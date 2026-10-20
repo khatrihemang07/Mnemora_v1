@@ -88,6 +88,11 @@ pub fn list_pages(conn: &Connection, cursor: Option<&str>, limit: u32) -> AppRes
     let limit = limit.clamp(1, MAX_PAGES);
     Ok(repo::pages(conn, cursor, limit)?
         .into_iter()
-        .map(|(date, entries)| Page { date, entries })
+        .map(|(date, entries)| Page {
+            date,
+            entry_count: u32::try_from(entries.len()).unwrap_or(u32::MAX),
+            word_count: entries.iter().map(|e| e.word_count).sum(),
+            entries,
+        })
         .collect())
 }
