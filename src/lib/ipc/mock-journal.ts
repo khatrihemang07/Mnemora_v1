@@ -59,9 +59,13 @@ function mockId(): string {
   return crypto.randomUUID();
 }
 
-/** Switches to simulate failures. `?fail=journal_update` turns `failUpdate` on from the start. */
+/**
+ * Switches to simulate failures. `?fail=journal_update` turns `failUpdate` on from the start, and
+ * `?fail=journal_pages` turns on `failPages`.
+ */
 export interface JournalMockFlags {
   failUpdate: boolean;
+  failPages?: boolean;
 }
 
 /**
@@ -205,6 +209,12 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
             ),
           );
         case 'journal_pages': {
+          if (flags.failPages) {
+            throw {
+              ...fail('database', 'Could not read the Journal'),
+              details: 'mock: simulated load failure',
+            };
+          }
           const cursor = a.cursor as string | null;
           if (cursor !== null && !validDate(cursor)) throw fail('validation', 'Not a valid date');
           const limit = Math.min(MAX_PAGES, Math.max(1, a.limit as number));

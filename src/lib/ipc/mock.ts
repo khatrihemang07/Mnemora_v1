@@ -60,7 +60,10 @@ export async function installMock() {
   };
 
   const query = new URLSearchParams(location.search);
-  const journalFlags = { failUpdate: query.get('fail') === 'journal_update' };
+  const journalFlags = {
+    failUpdate: query.get('fail') === 'journal_update',
+    failPages: query.get('fail') === 'journal_pages',
+  };
   // Reachable from the dev console: `__journalMock.failUpdate = false` lets a Retry succeed.
   (window as unknown as { __journalMock: typeof journalFlags }).__journalMock = journalFlags;
   const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
