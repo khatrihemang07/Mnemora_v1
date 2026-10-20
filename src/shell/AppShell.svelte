@@ -32,7 +32,10 @@
   import TabBar from './TabBar.svelte';
   import TitleBar from './TitleBar.svelte';
 
-  createQuery(() => appInfoQuery);
+  const info = createQuery(() => appInfoQuery);
+  $effect(() => {
+    pageHeader.env = info.data?.environment ?? null;
+  });
   useAppearance();
   useSidebarPersistence();
   const enabled = useEnabledModules();

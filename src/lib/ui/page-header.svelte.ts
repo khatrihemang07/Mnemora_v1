@@ -1,4 +1,5 @@
 import type { Snippet } from 'svelte';
+import type { Environment } from '../ipc/bindings';
 
 export interface PageHeaderEntry {
   title: string;
@@ -8,6 +9,8 @@ export interface PageHeaderEntry {
 /** What the desktop top bar shows. Written by `PageHeader`, read by the shell's top bar. */
 class PageHeaderState {
   current = $state.raw<PageHeaderEntry | null>(null);
+  /** The build's Environment, set once by the shell; the phone title shows a SANDBOX badge from it. */
+  env = $state<Environment | null>(null);
 
   /** Claim the bar; the returned function releases it unless a newer page already took over. */
   set(entry: PageHeaderEntry): () => void {

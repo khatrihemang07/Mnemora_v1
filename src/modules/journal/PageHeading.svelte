@@ -31,7 +31,7 @@
     </span>
   {/if}
   {#if summary && page.entry_count > 0}
-    <span class="ml-auto hidden text-xs text-faint tabular-nums min-[720px]:block">
+    <span class="ml-auto hidden text-xs text-faint tabular-nums desktop:block">
       {pageSummary(page.entry_count, page.word_count)}
     </span>
   {/if}

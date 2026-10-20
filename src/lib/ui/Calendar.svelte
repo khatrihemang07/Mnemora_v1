@@ -196,7 +196,7 @@
                   : ''}"
                 aria-current={d.date === today ? 'date' : undefined}
                 aria-disabled={off || undefined}
-                class="relative h-10.5 w-full rounded-sm text-xs tabular-nums transition-colors duration-(--dur) ease-out min-[720px]:h-8.5
+                class="relative h-10.5 w-full rounded-sm text-xs tabular-nums transition-colors duration-(--dur) ease-out desktop:h-8.5
                   {off || !d.inMonth ? 'text-faint' : 'text-ink'}
                   {off ? 'cursor-default opacity-35' : 'cursor-pointer hover:bg-hover'}
                   {!off && !d.inMonth ? 'opacity-50' : ''}

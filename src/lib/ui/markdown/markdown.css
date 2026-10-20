@@ -149,10 +149,8 @@ ol.md-list {
     box-shadow: 0 0 0 4px var(--ring);
   }
 }
-@media (max-width: 719.98px) {
-  .md-task[data-tickable] .md-cb::after {
-    inset: -3px -15px;
-  }
+[data-phone] .md-task[data-tickable] .md-cb::after {
+  inset: -3px -15px;
 }
 
 .md-mark {

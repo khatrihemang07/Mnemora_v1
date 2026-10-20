@@ -182,7 +182,7 @@
   tabindex="0"
   aria-label="Entry at {time}"
   aria-keyshortcuts={viewport.isPhone ? undefined : 'ArrowUp ArrowDown Enter Backspace Delete M C'}
-  class="group relative -mx-2.5 grid scroll-mt-20 scroll-mb-8 gap-0.5 rounded-md px-2.5 py-2 transition-[opacity,background-color,box-shadow] duration-(--dur) ease-out min-[720px]:grid-cols-[4rem_1fr] min-[720px]:gap-x-3.5 [&+&]:before:absolute [&+&]:before:inset-x-2.5 [&+&]:before:top-0 [&+&]:before:h-px [&+&]:before:bg-line
+  class="group relative -mx-2.5 grid scroll-mt-20 scroll-mb-8 gap-0.5 rounded-md px-2.5 py-2 transition-[opacity,background-color,box-shadow] duration-(--dur) ease-out desktop:grid-cols-[4rem_1fr] desktop:gap-x-3.5 [&+&]:before:absolute [&+&]:before:inset-x-2.5 [&+&]:before:top-0 [&+&]:before:h-px [&+&]:before:bg-line
     {open ? 'bg-surface shadow-pop' : 'cursor-text hover:bg-hover focus-visible:bg-hover'} {dimmed ? 'opacity-35' : ''}
     {editing.arrived === entry.id ? 'slide-in' : ''} {nav.flashEntry === entry.id ? 'flash' : ''}"
   data-entry-id={entry.id}
@@ -198,9 +198,9 @@
     if (editing.arrived === entry.id) editing.arrived = null;
   }}
 >
-  <time class="text-xs text-faint tabular-nums min-[720px]:pt-[3px] min-[720px]:text-[0.78rem]" title={full}>
+  <time class="text-xs text-faint tabular-nums desktop:pt-[3px] desktop:text-[0.78rem]" title={full}>
     {#if writtenDate}
-      <span class="mr-1.5 min-[720px]:mr-0 min-[720px]:block min-[720px]:text-[0.65rem] min-[720px]:leading-[1.3] min-[720px]:whitespace-nowrap">
+      <span class="mr-1.5 desktop:mr-0 desktop:block desktop:text-[0.65rem] desktop:leading-[1.3] desktop:whitespace-nowrap">
         {writtenDate}
       </span>
     {/if}
@@ -228,8 +228,8 @@
       icon={Ellipsis}
       label="Entry actions"
       size="sm"
-      class="absolute top-1 right-1.5 bg-surface-2 transition-opacity min-[720px]:opacity-0 min-[720px]:group-focus-within:opacity-100 min-[720px]:group-hover:opacity-100
-        {menuOpen ? 'min-[720px]:opacity-100' : ''}"
+      class="absolute top-1 right-1.5 bg-surface-2 transition-opacity desktop:opacity-0 desktop:group-focus-within:opacity-100 desktop:group-hover:opacity-100
+        {menuOpen ? 'desktop:opacity-100' : ''}"
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       onclick={(e) => openMenu(e.currentTarget)}
