@@ -26,6 +26,32 @@ const POOL = [
   'Finished the quarterly review draft. Writing down what went well first made the rest easier to face.\n\nNote to self: do this every month, not every quarter.\n\nNext step is sharing it on Friday.',
 ];
 
+/** One Entry using every supported Markdown feature, to check rendering and editing. */
+const SHOWCASE = `# A morning plan
+
+Some **bold**, *italic*, ~~struck~~ and ==highlighted== words, \`inline code\` and a [link](https://example.com), or just https://example.com/bare.
+
+## Today
+
+- [ ] Write the report
+- [x] Water the plants
+- plain bullet
+  - nested bullet
+
+1. First
+2. Second
+
+> A quote that wraps across the line to show the bar.
+
+---
+
+\`\`\`
+const x = 1;
+\`\`\`
+
+| a | b |
+|---|---|`;
+
 /** `YYYY-MM-DD` of the device's calendar `days` from `base`. */
 function shift(base: string, days: number): string {
   const [y = 0, m = 1, d = 1] = base.split('-').map(Number);
@@ -64,6 +90,7 @@ export function seedJournalEntries(now: Date, newId: () => string): Entry[] {
   const pad = (n: number) => String(n).padStart(2, '0');
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
+  add(today, SHOWCASE, at(today, '06:30'));
   add(today, pick(0), at(today, '07:48'));
   add(today, pick(1), at(today, '13:20'), at(today, '15:05'));
 

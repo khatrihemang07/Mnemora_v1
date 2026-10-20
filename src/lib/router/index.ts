@@ -1,5 +1,5 @@
 export { blockNavigation } from 'sv-router';
-export { installBackButton } from './back-button';
+export { installBackButton, interceptBack } from './back-button';
 export { createAppRouter } from './create';
 export type {
   ModuleAction,

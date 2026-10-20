@@ -20,6 +20,8 @@ export interface ComposerDeps {
 export class Composer {
   phase: ComposerPhase = 'idle';
   text = '';
+  /** Id of the Entry the last `finish()` completed, for the feed to welcome it. */
+  lastFinishedId: string | null = null;
   #sessionId: string;
   #entryId: string | null = null;
   #saved = '';
@@ -56,8 +58,24 @@ export class Composer {
     const blank = !this.text.trim();
     const saved = this.#entryId !== null && (blank || this.text === this.#saved);
     if (!saved && !(this.phase === 'idle' && blank)) return false;
+    this.lastFinishedId = this.#entryId;
     this.#reset();
     return true;
+  }
+
+  /** Text that is not stored yet: a failed create, or edits a failed update left behind. */
+  get unsaved(): boolean {
+    if (!this.text.trim()) return false;
+    return this.#entryId === null ? this.phase !== 'creating' : this.text !== this.#saved;
+  }
+
+  /** Tries the pending save again now (Retry, blur, leaving). */
+  async saveNow(): Promise<void> {
+    this.#cancelTimer?.();
+    this.#cancelTimer = null;
+    if (this.phase === 'idle' && this.text.trim()) this.#create();
+    else this.#save();
+    await this.#queue;
   }
 
   #schedule() {

@@ -38,15 +38,19 @@ _Avoid_: Local preference, machine config
 
 **Home**:
 The start screen: a greeting, the current time and a place for Modules to surface what matters.
+_Avoid_: Dashboard, landing page
 
 ### Journal
 
 **Entry**:
-One untitled piece of Journal writing with its own identity. It sits on exactly one Page and keeps the moment (date and time) it was written, which may fall on a later date than its Page. Moving it to another Page never changes that moment.
+One untitled piece of Journal writing with its own identity. It sits on exactly one Page and keeps the moment (date and time) it was written, which may fall on a different date than its Page. Moving it to another Page never changes that moment.
 _Avoid_: Note, post, log, record
 
 **Page**:
-All the Entries for one calendar date, like a dated page in a paper diary. Today's Page is the default, but an Entry can be written on or moved to any past Page.
+All the Entries for one calendar date, like a dated page in a paper diary. Today's Page is the default, but an Entry can be written on or moved to any other Page, past or future.
 _Avoid_: Day, day page, date
-_Avoid_: Dashboard, landing page
+
+**Editing session**:
+One continuous stretch of writing or editing an Entry, from opening it until you finish. An Entry counts as edited only when it changes more than 10 minutes after it was written.
+_Avoid_: Draft, revision
 

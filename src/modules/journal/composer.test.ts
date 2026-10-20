@@ -102,4 +102,30 @@ describe('Composer', () => {
     expect(errors).toHaveLength(1);
     expect(c.text).toBe('xy');
   });
+
+  it('reports unsaved text after a failed create or update, and retry saves it', async () => {
+    const failing = setup({ failCreate: true });
+    failing.c.input('hello');
+    await failing.settle();
+    expect(failing.c.unsaved).toBe(true);
+    expect(await failing.c.finish()).toBe(false);
+
+    const ok = setup();
+    ok.c.input('hello');
+    await ok.settle();
+    expect(ok.c.unsaved).toBe(false);
+    ok.c.input('hello there');
+    expect(ok.c.unsaved).toBe(true);
+    await ok.c.saveNow();
+    expect(ok.calls.at(-1)).toBe('update:e1:hello there:s1');
+    expect(ok.c.unsaved).toBe(false);
+  });
+
+  it('remembers which Entry the last finish completed', async () => {
+    const { c, settle } = setup();
+    c.input('x');
+    await settle();
+    expect(await c.finish()).toBe(true);
+    expect(c.lastFinishedId).toBe('e1');
+  });
 });

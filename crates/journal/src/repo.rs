@@ -55,16 +55,12 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Entry>> {
         .optional()?)
 }
 
-pub fn update_body(
-    conn: &Connection,
-    id: &str,
-    body: &str,
-    word_count: u32,
-    now: i64,
-) -> AppResult<()> {
+/// Writes the body and the fields an update changes.
+pub fn update_body(conn: &Connection, e: &Entry) -> AppResult<()> {
     conn.execute(
-        "UPDATE journal_entries SET body = ?2, word_count = ?3, updated_at = ?4 WHERE id = ?1",
-        params![id, body, word_count, now],
+        "UPDATE journal_entries SET body = ?2, word_count = ?3, edited_at = ?4, updated_at = ?5
+         WHERE id = ?1",
+        params![e.id, e.body, e.word_count, e.edited_at, e.updated_at],
     )?;
     Ok(())
 }

@@ -16,6 +16,15 @@ use crate::{repo, words};
 const ENTITY: &str = "journal_entry";
 /// Most Pages one request may return.
 const MAX_PAGES: u32 = 100;
+/// Changes sooner than this after the written instant are typo fixes, not edits.
+const EDIT_GRACE_MS: i64 = 10 * 60 * 1000;
+
+/// The "edited" instant after an update at `now`: kept once set, else set only past the grace.
+fn edited_after_update(entry: &Entry, now: i64) -> Option<i64> {
+    entry
+        .edited_at
+        .or_else(|| (now - entry.written_at > EDIT_GRACE_MS).then_some(now))
+}
 
 fn record(conn: &Connection, entry: &Entry, op: ChangeOp, session_id: &str) -> AppResult<()> {
     changelog::record(
@@ -59,7 +68,8 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     Ok(entry)
 }
 
-/// Replaces an Entry's text. Setting `edited_at` (the 10-minute rule) will go here.
+/// Replaces an Entry's text. Marks it edited only when more than 10 minutes have passed since
+/// it was written.
 pub fn update_entry(
     conn: &mut Connection,
     id: &str,
@@ -73,8 +83,10 @@ pub fn update_entry(
 
     entry.word_count = words::word_count(&text);
     entry.body = text;
-    entry.updated_at = now_ms();
-    repo::update_body(&tx, id, &entry.body, entry.word_count, entry.updated_at)?;
+    let now = now_ms();
+    entry.updated_at = now;
+    entry.edited_at = edited_after_update(&entry, now);
+    repo::update_body(&tx, &entry)?;
     record(&tx, &entry, ChangeOp::Update, session_id)?;
     tx.commit()?;
     Ok(entry)

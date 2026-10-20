@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./lib/theme/fonts.css";
 @import "./lib/theme/tokens.css";
+@import "./lib/ui/markdown/markdown.css";
 
 /* Remove Tailwind's default palette and scales so only semantic tokens are usable. */
 @theme {
@@ -183,5 +184,16 @@ textarea,
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* A new Entry arriving in its Page when the composer finishes. Zero under reduced motion (--dur). */
+.slide-in {
+  animation: slide-in calc(var(--dur) * 2) var(--ease) both;
+}
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
 }

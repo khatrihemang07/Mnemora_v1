@@ -8,10 +8,14 @@
   interface Props {
     error: unknown;
     onretry?: () => void;
+    /** Replaces the error's own message (the details still come from the error). */
+    message?: string;
   }
-  let { error, onretry }: Props = $props();
+  let { error, onretry, message: override }: Props = $props();
 
-  const message = $derived(error instanceof Error ? error.message : 'Something went wrong.');
+  const message = $derived(
+    override ?? (error instanceof Error ? error.message : 'Something went wrong.'),
+  );
   const details = $derived(
     error instanceof IpcError
       ? JSON.stringify({ code: error.code, message: error.message, details: error.details }, null, 2)
