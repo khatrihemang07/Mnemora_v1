@@ -81,7 +81,8 @@
     >
       {#each items as item (item.label)}
         {#if item.separatorBefore}
-          <DropdownMenu.Separator class="my-1 h-px bg-line" />
+          <!-- --line nearly matches --pop in dark themes, so the divider is drawn from the ink colour. -->
+          <DropdownMenu.Separator class="my-1 h-px bg-[color-mix(in_oklch,var(--ink)_12%,transparent)]" />
         {/if}
         <DropdownMenu.Item
           textValue={item.label}

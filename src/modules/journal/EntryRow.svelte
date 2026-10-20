@@ -136,12 +136,13 @@
     {/if}
   </div>
   {#if !open}
-    <!-- Hover or focus reveals it on desktop; a phone has no hover, so it stays. -->
+    <!-- Hover or focus reveals it on desktop; a phone has no hover, so it stays. Solid, because it
+         sits over the end of the first line. -->
     <IconButton
       icon={Ellipsis}
       label="Entry actions"
       size="sm"
-      class="absolute top-1 right-1.5 transition-opacity min-[720px]:opacity-0 min-[720px]:group-focus-within:opacity-100 min-[720px]:group-hover:opacity-100
+      class="absolute top-1 right-1.5 bg-surface-2 transition-opacity min-[720px]:opacity-0 min-[720px]:group-focus-within:opacity-100 min-[720px]:group-hover:opacity-100
         {menuOpen ? 'min-[720px]:opacity-100' : ''}"
       aria-haspopup="menu"
       aria-expanded={menuOpen}
