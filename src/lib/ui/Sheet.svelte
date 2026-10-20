@@ -18,7 +18,7 @@
   let { open, title, onclose, restoreFocus, children }: Props = $props();
 
   // Android Back closes the sheet instead of leaving the screen.
-  closeOnBack(() => open, onclose);
+  closeOnBack(() => open, () => onclose());
 </script>
 
 <Dialog.Root {open} onOpenChange={(o) => !o && onclose()}>

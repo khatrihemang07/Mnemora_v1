@@ -13,7 +13,7 @@
   }
   let { open, title, description, onclose, actions }: Props = $props();
 
-  closeOnBack(() => open, onclose);
+  closeOnBack(() => open, () => onclose());
 </script>
 
 <Dialog.Root {open} onOpenChange={(o) => !o && onclose()}>
