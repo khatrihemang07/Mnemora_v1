@@ -28,6 +28,7 @@ macro_rules! specta_builder_for {
                 journal::journal_entry_move,
                 journal::journal_month_days,
                 journal::journal_pages,
+                journal::journal_search,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
     };
@@ -253,6 +254,7 @@ mod tests {
             "journalEntryMove",
             "journalMonthDays",
             "journalPages",
+            "journalSearch",
             "settingsChangedEvent",
         ] {
             assert!(ts.contains(name), "bindings are missing {name}");

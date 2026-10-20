@@ -1,4 +1,9 @@
-import { type InfiniteData, infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
+import {
+  type InfiniteData,
+  infiniteQueryOptions,
+  keepPreviousData,
+  queryOptions,
+} from '@tanstack/svelte-query';
 import { commands, type Entry, type Page } from '../../lib/ipc/bindings';
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
@@ -9,6 +14,8 @@ export const PAGE_SIZE = 30;
 export const journalKeys = {
   all: ['journal'] as const,
   pages: ['journal', 'pages'] as const,
+  search: (query: string, from: string | null, to: string | null) =>
+    ['journal', 'search', query, from, to] as const,
   monthDays: (year: number, month: number) => ['journal', 'month-days', year, month] as const,
 };
 
@@ -17,6 +24,18 @@ export const monthDaysQuery = (year: number, month: number) =>
   queryOptions({
     queryKey: journalKeys.monthDays(year, month),
     queryFn: () => unwrap(commands.journalMonthDays(year, month)),
+    staleTime: 30_000,
+  });
+
+/**
+ * Search results for `query` within the Page-date range. The previous results stay on screen while
+ * the next ones load, so typing never flashes empty; `enabled` is the caller's to set.
+ */
+export const searchQuery = (query: string, range: { from: string; to: string } | null) =>
+  queryOptions({
+    queryKey: journalKeys.search(query, range?.from ?? null, range?.to ?? null),
+    queryFn: () => unwrap(commands.journalSearch(query, range?.from ?? null, range?.to ?? null)),
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
 

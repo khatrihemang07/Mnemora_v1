@@ -87,7 +87,7 @@ export function moveFocus(date: string, key: string, weekStart: WeekStart): stri
 }
 
 /** The same day number in the neighbouring month, clamped to that month's last day. */
-function shiftMonthKeepingDay(date: string, delta: number): string {
+export function shiftMonthKeepingDay(date: string, delta: number): string {
   const [, , d] = parseYmd(date);
   const month = shiftMonth(date.slice(0, 7), delta);
   const [y, m] = parseYmd(month);

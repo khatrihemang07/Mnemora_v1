@@ -92,7 +92,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Card` | A hairline-bordered surface that groups content |
 | `Dialog` | A small modal needing a decision (confirm, unsaved changes) |
 | `Sheet` | A bottom sheet: the phone More menu, and the DatePicker on a phone |
-| `CommandPalette` | The ⌘K action list. Mount once in the shell |
+| `CommandPalette` | The ⌘K action list. Mount once in the shell. Filters with `visibleItems` (every typed word in the label); an item with a `queryLabel` is a query action that appears once something is typed ("Search Journal for 'river'") and receives the text in `run` |
 | `Tooltip` / `TooltipProvider` | Names or explains a control; 600ms delay, shows the shortcut. Provider mounts once |
 | `ResizablePanes` | The desktop sidebar + main split. Wraps paneforge; takes a pixel width and reports dragged pixels |
 | `Kbd` | Shows a keyboard shortcut |
@@ -114,7 +114,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Popover` | A small floating panel hung off a button (pickers). Controlled (`open`, `anchor` element, `label`); Bits UI gives Esc, outside-click and focus; clicking the anchor toggles it; `focus` picks what to focus, `restoreFocus` where focus goes on close. Marked `data-editor-popup` so an open Entry editor is not closed by clicks inside |
 | `Calendar` | A month grid: dots on `marked` days, a ring on today, `selected`, an optional `range` tint and `disabled` predicate, week start from the `weekStart` prop (core Setting), ‹ › month arrows, a month/year picker on the title and an optional Today button. Keyboard (arrows, PageUp/PageDown, Home/End, Enter) and screen-reader grid roles. `hue` tints today and dots with a Module hue token name. Date maths lives in `calendar.ts` (unit-tested) |
 | `DatePicker` | Choose a date: a `Popover` on desktop, a bottom `Sheet` on phone, with Today / Yesterday chips above a `Calendar`. `mode="single"` (`onpick`) or `mode="range"` (two picks, `onrange`; for search); `chips`, `closeOnPick`, `showToday`, `footer` turn it into a browsing calendar (the Journal's go-to-date) |
-| `Chip` | A small pill button that opens a picker (the date chip "Today ▾"): optional icon, trailing chevron, `tone="warm"` tints it with a Module `hue`. `bind:ref` to anchor a popover |
+| `Chip` | A small pill button that opens a picker (the date chip "Today ▾", the search "Any date ▾"): optional icon, trailing chevron, `tone="warm"` tints it with a Module `hue`. `bind:ref` to anchor a popover |
 | `KeyboardBar` | The phone formatting row above the keyboard while an editor is focused (B, I, H, bullet, checklist, quote, link). Buttons never steal focus; it follows the visual viewport |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |

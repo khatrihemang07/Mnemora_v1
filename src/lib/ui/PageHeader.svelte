@@ -19,6 +19,7 @@
 {#if viewport.isPhone}
   <div class="mb-3 flex items-center justify-between gap-3">
     <h1 class="font-display text-2xl" style="font-weight: var(--display-weight)">{title}</h1>
-    {@render actions?.()}
+    <!-- One group, so several actions sit together on the right rather than spread out. -->
+    {#if actions}<div class="flex items-center gap-1">{@render actions()}</div>{/if}
   </div>
 {/if}

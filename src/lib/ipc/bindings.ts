@@ -45,6 +45,13 @@ export const commands = {
 	 *  from the previous request). Fewer Pages than `limit` means the end.
 	 */
 	journalPages: (cursor: string | null, limit: number) => typedError<Page[], AppError>(__TAURI_INVOKE("journal_pages", { cursor, limit })),
+	/**
+	 *  Searches live Entries. Every word is required and matches by prefix; quoted text is an exact
+	 *  phrase; case and accents are ignored. `from` and `to` are optional inclusive Page dates; with
+	 *  no words they list every Entry in the range. `similar` holds Entries that match only with a
+	 *  typo allowed, never repeating `exact`.
+	 */
+	journalSearch: (query: string, from: string | null, to: string | null) => typedError<SearchResults, AppError>(__TAURI_INVOKE("journal_search", { query, from, to })),
 };
 
 /** Events */
@@ -129,6 +136,22 @@ export type ErrorCode =
 /**  Anything else; a bug or an unexpected state. */
 "internal";
 
+/**  One Entry found by a search. */
+export type Hit = {
+	/**  The Entry's id. */
+	id: string,
+	/**  The Page it sits on, `YYYY-MM-DD`. */
+	page_date: string,
+	/**  When it was written: UTC milliseconds. */
+	written_at: number,
+	/**  UTC offset in minutes where it was written. */
+	written_offset_min: number,
+	/**  IANA zone where it was written. */
+	written_tz: string,
+	/**  A window of its text with the matches marked. */
+	snippet: Span[],
+};
+
 /**
  *  TypeScript-facing description of any JSON value. Only used for type generation: on the wire
  *  fields stay `serde_json::Value`, which specta cannot export (recursive, i64 numbers).
@@ -159,6 +182,16 @@ export type Page = {
 	word_count: number,
 	/**  Entries by written instant, oldest first. */
 	entries: Entry[],
+};
+
+/**  The outcome of a search. */
+export type SearchResults = {
+	/**  Entries that match every word and phrase, newest first. */
+	exact: Hit[],
+	/**  Entries that match only when a word is allowed a typo; never also in `exact`. */
+	similar: Hit[],
+	/**  Whether `exact` was cut short at the limit. */
+	truncated: boolean,
 };
 
 /**  Wire form of a registered key, so the UI can render defaults and reset buttons. */
@@ -204,6 +237,14 @@ export type SidebarState = {
 	width?: number,
 	/**  Collapsed to the icon rail. */
 	rail?: boolean,
+};
+
+/**  A run of snippet text, either plain or a match. */
+export type Span = {
+	/**  The text, with whitespace collapsed to single spaces. */
+	text: string,
+	/**  Whether it matched the search. */
+	matched: boolean,
 };
 
 /**  Last known window geometry. */

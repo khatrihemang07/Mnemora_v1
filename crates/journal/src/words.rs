@@ -23,6 +23,56 @@ pub fn word_count(text: &str) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
+/// Separates lines (blocks, list items) in [`plain_text`].
+const LINE_SEPARATOR: &str = " · ";
+
+/// `text` as plain reading text for a search snippet: block markers, emphasis, highlight, strike
+/// and code marks and link targets are gone (link text and bare URLs stay), fence and divider
+/// lines are dropped, and the remaining lines are joined with " · ".
+pub fn plain_text(text: &str) -> String {
+    let mut in_fence = false;
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        // Code keeps its characters; everything else loses its Markdown.
+        let plain = if in_fence {
+            line.trim().to_owned()
+        } else {
+            strip_marks(&strip_links(strip_line_prefix(line)))
+        };
+        // A line with no letter or digit is only symbols (a divider).
+        if plain.chars().any(char::is_alphanumeric) {
+            lines.push(plain.split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+    }
+    lines.join(LINE_SEPARATOR)
+}
+
+/// Removes `*`, backticks, `~~` and `==`, and `_` at the edge of a word (`snake_case` keeps its own).
+fn strip_marks(s: &str) -> String {
+    let s = s.replace("~~", "").replace("==", "");
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    for (i, &c) in chars.iter().enumerate() {
+        match c {
+            '*' | '`' => {}
+            '_' => {
+                let inside = i > 0
+                    && chars.get(i + 1).is_some_and(|n| n.is_alphanumeric())
+                    && chars[i - 1].is_alphanumeric();
+                if inside {
+                    out.push(c);
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
 fn strip_line_prefix(line: &str) -> &str {
     let mut s = line.trim_start();
     while let Some(rest) = s.strip_prefix('>') {
@@ -73,6 +123,25 @@ fn strip_links(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::word_count;
+
+    #[test]
+    fn plain_text_drops_markdown_and_joins_lines() {
+        use super::plain_text;
+        assert_eq!(
+            plain_text(
+                "# A plan\n\nSome **bold**, *it*, ~~gone~~ ==hi== `code` and [a link](https://x.io/a) at https://y.io"
+            ),
+            "A plan · Some bold, it, gone hi code and a link at https://y.io"
+        );
+        assert_eq!(
+            plain_text("- [ ] Call\n- [x] Reply\n> quoted\n1. one\n---"),
+            "Call · Reply · quoted · one"
+        );
+        assert_eq!(
+            plain_text("a snake_case _word_\n```rust\nlet x_y = 1;\n```"),
+            "a snake_case word · let x_y = 1;"
+        );
+    }
 
     #[test]
     fn plain_words() {

@@ -45,7 +45,8 @@ export function buildPaletteItems({ setTheme, toggleSidebar, enabled }: Actions)
       group: m.name,
       icon: a.icon ?? m.icon,
       shortcut: a.shortcut,
-      run: () => a.run(moduleContext),
+      queryLabel: a.queryLabel,
+      run: (query: string) => a.run(moduleContext, query),
     })),
   );
   const themes: PaletteItem[] = THEMES.map((t) => ({
