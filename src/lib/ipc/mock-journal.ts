@@ -86,7 +86,7 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
   const deleted = new Map<string, number>();
   const live = () => all.filter((e) => !deleted.has(e.id));
   const find = (id: unknown) => live().find((e) => e.id === id);
-  const missing = () => fail('unknown_key', 'That Entry no longer exists');
+  const missing = () => fail('not_found', 'That Entry no longer exists');
 
   return {
     handles: (cmd: string) => cmd.startsWith('journal_'),
@@ -135,8 +135,8 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           entry.body = text;
           entry.word_count = wordCount(text);
           entry.updated_at = now;
-          // Edited only once more than 10 minutes have passed since it was written (kept once set).
-          entry.edited_at ??= now - entry.written_at > EDIT_GRACE_MS ? now : null;
+          // The last edit: moves on every update past 10 minutes after it was written.
+          if (now - entry.written_at > EDIT_GRACE_MS) entry.edited_at = now;
           return copy(entry);
         }
         case 'journal_entry_toggle_task': {
@@ -175,14 +175,18 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           ].sort();
         }
         case 'journal_entry_delete': {
-          if (!find(a.id)) throw missing();
-          deleted.set(a.id as string, Date.now());
+          const entry = find(a.id);
+          if (!entry) throw missing();
+          const now = Date.now();
+          entry.updated_at = now;
+          deleted.set(entry.id, now);
           return null;
         }
         case 'journal_entry_restore': {
           const entry = all.find((e) => e.id === a.id && deleted.has(e.id));
           if (!entry) throw missing();
           deleted.delete(entry.id);
+          entry.updated_at = Date.now();
           return copy(entry);
         }
         case 'journal_today': {

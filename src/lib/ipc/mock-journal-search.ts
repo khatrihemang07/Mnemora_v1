@@ -174,6 +174,7 @@ export function searchEntries(
       exact: all.slice(0, MAX_EXACT).map((e) => toHit(e, snippet(e.body, terms, false))),
       similar: [],
       truncated: all.length > MAX_EXACT,
+      similar_truncated: false,
     };
   }
   const tokens = new Map(inRange.map((e) => [e.id, words(e.body)]));
@@ -186,5 +187,6 @@ export function searchEntries(
     exact: exact.slice(0, MAX_EXACT).map((e) => toHit(e, snippet(e.body, terms, false))),
     similar: similar.slice(0, MAX_SIMILAR).map((e) => toHit(e, snippet(e.body, terms, true))),
     truncated: exact.length > MAX_EXACT,
+    similar_truncated: similar.length > MAX_SIMILAR,
   };
 }

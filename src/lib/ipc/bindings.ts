@@ -138,8 +138,10 @@ export type Environment =
 export type ErrorCode = 
 /**  A value failed validation. */
 "validation" | 
-/**  A key or id is not registered or does not exist. */
+/**  A key is not registered. */
 "unknown_key" | 
+/**  The record asked for does not exist (or is deleted). */
+"not_found" | 
 /**  Filesystem failure. */
 "io" | 
 /**  Database failure. */
@@ -212,6 +214,8 @@ export type SearchResults = {
 	similar: Hit[],
 	/**  Whether `exact` was cut short at the limit. */
 	truncated: boolean,
+	/**  Whether `similar` was cut short at the limit. */
+	similar_truncated: boolean,
 };
 
 /**  Wire form of a registered key, so the UI can render defaults and reset buttons. */

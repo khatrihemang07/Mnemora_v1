@@ -24,11 +24,12 @@ const MAX_PAGES: u32 = 100;
 /// Changes sooner than this after the written instant are typo fixes, not edits.
 const EDIT_GRACE_MS: i64 = 10 * 60 * 1000;
 
-/// The "edited" instant after an update at `now`: kept once set, else set only past the grace.
+/// The "edited" instant after an update at `now`: the last edit, so it moves forward with every
+/// update past the grace; within the grace the existing value stays.
 fn edited_after_update(entry: &Entry, now: i64) -> Option<i64> {
-    entry
-        .edited_at
-        .or_else(|| (now - entry.written_at > EDIT_GRACE_MS).then_some(now))
+    (now - entry.written_at > EDIT_GRACE_MS)
+        .then_some(now)
+        .or(entry.edited_at)
 }
 
 /// Writes a change-log record. The snapshot is the Entry plus its `deleted_at`, which the Entry
@@ -83,8 +84,8 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     Ok(entry)
 }
 
-/// Replaces an Entry's text. Marks it edited only when more than 10 minutes have passed since
-/// it was written.
+/// Replaces an Entry's text. Marks it edited (at the latest update) only when more than 10
+/// minutes have passed since it was written.
 pub fn update_entry(
     conn: &mut Connection,
     id: &str,
@@ -141,7 +142,7 @@ pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
     let entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     let now = now_ms();
-    repo::set_deleted_at(&tx, id, Some(now))?;
+    repo::set_deleted_at(&tx, id, Some(now), now)?;
     record(&tx, &entry, Some(now), ChangeOp::Delete, None)?;
     tx.commit()?;
     Ok(())
@@ -150,8 +151,10 @@ pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
 /// Brings a deleted Entry back. Pages order by the written instant, so it returns to its place.
 pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
     let tx = conn.transaction()?;
-    let entry = repo::get_deleted(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
-    repo::set_deleted_at(&tx, id, None)?;
+    let mut entry = repo::get_deleted(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
+    let now = now_ms();
+    repo::set_deleted_at(&tx, id, None, now)?;
+    entry.updated_at = now;
     record(&tx, &entry, None, ChangeOp::Restore, None)?;
     tx.commit()?;
     Ok(entry)

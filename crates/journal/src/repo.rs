@@ -68,11 +68,11 @@ pub fn get_deleted(conn: &Connection, id: &str) -> AppResult<Option<Entry>> {
         .optional()?)
 }
 
-/// Sets or clears `deleted_at`.
-pub fn set_deleted_at(conn: &Connection, id: &str, at: Option<i64>) -> AppResult<()> {
+/// Sets or clears `deleted_at`, and stamps `updated_at` with `now`.
+pub fn set_deleted_at(conn: &Connection, id: &str, at: Option<i64>, now: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE journal_entries SET deleted_at = ?2 WHERE id = ?1",
-        params![id, at],
+        "UPDATE journal_entries SET deleted_at = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, at, now],
     )?;
     Ok(())
 }

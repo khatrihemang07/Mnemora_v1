@@ -319,7 +319,7 @@ mod tests {
                 json!({ "id": "nope", "text": "x", "sessionId": "s" }),
             )
             .unwrap_err();
-        assert_eq!(err["code"], "unknown_key");
+        assert_eq!(err["code"], "not_found");
 
         let e = create(&app, "2026-10-20", "keep").unwrap();
         let err = app
@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn update_after_ten_minutes_marks_edited_and_keeps_the_mark() {
+    fn update_after_ten_minutes_marks_edited_and_the_mark_moves_forward() {
         let app = TestApp::new();
         let e = create(&app, "2026-10-20", "a").unwrap();
         written_minutes_ago(&app, &e["id"], 11);
@@ -381,13 +381,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(3));
         let again = update(&app, &e["id"], "a b c", "s2");
         assert!(
-            again["edited_at"].as_i64().unwrap() == edited,
-            "the first edit time stays"
+            again["edited_at"].as_i64().unwrap() > edited,
+            "the mark shows the last edit"
         );
-        assert!(
-            again["updated_at"].as_i64().unwrap() > edited,
-            "updated_at always moves"
-        );
+        assert_eq!(again["updated_at"], again["edited_at"]);
     }
 
     #[test]
@@ -480,7 +477,7 @@ mod tests {
         }
         assert_eq!(
             toggle(&app, &json!("nope"), 1).unwrap_err()["code"],
-            "unknown_key"
+            "not_found"
         );
         assert_eq!(pages(&app, None, 1)[0]["entries"][0], e);
         assert_eq!(log_ops(&app), [("create".into(), "s1".into())]);
@@ -516,11 +513,40 @@ mod tests {
         assert_eq!(pages(&app, None, 10)[0]["entries"], json!([a, c]));
         assert_eq!(pages(&app, None, 10)[0]["entry_count"], 2);
 
-        assert_eq!(restore(&app, &b["id"]).unwrap(), b);
-        assert_eq!(pages(&app, None, 10)[0]["entries"], json!([a, b, c]));
+        let restored = restore(&app, &b["id"]).unwrap();
+        assert_eq!(restored["id"], b["id"]);
+        assert_eq!(pages(&app, None, 10)[0]["entries"], json!([a, restored, c]));
 
         let ops: Vec<String> = log_ops(&app).into_iter().map(|(op, _)| op).collect();
         assert_eq!(ops, ["create", "create", "create", "delete", "restore"]);
+    }
+
+    #[test]
+    fn delete_and_restore_both_bump_updated_at() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "x").unwrap();
+        let created = e["updated_at"].as_i64().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        delete(&app, &e["id"]).unwrap();
+        let deleted_row: i64 = app.with_db(|c| {
+            c.query_row(
+                "SELECT updated_at FROM journal_entries WHERE id = ?1",
+                [e["id"].as_str().unwrap()],
+                |r| r.get(0),
+            )
+            .unwrap()
+        });
+        assert!(deleted_row > created, "delete moves updated_at");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let restored = restore(&app, &e["id"]).unwrap();
+        assert!(
+            restored["updated_at"].as_i64().unwrap() > deleted_row,
+            "restore moves updated_at"
+        );
+        assert_eq!(
+            pages(&app, None, 1)[0]["entries"][0]["updated_at"],
+            restored["updated_at"]
+        );
     }
 
     #[test]
@@ -529,21 +555,18 @@ mod tests {
         let e = create(&app, "2026-10-20", "- [ ] a").unwrap();
         delete(&app, &e["id"]).unwrap();
         assert!(pages(&app, None, 10).is_empty());
-        assert_eq!(delete(&app, &e["id"]).unwrap_err()["code"], "unknown_key");
-        assert_eq!(
-            toggle(&app, &e["id"], 0).unwrap_err()["code"],
-            "unknown_key"
-        );
+        assert_eq!(delete(&app, &e["id"]).unwrap_err()["code"], "not_found");
+        assert_eq!(toggle(&app, &e["id"], 0).unwrap_err()["code"], "not_found");
         let err = app
             .invoke::<Value>(
                 "journal_entry_update",
                 json!({ "id": e["id"], "text": "x", "sessionId": "s" }),
             )
             .unwrap_err();
-        assert_eq!(err["code"], "unknown_key");
+        assert_eq!(err["code"], "not_found");
         assert_eq!(
             restore(&app, &json!("nope")).unwrap_err()["code"],
-            "unknown_key"
+            "not_found"
         );
     }
 
@@ -551,7 +574,7 @@ mod tests {
     fn restoring_a_live_entry_is_a_harmless_no_op() {
         let app = TestApp::new();
         let e = create(&app, "2026-10-20", "x").unwrap();
-        assert_eq!(restore(&app, &e["id"]).unwrap_err()["code"], "unknown_key");
+        assert_eq!(restore(&app, &e["id"]).unwrap_err()["code"], "not_found");
     }
 
     #[test]
@@ -706,11 +729,11 @@ mod tests {
         delete(&app, &e["id"]).unwrap();
         assert_eq!(
             move_to(&app, &e["id"], "2026-10-19").unwrap_err()["code"],
-            "unknown_key"
+            "not_found"
         );
         assert_eq!(
             move_to(&app, &json!("nope"), "2026-10-19").unwrap_err()["code"],
-            "unknown_key"
+            "not_found"
         );
         // Restoring it brings it back where it was, not where the move was attempted.
         assert_eq!(restore(&app, &e["id"]).unwrap()["page_date"], "2026-10-20");
@@ -1055,6 +1078,21 @@ mod tests {
         create(&app, "2026-10-20", "new journal").unwrap();
         let r = search(&app, "jurnal", Some("2026-10-10"), None);
         assert_eq!(r["similar"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn similar_matches_stop_at_one_hundred_and_say_so() {
+        let app = TestApp::new();
+        for _ in 0..101 {
+            create(&app, "2026-10-20", "bakery").unwrap();
+        }
+        let full = search(&app, "bakry", None, None);
+        assert_eq!(full["similar"].as_array().unwrap().len(), 100);
+        assert_eq!(full["similar_truncated"], true);
+        assert_eq!(full["truncated"], false);
+
+        let few = search(&app, "bakery", None, None);
+        assert_eq!(few["similar_truncated"], false);
     }
 
     #[test]

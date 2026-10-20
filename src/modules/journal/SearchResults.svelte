@@ -76,7 +76,11 @@
     >
       Similar matches
     </div>
-    <p class="mb-3 text-xs text-faint">Close to what you typed, with a typo or two.</p>
+    <p class="mb-3 text-xs text-faint">
+      Close to what you typed, with a typo or two{results.similar_truncated
+        ? ' · showing the newest only, narrow the search to see more'
+        : ''}.
+    </p>
     {#each similarGroups as g (g.date)}
       {@render group(g.date, g.label, g.hits, g.start)}
     {/each}
