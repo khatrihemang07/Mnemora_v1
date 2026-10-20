@@ -2126,6 +2126,7 @@ name = "mnemora-app"
 version = "0.1.0"
 dependencies = [
  "mnemora-core",
+ "mnemora-journal",
  "serde",
  "serde_json",
  "specta",
@@ -2155,6 +2156,18 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "mnemora-journal"
+version = "0.1.0"
+dependencies = [
+ "mnemora-core",
+ "rusqlite",
+ "rusqlite_migration",
+ "serde",
+ "serde_json",
+ "specta",
 ]
 
 [[package]]

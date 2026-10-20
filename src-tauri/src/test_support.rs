@@ -9,7 +9,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use mnemora_core::db;
+use mnemora_core::db::{self, Connection};
 use mnemora_core::device::DeviceSettings;
 use mnemora_core::env::Environment;
 use mnemora_core::events::EventBus;
@@ -24,11 +24,11 @@ use tauri::test::{
     INVOKE_KEY, MockRuntime, get_ipc_response, mock_builder, mock_context, noop_assets,
 };
 use tauri::webview::InvokeRequest;
-use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tempfile::TempDir;
 
-use crate::state::{AppState, DeviceStore};
-use crate::{SettingsChangedEvent, commands, modules, settings_store};
+use crate::state::{AppState, DeviceStore, lock};
+use crate::{SettingsChangedEvent, commands, journal, modules, settings_store};
 
 /// A mock Tauri app with every registered command, on an in-memory database migrated with every
 /// Module. Device files and backups go to a temp folder that is removed on drop.
@@ -99,5 +99,10 @@ impl TestApp {
             invoke_key: INVOKE_KEY.to_string(),
         };
         get_ipc_response(&self.window, request).map(|body| body.deserialize().unwrap())
+    }
+
+    /// Runs `f` on the database, for assertions about state no command exposes (the change log).
+    pub fn with_db<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
+        f(&lock(&self._app.state::<AppState>().db))
     }
 }

@@ -20,6 +20,9 @@ macro_rules! specta_builder_for {
                 commands::log_ui_error,
                 commands::backup_now,
                 commands::open_log_dir::<$runtime>,
+                journal::journal_entry_create,
+                journal::journal_entry_update,
+                journal::journal_pages,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
     };
@@ -27,6 +30,7 @@ macro_rules! specta_builder_for {
 
 mod commands;
 mod env_guard;
+mod journal;
 mod state;
 #[cfg(test)]
 mod test_support;
@@ -45,6 +49,7 @@ use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::{SettingsRegistry, SettingsStore};
+use mnemora_journal::JournalModule;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{Manager, WebviewWindowBuilder};
@@ -69,7 +74,7 @@ pub struct SettingsChangedEvent(pub SettingsChanged);
 
 /// Every Module in the app, in migration order. The one place Modules are registered.
 fn modules() -> Vec<Box<dyn Module>> {
-    vec![Box::new(CoreModule)]
+    vec![Box::new(CoreModule), Box::new(JournalModule)]
 }
 
 /// A Settings store over every Module's registered keys.
@@ -225,6 +230,9 @@ mod tests {
             "logUiError",
             "backupNow",
             "openLogDir",
+            "journalEntryCreate",
+            "journalEntryUpdate",
+            "journalPages",
             "settingsChangedEvent",
         ] {
             assert!(ts.contains(name), "bindings are missing {name}");
