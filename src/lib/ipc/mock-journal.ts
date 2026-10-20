@@ -4,6 +4,7 @@
  * IPC: handing out live objects would let the UI mutate the "database".
  */
 import type { AppError, Entry, NewEntry, Page } from './bindings';
+import { seedJournalEntries } from './mock-journal-seed';
 
 const MAX_OFFSET_MIN = 14 * 60;
 const MAX_ZONE_CHARS = 64;
@@ -54,8 +55,9 @@ function mockId(): string {
   return crypto.randomUUID();
 }
 
-export function createJournalMock() {
-  const entries: Entry[] = [];
+/** `seed` fills a sample Journal (dev only: `?seed=journal`); otherwise it starts empty. */
+export function createJournalMock(seed = false) {
+  const entries: Entry[] = seed ? seedJournalEntries(new Date(), mockId) : [];
 
   return {
     handles: (cmd: string) => cmd.startsWith('journal_'),
@@ -108,12 +110,17 @@ export function createJournalMock() {
             .sort()
             .reverse()
             .slice(0, limit);
-          const pages: Page[] = dates.map((date) => ({
-            date,
-            entries: entries
+          const pages: Page[] = dates.map((date) => {
+            const list = entries
               .filter((e) => e.page_date === date)
-              .sort((x, y) => x.written_at - y.written_at),
-          }));
+              .sort((x, y) => x.written_at - y.written_at);
+            return {
+              date,
+              entry_count: list.length,
+              word_count: list.reduce((n, e) => n + e.word_count, 0),
+              entries: list,
+            };
+          });
           return copy(pages);
         }
         default:

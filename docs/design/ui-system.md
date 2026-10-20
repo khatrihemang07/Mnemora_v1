@@ -97,7 +97,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `ResizablePanes` | The desktop sidebar + main split. Wraps paneforge; takes a pixel width and reports dragged pixels |
 | `Kbd` | Shows a keyboard shortcut |
 | `Toaster` / `toast.ts` | Transient feedback: `notify`, `notifyError`, `notifyUndo` |
-| `EmptyState` | Nothing to show yet: icon, sentence, action |
+| `EmptyState` | Nothing to show yet: icon, sentence, action. Optional `hue` (a Module hue token name, e.g. `--hue-journal`) tints the icon instead of the brand accent |
 | `Skeleton` | Loading placeholder (appears after 300ms) |
 | `ErrorBanner` | An inline failure with Retry and Copy details |
 | `EnvBadge` | The SANDBOX marker (nothing in Production) |
@@ -106,6 +106,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Switch` | An on/off Setting |
 | `Select` | Pick one of many options |
 | `Input` | A single-line text field |
+| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToTop()` respects reduced motion; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
 | `Textarea` | A multi-line text field that grows with its content up to a cap. Unstyled box: the parent supplies the frame |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |

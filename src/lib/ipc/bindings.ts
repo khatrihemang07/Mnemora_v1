@@ -140,6 +140,10 @@ export type NewEntry = {
 export type Page = {
 	/**  `YYYY-MM-DD`. */
 	date: string,
+	/**  How many Entries the Page holds. */
+	entry_count: number,
+	/**  Words across all its Entries, for the header summary. */
+	word_count: number,
 	/**  Entries by written instant, oldest first. */
 	entries: Entry[],
 };

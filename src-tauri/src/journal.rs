@@ -146,6 +146,19 @@ mod tests {
     }
 
     #[test]
+    fn pages_carry_entry_and_word_counts() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "one two").unwrap();
+        create(&app, "2026-10-20", "# three **four** five").unwrap();
+        create(&app, "2026-10-19", "solo").unwrap();
+        let listed = pages(&app, None, 10);
+        assert_eq!(listed[0]["entry_count"], 2);
+        assert_eq!(listed[0]["word_count"], 5);
+        assert_eq!(listed[1]["entry_count"], 1);
+        assert_eq!(listed[1]["word_count"], 1);
+    }
+
+    #[test]
     fn pages_are_cursor_paged_by_page_count() {
         let app = TestApp::new();
         for d in ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20"] {

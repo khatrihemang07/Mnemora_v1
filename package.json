@@ -17,6 +17,7 @@
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@tailwindcss/vite": "4.3.3",
     "@tanstack/svelte-query": "6.3.4",
+    "@tanstack/svelte-virtual": "3.13.47",
     "@tauri-apps/api": "2.12.4",
     "@tauri-apps/plugin-opener": "2.7.2",
     "bits-ui": "2.19.5",

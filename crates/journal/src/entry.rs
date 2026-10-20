@@ -60,6 +60,10 @@ pub struct NewEntry {
 pub struct Page {
     /// `YYYY-MM-DD`.
     pub date: String,
+    /// How many Entries the Page holds.
+    pub entry_count: u32,
+    /// Words across all its Entries, for the header summary.
+    pub word_count: u32,
     /// Entries by written instant, oldest first.
     pub entries: Vec<Entry>,
 }
