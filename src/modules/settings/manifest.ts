@@ -8,4 +8,5 @@ export const settingsManifest: ModuleManifest = {
   accentVar: '--hue-settings',
   routes: [{ path: '/settings', component: () => import('./SettingsPage.svelte') }],
   nav: { order: 100, shortcut: null, placement: 'bottom' },
+  required: true,
 };

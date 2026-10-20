@@ -18,9 +18,12 @@
   import TooltipProvider from '../lib/ui/TooltipProvider.svelte';
   import { viewport } from '../lib/viewport.svelte';
   import { useAppearance } from './appearance.svelte';
+  import { redirectForDisabled } from './enabled-modules';
+  import { useEnabledModules } from './enabled.svelte';
+  import { modules } from './registry';
   import { router } from './router';
   import Sidebar from './Sidebar.svelte';
-  import { paletteItems, runShortcut } from './shell-commands';
+  import { paletteItemsFor, runShortcut } from './shell-commands';
   import { shell } from './shell-state.svelte';
   import { useSidebarPersistence } from './sidebar-persist.svelte';
   import { resolveShortcut } from './shortcuts';
@@ -31,12 +34,20 @@
   createQuery(() => appInfoQuery);
   useAppearance();
   useSidebarPersistence();
+  const enabled = useEnabledModules();
+  const paletteItems = $derived(paletteItemsFor(enabled.list));
+
+  // A disabled Module's URL (bookmark, history, a switch-off elsewhere) falls back to Home.
+  $effect(() => {
+    const to = redirectForDisabled(router.pathname, modules, enabled.list);
+    if (to) void router.navigate(to);
+  });
 
   function onKeydown(e: KeyboardEvent) {
     const action = resolveShortcut(e, isMac);
     if (!action) return;
     e.preventDefault();
-    runShortcut(action);
+    runShortcut(action, enabled.list);
   }
 </script>
 

@@ -7,12 +7,13 @@
   import { settingsQuery } from '../lib/settings/queries';
   import Sheet from '../lib/ui/Sheet.svelte';
   import { activeModuleId, isMoreActive, visibleTabs } from './phone-tabs';
-  import { modules } from './registry';
+  import { useEnabledModules } from './enabled.svelte';
   import { router } from './router';
 
   const settings = createQuery(() => settingsQuery);
-  const entries = navEntries(modules);
-  const ids = entries.map((e) => e.id);
+  const enabled = useEnabledModules();
+  const entries = $derived(navEntries(enabled.list));
+  const ids = $derived(entries.map((e) => e.id));
 
   const tabIds = $derived(visibleTabs(readCore(settings.data?.values).phoneTabs, ids));
   const tabs = $derived(tabIds.flatMap((id) => entries.filter((e) => e.id === id)));

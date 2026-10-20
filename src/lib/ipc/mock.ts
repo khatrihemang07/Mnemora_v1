@@ -36,7 +36,7 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'core.date_format': { default: 'long', validate: oneOf('long', 'short', 'iso') },
   'core.week_start': { default: 'mon', validate: oneOf('mon', 'sun') },
   'core.phone_tabs': { default: ['home'], validate: list(4) },
-  'core.enabled_modules': { default: [], validate: list(64) },
+  'core.disabled_modules': { default: [], validate: list(64) },
 };
 
 const err = (code: AppError['code'], message: string): AppError => ({

@@ -16,7 +16,8 @@ export interface CoreSettings {
   dateFormat: DateFormat;
   weekStart: 'mon' | 'sun';
   phoneTabs: string[];
-  enabledModules: string[];
+  /** Modules switched off; absent Modules are on, so new ones appear by default. */
+  disabledModules: string[];
 }
 
 type Values = Record<string, JsonValue>;
@@ -37,6 +38,6 @@ export function readCore(values: Values = {}): CoreSettings {
     dateFormat: pick(values['core.date_format'], ['long', 'short', 'iso'], 'long'),
     weekStart: pick(values['core.week_start'], ['mon', 'sun'], 'mon'),
     phoneTabs: strings(values['core.phone_tabs']),
-    enabledModules: strings(values['core.enabled_modules']),
+    disabledModules: strings(values['core.disabled_modules']),
   };
 }

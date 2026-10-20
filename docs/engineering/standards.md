@@ -67,8 +67,18 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 - Test-first at the seams: settings validation, migrations, backups, paths, and pure UI logic (formatting, layout maths, tab rules).
 - Rust: unit tests beside the code in `#[cfg(test)]`; database behaviour is tested against an in-memory SQLite (`db::open_in_memory`) or a `tempfile` dir.
 - UI: Vitest, with `*.test.ts` next to the source. Keep logic in plain `.ts` so it is testable without a DOM.
-- No E2E for now ([ADR 0006](../adr/0006-no-e2e-tests.md)). Use the manual smoke checklist instead: `make dev`, check theme, sidebar, Settings save/discard, restart persistence.
+- No E2E for now ([ADR 0006](../adr/0006-no-e2e-tests.md)). Use the manual smoke checklist instead (below).
 - `make test` and `make lint` must pass before you finish.
+
+## Manual smoke checklist
+
+`make dev`, then:
+
+1. Theme, density and sidebar (expanded and rail) look right; Settings save/discard works; values persist after a restart.
+2. Home shows the greeting and clock, plus an empty state while no Module provides a card; Module cards appear for enabled Modules only.
+3. Settings ▸ Modules: Home and Settings are checked and disabled. Switching a Module off and saving removes it from the sidebar, phone tabs and More, ⌘K and ⌘-digit; its URL falls back to Home. Switching it on and saving restores all of them. Unsaved switches show the leave prompt.
+4. A Module's Settings section appears after the core sections (and drills in on phone) only while the Module is on.
+5. ⌘N runs the first enabled Module's create action; with none it shows "Nothing to create yet".
 
 ## Performance budgets
 
@@ -132,5 +142,5 @@ Example id: `journal`.
 6. Create `src/modules/journal/` with `manifest.ts` exporting a `ModuleManifest` (`id`, `name`, Lucide `icon`, `accentVar` such as `--hue-journal`, `routes` with lazy `component: () => import('./JournalPage.svelte')`, `nav: { order, shortcut }`).
 7. Add `JournalPage.svelte` (start it with `<PageHeader title="Journal" />`), and `queries.ts` with TanStack Query definitions that call `commands.*` through `unwrap`. Mutations invalidate by query key; Rust events already invalidate Settings.
 8. Build screens only from `src/lib/ui`. Settings for the Module go in a Settings section that follows the section/row/save-bar pattern; forms use the SaveBar (long-form writing autosaves instead).
-9. Register the manifest in `src/shell/registry.ts`. Routes, sidebar entry, tab chooser, palette and shortcuts follow from the manifest.
+9. Register the manifest in `src/shell/registry.ts`. Routes, sidebar entry, tab chooser, palette and shortcuts follow from the manifest, and only while the Module is enabled. Optional manifest hooks: `homeCard` (lazy Home card), `settingsSection` (replaces step 8's hand wiring), `create` (⌘N) and `paletteActions`.
 10. Add a hue token if the Module needs one (`--hue-journal` exists already), unit-test the logic, run `make lint test`, then update the glossary or add an ADR if you settled a term or decision.
