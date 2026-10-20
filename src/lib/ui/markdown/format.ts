@@ -1,4 +1,4 @@
-import { type Edit, type TextChange, lineBounds, selectedLineStarts } from './edit';
+import { type Edit, lineBounds, selectedLineStarts, type TextChange } from './edit';
 
 export type InlineMark = '**' | '*' | '~~' | '==' | '`';
 export type BlockKind = 'h1' | 'h2' | 'h3' | 'bullet' | 'numbered' | 'task' | 'quote';
@@ -114,17 +114,17 @@ export function toggleBlock(doc: string, from: number, to: number, kind: BlockKi
 
   let n = 0;
   const changes = targets.map((l) => {
-      const m = BLOCK_PREFIX.exec(l.text);
-      const indent = /^[ \t]*/.exec(l.text)?.[0] ?? '';
-      const keepIndent = KEEPS_INDENT.has(kind) && !remove;
-      // Headings and quotes start at the margin; lists keep their nesting.
-      const oldLength = m ? m[0].length : keepIndent ? 0 : indent.length;
-      n += 1;
-      return {
-        from: l.start,
-        to: l.start + oldLength,
-        insert: remove ? '' : (keepIndent && m ? m[1] : '') + PREFIXES[kind](n),
-      };
+    const m = BLOCK_PREFIX.exec(l.text);
+    const indent = /^[ \t]*/.exec(l.text)?.[0] ?? '';
+    const keepIndent = KEEPS_INDENT.has(kind) && !remove;
+    // Headings and quotes start at the margin; lists keep their nesting.
+    const oldLength = m ? m[0].length : keepIndent ? 0 : indent.length;
+    n += 1;
+    return {
+      from: l.start,
+      to: l.start + oldLength,
+      insert: remove ? '' : (keepIndent && m ? m[1] : '') + PREFIXES[kind](n),
+    };
   });
   return from === to ? { changes, selection: caretAfter(changes, from) } : { changes };
 }
