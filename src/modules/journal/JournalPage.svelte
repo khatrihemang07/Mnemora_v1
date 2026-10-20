@@ -8,14 +8,19 @@
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import KeyboardBar from '../../lib/ui/KeyboardBar.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import VirtualList from '../../lib/ui/VirtualList.svelte';
+  import { viewport } from '../../lib/viewport.svelte';
   import ComposerDock from './ComposerDock.svelte';
   import { localDateString, showTodayPill } from './dates';
+  import { Editing, provideEditing } from './editing.svelte';
   import { buildFeed, type FeedItem } from './feed';
   import PageHeading from './PageHeading.svelte';
   import PageSection from './PageSection.svelte';
   import { pagesQuery } from './queries';
+  import { slashValues } from './slash-values';
+  import UnsavedEntryDialog from './UnsavedEntryDialog.svelte';
 
   /** Guesses before a row is measured: a header plus a couple of Entries. */
   const PAGE_ESTIMATE_PX = 70;
@@ -24,7 +29,13 @@
 
   const pages = createInfiniteQuery(() => pagesQuery);
   const settings = createQuery(() => settingsQuery);
-  const timeFormat = $derived(readCore(settings.data?.values).timeFormat);
+  const core = $derived(readCore(settings.data?.values));
+  const timeFormat = $derived(core.timeFormat);
+
+  // Which Entry is open for editing, which editor the phone bar drives, and the slash menu formats.
+  const editing = new Editing();
+  editing.slashValues = () => slashValues(new Date(), core.dateFormat, core.timeFormat);
+  provideEditing(editing);
   const today = localDateString(new Date());
   const feed = $derived(buildFeed(pages.data?.pages.flat() ?? [], today));
 
@@ -112,3 +123,8 @@
   </div>
   <ComposerDock />
 </div>
+<KeyboardBar
+  visible={viewport.isPhone && editing.active !== null}
+  onaction={(command) => editing.active?.run(command)}
+/>
+<UnsavedEntryDialog />

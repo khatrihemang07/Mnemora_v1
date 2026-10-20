@@ -1,5 +1,5 @@
-import { infiniteQueryOptions } from '@tanstack/svelte-query';
-import { commands, type Entry } from '../../lib/ipc/bindings';
+import { type InfiniteData, infiniteQueryOptions } from '@tanstack/svelte-query';
+import { commands, type Entry, type Page } from '../../lib/ipc/bindings';
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
 
@@ -59,4 +59,24 @@ export function updateEntry(id: string, text: string, sessionId: string): Promis
  */
 export function invalidateJournal(): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: journalKeys.all });
+}
+
+/**
+ * Puts a saved Entry into the cached feed in place, without a refetch: inline editing saves while
+ * the Entry is open, and the feed must neither jump nor flash old text when it closes.
+ */
+export function patchEntry(entry: Entry): void {
+  queryClient.setQueryData<InfiniteData<Page[]>>(journalKeys.pages, (data) => {
+    if (!data) return data;
+    return {
+      ...data,
+      pages: data.pages.map((group) =>
+        group.map((page) => {
+          if (!page.entries.some((e) => e.id === entry.id)) return page;
+          const entries = page.entries.map((e) => (e.id === entry.id ? entry : e));
+          return { ...page, entries, word_count: entries.reduce((n, e) => n + e.word_count, 0) };
+        }),
+      ),
+    };
+  });
 }
