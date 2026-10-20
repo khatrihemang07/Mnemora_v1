@@ -86,7 +86,7 @@ fn strip_line_prefix(line: &str) -> &str {
         }
     }
     let digits = s.chars().take_while(char::is_ascii_digit).count();
-    if digits > 0 && s[digits..].starts_with(". ") {
+    if digits > 0 && (s[digits..].starts_with(". ") || s[digits..].starts_with(") ")) {
         s = s[digits + 2..].trim_start();
     }
     for task in ["[ ] ", "[x] ", "[X] "] {
@@ -163,6 +163,14 @@ mod tests {
             word_count("- one\n* two\n1. three\n- [ ] four\n- [x] five"),
             5
         );
+        // `1)` is a list marker too, as the task toggle accepts it.
+        assert_eq!(word_count("1) one\n2) two words\n10) [ ] four"), 4);
+        assert_eq!(word_count("1)nospace"), 1);
+    }
+
+    #[test]
+    fn plain_text_drops_paren_list_markers() {
+        assert_eq!(super::plain_text("1) one\n2) two"), "one · two");
     }
 
     #[test]
