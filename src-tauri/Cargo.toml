@@ -1,0 +1,38 @@
+[package]
+name = "mnemora-app"
+description = "Mnemora desktop and mobile shell (thin: wiring only, logic lives in mnemora-core)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# `_lib` suffix avoids a Windows name clash between the lib and bin outputs.
+name = "mnemora_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# Selects Environment::Sandbox (separate data, identifier and badge).
+sandbox = []
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+mnemora-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+specta.workspace = true
+specta-typescript.workspace = true
+tauri = { workspace = true, features = ["wry", "compression", "common-controls-v6", "dynamic-acl", "x11"] }
+tauri-plugin-opener.workspace = true
+tauri-specta.workspace = true
+tracing.workspace = true
+whoami.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

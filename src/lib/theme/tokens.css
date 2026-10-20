@@ -1,0 +1,160 @@
+/*
+ * Semantic design tokens: D5 Warm Studio, C1 Jewel, S1 vibrance.
+ * Components and Tailwind utilities read these names only, never raw colours.
+ * Light is the default; dark and oled are keyed off [data-theme] on <html>.
+ */
+:root {
+  color-scheme: light;
+
+  /* Surfaces and ink (warm neutrals) */
+  --bg: oklch(98.2% 0.006 70);
+  --side: oklch(96.2% 0.009 70);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(95.6% 0.01 70);
+  --pop: oklch(100% 0 0);
+  --ink: oklch(21% 0.014 60);
+  --muted: oklch(50% 0.016 60);
+  --faint: oklch(62% 0.014 65);
+  --line: oklch(91% 0.011 70);
+  --hover: oklch(30% 0.03 60 / 0.06); /* N2-A neutral tint */
+  --active: oklch(30% 0.03 60 / 0.1);
+
+  /* Brand + feedback */
+  --accent: oklch(55% 0.19 280);
+  --on-accent: oklch(99% 0 0);
+  --accent-soft: oklch(55% 0.19 280 / 0.12);
+  --ring: oklch(55% 0.19 280 / 0.3);
+  --danger: oklch(52% 0.2 27);
+  --danger-soft: oklch(52% 0.2 27 / 0.1);
+  --on-danger: oklch(99% 0 0);
+  --success: oklch(50% 0.13 160);
+  --warning: oklch(72% 0.15 65);
+  --on-warning: oklch(20% 0.03 60);
+
+  /* C1 Jewel: Module hues */
+  --hue-home: oklch(72% 0.15 65);
+  --hue-journal: oklch(65% 0.17 32);
+  --hue-todo: oklch(63% 0.12 182);
+  --hue-ai: oklch(60% 0.2 295);
+  --hue-settings: oklch(57% 0.03 260);
+
+  /* S1 hero gradient: Module hues darkened so white text stays at least 4.5:1 (AA). */
+  --hero-from: oklch(54% 0.13 58);
+  --hero-via: oklch(54% 0.17 32);
+  --hero-to: oklch(52% 0.2 295);
+  --hero-ink: oklch(100% 0 0);
+  --hero-ink-muted: oklch(100% 0 0 / 0.92);
+
+  /* Shape, elevation (N4-A hairline cards; light uses faint shadows) */
+  --r1: 8px;
+  --r2: 12px;
+  --r3: 16px;
+  --card-border: 1px solid var(--line);
+  --elev-card: 0 1px 2px oklch(30% 0.03 60 / 0.06);
+  --elev-pop: 0 10px 30px -8px oklch(30% 0.03 60 / 0.22), 0 0 0 1px var(--line);
+  --scroll-thumb: oklch(30% 0.03 60 / 0.28);
+  --scrim: oklch(20% 0.02 60 / 0.4);
+
+  /* Typography (F2) */
+  --f-ui: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --f-display: "Fraunces Variable", ui-serif, Georgia, serif;
+  --f-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --display-weight: 560;
+  --display-track: -0.01em;
+
+  /* Motion (N13-A snappy, exits 30% shorter, N14-B page fade) */
+  --dur: 140ms;
+  --dur-exit: 98ms;
+  --dur-fade: 120ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* Density: comfortable */
+  --row: 34px;
+  --pad: 16px;
+  --gap: 14px;
+  --fs: 0.9375rem;
+
+  --sidebar-bg: var(--side);
+  --titlebar-h: 40px;
+}
+
+:root[data-theme="dark"],
+:root[data-theme="oled"] {
+  color-scheme: dark;
+  --bg: oklch(16.5% 0.008 60);
+  --side: oklch(14.6% 0.008 60);
+  --surface: oklch(19.8% 0.01 60);
+  --surface-2: oklch(23.5% 0.011 60);
+  --pop: oklch(25% 0.012 60); /* dark elevation = lighter surface, not shadow */
+  --ink: oklch(94% 0.009 80);
+  --muted: oklch(68% 0.013 70);
+  --faint: oklch(58% 0.012 65);
+  --line: oklch(26% 0.01 60);
+  --hover: oklch(100% 0 0 / 0.06);
+  --active: oklch(100% 0 0 / 0.1);
+
+  --accent: oklch(72% 0.14 280);
+  --on-accent: oklch(18% 0.03 280);
+  --accent-soft: oklch(72% 0.14 280 / 0.16);
+  --ring: oklch(72% 0.14 280 / 0.35);
+  --danger: oklch(70% 0.17 27);
+  --danger-soft: oklch(70% 0.17 27 / 0.14);
+  --on-danger: oklch(18% 0.03 27);
+  --success: oklch(75% 0.14 160);
+
+  --elev-card: inset 0 1px 0 oklch(100% 0 0 / 0.035);
+  --elev-pop: 0 0 0 1px var(--line);
+  --scroll-thumb: oklch(100% 0 0 / 0.25);
+  --scrim: oklch(0% 0 0 / 0.55);
+}
+
+/* True black base so OLED pixels switch off; surfaces barely lifted. */
+:root[data-theme="oled"] {
+  --bg: oklch(0% 0 0);
+  --side: oklch(0% 0 0);
+  --surface: oklch(14% 0.004 270);
+  --surface-2: oklch(18% 0.005 270);
+  --pop: oklch(20% 0.005 270);
+  --line: oklch(22% 0.005 270);
+  --elev-card: none;
+}
+
+:root[data-density="compact"] {
+  --row: 28px;
+  --pad: 12px;
+  --gap: 10px;
+  --fs: 0.84rem;
+}
+
+/* The phone always uses touch sizes, whatever the density Setting says. */
+@media (max-width: 719.98px) {
+  :root,
+  :root[data-density] {
+    --row: 44px;
+    --pad: 16px;
+    --gap: 14px;
+    --fs: 0.9375rem;
+  }
+}
+
+/* Text size scales every rem. */
+:root[data-text-size="s"] {
+  font-size: 90%;
+}
+:root[data-text-size="l"] {
+  font-size: 112.5%;
+}
+
+/* Reduced motion: Settings toggle or the OS preference. */
+:root[data-reduce-motion="true"] {
+  --dur: 0ms;
+  --dur-exit: 0ms;
+  --dur-fade: 0ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+    --dur-exit: 0ms;
+    --dur-fade: 0ms;
+  }
+}

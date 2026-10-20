@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mnemora UI/UX Pitch v2</title>
+<!-- Preview-only: fonts and icons load from the web here. The real app bundles them locally (Fontsource + unplugin-icons). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..800&family=Geist+Mono:wght@400..600&family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Inter:wght@300..800&family=Fraunces:opsz,wght@9..144,300..800&family=JetBrains+Mono:wght@400..600&family=Manrope:wght@300..800&family=Space+Grotesk:wght@400..700&family=Plus+Jakarta+Sans:wght@300..800&family=Instrument+Serif:ital@0;1&family=Martian+Mono:wght@400..600&family=Instrument+Sans:wght@400..700&family=Figtree:wght@300..900&family=Mona+Sans:wght@400..900&family=Recursive:wght,MONO@300..800,0..1&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/iconify-icon@3.0.3/dist/iconify-icon.min.js"></script>
+<style>
+/* =====================================================================
+   1. PITCH DOCUMENT CHROME (neutral, so it never competes with the mocks)
+   ===================================================================== */
+:root {
+  --p-bg: #f4f4f2; --p-surface: #fff; --p-ink: #1b1b1f; --p-muted: #6a6a73; --p-line: #e2e2de;
+  --p-accent: #3d5afe; --p-code: #ececea; --p-good: #13795b; --p-bad: #b42318;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --p-bg: #111113; --p-surface: #19191c; --p-ink: #ececf0; --p-muted: #9a9aa5; --p-line: #2a2a30;
+    --p-accent: #8ea0ff; --p-code: #232328; --p-good: #4cc79a; --p-bad: #f07167;
+  }
+}
+:root[data-theme="dark"] {
+  --p-bg: #111113; --p-surface: #19191c; --p-ink: #ececf0; --p-muted: #9a9aa5; --p-line: #2a2a30;
+  --p-accent: #8ea0ff; --p-code: #232328; --p-good: #4cc79a; --p-bad: #f07167;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink);
+  font: 15px/1.6 "Inter", ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+.wrap { max-width: 1500px; margin: 0 auto; padding: 0 16px; }
+header.top { padding: 40px 0 8px; }
+h1 { font-size: clamp(30px, 4vw, 44px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 10px; }
+h2 { font-size: 26px; letter-spacing: -0.01em; margin: 64px 0 6px; padding-top: 18px; border-top: 1px solid var(--p-line); }
+h3 { font-size: 17px; margin: 24px 0 8px; }
+p.lead { font-size: 17px; color: var(--p-muted); max-width: 860px; margin: 0; }
+.muted { color: var(--p-muted); }
+code, kbd { font: 12.5px "JetBrains Mono", ui-monospace, monospace; background: var(--p-code); padding: 1px 6px; border-radius: 5px; }
+a { color: var(--p-accent); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 18px 0 0; }
+.toc a { text-decoration: none; color: var(--p-ink); border: 1px solid var(--p-line); background: var(--p-surface); padding: 3px 11px; border-radius: 999px; font-size: 13px; }
+.toc a:hover { border-color: var(--p-accent); }
+
+/* Sticky control bar */
+.controls { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--p-bg) 88%, transparent);
+  backdrop-filter: blur(12px); border-bottom: 1px solid var(--p-line); padding: 10px 0; margin-top: 20px; }
+.controls .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.ctl { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ctl > span { color: var(--p-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; font-size: 10.5px; }
+.ctl select, .seg button { font: inherit; font-size: 12.5px; color: var(--p-ink); background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 8px; padding: 5px 8px; cursor: pointer; }
+.seg { display: inline-flex; border: 1px solid var(--p-line); border-radius: 9px; overflow: hidden; background: var(--p-surface); }
+.seg button { border: 0; border-radius: 0; padding: 5px 10px; }
+.seg button[aria-pressed="true"] { background: var(--p-ink); color: var(--p-bg); }
+.pagetheme { margin-left: auto; }
+
+/* Stage */
+.stage { display: flex; gap: 28px; align-items: flex-start; margin: 24px 0 8px; flex-wrap: wrap; justify-content: center; }
+.frame-label { font-size: 12px; color: var(--p-muted); margin: 0 0 8px; display: flex; justify-content: space-between; gap: 12px; }
+.desk-wrap { flex: 1 1 860px; max-width: 1180px; min-width: 0; }
+.phone-wrap { flex: 0 0 auto; }
+.note { font-size: 13px; color: var(--p-muted); background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 12px; padding: 10px 14px; margin: 8px 0; }
+
+/* Option cards */
+.opts { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin: 12px 0; }
+.opt { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 14px; padding: 16px; position: relative; }
+.opt.on { outline: 2px solid var(--p-accent); outline-offset: -1px; }
+.opt h4 { margin: 0 0 4px; font-size: 15.5px; display: flex; gap: 8px; align-items: baseline; }
+.id { font: 600 11px "JetBrains Mono", monospace; background: var(--p-code); color: var(--p-ink); padding: 2px 7px; border-radius: 6px; }
+.opt .like { font-size: 12.5px; color: var(--p-muted); margin: 0 0 8px; }
+.pc { font-size: 13px; margin: 6px 0 0; padding-left: 0; list-style: none; }
+.pc li { padding-left: 18px; position: relative; margin: 3px 0; }
+.pc li.p::before { content: "+"; position: absolute; left: 2px; color: var(--p-good); font-weight: 700; }
+.pc li.c::before { content: "–"; position: absolute; left: 3px; color: var(--p-bad); font-weight: 700; }
+.opt button.try { font: inherit; font-size: 12px; margin-top: 10px; border: 1px solid var(--p-line); background: transparent; color: var(--p-ink); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+.opt button.try:hover { border-color: var(--p-accent); }
+details.ev { background: var(--p-surface); border: 1px dashed var(--p-line); border-radius: 12px; padding: 10px 14px; margin: 10px 0; font-size: 13.5px; }
+details.ev summary { cursor: pointer; font-weight: 600; color: var(--p-muted); }
+details.ev table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+details.ev th, details.ev td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--p-line); vertical-align: top; }
+.tw { overflow-x: auto; }
+.swatches { display: flex; gap: 4px; margin: 6px 0; }
+.swatches i { width: 22px; height: 22px; border-radius: 6px; display: block; }
+
+/* Nuance catalogue */
+.nu { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 16px; padding: 16px; margin: 14px 0; }
+.nu > header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 4px; }
+.nu > header h4 { margin: 0; font-size: 16px; }
+.nu > p { margin: 0 0 10px; font-size: 13.5px; color: var(--p-muted); }
+.nu-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.nu-opt { border: 1px solid var(--p-line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+.nu-opt .demo { padding: 16px; min-height: 120px; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; position: relative; overflow: hidden; }
+.nu-opt .meta { padding: 10px 12px; border-top: 1px solid var(--p-line); font-size: 12.5px; }
+.nu-opt .meta b { font-size: 13px; }
+
+/* App icons */
+.icons { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.icon-opt { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 16px; padding: 18px 14px; text-align: center; }
+.icon-opt .big svg { width: 112px; height: 112px; filter: drop-shadow(0 10px 16px rgba(0,0,0,.2)); }
+.icon-opt .sm { display: flex; justify-content: center; gap: 12px; align-items: center; margin: 8px 0; }
+.icon-opt .sm svg:first-child { width: 32px; height: 32px; } .icon-opt .sm svg:last-child { width: 16px; height: 16px; }
+.icon-opt .dock { display: flex; justify-content: center; gap: 8px; padding: 8px; border-radius: 14px; background: linear-gradient(#cfd6e6,#aab3c8); margin: 6px auto 8px; width: max-content; }
+.icon-opt .dock.dark { background: linear-gradient(#2d2f38,#1c1d22); }
+.icon-opt .dock svg { width: 40px; height: 40px; }
+
+/* Decision list */
+table.dl { width: 100%; border-collapse: collapse; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 12px; overflow: hidden; font-size: 14px; }
+table.dl th, table.dl td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--p-line); vertical-align: top; }
+table.dl th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--p-muted); }
+footer { margin: 80px 0 60px; font-size: 13px; color: var(--p-muted); }
+
+/* =====================================================================
+   2. MOCK APP: token contract. Every rule below reads only these tokens,
+      which is exactly how the real app's Components will work.
+   ===================================================================== */
+.m {
+  --font-ui: "Geist", ui-sans-serif, sans-serif; --font-display: "Bricolage Grotesque", sans-serif; --font-mono: "Geist Mono", monospace;
+  --display-weight: 700; --display-track: -0.02em;
+  --r1: 8px; --r2: 12px; --r3: 18px;
+  --card-border: 1px solid var(--line); --card-shadow: none;
+  --gap: 16px; --row: 34px; --pad: 18px; --fs: 13.5px; --side-w: 248px;
+  --dur: 160ms; --ease: cubic-bezier(.2,.8,.2,1);
+  --on-accent: #fff;
+  --accent: var(--c-brand);
+  --cur: var(--c-home);
+  font-family: var(--font-ui); font-size: var(--fs); color: var(--ink); background: var(--bg);
+  -webkit-font-smoothing: antialiased; position: relative;
+}
+.m *::selection { background: color-mix(in oklch, var(--accent) 28%, transparent); }
+
+/* ---- Accent palettes (C) ---- */
+.m[data-pal="C1"] { --c-brand: oklch(57% 0.19 280); --c-home: oklch(72% 0.15 65);  --c-journal: oklch(65% 0.17 32);  --c-todo: oklch(63% 0.12 182); --c-ai: oklch(60% 0.2 295);  --c-settings: oklch(57% 0.03 260); }
+.m[data-pal="C2"] { --c-brand: oklch(58% 0.13 42);  --c-home: oklch(70% 0.12 80);  --c-journal: oklch(60% 0.12 32);  --c-todo: oklch(60% 0.08 150); --c-ai: oklch(52% 0.1 330);  --c-settings: oklch(56% 0.015 70); }
+.m[data-pal="C3"] { --c-brand: oklch(58% 0.22 262); --c-home: oklch(76% 0.17 85);  --c-journal: oklch(61% 0.24 352); --c-todo: oklch(67% 0.15 205); --c-ai: oklch(57% 0.25 300); --c-settings: oklch(58% 0.02 262); }
+.m[data-pal="C4"] { --c-brand: oklch(55% 0.17 268); --c-home: var(--c-brand); --c-journal: var(--c-brand); --c-todo: var(--c-brand); --c-ai: var(--c-brand); --c-settings: oklch(56% 0.02 268); }
+.m[data-pal="C5"] { --c-brand: oklch(62% 0.11 285); --c-home: oklch(78% 0.1 75);  --c-journal: oklch(72% 0.11 25);  --c-todo: oklch(72% 0.08 175); --c-ai: oklch(70% 0.1 300);  --c-settings: oklch(64% 0.02 260); }
+.m[data-pal="C5"] { --on-accent: oklch(20% 0.02 280); }
+
+/* ---- Directions (D): shape + colour. dark rules also apply to OLED; OLED overrides after. ---- */
+/* D1 Studio — Linear / Raycast */
+.m[data-dir="D1"] { --r1: 7px; --r2: 10px; --r3: 14px; --display-weight: 650; --display-track: -0.025em; }
+.m[data-dir="D1"][data-mode="light"] { --bg: oklch(98.6% 0.003 270); --side: oklch(97% 0.004 270); --surface: #fff; --surface-2: oklch(96% 0.005 270); --ink: oklch(21% 0.012 270); --muted: oklch(50% 0.012 270); --faint: oklch(68% 0.01 270); --line: oklch(91.5% 0.006 270); --card-shadow: 0 1px 2px oklch(20% 0.02 270 / .05); }
+.m[data-dir="D1"]:is([data-mode="dark"],[data-mode="oled"]) { --bg: oklch(16.5% 0.008 272); --side: oklch(14.8% 0.008 272); --surface: oklch(19.5% 0.009 272); --surface-2: oklch(23% 0.01 272); --ink: oklch(95% 0.005 270); --muted: oklch(68% 0.012 270); --faint: oklch(52% 0.012 270); --line: oklch(26.5% 0.01 272); --card-shadow: inset 0 1px 0 oklch(100% 0 0 / .04); }
+/* D2 Paper — Things 3 / Bear */
+.m[data-dir="D2"] { --r1: 9px; --r2: 14px; --r3: 20px; --card-border: 0; --display-weight: 600; --display-track: -0.015em; }
+.m[data-dir="D2"][data-mode="light"] { --bg: oklch(97.6% 0.009 80); --side: oklch(95.4% 0.012 78); --surface: oklch(99.4% 0.004 80); --surface-2: oklch(95% 0.012 78); --ink: oklch(25% 0.016 60); --muted: oklch(52% 0.02 62); --faint: oklch(70% 0.018 70); --line: oklch(90% 0.014 78); --card-shadow: 0 1px 0 oklch(85% 0.02 75), 0 8px 22px -14px oklch(40% 0.05 60 / .35); }
+.m[data-dir="D2"]:is([data-mode="dark"],[data-mode="oled"]) { --bg: oklch(19% 0.01 62); --side: oklch(17% 0.01 62); --surface: oklch(22.5% 0.012 62); --surface-2: oklch(26% 0.013 62); --ink: oklch(93% 0.013 80); --muted: oklch(70% 0.016 72); --faint: oklch(54% 0.015 68); --line: oklch(29% 0.012 62); --card-shadow: inset 0 1px 0 oklch(100% 0 0 / .04); }
+/* D3 Canvas — Craft / Arc */
+.m[data-dir="D3"] { --r1: 11px; --r2: 18px; --r3: 26px; --display-weight: 750; --display-track: -0.025em; }
+.m[data-dir="D3"][data-mode="light"] { --bg: oklch(96.8% 0.014 290); --side: oklch(93.6% 0.03 290); --surface: #fff; --surface-2: oklch(95.5% 0.02 290); --ink: oklch(23% 0.03 285); --muted: oklch(50% 0.03 285); --faint: oklch(68% 0.025 288); --line: oklch(90% 0.02 290); --card-shadow: 0 2px 4px oklch(30% 0.08 285 / .05), 0 14px 30px -16px oklch(35% 0.12 285 / .28); }
+.m[data-dir="D3"]:is([data-mode="dark"],[data-mode="oled"]) { --bg: oklch(18% 0.03 285); --side: oklch(21% 0.045 285); --surface: oklch(23% 0.03 285); --surface-2: oklch(27% 0.035 285); --ink: oklch(95% 0.01 290); --muted: oklch(72% 0.03 290); --faint: oklch(55% 0.03 288); --line: oklch(30% 0.035 285); --card-shadow: 0 14px 30px -16px oklch(0% 0 0 / .6); }
+/* D4 Notebook — Notion / Capacities */
+.m[data-dir="D4"] { --r1: 6px; --r2: 8px; --r3: 12px; --display-weight: 700; --display-track: -0.02em; }
+.m[data-dir="D4"][data-mode="light"] { --bg: #fff; --side: oklch(97.6% 0.002 90); --surface: #fff; --surface-2: oklch(96.5% 0.002 90); --ink: oklch(24% 0.003 90); --muted: oklch(53% 0.004 90); --faint: oklch(72% 0.004 90); --line: oklch(92% 0.003 90); }
+.m[data-dir="D4"]:is([data-mode="dark"],[data-mode="oled"]) { --bg: oklch(19.5% 0.002 90); --side: oklch(17.5% 0.002 90); --surface: oklch(21.5% 0.002 90); --surface-2: oklch(25% 0.003 90); --ink: oklch(93% 0.003 90); --muted: oklch(66% 0.004 90); --faint: oklch(50% 0.004 90); --line: oklch(28% 0.003 90); }
+/* D5 Warm Studio — Linear precision + paper warmth */
+.m[data-dir="D5"] { --r1: 8px; --r2: 12px; --r3: 16px; --display-weight: 650; --display-track: -0.02em; }
+.m[data-dir="D5"][data-mode="light"] { --bg: oklch(98.2% 0.006 70); --side: oklch(96.2% 0.009 70); --surface: #fff; --surface-2: oklch(95.6% 0.01 70); --ink: oklch(21% 0.014 60); --muted: oklch(50% 0.016 60); --faint: oklch(69% 0.014 65); --line: oklch(91% 0.011 70); --card-shadow: 0 1px 2px oklch(30% 0.03 60 / .06); }
+.m[data-dir="D5"]:is([data-mode="dark"],[data-mode="oled"]) { --bg: oklch(16.5% 0.008 60); --side: oklch(14.6% 0.008 60); --surface: oklch(19.8% 0.01 60); --surface-2: oklch(23.5% 0.011 60); --ink: oklch(94% 0.009 80); --muted: oklch(68% 0.013 70); --faint: oklch(52% 0.012 65); --line: oklch(26% 0.01 60); --card-shadow: inset 0 1px 0 oklch(100% 0 0 / .035); }
+/* OLED: true black base, surfaces barely lifted, keeps the direction's ink colours */
+.m[data-dir][data-mode="oled"] { --bg: #000; --side: #000; --surface: oklch(14% 0.004 270); --surface-2: oklch(18% 0.005 270); --line: oklch(22% 0.005 270); --card-shadow: none; }
+
+/* ---- Fonts (F) ---- */
+.m[data-font="F1"] { --font-ui: "Geist", sans-serif; --font-display: "Bricolage Grotesque", sans-serif; --font-mono: "Geist Mono", monospace; }
+.m[data-font="F2"] { --font-ui: "Inter", sans-serif; --font-display: "Fraunces", serif; --font-mono: "JetBrains Mono", monospace; --display-weight: 560; --display-track: -0.01em; }
+.m[data-font="F3"] { --font-ui: "Manrope", sans-serif; --font-display: "Space Grotesk", sans-serif; --font-mono: "JetBrains Mono", monospace; }
+.m[data-font="F4"] { --font-ui: "Plus Jakarta Sans", sans-serif; --font-display: "Instrument Serif", serif; --font-mono: "Martian Mono", monospace; --display-weight: 400; --display-track: -0.005em; }
+.m[data-font="F5"] { --font-ui: "Instrument Sans", sans-serif; --font-display: "Bricolage Grotesque", sans-serif; --font-mono: "Geist Mono", monospace; }
+.m[data-font="F6"] { --font-ui: "Figtree", sans-serif; --font-display: "Mona Sans", sans-serif; --font-mono: "Recursive", monospace; --display-weight: 800; }
+.m[data-font="F6"] .mono, .m[data-font="F6"] .clock { font-variation-settings: "MONO" 1; }
+
+/* ---- Density ---- */
+.m[data-density="compact"] { --gap: 10px; --row: 28px; --pad: 12px; --fs: 12.8px; }
+.m.phone { --row: 44px; --fs: 15px; --pad: 16px; --gap: 14px; }
+
+/* ---- Vibrance strategies (S) ---- */
+.m .hero { background: var(--surface); border: var(--card-border); box-shadow: var(--card-shadow); }
+.m[data-vib="S1"] .hero, .m[data-vib="S2"] .hero {
+  background: linear-gradient(125deg, color-mix(in oklch, var(--c-home) 92%, white) 0%, var(--c-journal) 48%, var(--c-ai) 100%);
+  color: #fff; border: 0; --muted: oklch(100% 0 0 / .82); }
+.m[data-vib="S3"] .hero { background: color-mix(in oklch, var(--accent) 12%, var(--surface)); border: 1px solid color-mix(in oklch, var(--accent) 28%, transparent); }
+.m[data-vib="S4"] { background:
+   radial-gradient(60% 50% at 0% 0%, color-mix(in oklch, var(--c-ai) 22%, transparent), transparent 70%),
+   radial-gradient(50% 50% at 100% 10%, color-mix(in oklch, var(--c-journal) 18%, transparent), transparent 70%),
+   radial-gradient(60% 60% at 60% 100%, color-mix(in oklch, var(--c-todo) 16%, transparent), transparent 70%), var(--bg); }
+.m[data-vib="S4"] .side { background: color-mix(in oklch, var(--accent) 10%, color-mix(in oklch, var(--side) 70%, transparent)) !important; backdrop-filter: blur(20px); }
+.m[data-vib="S4"] .card { background: color-mix(in oklch, var(--surface) 72%, transparent); backdrop-filter: blur(16px); }
+.m[data-vib="S4"] .hero { background: linear-gradient(125deg, var(--c-ai), var(--c-journal) 55%, var(--c-home)); color: #fff; border: 0; --muted: oklch(100% 0 0 / .82); }
+.m[data-vib="S5"] { --accent: var(--cur); background: color-mix(in oklch, var(--cur) 6%, var(--bg)); }
+.m[data-vib="S5"] .side { background: color-mix(in oklch, var(--cur) 11%, var(--side)) !important; }
+.m[data-vib="S5"] .hero { background: color-mix(in oklch, var(--cur) 18%, var(--surface)); border: 1px solid color-mix(in oklch, var(--cur) 35%, transparent); }
+.m[data-screen="settings"] { --cur: var(--c-settings); }
+
+/* ---- Shared mock Components ---- */
+.m .card { background: var(--surface); border: var(--card-border); box-shadow: var(--card-shadow); border-radius: var(--r2); padding: var(--pad); }
+.m .btn { font: inherit; font-weight: 600; font-size: .95em; height: var(--row); padding: 0 calc(var(--row) * .42); border-radius: var(--r1); border: 1px solid var(--line); background: var(--surface); color: var(--ink); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; transition: transform 80ms, background var(--dur); }
+.m .btn:active { transform: scale(.97); }
+.m .btn.primary { background: var(--accent); border-color: transparent; color: var(--on-accent); }
+.m .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.m .btn.ghost:hover { background: var(--surface-2); color: var(--ink); }
+.m .btn:focus-visible, .m .field:focus-visible, .m .seg-m button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.m .kbd { font: 500 .78em var(--font-mono); color: var(--faint); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; line-height: 1.6; }
+.m .chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: .85em; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+.m .dot { width: 8px; height: 8px; border-radius: 3px; flex: none; }
+.m .field { font: inherit; height: var(--row); border-radius: var(--r1); border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0 10px; min-width: 0; }
+.m .seg-m { display: inline-flex; padding: 3px; gap: 2px; background: var(--surface-2); border-radius: calc(var(--r1) + 3px); flex-wrap: wrap; }
+.m .seg-m button { font: inherit; font-size: .92em; border: 0; background: transparent; color: var(--muted); height: calc(var(--row) - 6px); padding: 0 11px; border-radius: var(--r1); display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.m .seg-m button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px oklch(0% 0 0 / .12); font-weight: 600; }
+.m .switch { width: 36px; height: 21px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; border: 0; flex: none; transition: background var(--dur); }
+.m .switch::after { content: ""; position: absolute; top: 2.5px; left: 2.5px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px oklch(0% 0 0 / .3); transition: transform var(--dur) var(--ease); }
+.m .switch[aria-checked="true"] { background: var(--accent); }
+.m .switch[aria-checked="true"]::after { transform: translateX(15px); }
+.m iconify-icon { font-size: 1.15em; display: inline-flex; flex: none; }
+.m .display { font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: var(--display-track); }
+.m .mono { font-family: var(--font-mono); }
+.m .env { font: 600 10px var(--font-mono); letter-spacing: .06em; padding: 2px 6px; border-radius: 5px; background: oklch(75% 0.16 60); color: oklch(25% 0.05 60); }
+
+/* ---- Desktop shell ---- */
+.desk { height: 760px; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 30px 70px -30px rgba(0,0,0,.45); display: grid; grid-template-columns: var(--side-w) 1fr; }
+.desk.rail { --side-w: 60px; }
+.desk .side { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; position: relative; min-width: 0; padding: 10px 10px 12px; gap: 2px; user-select: none; }
+.desk .lights { display: flex; gap: 7px; padding: 6px 4px 14px; align-items: center; }
+.desk .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.desk .lights .tg { margin-left: auto; }
+.desk.rail .lights { flex-direction: column; gap: 6px; }
+.desk.rail .lights .tg { margin: 6px 0 0; }
+.desk .brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 12px; font-size: 1.08em; }
+.desk .brand .logo { width: 22px; height: 22px; border-radius: 7px; flex: none; }
+.desk .nav { display: flex; align-items: center; gap: 10px; height: var(--row); padding: 0 9px; border-radius: var(--r1); color: var(--muted); cursor: pointer; white-space: nowrap; overflow: hidden; position: relative; }
+.desk .nav:hover { background: var(--surface-2); color: var(--ink); }
+.desk .nav.on { background: color-mix(in oklch, var(--accent) 13%, transparent); color: var(--ink); font-weight: 600; }
+.desk .nav .ico { color: var(--mc, var(--muted)); display: inline-flex; }
+.desk .nav .k { margin-left: auto; }
+.desk .nav.soon { opacity: .45; cursor: default; }
+.desk .nav.soon:hover { background: transparent; }
+.desk .sect { font-size: .74em; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); padding: 14px 9px 4px; white-space: nowrap; }
+.desk .spacer { flex: 1; }
+.desk.rail .label, .desk.rail .k, .desk.rail .sect, .desk.rail .brand .name, .desk.rail .envrow { display: none; }
+.desk.rail .nav { justify-content: center; padding: 0; }
+.desk.rail .brand { justify-content: center; padding: 4px 0 12px; }
+.desk .grip { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 5; }
+.desk .grip::after { content: ""; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background var(--dur); }
+.desk .grip:hover::after, .desk .grip.drag::after { background: var(--accent); }
+.desk .main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+.desk .bar { height: 50px; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-bottom: 1px solid var(--line); flex: none; }
+.desk .bar h5 { margin: 0; font-size: 1.05em; font-weight: 650; }
+.desk .bar .search { margin-left: auto; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: var(--r1); border: 1px solid var(--line); background: var(--surface); color: var(--faint); min-width: 220px; cursor: pointer; }
+.desk .body { flex: 1; overflow: auto; padding: 28px 34px 40px; }
+.desk .envrow { display: flex; align-items: center; gap: 8px; padding: 8px 9px 0; font-size: .82em; color: var(--faint); }
+.tip { position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); background: var(--ink); color: var(--bg); font-size: 12px; padding: 3px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 120ms; z-index: 9; }
+.desk.rail .nav:hover .tip { opacity: 1; transition-delay: 450ms; }
+.desk.rail .side { overflow: visible; }
+.desk.rail .nav { overflow: visible; }
+
+/* ---- Phone shell ---- */
+.phone { width: 390px; height: 820px; border-radius: 46px; overflow: hidden; border: 10px solid #101012; box-shadow: 0 30px 70px -30px rgba(0,0,0,.5); display: flex; flex-direction: column; position: relative; }
+.phone .status { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; font: 600 13px var(--font-ui); flex: none; }
+.phone .ptitle { padding: 8px 20px 6px; display: flex; align-items: center; gap: 10px; flex: none; }
+.phone .ptitle h5 { margin: 0; font-size: 28px; }
+.phone .pbody { flex: 1; overflow: auto; padding: 8px 16px 20px; }
+.phone .tabs { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); background: color-mix(in oklch, var(--side) 92%, transparent); backdrop-filter: blur(16px); padding: 6px 4px 18px; flex: none; }
+.phone .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; color: var(--faint); cursor: pointer; padding: 4px 0; border-radius: 12px; }
+.phone .tab iconify-icon { font-size: 23px; }
+.phone .tab.on { color: var(--ink); font-weight: 600; }
+.phone .tab.on iconify-icon { color: var(--accent); }
+.phone .tab.soon { opacity: .4; }
+.phone .handle { width: 120px; height: 4px; border-radius: 4px; background: var(--ink); opacity: .35; position: absolute; bottom: 6px; left: 50%; transform: translateX(-50%); }
+
+/* ---- Home layouts (H) ---- */
+.m .greet { margin: 0; font-size: 2.1em; line-height: 1.12; }
+.m .sub { color: var(--muted); margin: 6px 0 0; }
+.m .clock { font-variant-numeric: tabular-nums; font-family: var(--font-display); font-weight: var(--display-weight); letter-spacing: -0.03em; line-height: 1; }
+.m .clock .sec { opacity: .45; font-size: .45em; margin-left: .15em; letter-spacing: 0; }
+.m .clock .ap { font-size: .32em; margin-left: .25em; opacity: .6; letter-spacing: .02em; }
+.m .hero { border-radius: var(--r3); padding: calc(var(--pad) * 1.6); }
+.m .h1-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: var(--gap); align-items: stretch; }
+.m .h1-clock { font-size: 64px; }
+.m .h2-date { font-size: 76px; line-height: .95; }
+.m .h3-ring { width: 180px; height: 180px; flex: none; }
+.m .empty { margin-top: var(--gap); display: flex; gap: 14px; align-items: center; color: var(--muted); }
+.m .empty .orb { width: 42px; height: 42px; border-radius: 14px; background: conic-gradient(from 200deg, var(--c-journal), var(--c-todo), var(--c-ai), var(--c-journal)); opacity: .9; flex: none; }
+.m .modchips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.m .widgets { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--gap); margin-top: var(--gap); }
+.m .wt { display: flex; align-items: center; gap: 8px; font-weight: 650; margin-bottom: 10px; }
+.m .wt iconify-icon { color: var(--mc); }
+.m .todo { display: flex; gap: 9px; align-items: center; min-height: calc(var(--row) - 6px); }
+.m .todo .bx { width: 16px; height: 16px; border-radius: 5px; border: 1.6px solid var(--faint); flex: none; }
+.m .todo.done { color: var(--faint); text-decoration: line-through; }
+.m .todo.done .bx { background: var(--c-todo); border-color: var(--c-todo); }
+.phone .h1-grid { grid-template-columns: 1fr; }
+.phone .h1-clock { font-size: 56px; }
+.phone .h2-date { font-size: 60px; }
+.phone .greet { font-size: 1.7em; }
+
+/* ---- Settings ---- */
+.m .set { display: grid; grid-template-columns: 200px 1fr; gap: 28px; max-width: 920px; }
+.m .setnav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; align-self: start; }
+.m .setnav a { display: flex; gap: 9px; align-items: center; height: var(--row); padding: 0 10px; border-radius: var(--r1); color: var(--muted); text-decoration: none; cursor: pointer; }
+.m .setnav a.on { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+.m .setsec h6 { font-size: 1.05em; margin: 0 0 4px; font-weight: 650; }
+.m .setsec > p { margin: 0 0 12px; color: var(--muted); font-size: .92em; }
+.m .rows { border-radius: var(--r2); background: var(--surface); border: var(--card-border); box-shadow: var(--card-shadow); overflow: hidden; margin-bottom: 22px; }
+.m .srow { display: flex; align-items: center; gap: 16px; padding: calc(var(--pad) * .8) var(--pad); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.m .srow:last-child { border-bottom: 0; }
+.m .srow .lbl { flex: 1 1 200px; min-width: 0; }
+.m .srow .lbl b { display: block; font-weight: 600; }
+.m .srow .lbl span { color: var(--muted); font-size: .9em; }
+.m .sw { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.m .sw[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 2px var(--surface); }
+.m .preset { border: 1px solid var(--line); border-radius: var(--r2); padding: 8px; cursor: pointer; background: var(--surface); width: 108px; font: inherit; color: var(--ink); text-align: left; }
+.m .preset[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.m .preset .pv { height: 42px; border-radius: 6px; margin-bottom: 6px; }
+.phone .set { grid-template-columns: 1fr; gap: 10px; }
+.phone .setnav { display: none; }
+.phone .srow { padding: 12px 14px; }
+
+/* ---- Command palette ---- */
+.m .pal-bg { position: absolute; inset: 0; background: oklch(0% 0 0 / .28); display: flex; justify-content: center; padding-top: 90px; z-index: 20; animation: fadein 140ms var(--ease); }
+.m .pal { width: min(560px, 90%); align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r3); box-shadow: 0 30px 60px -20px oklch(0% 0 0 / .5); overflow: hidden; animation: pop 160ms var(--ease); }
+.m .pal input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); font: inherit; font-size: 1.1em; padding: 16px 18px; outline: none; }
+.m .pal .it { display: flex; align-items: center; gap: 10px; padding: 9px 18px; color: var(--muted); }
+.m .pal .it.sel { background: color-mix(in oklch, var(--accent) 12%, transparent); color: var(--ink); }
+.m .pal .it .kbd { margin-left: auto; }
+.m .pal .grp { font-size: .74em; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); padding: 10px 18px 4px; }
+@keyframes fadein { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: translateY(-6px) scale(.98); } }
+
+/* ---- Nuance demos ---- */
+.m.demo-root { border-radius: 0; }
+.nu-opt .demo.m { background: var(--bg); }
+.n-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r1); cursor: pointer; transition: background var(--dur), transform var(--dur); }
+.n-hA .n-row:hover { background: var(--surface-2); }
+.n-hB .n-row:hover { background: color-mix(in oklch, var(--accent) 10%, transparent); }
+.n-hC .n-row { border-left: 3px solid transparent; border-radius: 0 var(--r1) var(--r1) 0; }
+.n-hC .n-row:hover { border-left-color: var(--accent); background: var(--surface-2); }
+.n-fA:focus-visible, .n-fA.show { outline: 2px solid var(--accent); outline-offset: 2px; }
+.n-fB:focus-visible, .n-fB.show { outline: none; box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 30%, transparent); border-color: var(--accent); }
+.n-fC:focus-visible, .n-fC.show { outline: 2px solid var(--accent); outline-offset: -2px; }
+.n-pA:active { transform: scale(.96); }
+.n-pB:active { filter: brightness(.86); transform: none; }
+.n-pC:active { transform: none; }
+.skel { border-radius: 6px; background: var(--surface-2); height: 12px; }
+.shimmer { background: linear-gradient(90deg, var(--surface-2) 0%, color-mix(in oklch, var(--surface-2) 40%, var(--surface)) 50%, var(--surface-2) 100%); background-size: 200% 100%; animation: sh 1.4s linear infinite; }
+.pulse { animation: pu 1.4s ease-in-out infinite; }
+@keyframes sh { to { background-position: -200% 0; } }
+@keyframes pu { 50% { opacity: .45; } }
+.spin { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid var(--line); border-top-color: var(--accent); animation: sp .8s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.toastbox { position: absolute; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+.toast { pointer-events: auto; background: var(--ink); color: var(--bg); border-radius: var(--r2); padding: 8px 12px; font-size: 12.5px; display: flex; gap: 10px; align-items: center; box-shadow: 0 10px 24px -10px oklch(0% 0 0 / .5); animation: pop 180ms var(--ease); }
+.toast b { color: color-mix(in oklch, var(--accent) 60%, var(--bg)); cursor: pointer; }
+.pill { border-radius: 999px; }
+.tipbox { position: relative; display: inline-flex; }
+.tipbox .tt { position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(3px); background: var(--ink); color: var(--bg); font-size: 11.5px; padding: 3px 8px; border-radius: 6px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 120ms, transform 120ms; }
+.tipbox:hover .tt { opacity: 1; transform: translateX(-50%); }
+.mv-panel { width: 120px; height: 56px; border-radius: var(--r2); background: var(--accent); }
+.scrolly { height: 96px; width: 100%; overflow-y: scroll; border: 1px solid var(--line); border-radius: var(--r1); padding: 6px 10px; font-size: 12px; color: var(--muted); }
+.sbA::-webkit-scrollbar { width: 6px; } .sbA::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; } .sbA:hover::-webkit-scrollbar-thumb { background: var(--faint); }
+.sbB::-webkit-scrollbar { width: 6px; } .sbB::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 6px; } .sbB::-webkit-scrollbar-track { background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .m *, .m *::after { animation: none !important; transition: none !important; } }
+@media (max-width: 700px) { .desk { height: 640px; } .m .set { grid-template-columns: 1fr; } .m .setnav { display: none; } .m .h1-grid { grid-template-columns: 1fr; } .phone { transform: scale(.86); transform-origin: top center; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <span class="id">Mnemora · UI/UX pitch v2 · 2026-10-20</span>
+  <h1>Pick the look, then the details</h1>
+  <p class="lead">Nothing here is decided. Use the bar below to mix a <b>vibrance strategy</b>, a <b>direction</b>, an <b>accent palette</b>, a <b>font pairing</b>, an <b>icon set</b> and a <b>Home layout</b>, and watch the real first-build screens (Home and Settings) re-render on desktop and phone. Under that, every option is explained with pros, cons and research. Then there's a catalogue of interaction details, each with live options. Tell me your picks by ID (e.g. <code>S1 · D5 · C1 · F1 · I1 · H1 · N3-B …</code>).</p>
+  <nav class="toc">
+    <a href="#stage">Live mock-ups</a><a href="#s">S · Vibrance</a><a href="#d">D · Direction</a><a href="#c">C · Accents</a><a href="#f">F · Fonts</a><a href="#i">I · Icons</a><a href="#h">H · Home layout</a><a href="#n">N · Interaction details</a><a href="#a">A · App icon</a><a href="#locked">Already decided</a><a href="#list">Decision list</a>
+  </nav>
+</header>
+</div>
+
+<div class="controls" id="controls">
+  <div class="wrap row">
+    <label class="ctl"><span>Vibrance</span><select data-k="vib"></select></label>
+    <label class="ctl"><span>Direction</span><select data-k="dir"></select></label>
+    <label class="ctl"><span>Accents</span><select data-k="pal"></select></label>
+    <label class="ctl"><span>Fonts</span><select data-k="font"></select></label>
+    <label class="ctl"><span>Icons</span><select data-k="icons"></select></label>
+    <label class="ctl"><span>Home</span><select data-k="home"></select></label>
+    <div class="ctl"><span>Mode</span><div class="seg" data-k="mode"></div></div>
+    <div class="ctl"><span>Density</span><div class="seg" data-k="density"></div></div>
+    <div class="ctl"><span>Screen</span><div class="seg" data-k="screen"></div></div>
+    <div class="ctl"><span>Future widgets</span><div class="seg" data-k="future"></div></div>
+    <div class="ctl pagetheme"><span>Page</span><div class="seg" id="pagetheme"></div></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <section id="stage">
+    <div class="stage">
+      <div class="desk-wrap">
+        <div class="frame-label"><span>Desktop · 1180×760 · drag the sidebar edge, click the toggle or press <kbd>⌘\</kbd> · <kbd>⌘K</kbd> opens the palette</span><span id="deskinfo"></span></div>
+        <div id="desk"></div>
+      </div>
+      <div class="phone-wrap">
+        <div class="frame-label"><span>Android · 390×820 · 4 tabs + More</span></div>
+        <div id="phone"></div>
+      </div>
+    </div>
+    <div class="note"><b>Honest about the first build:</b> it ships <i>only</i> Home (greeting and live date/time) and Settings. "Future widgets" adds sample Journal, Todo and AI cards so you can judge how the look scales. In the first build those nav entries won't exist. Fonts and icons load from the web in this preview only; the app bundles them.</div>
+  </section>
+
+  <!-- ============================== S ============================== -->
+  <h2 id="s">S · Vibrance strategy</h2>
+  <p class="muted">How we reconcile <i>calm, pro and warm</i> (your day-to-day feel) with <i>unique and vibrant</i> (your first brief). This is the biggest visual decision, because it decides <b>where colour is allowed</b>.</p>
+  <div class="opts" id="opts-vib"></div>
+  <details class="ev"><summary>Evidence and references</summary>
+    <ul>
+      <li><b>Arc "Spaces"</b>: each context tints the whole sidebar and background (that's S5). Users like knowing where they are; the cost is that the app never looks neutral.</li>
+      <li><b>Things 3 / Bear</b>: almost no colour on surfaces; colour marks meaning (tags, today). That's the S1 or S3 end of the spectrum.</li>
+      <li><b>Linear</b>: dark neutral surfaces with subtle gradient glows on hero moments, and themes generated in LCH. That's S1 with D1.</li>
+      <li><b>Amie / Daylio</b>: colour-rich, playful and celebratory. That's S4.</li>
+      <li>Technical cost: every strategy is just <b>token rules</b> (no per-Component work), because Components read <code>--accent</code>, <code>--cur</code>, <code>--surface</code> and so on. S2 (presets) multiplies <i>design and QA</i> effort per preset, not code.</li>
+      <li>Accessibility: gradients behind text (S1, S4 hero) need text contrast of at least 4.5:1, which white on the mid-chroma accents in C1/C3 meets. S4's translucent cards need a solid fallback if <code>backdrop-filter</code> is slow on low-end Android WebView.</li>
+    </ul>
+  </details>
+
+  <!-- ============================== D ============================== -->
+  <h2 id="d">D · Direction (surfaces, shape, depth)</h2>
+  <p class="muted">The base material of the app: background warmth, how cards separate, corner radius and depth. Each one maps to a reference family you picked.</p>
+  <div class="opts" id="opts-dir"></div>
+  <details class="ev"><summary>Evidence and how directions are built</summary>
+    <ul>
+      <li>Colours are defined in <b>OKLCH</b> (perceptually even lightness), which Tailwind v4 uses natively in <code>@theme</code>. Light, dark and OLED ramps stay balanced across hues.</li>
+      <li>Dark mode uses <b>lighter surfaces instead of shadows</b> for elevation, plus a 1px inner highlight. Shadows are nearly invisible on dark backgrounds.</li>
+      <li><b>OLED true black</b>: the background and sidebar are <code>#000</code>, and surfaces are only lifted to about 14% lightness, so OLED pixels can switch off. Pure white text on pure black can "smear" on some OLED panels, so the ink colour stays slightly off-white.</li>
+      <li>A direction is one token file (<code>src/lib/theme/directions/*.css</code>). If you choose S2 (presets), several of these ship and the user switches between them.</li>
+    </ul>
+  </details>
+
+  <!-- ============================== C ============================== -->
+  <h2 id="c">C · Accent palettes (brand + one colour per Module)</h2>
+  <p class="muted">Each Module owns a hue: its nav icon, its selection colour and, under S5, its whole tint. Home and Settings already have one. Journal, Todo and AI are reserved for later.</p>
+  <div class="opts" id="opts-pal"></div>
+  <details class="ev"><summary>Evidence</summary>
+    <ul>
+      <li>Per-context colour identity: Arc Spaces, Capacities object types, Linear team colours. It helps orientation when switching quickly.</li>
+      <li>All accents are chosen at OKLCH lightness 55–72% so white text on them reaches about 4.5:1. The pastel palette, C5, uses dark text instead (<code>--on-accent</code> flips).</li>
+      <li>The user can still override the brand accent in Settings under any strategy. S3 makes that override the main feature.</li>
+    </ul>
+  </details>
+
+  <!-- ============================== F ============================== -->
+  <h2 id="f">F · Font pairings (UI + display + mono)</h2>
+  <p class="muted">All are OFL-licensed and can be bundled locally as variable WOFF2 with a Latin subset (about 30–90 KB each) through Fontsource. Satoshi and General Sans were excluded because their licence restricts redistribution.</p>
+  <div class="opts" id="opts-font"></div>
+  <details class="ev"><summary>Evidence</summary>
+    <ul>
+      <li>From the research: everything below is on Fontsource 5.3.x as <code>@fontsource-variable/*</code>, except Instrument Serif and Commit Mono (static weights only).</li>
+      <li>The UI font carries 95% of the text, so <b>readability at 13–15px</b> matters most. Geist, Inter, Manrope, Plus Jakarta, Instrument Sans and Figtree all have tall x-heights and clear numerals.</li>
+      <li>The display font appears only in the greeting, page titles and the clock. That's where personality lives cheaply.</li>
+      <li>The clock uses <code>font-variant-numeric: tabular-nums</code> so digits don't jitter every second.</li>
+      <li>F3's mono is <b>Commit Mono</b> in the real app. This preview substitutes JetBrains Mono because Commit Mono isn't on Google Fonts.</li>
+    </ul>
+  </details>
+
+  <!-- ============================== I ============================== -->
+  <h2 id="i">I · Icon set</h2>
+  <p class="muted">Delivered through <code>unplugin-icons</code>, which compiles only the icons we import into inline SVG. There's zero runtime, and sets can be mixed if ever needed.</p>
+  <div class="opts" id="opts-icons"></div>
+  <details class="ev"><summary>Evidence (from the research, counts via the Iconify API)</summary>
+    <div class="tw"><table>
+      <tr><th>Set</th><th>Count</th><th>Styles</th><th>Licence</th></tr>
+      <tr><td>Phosphor</td><td>9,072 (1,512 × 6)</td><td>thin, light, regular, bold, fill, <b>duotone</b></td><td>MIT</td></tr>
+      <tr><td>Solar</td><td>8,706</td><td>bold, <b>bold-duotone</b>, line-duotone, linear, outline, broken</td><td><b>CC BY 4.0, attribution required</b> (on the About page)</td></tr>
+      <tr><td>Lucide</td><td>~1,895</td><td>stroke only</td><td>ISC</td></tr>
+      <tr><td>Tabler</td><td>6,238</td><td>outline + filled</td><td>MIT</td></tr>
+      <tr><td>Hugeicons (free)</td><td>~6,065</td><td>stroke-rounded (other styles are Pro)</td><td>MIT (free tier)</td></tr>
+    </table></div>
+  </details>
+
+  <!-- ============================== H ============================== -->
+  <h2 id="h">H · Home layout (first-build screen)</h2>
+  <p class="muted">Home in the first build = time-of-day greeting with your display name, plus the live date and time. Three ways to compose it:</p>
+  <div class="opts" id="opts-home"></div>
+
+  <!-- ============================== N ============================== -->
+  <h2 id="n">N · Interaction details (each one live, in your current look)</h2>
+  <p class="muted">These follow whatever you set in the bar above. Hover, click and focus (use <kbd>Tab</kbd>) on each demo. Pick one option per row, e.g. <code>N1-A</code>.</p>
+  <div id="nuances"></div>
+
+  <!-- ============================== A ============================== -->
+  <h2 id="a">A · App icon</h2>
+  <p class="muted">Each icon is shown at 112px, 32px and 16px, and in a light and a dark dock. It must stay readable as a 16px tab icon and on an Android launcher (where it gets masked to a circle). The final version is exported to every size with <code>cargo tauri icon</code>.</p>
+  <div class="icons" id="icons"></div>
+
+  <!-- ============================== Locked ============================== -->
+  <h2 id="locked">Already decided in the session (for reference)</h2>
+  <div class="opts">
+    <div class="opt"><h4>Navigation</h4><p class="like">The desktop sidebar is resizable and collapses to an icon rail (Claude-app style) with a toggle and <kbd>⌘\</kbd>. It never hides. On the phone: a bottom bar with 4 Modules you choose plus More, and no centre "+" for now.</p></div>
+    <div class="opt"><h4>Window and themes</h4><p class="like">A custom integrated titlebar (traffic lights inside the sidebar). Themes: Light, Dark, System and True black (OLED). Density: Comfortable and Compact (the phone always uses touch sizes).</p></div>
+    <div class="opt"><h4>Stack</h4><p class="like">Svelte 5 + Vite 8, Tailwind v4 with our own OKLCH tokens, Bits UI (plus Ark UI for the bottom sheet and splitter), svelte-sonner, paneforge, TanStack Virtual. Motion uses Svelte built-ins and View Transitions. Capture is <kbd>⌘N</kbd> in the app only.</p></div>
+  </div>
+
+  <!-- ============================== List ============================== -->
+  <h2 id="list">Decision list: tell me your picks</h2>
+  <div class="tw"><table class="dl" id="dl"></table></div>
+  <footer>Pitch v2 · generated for the Mnemora session · <code>docs/design/ui-pitch.html</code></footer>
+</div>
+
+<script>
+/* ===================================================================
+   Option data: each list drives the switchers, the option cards and the decision list.
+   =================================================================== */
+const VIB = [
+  { id: "S1", name: "Calm canvas, vibrant moments", like: "Linear hero glows · Things 3 calm",
+    pros: ["Calm for hours of daily use", "Colour lands where it means something: hero, accents, celebrations", "Cheapest to keep consistent"],
+    cons: ["Day to day it can feel 'normal' unless the hero moments are strong", "Vibrance relies on a few places doing a lot"] },
+  { id: "S2", name: "Selectable style presets", like: "Raycast / Bear themes",
+    pros: ["Lets you be calm one day and vibrant the next", "Each direction (D) becomes a preset in Settings → Appearance", "Same Components, only token sets differ"],
+    cons: ["Every preset must be designed and QA'd on every screen", "The brand identity is weaker: which one is 'Mnemora'?"] },
+  { id: "S3", name: "One look + accent picker", like: "macOS accent colour · Things",
+    pros: ["Strong single identity", "You choose the accent (and per-Module colours)", "Lowest design and QA cost"],
+    cons: ["Least 'vibrant' unless you pick a loud accent", "Hero moments are tints, not gradients"] },
+  { id: "S4", name: "Vibrant throughout", like: "Amie · Arc gradients · Daylio",
+    pros: ["Unmistakably unique and joyful", "Colour mesh behind translucent surfaces"],
+    cons: ["Fights the calm and pro feel you picked", "Translucency (backdrop-filter) costs GPU on mid-range Android", "Harder to keep text contrast high"] },
+  { id: "S5", name: "Module-tinted spaces", like: "Arc Spaces · Capacities",
+    pros: ["Each Module subtly tints the whole app, so you always know where you are", "Vibrant yet calm (tints of 6–11%)", "Scales naturally as Modules are added"],
+    cons: ["The app never looks fully neutral", "Needs 1 well-tuned hue per Module", "Screenshots of different Modules look like different apps"] },
+];
+const DIR = [
+  { id: "D1", name: "Studio", like: "Linear · Raycast", pros: ["Crisp hairlines, precise, pro", "Excellent in dark mode"], cons: ["Cool and techy; less warm and personal", "Very common look among 2025-era apps"] },
+  { id: "D2", name: "Paper", like: "Things 3 · Bear", pros: ["Warm, typographic, calm", "Borderless cards with soft lift"], cons: ["Less 'sharp & pro'", "Warm off-white can look yellowish on cheap screens"] },
+  { id: "D3", name: "Canvas", like: "Craft · Arc", pros: ["Expressive depth, soft colour-tinted surfaces", "Big radii feel friendly and modern"], cons: ["Least dense", "Tinted surfaces fight the Module accents unless tuned"] },
+  { id: "D4", name: "Notebook", like: "Notion · Capacities", pros: ["Neutral and content-first; the content is the colour", "Densest and most flexible"], cons: ["Can feel plain or generic", "Personality must come from fonts and accents"] },
+  { id: "D5", name: "Warm Studio", like: "Linear precision × Bear warmth", pros: ["Pro structure with warm neutrals (blends 3 of your 4 references)", "Works in dark, light and OLED"], cons: ["A blend: less extreme than D1 or D2", "Needs care so it doesn't read as 'beige'"] },
+];
+const PAL = [
+  { id: "C1", name: "Jewel", like: "amber · coral · teal · violet", pros: ["Balanced, vibrant but not loud", "Clear separation between Modules"], cons: ["Violet brand is popular in productivity apps"] },
+  { id: "C2", name: "Earth", like: "ochre · clay · sage · plum", pros: ["Warm, personal, journal-like", "Pairs with D2 and D5"], cons: ["Lower chroma, less 'vibrant'"] },
+  { id: "C3", name: "Electric", like: "sun · magenta · cyan · purple", pros: ["Most vibrant and energetic", "Stands out instantly"], cons: ["Loud next to calm surfaces", "Magenta and purple can clash"] },
+  { id: "C4", name: "Mono + 1", like: "one indigo everywhere", pros: ["Calmest, most coherent", "Pro look"], cons: ["No per-Module identity", "Least unique"] },
+  { id: "C5", name: "Pastel", like: "butter · peach · mint · lilac", pros: ["Soft, friendly, warm", "Uses dark text on the accent"], cons: ["Weak on light backgrounds", "Can feel childish"] },
+];
+const FONT = [
+  { id: "F1", name: "Geist · Bricolage Grotesque · Geist Mono", like: "technical + quirky display", pros: ["Very crisp UI text", "Bricolage gives the greeting character"], cons: ["Geist is Vercel's font, so it's increasingly common"] },
+  { id: "F2", name: "Inter · Fraunces · JetBrains Mono", like: "warm editorial, journal-like", pros: ["Fraunces (soft serif) feels personal and literary", "Inter is the most proven UI face"], cons: ["Inter is everywhere", "Serif titles feel less 'pro'"] },
+  { id: "F3", name: "Manrope · Space Grotesk · Commit Mono", like: "geometric, friendly", pros: ["Friendly and modern", "Space Grotesk numerals suit the clock"], cons: ["Space Grotesk is quite common", "Commit Mono has static weights only"] },
+  { id: "F4", name: "Plus Jakarta Sans · Instrument Serif · Martian Mono", like: "elegant contrast", pros: ["High-contrast elegant serif display", "Distinctive, premium"], cons: ["Instrument Serif is static and a single weight", "A thin serif suffers at small sizes on low-DPI screens"] },
+  { id: "F5", name: "Instrument Sans · Bricolage Grotesque · Geist Mono", like: "lively but readable", pros: ["Less common UI face, so more unique", "Characterful display"], cons: ["Instrument Sans has a slightly narrower range of weights"] },
+  { id: "F6", name: "Figtree · Mona Sans · Recursive", like: "vibrant, playful", pros: ["Bold, expressive display (width axis)", "Recursive mono is fun"], cons: ["The most playful option, less calm", "The biggest font payload of the six"] },
+];
+const ICONSETS = [
+  { id: "I1", name: "Phosphor (duotone)", like: "MIT · 9k", pros: ["Duotone adds depth and personality", "Six weights to choose from"], cons: ["Duotone can look busy at 16px in compact mode"] },
+  { id: "I2", name: "Solar (bold-duotone)", like: "CC BY 4.0 · 8.7k", pros: ["The most distinctive and soft", "Rich duotone"], cons: ["Requires an attribution line", "Heavier visual weight"] },
+  { id: "I3", name: "Lucide", like: "ISC · 1.9k", pros: ["Clean, consistent, proven", "Tunable stroke width"], cons: ["Generic (the shadcn look)", "The smallest set"] },
+  { id: "I4", name: "Tabler", like: "MIT · 6.2k", pros: ["Huge coverage, neutral", "Outline and filled variants"], cons: ["Neutral, so little personality"] },
+  { id: "I5", name: "Hugeicons (free)", like: "MIT · 6k", pros: ["Friendly rounded strokes", "Contemporary"], cons: ["The free tier is stroke-only; other styles are paid"] },
+];
+const HOME = [
+  { id: "H1", name: "Greeting card + clock tile", like: "split hero", pros: ["Balanced; room for future widgets below", "The clock is prominent but not dominant"], cons: ["The most conventional"] },
+  { id: "H2", name: "Big date, small clock", like: "editorial / calendar-first", pros: ["Calm, typographic, journal feel", "The date is the hero, matching a life-management focus"], cons: ["Time is less glanceable"] },
+  { id: "H3", name: "Day ring", like: "time as progress", pros: ["Unique: a ring shows how much of the day has passed", "A good spot for future widgets (todos due) around it"], cons: ["More novel, so it needs to earn its place", "Slightly more rendering work"] },
+];
+
+const ICONS = {
+  I1: { home: "ph:house-duotone", journal: "ph:notebook-duotone", todo: "ph:check-square-duotone", ai: "ph:sparkle-duotone", settings: "ph:gear-six-duotone", search: "ph:magnifying-glass-duotone", sidebar: "ph:sidebar-simple-duotone", more: "ph:dots-three-outline-duotone", sun: "ph:sun-duotone", moon: "ph:moon-duotone", system: "ph:desktop-duotone", oled: "ph:moon-stars-duotone", folder: "ph:folder-duotone", keyboard: "ph:keyboard-duotone", info: "ph:info-duotone", nav: "ph:squares-four-duotone", user: "ph:user-duotone", data: "ph:database-duotone", modules: "ph:compass-duotone" },
+  I2: { home: "solar:home-2-bold-duotone", journal: "solar:notebook-bold-duotone", todo: "solar:checklist-minimalistic-bold-duotone", ai: "solar:magic-stick-3-bold-duotone", settings: "solar:settings-bold-duotone", search: "solar:magnifer-bold-duotone", sidebar: "solar:sidebar-minimalistic-bold-duotone", more: "solar:menu-dots-bold-duotone", sun: "solar:sun-bold-duotone", moon: "solar:moon-bold-duotone", system: "solar:monitor-bold-duotone", oled: "solar:moon-stars-bold-duotone", folder: "solar:folder-bold-duotone", keyboard: "solar:keyboard-bold-duotone", info: "solar:info-circle-bold-duotone", nav: "solar:widget-bold-duotone", user: "solar:user-bold-duotone", data: "solar:database-bold-duotone", modules: "solar:compass-bold-duotone" },
+  I3: { home: "lucide:house", journal: "lucide:notebook-pen", todo: "lucide:square-check-big", ai: "lucide:sparkles", settings: "lucide:settings", search: "lucide:search", sidebar: "lucide:panel-left", more: "lucide:ellipsis", sun: "lucide:sun", moon: "lucide:moon", system: "lucide:monitor", oled: "lucide:moon-star", folder: "lucide:folder", keyboard: "lucide:keyboard", info: "lucide:info", nav: "lucide:layout-grid", user: "lucide:user", data: "lucide:database", modules: "lucide:compass" },
+  I4: { home: "tabler:home", journal: "tabler:notebook", todo: "tabler:checkbox", ai: "tabler:sparkles", settings: "tabler:settings", search: "tabler:search", sidebar: "tabler:layout-sidebar", more: "tabler:dots", sun: "tabler:sun", moon: "tabler:moon", system: "tabler:device-desktop", oled: "tabler:moon-stars", folder: "tabler:folder", keyboard: "tabler:keyboard", info: "tabler:info-circle", nav: "tabler:layout-grid", user: "tabler:user", data: "tabler:database", modules: "tabler:compass" },
+  I5: { home: "hugeicons:home-01", journal: "hugeicons:note-edit", todo: "hugeicons:task-done-01", ai: "hugeicons:ai-magic", settings: "hugeicons:settings-01", search: "hugeicons:search-01", sidebar: "hugeicons:sidebar-left", more: "hugeicons:more-horizontal", sun: "hugeicons:sun-03", moon: "hugeicons:moon-02", system: "hugeicons:computer", oled: "hugeicons:moon-01", folder: "hugeicons:folder-01", keyboard: "hugeicons:keyboard", info: "hugeicons:information-circle", nav: "hugeicons:dashboard-square-01", user: "hugeicons:user", data: "hugeicons:database", modules: "hugeicons:compass" },
+};
+
+/* ===================================================================
+   State
+   =================================================================== */
+const S = {
+  vib: "S1", dir: "D5", pal: "C1", font: "F1", icons: "I1", home: "H1",
+  mode: "dark", density: "comfortable", screen: "home", future: "off",
+  sideW: 248, rail: false, palette: false, palSel: 0,
+  name: "Hemang", h24: true, dateFmt: "long", weekStart: "mon", setTab: "appearance", reduce: false, fontSize: "M",
+};
+const MODES = [["light", "Light"], ["dark", "Dark"], ["oled", "True black"]];
+const ic = n => `<iconify-icon icon="${ICONS[S.icons][n]}"></iconify-icon>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* ===================================================================
+   Time helpers (shared by every Home layout)
+   =================================================================== */
+function greeting(d) {
+  const h = d.getHours();
+  if (h >= 5 && h < 12) return "Good morning";
+  if (h >= 12 && h < 17) return "Good afternoon";
+  if (h >= 17 && h < 22) return "Good evening";
+  return "Good night";
+}
+function clockHTML(d, secs = true) {
+  let h = d.getHours(), ap = "";
+  if (!S.h24) { ap = h < 12 ? "AM" : "PM"; h = h % 12 || 12; }
+  const p = n => String(n).padStart(2, "0");
+  return `${S.h24 ? p(h) : h}:${p(d.getMinutes())}${secs ? `<span class="sec">${p(d.getSeconds())}</span>` : ""}${ap ? `<span class="ap">${ap}</span>` : ""}`;
+}
+function dateText(d) {
+  if (S.dateFmt === "iso") return d.toISOString().slice(0, 10);
+  if (S.dateFmt === "short") return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+/* ===================================================================
+   Mock content (shared by desktop and phone)
+   =================================================================== */
+function homeHTML(phone) {
+  const d = new Date();
+  const g = `<h3 class="greet display">${greeting(d)}, ${esc(S.name)}</h3>`;
+  let hero;
+  if (S.home === "H1") {
+    hero = `<div class="h1-grid">
+      <div class="hero">${g}<p class="sub">${dateText(d)}</p></div>
+      <div class="card" style="display:flex;flex-direction:column;justify-content:center;gap:6px">
+        <span class="muted" style="color:var(--muted);font-size:.85em;font-weight:600;text-transform:uppercase;letter-spacing:.06em">Local time</span>
+        <div class="clock h1-clock" data-clock>${clockHTML(d)}</div>
+      </div></div>`;
+  } else if (S.home === "H2") {
+    const day = d.toLocaleDateString(undefined, { weekday: "long" });
+    const dm = d.toLocaleDateString(undefined, { day: "numeric", month: "long" });
+    hero = `<div class="hero">
+      <p class="sub" style="margin:0 0 4px">${greeting(d)}, ${esc(S.name)}</p>
+      <div class="display h2-date">${day}</div>
+      <div class="display" style="font-size:${phone ? 30 : 40}px;opacity:.75">${dm}</div>
+      <div class="clock" data-clock style="font-size:${phone ? 26 : 30}px;margin-top:14px">${clockHTML(d)}</div></div>`;
+  } else {
+    const frac = (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds()) / 86400;
+    const C = 2 * Math.PI * 80;
+    hero = `<div class="hero" style="display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+      <svg class="h3-ring" viewBox="0 0 180 180" data-ring>
+        <circle cx="90" cy="90" r="80" fill="none" stroke="currentColor" stroke-opacity=".14" stroke-width="10"/>
+        <circle cx="90" cy="90" r="80" fill="none" stroke="var(--c-home)" stroke-width="10" stroke-linecap="round"
+          stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}" transform="rotate(-90 90 90)"/>
+        <foreignObject x="20" y="58" width="140" height="64"><div class="clock" data-clock style="font-size:34px;text-align:center">${clockHTML(d, false)}</div></foreignObject>
+      </svg>
+      <div style="flex:1;min-width:180px">${g}<p class="sub">${dateText(d)}</p>
+        <p class="sub" style="font-size:.9em">${Math.round(frac * 100)}% of today has passed</p></div></div>`;
+  }
+  const empty = S.future === "off"
+    ? `<div class="card empty"><span class="orb"></span><div><b style="color:var(--ink)">Your Modules will live here</b><br>Journal, Todo and AI arrive one by one. Each adds its own widget to Home.
+        <div class="modchips"><span class="chip"><span class="dot" style="background:var(--c-journal)"></span>Journal · soon</span><span class="chip"><span class="dot" style="background:var(--c-todo)"></span>Todo · soon</span><span class="chip"><span class="dot" style="background:var(--c-ai)"></span>AI · soon</span></div></div></div>`
+    : `<div class="widgets">
+        <div class="card" style="--mc:var(--c-todo)"><div class="wt">${ic("todo")}Today</div>
+          <div class="todo done"><span class="bx"></span>Set up the repo</div><div class="todo"><span class="bx"></span>Pick the visual direction</div><div class="todo"><span class="bx"></span>Review the Settings page</div></div>
+        <div class="card" style="--mc:var(--c-journal)"><div class="wt">${ic("journal")}Journal</div>
+          <div style="color:var(--muted)">"Started Mnemora today. I want it to feel calm but alive…"</div><div style="margin-top:8px;color:var(--faint);font-size:.85em">Yesterday · 21:40</div></div>
+        <div class="card" style="--mc:var(--c-ai)"><div class="wt">${ic("ai")}Ask AI</div>
+          <input class="field" style="width:100%" placeholder="What did I plan for this week?"></div></div>`;
+  return hero + empty;
+}
+
+function settingsHTML(phone) {
+  const tabs = [["appearance", "Appearance", "sun"], ["general", "General", "user"], ["navigation", "Navigation", "nav"], ["data", "Data & storage", "data"], ["modules", "Modules", "modules"], ["shortcuts", "Shortcuts", "keyboard"], ["about", "About", "info"]];
+  const nav = `<nav class="setnav">${tabs.map(([k, l, i]) => `<a class="${S.setTab === k ? "on" : ""}" data-act="settab" data-v="${k}">${ic(i)}${l}</a>`).join("")}</nav>`;
+  const seg = (k, opts) => `<div class="seg-m">${opts.map(([v, l, i]) => `<button aria-pressed="${S[k] === v}" data-act="set" data-k="${k}" data-v="${v}">${i ? ic(i) : ""}${l}</button>`).join("")}</div>`;
+  const row = (t, d, ctl) => `<div class="srow"><div class="lbl"><b>${t}</b><span>${d}</span></div>${ctl}</div>`;
+  const sw = (k) => `<button class="switch" role="switch" aria-checked="${!!S[k]}" data-act="toggle" data-k="${k}"></button>`;
+  let body = "";
+  const tab = phone ? "appearance" : S.setTab;
+  if (tab === "appearance") {
+    let extra = "";
+    if (S.vib === "S2") extra = row("Style preset", "Each preset is a complete look; Components stay the same.",
+      `<div style="display:flex;gap:8px;flex-wrap:wrap">${DIR.map(o => `<button class="preset" aria-pressed="${S.dir === o.id}" data-act="set" data-k="dir" data-v="${o.id}"><div class="pv" style="background:${previewBg(o.id)}"></div>${o.name}</button>`).join("")}</div>`);
+    if (S.vib === "S3" || S.vib === "S1" || S.vib === "S2") extra += row("Accent colour", S.vib === "S3" ? "Your colour, used everywhere." : "Overrides the brand accent.",
+      `<div style="display:flex;gap:8px">${PAL.map(o => `<button class="sw" title="${o.name}" aria-pressed="${S.pal === o.id}" data-act="set" data-k="pal" data-v="${o.id}" style="background:${palColor(o.id)}"></button>`).join("")}</div>`);
+    body = `<div class="setsec"><h6>Appearance</h6><p>How Mnemora looks on this device.</p><div class="rows">
+      ${row("Theme", "Follow the system or choose. True black saves battery on OLED phones.", seg("mode", [["light", "Light", "sun"], ["dark", "Dark", "moon"], ["oled", "True black", "oled"]]))}
+      ${extra}
+      ${row("Density", "Compact fits more on screen; phones always use touch sizes.", seg("density", [["comfortable", "Comfortable"], ["compact", "Compact"]]))}
+      ${row("Text size", "Scales the whole interface.", seg("fontSize", [["S", "S"], ["M", "M"], ["L", "L"]]))}
+      ${row("Reduce motion", "Replaces movement with quick fades.", sw("reduce"))}
+    </div></div>`;
+  } else if (tab === "general") {
+    body = `<div class="setsec"><h6>General</h6><p>You, and how dates and times read.</p><div class="rows">
+      ${row("Display name", "Used in the Home greeting.", `<input class="field" data-act="name" value="${esc(S.name)}" style="width:180px">`)}
+      ${row("Time format", "Affects every clock and timestamp.", seg("h24", [[true, "24-hour"], [false, "12-hour"]]))}
+      ${row("Date format", "", seg("dateFmt", [["long", "Long"], ["short", "Short"], ["iso", "ISO"]]))}
+      ${row("Week starts on", "", seg("weekStart", [["mon", "Monday"], ["sun", "Sunday"]]))}
+    </div></div>`;
+  } else if (tab === "navigation") {
+    body = `<div class="setsec"><h6>Navigation</h6><p>Sidebar on desktop and tabs on the phone.</p><div class="rows">
+      ${row("Sidebar", "Drag its edge to resize; collapses to an icon rail.", seg("rail", [[false, "Expanded"], [true, "Rail"]]))}
+      ${row("Phone tabs", "Choose and reorder 4 Modules; the rest go under More.", `<div style="display:flex;gap:6px;flex-wrap:wrap">${["home", "journal", "todo", "ai"].map(k => `<span class="chip">${ic(k)}${k[0].toUpperCase() + k.slice(1)}</span>`).join("")}<span class="chip">${ic("more")}More</span></div>`)}
+    </div></div>`;
+  } else if (tab === "data") {
+    body = `<div class="setsec"><h6>Data & storage</h6><p>Everything stays on this device.</p><div class="rows">
+      ${row("Environment", "Production holds your real data. Sandbox is separate.", `<span class="chip">Production</span>`)}
+      ${row("Data folder", "<span class='mono'>~/Library/Application Support/com.hemang.mnemora</span>", `<button class="btn">${ic("folder")}Change…</button>`)}
+      ${row("Backups", "Automatic before every update to the data format · keeps the last 5", `<button class="btn">Back up now</button>`)}
+    </div></div>`;
+  } else if (tab === "modules") {
+    body = `<div class="setsec"><h6>Modules</h6><p>Turn Modules on or off. Each one adds its own settings here.</p><div class="rows">
+      ${["journal", "todo", "ai"].map(k => row(k === "ai" ? "AI" : k[0].toUpperCase() + k.slice(1), "Not built yet", `<span class="chip">Coming soon</span>`)).join("")}
+    </div></div>`;
+  } else if (tab === "shortcuts") {
+    const sc = [["Command palette", "⌘ K"], ["Settings", "⌘ ,"], ["Toggle sidebar", "⌘ \\"], ["New item", "⌘ N"], ["Go to Home", "⌘ 1"]];
+    body = `<div class="setsec"><h6>Shortcuts</h6><p>Click a shortcut to record a new one; conflicts are flagged.</p><div class="rows">
+      ${sc.map(([l, k]) => row(l, "", `<span class="kbd" style="font-size:12px;padding:2px 8px">${k}</span>`)).join("")}</div></div>`;
+  } else {
+    body = `<div class="setsec"><h6>About</h6><p>Mnemora 0.1.0 · Tauri 2.12</p><div class="rows">
+      ${row("Logs", "Daily files, kept 7 days.", `<button class="btn">Open log folder</button>`)}
+      ${row("Diagnostics", "Copies version, OS and recent errors.", `<button class="btn">Copy diagnostics</button>`)}
+      ${S.icons === "I2" ? row("Credits", "Icons: Solar by 480 Design (CC BY 4.0)", "") : ""}</div></div>`;
+  }
+  return `<div class="set">${nav}<div>${body}</div></div>`;
+}
+
+const previewBg = id => ({ D1: "linear-gradient(#1e2129,#16181d)", D2: "linear-gradient(#f7f1e6,#efe6d6)", D3: "linear-gradient(135deg,#efe9ff,#ffe3ef)", D4: "linear-gradient(#ffffff,#f3f3f1)", D5: "linear-gradient(#24201c,#1a1714)" }[id]);
+const palColor = id => ({ C1: "oklch(57% 0.19 280)", C2: "oklch(58% 0.13 42)", C3: "oklch(58% 0.22 262)", C4: "oklch(55% 0.17 268)", C5: "oklch(62% 0.11 285)" }[id]);
+
+function rootAttrs(style = "") {
+  const fs = { S: .93, M: 1, L: 1.08 }[S.fontSize];
+  return `data-vib="${S.vib}" data-dir="${S.dir}" data-pal="${S.pal}" data-font="${S.font}" data-mode="${S.mode}" data-density="${S.density}" data-screen="${S.screen}" style="zoom:${fs};${style}"`;
+}
+
+function deskHTML() {
+  const mods = [["home", "Home", "--c-home", "⌘1"], ["journal", "Journal", "--c-journal", "⌘2"], ["todo", "Todo", "--c-todo", "⌘3"], ["ai", "AI", "--c-ai", "⌘4"]];
+  const navs = mods.map(([k, l, c, key]) => {
+    const exists = k === "home" || S.future === "on";
+    return `<div class="nav ${S.screen === k ? "on" : ""} ${exists ? "" : "soon"}" ${exists ? `data-act="screen" data-v="${k}"` : ""} style="--mc:var(${c})">
+      <span class="ico">${ic(k)}</span><span class="label">${l}${exists ? "" : " · soon"}</span><span class="k kbd">${key}</span><span class="tip">${l}</span></div>`;
+  }).join("");
+  const title = S.screen === "settings" ? "Settings" : "Home";
+  const pal = S.palette ? paletteHTML() : "";
+  return `<div class="m desk ${S.rail ? "rail" : ""}" ${rootAttrs(`--side-w:${S.rail ? 60 : S.sideW}px`)}>
+    <aside class="side">
+      <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>
+        <button class="btn ghost tg" style="height:26px;padding:0 6px" title="Toggle sidebar (⌘\\)" data-act="rail">${ic("sidebar")}</button></div>
+      <div class="brand"><span class="logo" style="background:${appLogoBg()}"></span><span class="name display">Mnemora</span></div>
+      <div class="nav" data-act="palette" style="--mc:var(--muted)"><span class="ico">${ic("search")}</span><span class="label">Search</span><span class="k kbd">⌘K</span><span class="tip">Search ⌘K</span></div>
+      <div class="sect">Modules</div>${navs}
+      <div class="spacer"></div>
+      <div class="nav ${S.screen === "settings" ? "on" : ""}" data-act="screen" data-v="settings" style="--mc:var(--c-settings)"><span class="ico">${ic("settings")}</span><span class="label">Settings</span><span class="k kbd">⌘,</span><span class="tip">Settings</span></div>
+      <div class="envrow"><span class="env">PROD</span>v0.1.0</div>
+      ${S.rail ? "" : `<div class="grip" data-grip></div>`}
+    </aside>
+    <main class="main">
+      <div class="bar"><h5>${title}</h5><div class="search" data-act="palette">${ic("search")}Search or run a command…<span class="kbd" style="margin-left:auto">⌘K</span></div></div>
+      <div class="body">${S.screen === "settings" ? settingsHTML(false) : homeHTML(false)}</div>
+    </main>${pal}</div>`;
+}
+
+function phoneHTML() {
+  const tabs = [["home", "Home"], ["journal", "Journal"], ["todo", "Todo"], ["ai", "AI"]];
+  const t = new Date();
+  const title = S.screen === "settings" ? "Settings" : "Home";
+  return `<div class="m phone" ${rootAttrs()}>
+    <div class="status"><span>${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}</span><span>●●● ▮</span></div>
+    <div class="ptitle"><h5 class="display">${title}</h5><span style="margin-left:auto;font-size:22px;color:var(--muted)" data-act="screen" data-v="${S.screen === "settings" ? "home" : "settings"}">${ic(S.screen === "settings" ? "home" : "settings")}</span></div>
+    <div class="pbody">${S.screen === "settings" ? settingsHTML(true) : homeHTML(true)}</div>
+    <nav class="tabs">${tabs.map(([k, l]) => {
+      const exists = k === "home" || S.future === "on";
+      return `<div class="tab ${S.screen === k ? "on" : ""} ${exists ? "" : "soon"}" ${exists ? `data-act="screen" data-v="${k}"` : ""}>${ic(k)}${l}</div>`;
+    }).join("")}<div class="tab ${S.screen === "settings" ? "on" : ""}" data-act="screen" data-v="settings">${ic("more")}More</div></nav>
+    <div class="handle"></div></div>`;
+}
+
+function paletteHTML() {
+  const items = [["Go to Home", "home", "⌘1"], ["Open Settings", "settings", "⌘,"], ["Toggle sidebar", "sidebar", "⌘\\"], ["Switch to light theme", "sun", ""], ["Switch to dark theme", "moon", ""], ["Switch to true black", "oled", ""]];
+  return `<div class="pal-bg" data-act="palclose"><div class="pal">
+    <input placeholder="Type a command or search…" autofocus>
+    <div class="grp">Navigate</div>${items.slice(0, 3).map((it, i) => palItem(it, i)).join("")}
+    <div class="grp">Appearance</div>${items.slice(3).map((it, i) => palItem(it, i + 3)).join("")}
+    <div style="padding:8px 18px;border-top:1px solid var(--line);color:var(--faint);font-size:.82em;display:flex;gap:14px"><span><span class="kbd">↑↓</span> move</span><span><span class="kbd">↵</span> run</span><span><span class="kbd">esc</span> close</span></div>
+  </div></div>`;
+}
+const palItem = ([l, i, k], idx) => `<div class="it ${S.palSel === idx ? "sel" : ""}" data-act="palrun" data-v="${idx}">${ic(i)}${l}${k ? `<span class="kbd">${k}</span>` : ""}</div>`;
+const appLogoBg = () => S.vib === "S4" || S.vib === "S1" || S.vib === "S2" ? "conic-gradient(from 200deg, var(--c-home), var(--c-journal), var(--c-ai), var(--c-home))" : "var(--accent)";
+
+/* ===================================================================
+   Render + events
+   =================================================================== */
+function render() {
+  document.getElementById("desk").innerHTML = deskHTML();
+  document.getElementById("phone").innerHTML = phoneHTML();
+  document.querySelectorAll(".m.sync").forEach(el => {
+    for (const k of ["vib", "dir", "pal", "font", "mode", "density"]) el.dataset[k] = S[k];
+  });
+  syncControls();
+  document.getElementById("deskinfo").textContent = S.rail ? "rail · 60px" : `sidebar · ${S.sideW}px`;
+  if (S.palette) document.querySelector(".pal input")?.focus();
+}
+
+function syncControls() {
+  document.querySelectorAll("#controls select").forEach(sel => { sel.value = S[sel.dataset.k]; });
+  document.querySelectorAll("#controls .seg").forEach(seg => {
+    seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(String(S[seg.dataset.k]) === b.dataset.v)));
+  });
+  for (const [k, list] of Object.entries(LISTS)) {
+    document.querySelectorAll(`#opts-${k} .opt`).forEach(card => card.classList.toggle("on", card.dataset.id === S[k]));
+  }
+}
+
+const LISTS = { vib: VIB, dir: DIR, pal: PAL, font: FONT, icons: ICONSETS, home: HOME };
+function buildControls() {
+  for (const sel of document.querySelectorAll("#controls select")) {
+    sel.innerHTML = LISTS[sel.dataset.k].map(o => `<option value="${o.id}">${o.id} · ${o.name}</option>`).join("");
+    sel.addEventListener("change", () => { S[sel.dataset.k] = sel.value; render(); });
+  }
+  const segs = { mode: MODES, density: [["comfortable", "Comfortable"], ["compact", "Compact"]], screen: [["home", "Home"], ["settings", "Settings"]], future: [["off", "Off"], ["on", "On"]] };
+  for (const seg of document.querySelectorAll("#controls .seg[data-k]")) {
+    seg.innerHTML = segs[seg.dataset.k].map(([v, l]) => `<button data-v="${v}">${l}</button>`).join("");
+    seg.addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      S[seg.dataset.k] = b.dataset.v;
+      if (seg.dataset.k === "future" && S.future === "off" && !["home", "settings"].includes(S.screen)) S.screen = "home";
+      render();
+    });
+  }
+  const pt = document.getElementById("pagetheme");
+  pt.innerHTML = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]].map(([v, l]) => `<button data-v="${v}" aria-pressed="${v === "auto"}">${l}</button>`).join("");
+  pt.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    pt.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    if (b.dataset.v === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.dataset.theme = b.dataset.v;
+  });
+}
+
+function buildOptionCards() {
+  for (const [k, list] of Object.entries(LISTS)) {
+    const host = document.getElementById(`opts-${k}`);
+    host.innerHTML = list.map(o => `<div class="opt" data-id="${o.id}">
+      <h4><span class="id">${o.id}</span>${o.name}</h4>
+      <p class="like">${o.like}</p>
+      ${k === "pal" ? `<div class="m swatches" data-pal="${o.id}"><i style="background:var(--c-brand)"></i><i style="background:var(--c-home)"></i><i style="background:var(--c-journal)"></i><i style="background:var(--c-todo)"></i><i style="background:var(--c-ai)"></i><i style="background:var(--c-settings)"></i></div>` : ""}
+      ${k === "font" ? fontSample(o.id) : ""}
+      ${k === "icons" ? iconSample(o.id) : ""}
+      <ul class="pc">${o.pros.map(p => `<li class="p">${p}</li>`).join("")}${o.cons.map(c => `<li class="c">${c}</li>`).join("")}</ul>
+      <button class="try" data-k="${k}" data-v="${o.id}">Try ${o.id} in the mock-ups ↑</button></div>`).join("");
+    host.addEventListener("click", e => {
+      const b = e.target.closest("button.try"); if (!b) return;
+      S[b.dataset.k] = b.dataset.v; render();
+      document.getElementById("stage").scrollIntoView({ behavior: "smooth" });
+    });
+  }
+}
+function fontSample(id) {
+  return `<div class="m" data-font="${id}" data-dir="D4" data-mode="light" data-pal="C1" style="background:transparent;color:inherit;margin:6px 0">
+    <div class="display" style="font-size:26px;line-height:1.1">Good evening, Hemang</div>
+    <div style="font-size:14px;margin-top:4px">The quick brown fox plans Tuesday's tasks · 0123456789</div>
+    <div class="mono" style="font-size:12px;opacity:.7;margin-top:2px">⌘K  todo:changed  21:42:07</div></div>`;
+}
+function iconSample(id) {
+  return `<div style="display:flex;gap:12px;font-size:24px;margin:8px 0;flex-wrap:wrap">${["home", "journal", "todo", "ai", "settings", "search", "sun", "more"].map(n => `<iconify-icon icon="${ICONS[id][n]}"></iconify-icon>`).join("")}</div>`;
+}
+
+/* Delegated actions inside mock-ups */
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-act]"); if (!el || !el.closest(".m")) return;
+  const a = el.dataset.act, v = el.dataset.v;
+  if (a === "screen") S.screen = v;
+  else if (a === "rail") S.rail = !S.rail;
+  else if (a === "settab") S.setTab = v;
+  else if (a === "set") { const k = el.dataset.k; S[k] = v === "true" ? true : v === "false" ? false : v; }
+  else if (a === "toggle") S[el.dataset.k] = !S[el.dataset.k];
+  else if (a === "palette") { S.palette = true; S.palSel = 0; }
+  else if (a === "palclose") { if (e.target !== el) return; S.palette = false; }
+  else if (a === "palrun") runPal(+v);
+  else return;
+  render();
+});
+document.addEventListener("input", e => {
+  if (e.target.dataset.act === "name") { S.name = e.target.value || "there"; document.querySelectorAll(".greet").forEach(g => g.textContent = `${greeting(new Date())}, ${S.name}`); }
+});
+function runPal(i) {
+  S.palette = false;
+  [() => S.screen = "home", () => S.screen = "settings", () => S.rail = !S.rail, () => S.mode = "light", () => S.mode = "dark", () => S.mode = "oled"][i]();
+}
+document.addEventListener("keydown", e => {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key === "\\") { e.preventDefault(); S.rail = !S.rail; render(); }
+  else if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); S.palette = !S.palette; S.palSel = 0; render(); }
+  else if (mod && e.key === ",") { e.preventDefault(); S.screen = "settings"; render(); }
+  else if (S.palette && e.key === "Escape") { S.palette = false; render(); }
+  else if (S.palette && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); S.palSel = (S.palSel + (e.key === "ArrowDown" ? 1 : 5)) % 6; render(); }
+  else if (S.palette && e.key === "Enter") { runPal(S.palSel); render(); }
+});
+
+/* Sidebar drag: free 200–360px, snaps to the rail below 150px; double-click resets */
+let drag = null;
+document.addEventListener("pointerdown", e => {
+  if (!e.target.matches("[data-grip]")) return;
+  drag = { x: e.clientX, w: S.sideW }; e.target.classList.add("drag"); e.preventDefault();
+});
+document.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const w = drag.w + (e.clientX - drag.x);
+  if (w < 150) { S.rail = true; drag = null; render(); return; }
+  S.sideW = Math.max(200, Math.min(360, Math.round(w)));
+  const d = document.querySelector(".desk"); d.style.setProperty("--side-w", S.sideW + "px");
+  document.getElementById("deskinfo").textContent = `sidebar · ${S.sideW}px`;
+});
+document.addEventListener("pointerup", () => { if (drag) { drag = null; render(); } });
+document.addEventListener("dblclick", e => { if (e.target.matches("[data-grip]")) { S.sideW = 248; render(); } });
+
+/* Live clock: one timer, paused while the page is hidden (as the real app will do). */
+let timer;
+function tick() {
+  const d = new Date();
+  document.querySelectorAll("[data-clock]").forEach(c => c.innerHTML = clockHTML(d, !c.closest("[data-ring]")));
+  document.querySelectorAll(".greet").forEach(g => g.textContent = `${greeting(d)}, ${S.name}`);
+}
+function startClock() { clearInterval(timer); tick(); timer = setInterval(tick, 1000); }
+document.addEventListener("visibilitychange", () => document.hidden ? clearInterval(timer) : startClock());
+
+/* ===================================================================
+   Nuance catalogue: each option = live demo + verdict
+   =================================================================== */
+const NU = [
+  { id: "N1", t: "Keyboard focus ring", d: "Shown only for keyboard focus (:focus-visible), never on mouse click. Press Tab in a demo to see the real thing.", o: [
+    ["A", "Offset ring", `<button class="btn n-fA show">Button</button><input class="field n-fA" placeholder="Input">`, "Clearest; the macOS and Linear standard", "Adds visual noise around dense lists"],
+    ["B", "Soft glow halo", `<button class="btn n-fB show">Button</button><input class="field n-fB" placeholder="Input">`, "Soft and modern; fits warm directions", "Lower contrast; weaker for accessibility on light backgrounds"],
+    ["C", "Inset outline", `<button class="btn n-fC show">Button</button><input class="field n-fC" placeholder="Input">`, "Never overlaps neighbours; good in tight lists", "Can be mistaken for a 'selected' state"]] },
+  { id: "N2", t: "Hover on list rows and nav", d: "Desktop only; phones have no hover.", o: [
+    ["A", "Neutral tint", `<div class="n-hA" style="width:100%">${["Today", "Upcoming", "Someday"].map(x => `<div class="n-row">${x}</div>`).join("")}</div>`, "Calm; the accent stays reserved for selection", "Subtle on some screens"],
+    ["B", "Accent tint", `<div class="n-hB" style="width:100%">${["Today", "Upcoming", "Someday"].map(x => `<div class="n-row">${x}</div>`).join("")}</div>`, "Lively; shows the Module colour", "Hover and selection can look alike"],
+    ["C", "Accent edge bar", `<div class="n-hC" style="width:100%">${["Today", "Upcoming", "Someday"].map(x => `<div class="n-row">${x}</div>`).join("")}</div>`, "Distinctive and precise", "Shifts content visually; busier"]] },
+  { id: "N3", t: "Press feedback", d: "What a click feels like (hold the mouse down).", o: [
+    ["A", "Scale to 0.96", `<button class="btn primary n-pA">Save</button><button class="btn n-pA">Cancel</button>`, "Physical, springy (Things 3 style)", "Can feel toy-like if overused"],
+    ["B", "Darken", `<button class="btn primary n-pB">Save</button><button class="btn n-pB">Cancel</button>`, "Classic and solid", "Flat; less delight"],
+    ["C", "None", `<button class="btn primary n-pC">Save</button><button class="btn n-pC">Cancel</button>`, "Calmest, most native-desktop", "Feels unresponsive on touch"]] },
+  { id: "N4", t: "How cards separate from the background", d: "This overrides what the direction does, so you can mix and match.", o: [
+    ["A", "Hairline border", `<div class="card" style="box-shadow:none;border:1px solid var(--line);width:100%">Card</div>`, "Precise and pro (Linear)", "Can look boxy"],
+    ["B", "Soft shadow", `<div class="card" style="border:0;box-shadow:0 1px 2px oklch(0% 0 0/.06),0 10px 24px -14px oklch(0% 0 0/.35);width:100%">Card</div>`, "Warm, physical (Things)", "Invisible in dark mode, so dark uses lighter surfaces instead"],
+    ["C", "Tonal fill", `<div class="card" style="border:0;box-shadow:none;background:var(--surface-2);width:100%">Card</div>`, "Quietest, very modern", "Weaker structure in dense screens"],
+    ["D", "Border + shadow", `<div class="card" style="border:1px solid var(--line);box-shadow:0 8px 20px -14px oklch(0% 0 0/.35);width:100%">Card</div>`, "Strongest definition", "Heaviest look"]] },
+  { id: "N5", t: "Toasts (feedback after an action)", d: "Click to fire one. Max 3 stacked, 4 seconds, paused on hover.", o: [
+    ["A", "Bottom-right stack", toastDemo("right:12px;bottom:12px", ""), "Desktop standard; out of the way", "On phone it moves above the tab bar"],
+    ["B", "Top-centre pill", toastDemo("left:50%;top:12px;transform:translateX(-50%)", "pill"), "Very visible, Dynamic Island-like", "Covers titles and headers"],
+    ["C", "Bottom-centre snackbar", toastDemo("left:50%;bottom:12px;transform:translateX(-50%)", ""), "Same place on desktop and phone (Material)", "Covers content on small windows"]] },
+  { id: "N6", t: "Empty states", d: "What a Module shows before it has data.", o: [
+    ["A", "Icon + sentence + action", `<div style="text-align:center"><div style="font-size:28px;color:var(--accent)">${'<iconify-icon icon="ph:notebook-duotone"></iconify-icon>'}</div><b>No entries yet</b><div style="color:var(--muted);font-size:.9em;margin:2px 0 8px">Write your first one.</div><button class="btn primary">New entry</button></div>`, "Clear, actionable", "Standard"],
+    ["B", "Gradient orb + sentence", `<div style="text-align:center"><div style="width:44px;height:44px;border-radius:16px;margin:0 auto 8px;background:conic-gradient(from 200deg,var(--c-journal),var(--c-ai),var(--c-todo),var(--c-journal))"></div><b>A blank page</b><div style="color:var(--muted);font-size:.9em">⌘N to begin</div></div>`, "Unique brand moment, vibrant", "Less direct"],
+    ["C", "Text only", `<div style="color:var(--muted)">Nothing here yet · <span style="color:var(--accent)">Create</span></div>`, "Calmest and densest", "Easy to miss"]] },
+  { id: "N7", t: "Loading", d: "Data is local, so loading is usually instant. Nothing shows for the first 300ms, which prevents flicker.", o: [
+    ["A", "Shimmer skeleton", `<div style="width:100%;display:grid;gap:8px"><div class="skel shimmer" style="width:60%"></div><div class="skel shimmer"></div><div class="skel shimmer" style="width:80%"></div></div>`, "Feels fast; layout doesn't jump", "Shimmer animation costs a little GPU"],
+    ["B", "Pulse skeleton", `<div style="width:100%;display:grid;gap:8px"><div class="skel pulse" style="width:60%"></div><div class="skel pulse"></div><div class="skel pulse" style="width:80%"></div></div>`, "Calmer than shimmer", "Slightly 'sleepy'"],
+    ["C", "Small spinner", `<div class="spin"></div>`, "Simple", "Layout jumps when content arrives"]] },
+  { id: "N8", t: "Errors", d: "Every error has a plain message, a retry and a 'copy details' button (for the logs).", o: [
+    ["A", "Inline banner", `<div style="width:100%;border:1px solid oklch(60% 0.18 25/.4);background:oklch(60% 0.18 25/.1);border-radius:var(--r1);padding:8px 10px;font-size:.9em">Couldn't save the entry. <b style="color:var(--accent);cursor:pointer">Retry</b> · <span style="color:var(--muted)">Copy details</span></div>`, "Stays next to the problem", "Takes layout space"],
+    ["B", "Toast with retry", `<div class="toast">Couldn't save <b>Retry</b></div>`, "Unobtrusive", "Disappears; easy to miss"],
+    ["C", "Full-pane state", `<div style="text-align:center"><b>Something went wrong</b><div style="color:var(--muted);font-size:.9em;margin:4px 0 8px">The Journal couldn't load.</div><button class="btn">Retry</button></div>`, "Clear for fatal errors", "Heavy for small failures"]] },
+  { id: "N9", t: "Saving edits", d: "Rust saves to SQLite in milliseconds.", o: [
+    ["A", "Autosave + subtle 'Saved ✓'", `<div style="width:100%"><input class="field" style="width:100%" value="Morning pages"><div style="font-size:.8em;color:var(--faint);margin-top:6px">Saved ✓</div></div>`, "No buttons; you never lose work (Notion, Bear)", "Less sense of 'committing'"],
+    ["B", "Save bar when changed", `<div style="width:100%"><input class="field" style="width:100%" value="Morning pages*"><div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px"><button class="btn ghost">Discard</button><button class="btn primary">Save</button></div></div>`, "Explicit and safe for settings", "Extra clicks; easy to forget"],
+    ["C", "Autosave + undo toast", `<div style="width:100%"><input class="field" style="width:100%" value="Morning pages"><div class="toast" style="margin-top:6px">Saved <b>Undo</b></div></div>`, "Safe and fast", "Toasts can get noisy"]] },
+  { id: "N10", t: "Deleting things", d: "Data is soft-deleted, so undo is always possible.", o: [
+    ["A", "Undo toast", `<div class="toast">Entry deleted <b>Undo</b></div>`, "Fast; no interruption (Gmail, Things)", "A misclick needs noticing"],
+    ["B", "Confirm dialog", `<div class="card" style="width:100%;text-align:center"><b>Delete entry?</b><div style="display:flex;gap:6px;justify-content:center;margin-top:8px"><button class="btn">Cancel</button><button class="btn primary" style="background:oklch(58% 0.2 25)">Delete</button></div></div>`, "Explicit", "Annoying and redundant when undo exists"],
+    ["C", "Press and hold", `<button class="btn" style="position:relative;overflow:hidden" onpointerdown="this.querySelector('i').style.width='100%'" onpointerup="this.querySelector('i').style.width='0'"><i style="position:absolute;left:0;top:0;bottom:0;width:0;background:oklch(58% 0.2 25/.3);transition:width 900ms linear"></i>Hold to delete</button>`, "Deliberate; good on touch", "Unfamiliar on desktop"]] },
+  { id: "N11", t: "Scrollbars", d: "Hover each box and scroll.", o: [
+    ["A", "Thin, appear on hover", `<div class="scrolly sbA">${"Line of content · ".repeat(40)}</div>`, "Cleanest, the macOS feel", "Less discoverable on Windows"],
+    ["B", "Thin, always visible", `<div class="scrolly sbB">${"Line of content · ".repeat(40)}</div>`, "Always clear where you are", "A bit of visual noise"],
+    ["C", "Native OS", `<div class="scrolly">${"Line of content · ".repeat(40)}</div>`, "Zero surprise", "Chunky on Windows and Linux; inconsistent"]] },
+  { id: "N12", t: "Tooltip delay", d: "Hover the icon buttons.", o: [
+    ["A", "Fast (300ms)", tipDemo(300), "Responsive; helps learning", "Can flicker while moving around"],
+    ["B", "Medium (600ms)", tipDemo(600), "The macOS-like balance", "Feels slow when you need help"],
+    ["C", "Labels instead of tooltips", `<button class="btn">${'<iconify-icon icon="ph:sun-duotone"></iconify-icon>'}Theme</button>`, "No hidden meaning; best on touch", "Takes more space"]] },
+  { id: "N13", t: "Motion feel", d: "Click Play. Durations come from tokens and are zeroed when Reduce motion is on.", o: [
+    ["A", "Snappy (140ms ease-out)", motionDemo("140ms", "cubic-bezier(.2,.8,.2,1)"), "Pro, fast (Linear, Raycast)", "Less playful"],
+    ["B", "Gentle (260ms)", motionDemo("260ms", "cubic-bezier(.25,.1,.25,1)"), "Calm, smooth", "Can feel sluggish when repeated"],
+    ["C", "Springy (overshoot)", motionDemo("380ms", "cubic-bezier(.34,1.56,.64,1)"), "Delightful, physical (Things)", "Too bouncy for frequent actions"]] },
+  { id: "N14", t: "Page transitions between Modules", d: "Click to switch pages.", o: [
+    ["A", "None (instant)", pageDemo("none"), "Fastest; feels native", "Abrupt"],
+    ["B", "Fade 120ms", pageDemo("fade"), "Soft and cheap", "Subtle"],
+    ["C", "Slide + fade", pageDemo("slide"), "Conveys direction (good with phone back)", "More motion"],
+    ["D", "Shared-element morph", pageDemo("morph"), "The title morphs between pages (View Transitions API)", "Needs care per screen; feature-detected"]] },
+  { id: "N15", t: "Timestamps", d: "Applies to entries, todos and logs (not the Home clock).", o: [
+    ["A", "Relative under 7 days", `<div>Edited <b>2h ago</b><div style="color:var(--faint);font-size:.85em">hover → Tue 20 Oct, 19:42</div></div>`, "Easy to scan", "Needs a hover for the exact time"],
+    ["B", "Always absolute", `<div>Edited <b>20 Oct, 19:42</b></div>`, "Precise", "Harder to sense recency"],
+    ["C", "Smart mix", `<div>Edited <b>Today · 19:42</b></div>`, "Recency plus precision", "Slightly longer text"]] },
+  { id: "N16", t: "Where keyboard shortcuts are shown", d: "", o: [
+    ["A", "Tooltips + menus + palette", `<div class="tipbox"><button class="btn">${'<iconify-icon icon="ph:sidebar-simple-duotone"></iconify-icon>'}</button><span class="tt">Toggle sidebar <span class="kbd">⌘\\</span></span></div>`, "Learnable without clutter", "Hidden until you hover"],
+    ["B", "Palette only", `<div style="color:var(--muted)">Shortcuts appear in <span class="kbd">⌘K</span> results</div>`, "Cleanest UI", "Hard to discover"],
+    ["C", "Always beside labels", `<div class="n-row" style="width:auto">Search <span class="kbd" style="margin-left:14px">⌘K</span></div>`, "Most discoverable (Raycast)", "Visual noise on every row"]] },
+  { id: "N17", t: "Collapsed sidebar rail", d: "How the icon rail behaves when collapsed (Claude-app style).", o: [
+    ["A", "Icons + tooltip on hover", `<div style="display:flex;flex-direction:column;gap:4px">${["home", "settings"].map(n => `<div class="tipbox"><button class="btn ghost" style="font-size:18px">${'<iconify-icon icon="' + ICONS.I1[n] + '"></iconify-icon>'}</button><span class="tt">${n}</span></div>`).join("")}</div>`, "Minimal; the Claude, VS Code and Linear pattern", "Requires recognising icons"],
+    ["B", "Icons + tiny labels", `<div style="display:flex;flex-direction:column;gap:6px;align-items:center;font-size:10px;color:var(--muted)">${["home", "settings"].map(n => `<div style="display:flex;flex-direction:column;align-items:center"><iconify-icon style="font-size:18px" icon="${ICONS.I1[n]}"></iconify-icon>${n}</div>`).join("")}</div>`, "Self-explanatory (Discord, Teams)", "The rail must be wider (~72px)"],
+    ["C", "Expands as overlay on hover", `<div style="color:var(--muted);font-size:.9em">Hovering the rail slides the full sidebar over the content; leaving collapses it</div>`, "The best of both", "Can pop open accidentally"]] },
+  { id: "N18", t: "Settings page layout", d: "Desktop. The phone always uses a stacked list that drills into sections.", o: [
+    ["A", "Section nav + panel", `<div style="display:flex;gap:8px;width:100%"><div style="width:35%;display:grid;gap:4px">${["Appearance", "General", "Data"].map((x, i) => `<div class="n-row" style="padding:4px 6px;${i ? "" : "background:var(--surface-2)"}">${x}</div>`).join("")}</div><div class="card" style="flex:1;padding:8px">Rows…</div></div>`, "Scales to many Module settings (macOS System Settings)", "Two clicks to reach a setting"],
+    ["B", "One long page, sticky headers", `<div style="width:100%;display:grid;gap:6px"><b style="font-size:.85em">APPEARANCE</b><div class="skel" style="height:18px"></div><b style="font-size:.85em">GENERAL</b><div class="skel" style="height:18px"></div></div>`, "Everything scannable", "Gets long as Modules add settings"],
+    ["C", "Search-first list", `<div style="width:100%"><input class="field" style="width:100%" placeholder="Search settings…"><div style="color:var(--muted);font-size:.85em;margin-top:6px">Theme · Density · Display name…</div></div>`, "Fastest for pros (Raycast, VS Code)", "Poor browsing"]] },
+];
+function toastDemo(pos, cls) {
+  return `<button class="btn" onclick="fireToast(this,'${pos}','${cls}')">Fire toast</button><div class="toastbox" style="${pos}"></div>`;
+}
+window.fireToast = (btn, pos, cls) => {
+  const box = btn.parentElement.querySelector(".toastbox");
+  const t = document.createElement("div"); t.className = `toast ${cls}`; t.innerHTML = `Saved <b>Undo</b>`;
+  box.appendChild(t); while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => t.remove(), 4000);
+};
+function tipDemo(ms) {
+  return `<div class="tipbox"><button class="btn ghost">${'<iconify-icon icon="ph:sun-duotone"></iconify-icon>'}</button><span class="tt" style="transition-delay:${ms}ms">Theme</span></div>
+          <div class="tipbox"><button class="btn ghost">${'<iconify-icon icon="ph:gear-six-duotone"></iconify-icon>'}</button><span class="tt" style="transition-delay:${ms}ms">Settings</span></div>`;
+}
+function motionDemo(dur, ease) {
+  return `<div style="width:100%"><div style="height:56px;position:relative"><div class="mv-panel" style="position:absolute;left:0;transition:transform ${dur} ${ease}"></div></div>
+    <button class="btn" onclick="const p=this.parentElement.querySelector('.mv-panel');p.style.transform=p.style.transform?'':'translateX(90px)'">Play</button></div>`;
+}
+function pageDemo(kind) {
+  return `<div style="width:100%"><div class="card" style="height:70px;padding:10px;overflow:hidden;position:relative" data-page="${kind}"><b class="pg-title" style="display:block;view-transition-name:none">Home</b><span style="color:var(--muted);font-size:.85em" class="pg-sub">Greeting and clock</span></div>
+    <button class="btn" style="margin-top:8px" onclick="flipPage(this,'${kind}')">Switch page</button></div>`;
+}
+window.flipPage = (btn, kind) => {
+  const card = btn.parentElement.querySelector("[data-page]");
+  const title = card.querySelector(".pg-title"), sub = card.querySelector(".pg-sub");
+  const swap = () => { const home = title.textContent === "Home"; title.textContent = home ? "Settings" : "Home"; sub.textContent = home ? "Appearance · General" : "Greeting and clock"; title.style.fontSize = home ? "1.4em" : "1em"; };
+  if (kind === "none") return swap();
+  if (kind === "morph" && document.startViewTransition) { title.style.viewTransitionName = "pgtitle"; document.startViewTransition(swap).finished.then(() => title.style.viewTransitionName = "none"); return; }
+  const out = kind === "slide" ? [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateX(-16px)" }] : [{ opacity: 1 }, { opacity: 0 }];
+  const inn = kind === "slide" ? [{ opacity: 0, transform: "translateX(16px)" }, { opacity: 1, transform: "none" }] : [{ opacity: 0 }, { opacity: 1 }];
+  card.animate(out, { duration: 110, easing: "ease-in" }).finished.then(() => { swap(); card.animate(inn, { duration: 160, easing: "cubic-bezier(.2,.8,.2,1)" }); });
+};
+function buildNuances() {
+  document.getElementById("nuances").innerHTML = NU.map(n => `<div class="nu"><header><span class="id">${n.id}</span><h4>${n.t}</h4></header>${n.d ? `<p>${n.d}</p>` : ""}
+    <div class="nu-grid">${n.o.map(([k, l, demo, pro, con]) => `<div class="nu-opt"><div class="demo m sync">${demo}</div>
+      <div class="meta"><b><span class="id">${n.id}-${k}</span> ${l}</b><ul class="pc"><li class="p">${pro}</li><li class="c">${con}</li></ul></div></div>`).join("")}</div></div>`).join("");
+}
+
+/* ===================================================================
+   App icons
+   =================================================================== */
+const SQ = "M64 0c45 0 64 19 64 64s-19 64-64 64S0 109 0 64 19 0 64 0z";
+const APPICONS = [
+  ["A1", "Aurora Knot", "A gradient M folded like a ribbon: memory as a loop. Vibrant on dark.", `<defs><linearGradient id="a1g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6a45ff"/><stop offset=".55" stop-color="#e64aa8"/><stop offset="1" stop-color="#ff9f3e"/></linearGradient></defs><path d="${SQ}" fill="#120f24"/><path d="M30 94V40c0-6 7-9 11-4l23 28 23-28c4-5 11-2 11 4v54" fill="none" stroke="url(#a1g)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>`],
+  ["A2", "Ember Dot", "A warm dot rising over a horizon line: a day remembered. Calm and warm.", `<defs><radialGradient id="a2g" cx=".4" cy=".35" r=".7"><stop offset="0" stop-color="#ffd27a"/><stop offset="1" stop-color="#ff7a45"/></radialGradient></defs><path d="${SQ}" fill="#f6efe4"/><circle cx="64" cy="58" r="24" fill="url(#a2g)"/><path d="M28 86h72" stroke="#2a2118" stroke-width="7" stroke-linecap="round"/><path d="M44 100h40" stroke="#2a2118" stroke-opacity=".35" stroke-width="7" stroke-linecap="round"/>`],
+  ["A3", "Graphite M", "A precise monoline M on warm graphite with a single accent dot. Pro and quiet.", `<path d="${SQ}" fill="#1c1916"/><path d="M34 90V40l30 32 30-32v50" fill="none" stroke="#efe8dd" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><circle cx="94" cy="96" r="7" fill="#ff8a5b"/>`],
+  ["A4", "Memory Spiral", "A golden spiral: the things you keep, growing over time.", `<defs><linearGradient id="a4g" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#ff7a59"/><stop offset="1" stop-color="#ffc94d"/></linearGradient></defs><path d="${SQ}" fill="url(#a4g)"/><path d="M66 64a4 4 0 1 1-8 0 10 10 0 0 1 18 0c0 11-9 18-20 18-14 0-24-11-24-24 0-17 14-30 32-30 21 0 36 16 36 36" fill="none" stroke="#2a1608" stroke-width="7" stroke-linecap="round"/>`],
+  ["A5", "Constellation", "Life's pieces joined into a constellation; each dot could be a Module.", `<path d="${SQ}" fill="#0b0b18"/><g stroke="#8f73ff" stroke-width="3" opacity=".8"><path d="M34 82 52 44 78 58 96 36M78 58 88 90"/></g><g fill="#fff"><circle cx="34" cy="82" r="6"/><circle cx="52" cy="44" r="7"/><circle cx="96" cy="36" r="6"/><circle cx="88" cy="90" r="5"/></g><circle cx="78" cy="58" r="10" fill="#ff5cae"/>`],
+  ["A6", "Folded Page", "A journal page with a folded corner. Editorial and literal.", `<path d="${SQ}" fill="#141414"/><path d="M38 26h38l20 20v56H38z" fill="#f3f1ec"/><path d="M76 26v20h20" fill="#d4ff3a"/><g stroke="#141414" stroke-width="4" stroke-linecap="round"><path d="M48 62h36M48 74h36M48 86h22"/></g>`],
+  ["A7", "Day Ring", "An almost-closed ring with a dot: today in progress. Matches Home layout H3.", `<path d="${SQ}" fill="#f4f1ff"/><circle cx="64" cy="64" r="32" fill="none" stroke="#3a1fb8" stroke-opacity=".15" stroke-width="12"/><path d="M64 32a32 32 0 1 1-30.4 22" fill="none" stroke="#5b3cff" stroke-width="12" stroke-linecap="round"/><circle cx="33.6" cy="54" r="8" fill="#ff7a59"/>`],
+  ["A8", "Stacked Cards", "Three offset cards in Module colours: many parts of life, one place.", `<path d="${SQ}" fill="#fbf7f2"/><rect x="30" y="30" width="58" height="44" rx="10" fill="#14b8a6" transform="rotate(-8 59 52)"/><rect x="36" y="44" width="58" height="44" rx="10" fill="#ff7a59" transform="rotate(4 65 66)"/><rect x="40" y="56" width="58" height="44" rx="10" fill="#6d4aff"/>`],
+];
+function buildIcons() {
+  document.getElementById("icons").innerHTML = APPICONS.map(([id, n, d, body]) => {
+    const svg = `<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">${body.replaceAll('id="', `id="${id}-`).replaceAll("url(#", `url(#${id}-`)}</svg>`;
+    return `<div class="icon-opt"><div class="big">${svg}</div><div class="sm">${svg}${svg}</div>
+      <div class="dock">${svg}</div><div class="dock dark">${svg}</div>
+      <b><span class="id">${id}</span> ${n}</b><div class="muted" style="font-size:13px;margin-top:4px">${d}</div></div>`;
+  }).join("");
+}
+
+/* ===================================================================
+   Decision list
+   =================================================================== */
+function buildList() {
+  const rows = [
+    ["S", "Vibrance strategy", VIB], ["D", "Direction", DIR], ["C", "Accent palette", PAL], ["F", "Font pairing", FONT],
+    ["I", "Icon set", ICONSETS], ["H", "Home layout", HOME],
+  ].map(([k, t, l]) => `<tr><td><span class="id">${k}</span></td><td>${t}</td><td>${l.map(o => o.id).join(" · ")}</td></tr>`);
+  NU.forEach(n => rows.push(`<tr><td><span class="id">${n.id}</span></td><td>${n.t}</td><td>${n.o.map(o => `${n.id}-${o[0]}`).join(" · ")}</td></tr>`));
+  rows.push(`<tr><td><span class="id">A</span></td><td>App icon</td><td>${APPICONS.map(a => a[0]).join(" · ")}</td></tr>`);
+  document.getElementById("dl").innerHTML = `<tr><th>ID</th><th>Decision</th><th>Options</th></tr>${rows.join("")}`;
+}
+
+buildControls(); buildOptionCards(); buildNuances(); buildIcons(); buildList(); render(); startClock();
+</script>
+</body>
+</html>

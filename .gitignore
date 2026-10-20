@@ -1,0 +1,27 @@
+# Rust
+target/
+# JS
+node_modules/
+dist/
+.svelte-kit/
+# Local env and secrets
+.env.local
+keystore.properties
+*.keystore
+*.jks
+# Android build outputs (project files under gen/android are kept)
+src-tauri/gen/android/.gradle/
+src-tauri/gen/android/build/
+src-tauri/gen/android/app/build/
+src-tauri/gen/android/buildSrc/.gradle/
+src-tauri/gen/android/local.properties
+src-tauri/gen/android/app/src/main/jniLibs/
+src-tauri/gen/android/app/tauri.build.gradle.kts
+src-tauri/gen/android/app/proguard-tauri.pro
+src-tauri/gen/android/tauri.settings.gradle
+src-tauri/gen/schemas/
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.log

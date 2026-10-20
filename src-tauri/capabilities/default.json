@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Least-privilege access for the main window on every platform: typed events only.",
+  "windows": ["main"],
+  "permissions": ["core:event:default"]
+}

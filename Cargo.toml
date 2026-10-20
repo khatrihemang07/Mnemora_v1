@@ -1,0 +1,64 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "UNLICENSED"
+publish = false
+
+[workspace.dependencies]
+mnemora-core = { path = "crates/core" }
+# Tauri 2.x stable. Crates.io "latest" is 3.0 alpha; we deliberately stay on 2.x.
+tauri = { version = "=2.12.4", default-features = false }
+tauri-build = "=2.7.3"
+tauri-plugin-opener = "=2.7.2"
+# tauri-specta and specta must be the same rc; specta-typescript is the matching exporter.
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = "=2.0.0-rc.25"
+specta-typescript = "=0.0.12"
+rusqlite = { version = "=0.40.2", features = ["bundled", "backup"] }
+rusqlite_migration = "=2.6.0"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thiserror = "=2.0.21"
+toml = "=1.1.8"
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["env-filter", "fmt", "std", "ansi", "registry"] }
+tracing-appender = "=0.2.5"
+tracing-android = "=0.2.0"
+uuid = { version = "=1.28.0", features = ["v7"] }
+whoami = "=2.1.3"
+tempfile = "=3.27.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+# Curated pedantic opt-outs: noise without value for this codebase.
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+needless_pass_by_value = "allow"
+
+# Keep target/ small on an 8 GB / limited-disk dev machine.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+opt-level = "s"
+panic = "abort"

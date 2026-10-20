@@ -1,0 +1,7 @@
+{
+  "productName": "Mnemora Sandbox",
+  "identifier": "com.hemang.mnemora.sandbox",
+  "build": {
+    "features": ["sandbox"]
+  }
+}

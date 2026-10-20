@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mobile",
+  "description": "Android back button handling: the UI navigates back, or exits the app at the root.",
+  "windows": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": ["core:app:allow-register-listener", "core:app:allow-remove-listener", "core:app:allow-exit"]
+}

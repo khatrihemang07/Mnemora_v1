@@ -1,0 +1,182 @@
+@import "tailwindcss";
+@import "./lib/theme/fonts.css";
+@import "./lib/theme/tokens.css";
+
+/* Remove Tailwind's default palette and scales so only semantic tokens are usable. */
+@theme {
+  --color-*: initial;
+  --font-*: initial;
+  --shadow-*: initial;
+  --radius-*: initial;
+  --ease-*: initial;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-side: var(--side);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-pop: var(--pop);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-on-danger: var(--on-danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-on-warning: var(--on-warning);
+  --color-scrim: var(--scrim);
+  --color-hue-home: var(--hue-home);
+  --color-hue-journal: var(--hue-journal);
+  --color-hue-todo: var(--hue-todo);
+  --color-hue-ai: var(--hue-ai);
+  --color-hue-settings: var(--hue-settings);
+  --color-hero-ink: var(--hero-ink);
+  --color-hero-ink-muted: var(--hero-ink-muted);
+
+  --radius-sm: var(--r1);
+  --radius-md: var(--r2);
+  --radius-lg: var(--r3);
+  --radius-full: 9999px;
+
+  --shadow-card: var(--elev-card);
+  --shadow-pop: var(--elev-pop);
+
+  --text-2xs: 0.6875rem;
+
+  --font-sans: var(--f-ui);
+  --font-display: var(--f-display);
+  --font-mono: var(--f-mono);
+
+  --ease-out: var(--ease);
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--f-ui);
+  font-size: var(--fs);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  /* Chrome is not selectable; content areas opt back in. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.selectable,
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 25%, transparent);
+}
+
+/* N1-B: soft halo, keyboard focus only. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--ring);
+}
+
+/* N11-A: thin scrollbars that appear on hover. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+*:hover {
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 8px;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+}
+
+/* N14-B: route fade. RouterOutlet falls back to this when View Transitions are unavailable
+   or the navigation did not go through the router wrapper. */
+.route-fade {
+  animation: route-fade var(--dur-fade) var(--ease) both;
+}
+@keyframes route-fade {
+  from {
+    opacity: 0;
+  }
+}
+/* A View Transition is already fading the page, so skip the keyframe fade (no double fade). */
+:root[data-view-transition] .route-fade {
+  animation: none;
+}
+
+/* N14-B via View Transitions: 120ms fade in, exit 30% shorter, one easing. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-timing-function: var(--ease);
+  animation-fill-mode: both;
+}
+::view-transition-old(root) {
+  animation-name: vt-fade-out;
+  animation-duration: calc(var(--dur-fade) * 0.7);
+}
+::view-transition-new(root) {
+  animation-name: route-fade;
+  animation-duration: var(--dur-fade);
+}
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+/* N7-B: skeleton pulse. */
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Catch-all so third-party animations (Bits UI, sonner) also respect reduced motion. */
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

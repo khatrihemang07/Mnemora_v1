@@ -1,0 +1,25 @@
+/* Latin subsets only, one variable file per family and only the weight axis we use. */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2)
+    format("woff2-variations");
+}
+@font-face {
+  font-family: "Fraunces Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(../../../node_modules/@fontsource-variable/fraunces/files/fraunces-latin-wght-normal.woff2)
+    format("woff2-variations");
+}
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url(../../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2)
+    format("woff2-variations");
+}

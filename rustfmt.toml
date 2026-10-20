@@ -1,0 +1,7 @@
+edition = "2024"
+max_width = 100
+newline_style = "Unix"
+use_field_init_shorthand = true
+use_try_shorthand = true
+# Note: group_imports/imports_granularity are nightly-only; import grouping
+# (std, external, crate) is kept by hand and reviewed.

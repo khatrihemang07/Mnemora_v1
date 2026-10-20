@@ -1,0 +1,21 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!dist",
+      "!node_modules",
+      "!src-tauri",
+      "!docs",
+      "!.claude",
+      "!crates",
+      "!target",
+      "!src/lib/ipc/bindings.ts",
+      "!**/*.svelte"
+    ]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "css": { "parser": { "tailwindDirectives": true } },
+  "javascript": { "formatter": { "quoteStyle": "single" } },
+  "linter": { "rules": { "recommended": true, "complexity": { "noImportantStyles": "off" } } }
+}
