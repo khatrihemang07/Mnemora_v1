@@ -1,11 +1,12 @@
 /**
  * In-memory Journal for the browser-only IPC mock. Mirrors the rules in crates/journal
- * (blank text rejected, valid dates, word count, ordering, moves, month days). Every result is a JSON copy, like real
+ * (blank text rejected, valid dates, word count, ordering, moves, month days, search). Every result is a JSON copy, like real
  * IPC: handing out live objects would let the UI mutate the "database".
  */
 
 import { toggleTaskLine } from '../ui/markdown/tasks';
 import type { AppError, Entry, NewEntry, Page } from './bindings';
+import { searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
 
 const MAX_OFFSET_MIN = 14 * 60;
@@ -172,6 +173,15 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           deleted.delete(entry.id);
           return copy(entry);
         }
+        case 'journal_search':
+          return copy(
+            searchEntries(
+              live(),
+              a.query as string,
+              a.from as string | null,
+              a.to as string | null,
+            ),
+          );
         case 'journal_pages': {
           const cursor = a.cursor as string | null;
           if (cursor !== null && !validDate(cursor)) throw fail('validation', 'Not a valid date');

@@ -3,15 +3,23 @@
   sit above Today; the Journal opens scrolled to Today, with an "↑ Upcoming (n)" pill to go back up
   and an "↑ Today" pill once you are far below. The header calendar button (⌘G) opens the
   JournalCalendar. `JournalNav` (context) lets Entry actions and the calendar scroll and flash.
+  The header search button (⌘F, or ⌘K's "Search Journal") lays SearchView over the feed, which stays
+  mounted underneath so its scroll place survives; opening a result parks the search (a "Back to
+  results" pill, ⌘F and Android Back return to it), and every other way out clears it.
 -->
 <script lang="ts">
   import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query';
   import { onDestroy, tick } from 'svelte';
   import ArrowUp from '~icons/lucide/arrow-up';
+  import ArrowLeft from '~icons/lucide/arrow-left';
   import CalendarDays from '~icons/lucide/calendar-days';
   import NotebookPen from '~icons/lucide/notebook-pen';
+  import Search from '~icons/lucide/search';
+  import X from '~icons/lucide/x';
+  import type { Hit } from '../../lib/ipc/bindings';
   import { hasMod, shortcutLabel } from '../../lib/platform';
   import { readCore } from '../../lib/settings/core';
+  import { interceptBack } from '../../lib/router';
   import { settingsQuery } from '../../lib/settings/queries';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
@@ -30,6 +38,8 @@
   import PageHeading from './PageHeading.svelte';
   import PageSection from './PageSection.svelte';
   import { pagesQuery } from './queries';
+  import { JournalSearch, searchLauncher } from './search.svelte';
+  import SearchView from './SearchView.svelte';
   import { slashValues } from './slash-values';
   import UnsavedEntryDialog from './UnsavedEntryDialog.svelte';
 
@@ -37,6 +47,8 @@
   const PAGE_ESTIMATE_PX = 70;
   const ENTRY_ESTIMATE_PX = 90;
   const MONTH_ESTIMATE_PX = 52;
+  /** The command palette finishes handing focus back within this long of closing. */
+  const PALETTE_CLOSE_MS = 80;
 
   const pages = createInfiniteQuery(() => pagesQuery);
   const settings = createQuery(() => settingsQuery);
@@ -51,7 +63,12 @@
   const nav = new JournalNav(today);
   provideNav(nav);
   nav.scrollTo = scrollTo;
-  onDestroy(() => nav.dispose());
+  const search = new JournalSearch();
+  let searchView = $state<ReturnType<typeof SearchView> | null>(null);
+  onDestroy(() => {
+    nav.dispose();
+    search.dispose();
+  });
   $effect(() => {
     nav.weekStart = core.weekStart;
   });
@@ -100,6 +117,44 @@
     if (open > 0) void tick().then(() => list?.scrollToIndex(open));
   });
 
+  // A search asked for from ⌘K (possibly just before this page mounted) opens with its words.
+  $effect(() => {
+    const query = searchLauncher.pending;
+    if (query === null) return;
+    searchLauncher.pending = null;
+    search.openFor(query);
+    // The palette gives focus back to where it was as it closes; take it again once it has.
+    setTimeout(() => searchView?.focus(false), PALETTE_CLOSE_MS);
+  });
+
+  // While search is open or parked, Back (Android) belongs to it: return to the results, or leave.
+  $effect(() => {
+    if (!search.active && !search.parked) return;
+    return interceptBack(() => {
+      const leaving = search.active;
+      search.back();
+      if (leaving) focusComposerSoon();
+    });
+  });
+
+  function focusComposerSoon() {
+    if (!viewport.isPhone) void tick().then(() => nav.focusComposer?.());
+  }
+
+  /** Opening a result: search steps aside (kept for Back), the feed scrolls to the Entry and flashes it. */
+  async function openHit(hit: Hit, scrollTop: number) {
+    search.park(scrollTop);
+    await scrollTo(hit.page_date, hit.id);
+  }
+
+  function toggleSearch() {
+    if (!search.active) search.open();
+    else {
+      search.close();
+      focusComposerSoon();
+    }
+  }
+
   /** Waits for what the feed does after a data change: Svelte's flush, then Query's notification. */
   async function settle() {
     await tick();
@@ -115,6 +170,7 @@
    * or the Entry `entryId` on it. Gives up quietly when no Page has that date.
    */
   async function scrollTo(date: string, entryId?: string) {
+    if (search.active) search.close(); // a calendar jump or a toast's Show leaves search
     await settle();
     while (pageIndex(feed, date) < 0 && pages.hasNextPage && (loaded.at(-1)?.date ?? '') > date) {
       const before = loaded.length;
@@ -148,15 +204,28 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
-    if (!hasMod(e) || e.shiftKey || (e.code !== 'KeyG' && e.key !== 'g')) return;
-    e.preventDefault();
-    openCalendar();
+    if (!hasMod(e) || e.shiftKey) return;
+    if (e.code === 'KeyG' || e.key === 'g') {
+      e.preventDefault();
+      openCalendar();
+    } else if (e.code === 'KeyF' || e.key === 'f') {
+      e.preventDefault(); // not the browser's find
+      if (search.active) searchView?.focus();
+      else search.open();
+    }
   }
 </script>
 
 <svelte:window {onkeydown} />
 
 {#snippet headerActions()}
+  <IconButton
+    icon={Search}
+    label="Search Journal"
+    shortcut={shortcutLabel('F')}
+    aria-pressed={search.active}
+    onclick={toggleSearch}
+  />
   <IconButton
     bind:ref={calendarAnchor}
     icon={CalendarDays}
@@ -174,6 +243,7 @@
     <PageHeader title="Journal" actions={headerActions} />
   </div>
   <div class="relative min-h-0 flex-1">
+    <div class="h-full" inert={search.active}>
     {#if pages.isPending}
       <div class="mx-auto flex max-w-[42.5rem] flex-col gap-3 px-(--pad) py-4">
         <Skeleton class="h-6 w-48" />
@@ -246,8 +316,41 @@
         </button>
       {/if}
     {/if}
+    </div>
+    {#if search.active}
+      <SearchView
+        bind:this={searchView}
+        {search}
+        {today}
+        weekStart={core.weekStart}
+        {timeFormat}
+        onopen={openHit}
+        onclose={focusComposerSoon}
+        class="absolute inset-0 z-20"
+      />
+    {:else if search.parked}
+      <div
+        class="absolute bottom-8 left-1/2 z-10 inline-flex -translate-x-1/2 items-center rounded-full border border-line bg-pop text-xs font-semibold shadow-(--elev-pop)"
+      >
+        <button
+          type="button"
+          class="inline-flex cursor-pointer items-center gap-1.5 rounded-l-full py-1.5 pr-2 pl-3.5 text-(--hue-journal) hover:bg-hover"
+          onclick={() => search.open()}
+        >
+          <ArrowLeft class="size-3.5" /> Back to results
+        </button>
+        <button
+          type="button"
+          aria-label="Dismiss search results"
+          class="grid cursor-pointer place-items-center rounded-r-full py-1.5 pr-2.5 pl-1.5 text-faint hover:bg-hover hover:text-ink"
+          onclick={() => search.close()}
+        >
+          <X class="size-3.5" />
+        </button>
+      </div>
+    {/if}
   </div>
-  <ComposerDock />
+  <ComposerDock class={search.active ? 'hidden' : ''} />
 </div>
 <KeyboardBar
   visible={viewport.isPhone && editing.active !== null}

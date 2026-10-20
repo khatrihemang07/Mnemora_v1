@@ -14,7 +14,12 @@ export interface ModuleAction {
   label: string;
   icon?: Component<{ class?: string }>;
   shortcut?: string;
-  run: (ctx: ModuleContext) => void;
+  /**
+   * Makes it a query action: it appears once something is typed in the palette, labelled with
+   * that text ("Search Journal for 'river'"), and `run` receives it.
+   */
+  queryLabel?: (query: string) => string;
+  run: (ctx: ModuleContext, query: string) => void;
 }
 
 /** What a Module tells the shell about itself. Registered in one place: `shell/registry.ts`. */
