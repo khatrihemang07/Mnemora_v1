@@ -2,24 +2,38 @@
   PageHeader: the page title in the display font, plus an optional actions slot.
   Desktop: hands the title to the shell's top bar (next to the sidebar toggle), renders nothing here.
   Phone: renders a large title at the top of the content.
+  An optional `icon` (with its Module `hue`) is drawn before the title on both.
 -->
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import type { Component, Snippet } from 'svelte';
   import EnvBadge from './EnvBadge.svelte';
   import { viewport } from '../viewport.svelte';
   import { pageHeader } from './page-header.svelte';
 
-  let { title, actions }: { title: string; actions?: Snippet } = $props();
+  let {
+    title,
+    icon: Icon,
+    hue,
+    actions,
+  }: {
+    title: string;
+    icon?: Component<{ class?: string }>;
+    hue?: string;
+    actions?: Snippet;
+  } = $props();
 
   $effect(() => {
     if (viewport.isPhone) return;
-    return pageHeader.set({ title, actions });
+    return pageHeader.set({ title, icon: Icon, hue, actions });
   });
 </script>
 
 {#if viewport.isPhone}
   <div class="mb-3 flex items-center justify-between gap-3">
     <div class="flex min-w-0 items-center gap-2">
+      {#if Icon}
+        <span class="shrink-0" style={hue ? `color: var(${hue})` : undefined}><Icon class="size-6" /></span>
+      {/if}
       <h1 class="font-display text-2xl" style="font-weight: var(--display-weight)">{title}</h1>
       {#if pageHeader.env}<EnvBadge env={pageHeader.env} />{/if}
     </div>
