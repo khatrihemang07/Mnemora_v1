@@ -64,8 +64,37 @@ function matches(tokens: string[], terms: Term[], fuzzy: boolean): boolean {
   );
 }
 
+/** Mirrors `plain_text` in crates/journal/src/words.rs: Markdown removed, lines joined with " · ". */
+export function plainText(body: string): string {
+  let inFence = false;
+  const lines: string[] = [];
+  for (const line of body.split('\n')) {
+    if (line.trimStart().startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    const plain = inFence
+      ? line.trim()
+      : stripLinePrefix(line)
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+          .replace(/~~|==|[*`]/g, '')
+          .replace(/(?<![\p{L}\p{N}])_|_(?![\p{L}\p{N}])/gu, '');
+    if (/[\p{L}\p{N}]/u.test(plain)) lines.push(plain.split(/\s+/).filter(Boolean).join(' '));
+  }
+  return lines.join(' · ');
+}
+
+function stripLinePrefix(line: string): string {
+  return line
+    .trimStart()
+    .replace(/^(>\s*)+/, '')
+    .replace(/^#+\s*/, '')
+    .replace(/^([-*+]|\d+\.)\s+/, '')
+    .replace(/^\[[ xX]\]\s+/, '');
+}
+
 function snippet(body: string, terms: Term[], fuzzy: boolean): Span[] {
-  const text = body.split(/\s+/).filter(Boolean).join(' ');
+  const text = plainText(body);
   const found = [...text.matchAll(WORD)].map((m) => ({
     start: m.index ?? 0,
     end: (m.index ?? 0) + m[0].length,

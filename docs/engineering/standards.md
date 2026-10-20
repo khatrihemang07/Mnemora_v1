@@ -127,6 +127,7 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 - **No polling.** Rust events invalidate queries (one event bridge). Nothing runs on an interval to check for changes.
 - **One timer rule**: time-driven UI shares the single clock in `src/lib/time/clock.svelte.ts` (one second-aligned timer, active only while subscribed and the window is visible). Do not add other `setInterval`s.
 - Lists beyond a few hundred rows use `@tanstack/svelte-virtual`.
+- **No `VACUUM`** without rebuilding full-text indexes afterwards: they are keyed on implicit rowids (the Journal's `journal_fts`), which VACUUM may renumber. Backups use the page-copy backup API, which keeps rowids.
 - Animate only `transform` and `opacity`; durations come from tokens and are zero under reduced motion.
 
 ## Resource rules for the dev machine

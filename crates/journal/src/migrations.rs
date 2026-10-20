@@ -24,6 +24,8 @@ pub fn all() -> Migrations<'static> {
         // Search index. External content: the text stays in `journal_entries`, triggers keep the
         // index in step. Deleted Entries stay indexed (Undo); queries filter on `deleted_at`.
         // The vocabulary table lists the distinct words, for fuzzy matching.
+        // The index is keyed on `journal_entries`' implicit rowid, which VACUUM may renumber (the
+        // table has a TEXT primary key). Never VACUUM without rebuilding `journal_fts` afterwards.
         M::up(
             "CREATE VIRTUAL TABLE journal_fts USING fts5(
                  body, content='journal_entries', content_rowid='rowid',

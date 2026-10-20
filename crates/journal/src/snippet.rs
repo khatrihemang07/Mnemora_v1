@@ -8,6 +8,7 @@ use specta::Type;
 
 use crate::fold;
 use crate::query::Term;
+use crate::words::plain_text;
 
 /// Longest snippet, in characters (not counting the ellipses).
 const SNIPPET_CHARS: usize = 160;
@@ -53,15 +54,10 @@ impl Matcher {
     }
 }
 
-/// The snippet for `body`: around its first match, or its start when nothing matches (a search
+/// The snippet for `body`, shown as plain text (Markdown removed): around its first match, or its start when nothing matches (a search
 /// by date alone).
 pub fn snippet(body: &str, matcher: &Matcher) -> Vec<Span> {
-    let chars: Vec<char> = body
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .collect();
+    let chars: Vec<char> = plain_text(body).chars().collect();
     let marks: Vec<Range<usize>> = fold::words_with_ranges(&chars)
         .into_iter()
         .filter(|(_, w)| matcher.hits(w))
@@ -157,7 +153,7 @@ mod tests {
     #[test]
     fn phrase_words_match_whole_and_whitespace_collapses() {
         assert_eq!(
-            spans("the red\n\ndoor   opened", "\"red door\""),
+            spans("the red   door opened", "\"red door\""),
             [
                 s("the ", false),
                 s("red", true),

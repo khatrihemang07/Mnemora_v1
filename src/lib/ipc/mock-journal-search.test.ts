@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Entry } from './bindings';
-import { searchEntries } from './mock-journal-search';
+import { plainText, searchEntries } from './mock-journal-search';
 
 let n = 0;
 const entry = (page_date: string, body: string): Entry => ({
@@ -65,5 +65,23 @@ describe('mock journal search', () => {
     expect(searchEntries(all, '', '2026-10-10', '2026-10-19').exact).toHaveLength(2);
     expect(searchEntries(all, '  ', null, null).exact).toHaveLength(0);
     expect(searchEntries(all, 'jour', '2026-10-20', null).exact).toHaveLength(1);
+  });
+
+  it('shows snippets as plain text with link text kept and URLs dropped', () => {
+    const e = entry(
+      '2026-10-01',
+      '# A plan\n\nSome **bold** and [my site](https://x.io/a) at https://y.io\n- [ ] Call\n---',
+    );
+    const [hit] = searchEntries([e], 'site', null, null).exact;
+    expect(hit?.snippet.map((s) => s.text).join('')).toBe(
+      'A plan · Some bold and my site at https://y.io · Call',
+    );
+    expect(hit?.snippet.filter((s) => s.matched).map((s) => s.text)).toEqual(['site']);
+  });
+
+  it('plainText drops fences, dividers and edge underscores but keeps snake_case', () => {
+    expect(plainText('a snake_case _word_\n```js\nx_y\n```\n> q\n---')).toBe(
+      'a snake_case word · x_y · q',
+    );
   });
 });

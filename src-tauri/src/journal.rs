@@ -1008,4 +1008,46 @@ mod tests {
         });
         assert_eq!(terms, 0);
     }
+
+    fn spans(app: &TestApp, query: &str) -> Vec<(String, bool)> {
+        search(app, query, None, None)["exact"][0]["snippet"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| (s["text"].as_str().unwrap().to_owned(), s["matched"] == true))
+            .collect()
+    }
+
+    #[test]
+    fn snippets_are_plain_text_with_the_match_marked() {
+        let app = TestApp::new();
+        create(
+            &app,
+            "2026-10-20",
+            "# A morning plan\n\nSome **bold** words and `code`.\n- [ ] Call the dentist\n- [x] Reply",
+        )
+        .unwrap();
+        let all: String = spans(&app, "bold").iter().map(|s| s.0.as_str()).collect();
+        assert_eq!(
+            all,
+            "A morning plan · Some bold words and code. · Call the dentist · Reply"
+        );
+        assert!(spans(&app, "bold").contains(&("bold".to_owned(), true)));
+        assert!(spans(&app, "dentist").contains(&("dentist".to_owned(), true)));
+    }
+
+    #[test]
+    fn a_match_in_link_text_is_marked_and_the_url_is_not_shown() {
+        let app = TestApp::new();
+        create(
+            &app,
+            "2026-10-20",
+            "see [my site](https://example.com/x) or https://bare.io",
+        )
+        .unwrap();
+        let s = spans(&app, "site");
+        assert!(s.contains(&("site".to_owned(), true)));
+        let all: String = s.iter().map(|x| x.0.as_str()).collect();
+        assert_eq!(all, "see my site or https://bare.io");
+    }
 }
