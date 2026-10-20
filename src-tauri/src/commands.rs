@@ -8,7 +8,7 @@ use mnemora_core::logging::normalize_level;
 use mnemora_core::settings::{SettingsChange, SettingsSnapshot};
 use serde::Serialize;
 use specta::Type;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Runtime, State};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::state::{AppState, lock};
@@ -115,7 +115,10 @@ pub fn backup_now(state: State<'_, AppState>) -> Result<String, AppError> {
 /// Opens the log folder in the system file manager.
 #[tauri::command]
 #[specta::specta]
-pub fn open_log_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
+pub fn open_log_dir<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<(), AppError> {
     app.opener()
         .open_path(state.paths.log_dir.display().to_string(), None::<&str>)
         .map_err(|e| AppError::new(ErrorCode::Io, "Could not open the log folder").with_details(e))
@@ -150,7 +153,54 @@ fn os_first_name() -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Value, json};
+
     use super::sanitize_first_name;
+    use crate::test_support::TestApp;
+
+    fn save_theme(app: &TestApp, value: Value) -> Result<(), Value> {
+        app.invoke(
+            "settings_save",
+            json!({ "changes": [{ "key": "core.theme", "value": value }] }),
+        )
+    }
+
+    #[test]
+    fn settings_get_all_returns_defaults_and_schema() {
+        let app = TestApp::new();
+        let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snapshot["values"]["core.theme"], "system");
+        assert!(!snapshot["schema"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn saved_setting_reads_back() {
+        let app = TestApp::new();
+        save_theme(&app, json!("dark")).unwrap();
+        let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snapshot["values"]["core.theme"], "dark");
+    }
+
+    #[test]
+    fn invalid_setting_is_rejected_with_the_validation_code() {
+        let app = TestApp::new();
+        let err = save_theme(&app, json!("neon")).unwrap_err();
+        assert_eq!(err["code"], "validation");
+        let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snapshot["values"]["core.theme"], "system");
+    }
+
+    #[test]
+    fn unknown_setting_key_is_rejected() {
+        let app = TestApp::new();
+        let err = app
+            .invoke::<()>(
+                "settings_save",
+                json!({ "changes": [{ "key": "core.nope", "value": 1 }] }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], "unknown_key");
+    }
 
     #[test]
     fn keeps_a_real_first_name() {

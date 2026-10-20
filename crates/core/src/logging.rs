@@ -34,6 +34,19 @@ impl LogHandle {
     }
 }
 
+impl LogHandle {
+    /// A handle connected to no subscriber, for tests that need an `AppState` without installing
+    /// the process-global subscriber. `set_level` on it fails.
+    pub fn detached() -> Self {
+        let (_writer, guard) = tracing_appender::non_blocking(std::io::sink());
+        let (_layer, filter) = reload::Layer::new(EnvFilter::new("info"));
+        Self {
+            _guard: guard,
+            filter,
+        }
+    }
+}
+
 /// Lower-cases and checks a level name.
 pub fn normalize_level(level: &str) -> AppResult<String> {
     let lower = level.trim().to_ascii_lowercase();
