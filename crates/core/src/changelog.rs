@@ -16,8 +16,14 @@ pub enum ChangeOp {
     Create,
     /// The entity was edited.
     Update,
+    /// The entity was moved, e.g. a Journal Entry to another Page.
+    Move,
+    /// A checklist item inside the entity was ticked or unticked.
+    Tick,
     /// The entity was deleted (soft or hard); the snapshot is its last state.
     Delete,
+    /// A deleted entity was brought back.
+    Restore,
 }
 
 impl ChangeOp {
@@ -26,7 +32,10 @@ impl ChangeOp {
         match self {
             Self::Create => "create",
             Self::Update => "update",
+            Self::Move => "move",
+            Self::Tick => "tick",
             Self::Delete => "delete",
+            Self::Restore => "restore",
         }
     }
 }
@@ -49,14 +58,14 @@ pub struct Change {
 }
 
 /// Records `change`. With a session id, the session's existing record for this entity is
-/// replaced (op, snapshot and time); otherwise a new record is appended.
+/// replaced (snapshot and time; a `create` stays a `create`); otherwise a new record is appended.
 /// Pass a transaction to make it atomic with the entity write.
 pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
-         DO UPDATE SET op = excluded.op, snapshot = excluded.snapshot, at = excluded.at",
+         DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END, snapshot = excluded.snapshot, at = excluded.at",
         rusqlite::params![
             new_id(),
             change.module,
@@ -129,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn same_session_collapses_to_the_latest_snapshot() {
+    fn same_session_collapses_to_the_latest_snapshot_and_keeps_create() {
         let conn = migrated();
         let mut first = change("e1", Some("s1"), json!({"v": 1}));
         first.op = ChangeOp::Create;
@@ -140,7 +149,10 @@ mod tests {
         let op: String = conn
             .query_row("SELECT op FROM change_log", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(op, "update");
+        assert_eq!(
+            op, "create",
+            "an Entry created and edited in one session was created"
+        );
     }
 
     #[test]
