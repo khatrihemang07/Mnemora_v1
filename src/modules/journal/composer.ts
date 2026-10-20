@@ -33,6 +33,10 @@ export class Composer {
   get entryId(): string | null {
     return this.#entryId;
   }
+  /** An Entry was created and its text then cleared: finishing (blur, leaving) discards it. */
+  get cleared(): boolean {
+    return this.#entryId !== null && !this.text.trim();
+  }
   /** The Page the Entry goes on; null is Today. Choosing it after creation moves the Entry. */
   pageDate: string | null = null;
   #sessionId: string;

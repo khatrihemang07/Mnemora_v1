@@ -270,4 +270,17 @@ describe('Composer', () => {
     await settle();
     expect(c.entryId).toBe('e1');
   });
+
+  it('is cleared only once a created Entry has blank text', async () => {
+    const { c, settle } = setup();
+    c.input('   ');
+    expect(c.cleared).toBe(false);
+    c.input('a');
+    await settle();
+    expect(c.cleared).toBe(false);
+    c.input(' ');
+    expect(c.cleared).toBe(true);
+    c.input('b');
+    expect(c.cleared).toBe(false);
+  });
 });

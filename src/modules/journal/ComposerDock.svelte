@@ -99,9 +99,10 @@
       editor?.focus();
     };
 
-    // Best effort: a blank box discards, anything else saves.
+    // Hiding (switching apps) only saves: the box may still have focus, so a blank one waits.
+    // Closing is a finish, best effort: a blank box discards, anything else saves.
     const hidden = () => {
-      if (document.visibilityState === 'hidden') void settle();
+      if (document.visibilityState === 'hidden') void composer.saveNow();
     };
     const leaving = () => void settle();
     document.addEventListener('visibilitychange', hidden);
@@ -118,7 +119,7 @@
 
   // Leaving the Journal mid-sentence still saves it; leaving it cleared discards the Entry.
   onDestroy(() => {
-    if (composer.text.trim() || composer.entryId !== null) {
+    if (composer.text.trim() || composer.cleared) {
       void composer.finish().then(() => {
         void invalidateJournal().then(() => (nav.composingId = null));
       });
@@ -151,9 +152,9 @@
     if (refocus && !viewport.isPhone) editor?.focus();
   }
 
-  /** Blur, hiding and closing: a cleared Entry is discarded, any other text is only saved. */
+  /** Blur and closing: a cleared Entry is discarded, any other text is only saved. */
   async function settle() {
-    if (composer.entryId !== null && !composer.text.trim()) await finish(false);
+    if (composer.cleared) await finish(false);
     else await composer.saveNow();
   }
 
