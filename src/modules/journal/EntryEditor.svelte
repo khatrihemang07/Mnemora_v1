@@ -11,6 +11,7 @@
   import CalendarDays from '~icons/lucide/calendar-days';
   import type { Entry } from '../../lib/ipc/bindings';
   import { blockNavigation, interceptBack } from '../../lib/router';
+  import { setTimer } from '../../lib/timing';
   import Button from '../../lib/ui/Button.svelte';
   import Chip from '../../lib/ui/Chip.svelte';
   import DatePicker from '../../lib/ui/DatePicker.svelte';
@@ -36,10 +37,7 @@
   const session = new EntryEditing<Entry>(
     {
       update: updateEntry,
-      setTimer: (fn, ms) => {
-        const t = setTimeout(fn, ms);
-        return () => clearTimeout(t);
-      },
+      setTimer,
       onSaved: (saved) => {
         error = null;
         patchEntry(saved);

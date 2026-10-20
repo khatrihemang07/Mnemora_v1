@@ -11,6 +11,7 @@
   import CalendarDays from '~icons/lucide/calendar-days';
   import Check from '~icons/lucide/check';
   import { blockNavigation, interceptBack } from '../../lib/router';
+  import { setTimer } from '../../lib/timing';
   import { shortcutLabel } from '../../lib/platform';
   import Chip from '../../lib/ui/Chip.svelte';
   import DatePicker from '../../lib/ui/DatePicker.svelte';
@@ -67,10 +68,7 @@
       error = null;
       return entry;
     },
-    setTimer: (fn, ms) => {
-      const t = setTimeout(fn, ms);
-      return () => clearTimeout(t);
-    },
+    setTimer,
     newSessionId: () => crypto.randomUUID(),
     onError: (e) => {
       error = e;
