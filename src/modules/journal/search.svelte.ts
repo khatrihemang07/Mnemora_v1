@@ -9,6 +9,7 @@ import {
   SEARCH_DEBOUNCE_MS,
   type SearchRange,
   type SearchSession,
+  toggleSearch,
   withQuery,
   withRange,
 } from './search-state';
@@ -49,6 +50,10 @@ export class JournalSearch {
   }
   openFor(query: string) {
     this.#set(openSearchFor(query));
+  }
+  /** The header button: opens, or leaves search for good (parked results included). */
+  toggle() {
+    this.#set(toggleSearch(this.session));
   }
   close() {
     this.#set(closeSearch());

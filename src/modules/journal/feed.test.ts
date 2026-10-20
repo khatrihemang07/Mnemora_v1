@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Page } from '../../lib/ipc/bindings';
+import { localDateString, pageHeading } from './dates';
 import {
   buildFeed,
   calendarStart,
@@ -156,5 +157,23 @@ describe('withoutEntry', () => {
     const pages = [full('2026-10-20', [entry('a', 3)])];
     expect(withoutEntry(pages, null)).toBe(pages);
     expect(withoutEntry(pages, 'zzz')).toEqual(pages);
+  });
+});
+
+describe('past midnight', () => {
+  it('a clock tick across midnight moves Today: new empty Page, Yesterday badge, upcoming count', () => {
+    const loaded = [page('2026-10-21'), page('2026-10-20')];
+    const before = localDateString(new Date(2026, 9, 21, 23, 59, 59));
+    const after = localDateString(new Date(2026, 9, 22, 0, 0, 0));
+    expect(before).toBe('2026-10-21');
+    expect(after).toBe('2026-10-22');
+
+    const datesOf = (today: string) =>
+      buildFeed(loaded, today).flatMap((i) => (i.kind === 'page' ? [i.page.date] : []));
+    expect(datesOf(before)).toEqual(['2026-10-21', '2026-10-20']);
+    expect(datesOf(after)).toEqual(['2026-10-22', '2026-10-21', '2026-10-20']);
+    expect(pageHeading('2026-10-21', before).badge).toBe('Today');
+    expect(pageHeading('2026-10-21', after).badge).toBe('Yesterday');
+    expect(upcomingCount(loaded, after)).toBe(0);
   });
 });

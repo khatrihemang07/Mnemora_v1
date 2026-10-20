@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveEditorShortcut } from './shortcuts';
+import { isPlainPasteShortcut, resolveEditorShortcut } from './shortcuts';
 
 const key = (
   code: string,
@@ -74,5 +74,20 @@ describe('resolveEditorShortcut', () => {
     expect(resolveEditorShortcut(key('KeyB', { meta: true }), false)).toBeNull();
     expect(resolveEditorShortcut(key('KeyB', { ctrl: true }), true)).toBeNull();
     expect(resolveEditorShortcut(key('KeyB', { meta: true, ctrl: true }), true)).toBeNull();
+  });
+});
+
+describe('isPlainPasteShortcut', () => {
+  it('is ⌘⇧V on macOS, by physical key (Shift changes the typed character)', () => {
+    expect(isPlainPasteShortcut(key('KeyV', { meta: true, shift: true }), true)).toBe(true);
+    expect(isPlainPasteShortcut(key('KeyV', { meta: true }), true)).toBe(false);
+    expect(isPlainPasteShortcut(key('KeyV', { ctrl: true, shift: true }), true)).toBe(false);
+  });
+  it('is Ctrl+Shift+V elsewhere', () => {
+    expect(isPlainPasteShortcut(key('KeyV', { ctrl: true, shift: true }), false)).toBe(true);
+    expect(isPlainPasteShortcut(key('KeyV', { meta: true, shift: true }), false)).toBe(false);
+  });
+  it('needs the V key', () => {
+    expect(isPlainPasteShortcut(key('KeyC', { meta: true, shift: true }), true)).toBe(false);
   });
 });

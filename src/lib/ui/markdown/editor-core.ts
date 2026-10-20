@@ -22,7 +22,7 @@ import type { Edit } from './edit';
 import { linkTemplate, makeLink, toggleBlock, toggleInline } from './format';
 import { listEnter, listIndent, markerBackspace } from './list-keys';
 import { htmlToMarkdown, isRichHtml } from './paste-html';
-import { type EditorCommand, resolveEditorShortcut } from './shortcuts';
+import { type EditorCommand, isPlainPasteShortcut, resolveEditorShortcut } from './shortcuts';
 import {
   applySlash,
   canOpenSlash,
@@ -276,7 +276,7 @@ export function createEditor(opts: EditorOptions): EditorController {
 
   const domEvents = EditorView.domEventHandlers({
     keydown(e, view) {
-      if (e.key === 'v' && e.shiftKey && (mac ? e.metaKey : e.ctrlKey)) {
+      if (isPlainPasteShortcut(e, mac)) {
         // ⌘⇧V: the next paste is plain text, whatever the clipboard holds.
         plainPaste = true;
         setTimeout(() => {

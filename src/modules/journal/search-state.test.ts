@@ -15,6 +15,7 @@ import {
   presetRange,
   rangeLabel,
   snippetText,
+  toggleSearch,
   wantsBack,
   withQuery,
   withRange,
@@ -125,6 +126,18 @@ describe('search session', () => {
       filter: { query: 'river', range: null },
       parked: null,
     });
+  });
+
+  it('the header button opens a blank search from idle and closes an active one', () => {
+    expect(toggleSearch(IDLE)).toEqual(openSearch(IDLE));
+    expect(toggleSearch(withQuery(openSearch(IDLE), 'river'))).toEqual(IDLE);
+  });
+
+  it('the header button on parked results clears them for good', () => {
+    const parked = openResult(withRange(withQuery(openSearch(IDLE), 'river'), range));
+    const s = toggleSearch(parked);
+    expect(s).toEqual(IDLE);
+    expect(openSearch(s).filter).toEqual({ query: '', range: null });
   });
 
   it('opening a result while not searching changes nothing', () => {

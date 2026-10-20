@@ -29,7 +29,12 @@ export class JournalNav {
   #entryTimer: ReturnType<typeof setTimeout> | undefined;
   #pageTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(public today: string) {}
+  /** The user's local date; `JournalPage` moves it at midnight. */
+  today = $state('');
+
+  constructor(today: string) {
+    this.today = today;
+  }
 
   /** Tints an Entry for a moment, restarting if it is already tinted. */
   flashEntryFor(id: string): void {

@@ -33,6 +33,7 @@
   import KeyboardBar from '../../lib/ui/KeyboardBar.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import VirtualList from '../../lib/ui/VirtualList.svelte';
+  import { clock } from '../../lib/time/clock.svelte';
   import { viewport } from '../../lib/viewport.svelte';
   import ComposerDock from './ComposerDock.svelte';
   import { localDateString, showTodayPill, showUpcomingPill } from './dates';
@@ -87,12 +88,15 @@
     editing.font = prefs.font;
     editing.spellcheck = device.data?.spellcheck ?? true;
   });
-  const today = localDateString(new Date());
-  const nav = new JournalNav(today);
+  // The shared clock ticks only while subscribed; `today` is a string, so it changes only at midnight.
+  // Subscribed here, not in an effect, so `clock.now` is fresh before `today` is first read.
+  onDestroy(clock.subscribe());
+  const today = $derived(localDateString(clock.now));
+  const nav = new JournalNav(untrack(() => today));
   provideNav(nav);
   nav.scrollTo = scrollTo;
   const focus = new EntryFocus();
-  focus.today = today;
+  focus.today = untrack(() => today);
   focus.entries = () => feedEntries(loaded);
   focus.reveal = revealEntry;
   focus.loadOlder = loadOlderNow;
@@ -107,6 +111,11 @@
   });
   $effect(() => {
     nav.weekStart = core.weekStart;
+  });
+  // Before the children render, so nothing shows yesterday's "Today" after midnight.
+  $effect.pre(() => {
+    nav.today = today;
+    focus.today = today;
   });
 
   const loaded = $derived(withoutEntry(pages.data?.pages.flat() ?? [], nav.composingId));
@@ -127,7 +136,7 @@
   let jump = $state.raw<{ date: string; entryId?: string; done: () => void } | null>(null);
   let calendarOpen = $state(false);
   let calendarAnchor = $state<HTMLButtonElement | null>(null);
-  let calendarHighlight = $state(today);
+  let calendarHighlight = $state(untrack(() => today));
 
   // Where Today's area starts: the pills and the opening scroll are measured from here. Row
   // measurements aren't reactive, so it is read again on every scroll, not just when the feed changes.
@@ -275,11 +284,9 @@
   }
 
   function toggleSearch() {
-    if (!search.active) search.open();
-    else {
-      search.close();
-      focusComposerSoon();
-    }
+    const wasActive = search.active;
+    search.toggle();
+    if (wasActive) focusComposerSoon();
   }
 
   /** Waits for what the feed does after a data change: Svelte's flush, then Query's notification. */
@@ -398,7 +405,10 @@
       </div>
     {:else if pages.isError}
       <div class="mx-auto max-w-(--journal-width) px-(--pad) py-4">
-        <ErrorBanner error={pages.error} onretry={() => pages.refetch()} />
+        <ErrorBanner
+          message="The Journal couldn't load."
+          error={pages.error}
+          onretry={() => pages.refetch()} />
       </div>
     {:else if feed.length === 0}
       <div class="mx-auto max-w-(--journal-width) px-(--pad)">

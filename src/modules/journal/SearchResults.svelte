@@ -26,8 +26,8 @@
 </script>
 
 {#snippet group(date: string, label: string, hits: Hit[], offset: number)}
-  <div role="group" aria-label={label} class="mb-4">
-    <h5 class="mb-1 text-xs font-semibold tracking-[0.06em] text-muted uppercase">{label}</h5>
+  <div role="group" aria-labelledby="{id}-day-{offset}" class="mb-4">
+    <h5 id="{id}-day-{offset}" class="mb-1 text-xs font-semibold tracking-[0.06em] text-muted uppercase">{label}</h5>
     {#each hits as hit, i (hit.id)}
       <button
         type="button"
@@ -56,31 +56,36 @@
   </div>
 {/snippet}
 
-<div role="listbox" {id} aria-label="Search results">
-  {#if results.exact.length > 0}
-    <p class="mb-2 text-xs text-faint">
-      {entriesLabel(results.exact.length)} · newest first{results.truncated
-        ? ' · showing the newest only, narrow the search to see more'
-        : ''}
-    </p>
-    {#each exactGroups as g (g.date)}
-      {@render group(g.date, g.label, g.hits, g.start)}
-    {/each}
-  {:else if results.similar.length > 0}
-    <p class="mb-2 text-xs text-faint">No exact matches</p>
-  {/if}
+<!-- A listbox holds only options and groups, so the notes sit outside it or are group labels. -->
+{#if results.exact.length > 0}
+  <p id="{id}-summary" class="mb-2 text-xs text-faint">
+    {entriesLabel(results.exact.length)} · newest first{results.truncated
+      ? ' · showing the newest only, narrow the search to see more'
+      : ''}
+  </p>
+{:else if results.similar.length > 0}
+  <p id="{id}-summary" class="mb-2 text-xs text-faint">No exact matches</p>
+{/if}
+
+<div role="listbox" {id} aria-label="Search results" aria-describedby="{id}-summary">
+  {#each exactGroups as g (g.date)}
+    {@render group(g.date, g.label, g.hits, g.start)}
+  {/each}
 
   {#if results.similar.length > 0}
-    <div
-      class="mt-6 mb-1 flex items-center gap-2.5 text-[11px] font-semibold tracking-[0.08em] text-faint uppercase after:h-px after:flex-1 after:bg-line"
-    >
-      Similar matches
+    <div role="group" aria-labelledby="{id}-similar" aria-describedby="{id}-similar-note">
+      <div
+        id="{id}-similar"
+        class="mt-6 mb-1 flex items-center gap-2.5 text-[11px] font-semibold tracking-[0.08em] text-faint uppercase after:h-px after:flex-1 after:bg-line"
+      >
+        Similar matches
+      </div>
+      <p id="{id}-similar-note" class="mb-3 text-xs text-faint">
+        Close to what you typed, with a typo or two{results.similar_truncated
+          ? ' · showing the newest only, narrow the search to see more'
+          : ''}.
+      </p>
     </div>
-    <p class="mb-3 text-xs text-faint">
-      Close to what you typed, with a typo or two{results.similar_truncated
-        ? ' · showing the newest only, narrow the search to see more'
-        : ''}.
-    </p>
     {#each similarGroups as g (g.date)}
       {@render group(g.date, g.label, g.hits, g.start)}
     {/each}
