@@ -62,7 +62,8 @@ export async function installMock() {
       switch (cmd) {
         case 'settings_get_all':
           return {
-            values,
+            // A JSON copy, like real IPC: handing out the live object hides later saves from the query cache.
+            values: JSON.parse(JSON.stringify(values)),
             schema: Object.entries(DEFS).map(([key, d]) => ({
               key,
               module: key.split('.')[0],
@@ -77,7 +78,7 @@ export async function installMock() {
             const problem = def.validate(c.value);
             if (problem) throw err('validation', `${c.key} ${problem}`);
           }
-          for (const c of changes) values[c.key] = c.value;
+          for (const c of changes) values[c.key] = JSON.parse(JSON.stringify(c.value));
           // Same shape the Rust side emits: module + keys without the module prefix.
           void events.settingsChangedEvent.emit({
             module: 'core',
