@@ -30,12 +30,12 @@
 .md-h {
   white-space: pre-wrap;
 }
-.md-h {
+/* Heading type, shared with the editor's heading lines. */
+.md-hd {
   font-family: var(--f-display);
   font-weight: var(--display-weight);
   letter-spacing: var(--display-track);
   line-height: 1.25;
-  margin-bottom: 0.35em;
 }
 .md-h1 {
   font-size: 1.35em;
@@ -47,7 +47,8 @@
   font-size: 1.05em;
 }
 
-.md-quote {
+/* Quote type, shared with the editor's quote lines (which hide the bar: the ">" shows instead). */
+.md-q {
   border-left: 3px solid var(--md-quote-bar, var(--hue-journal));
   padding-left: 12px;
   color: var(--muted);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyEdit } from './edit';
-import { blockKind, makeLink, toggleBlock, toggleInline } from './format';
+import { blockKind, linkTemplate, makeLink, toggleBlock, toggleInline } from './format';
 
 const inline = (doc: string, from: number, to: number, mark: Parameters<typeof toggleInline>[3]) =>
   applyEdit(doc, toggleInline(doc, from, to, mark));
@@ -117,5 +117,13 @@ describe('makeLink', () => {
     const r = applyEdit('https://x.y/z', e);
     expect(r.doc).toBe('[](https://x.y/z)');
     expect(r.anchor).toBe(1);
+  });
+});
+
+describe('linkTemplate', () => {
+  it('inserts a link skeleton with the label selected', () => {
+    const r = applyEdit('ab', linkTemplate(1));
+    expect(r.doc).toBe('a[text](url)b');
+    expect(r.doc.slice(r.anchor, r.head)).toBe('text');
   });
 });

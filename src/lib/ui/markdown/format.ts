@@ -151,3 +151,11 @@ export function makeLink(doc: string, from: number, to: number): Edit | null {
     selection: { anchor: urlStart, head: urlStart + 3 },
   };
 }
+
+/** A link with nothing selected (the phone bar's link button): `[text](url)` with "text" selected. */
+export function linkTemplate(pos: number): Edit {
+  return {
+    changes: [{ from: pos, to: pos, insert: '[text](url)' }],
+    selection: { anchor: pos + 1, head: pos + 5 },
+  };
+}

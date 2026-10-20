@@ -39,9 +39,9 @@
     {#if b.t === 'p'}
       <p class="md-p">{@render inline(b.c)}</p>
     {:else if b.t === 'h'}
-      <svelte:element this={`h${b.level}`} class="md-h md-h{b.level}">{@render inline(b.c)}</svelte:element>
+      <svelte:element this={`h${b.level}`} class="md-hd md-h md-h{b.level}">{@render inline(b.c)}</svelte:element>
     {:else if b.t === 'quote'}
-      <blockquote class="md-quote">{@render body(b.c)}</blockquote>
+      <blockquote class="md-q md-quote">{@render body(b.c)}</blockquote>
     {:else if b.t === 'hr'}
       <hr class="md-hr" />
     {:else if b.t === 'code'}
