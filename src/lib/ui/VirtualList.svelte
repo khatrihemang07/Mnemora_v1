@@ -2,8 +2,8 @@
   VirtualList: a scrolling list that only renders the rows in view, so thousands of rows stay smooth.
   Wraps @tanstack/svelte-virtual. Rows may differ in height: each is measured once it renders, and
   `estimateSize` only guesses until then. `onnearend` fires while the last rows are in view, to load
-  more. `onviewport` reports scroll position. `columnClass` styles the inner column (e.g. a max
-  width). Rows sit in translated boxes where `position: sticky` misplaces itself, so a pinned
+  more; `onnearstart` while the first rows are (more above). `onviewport` reports scroll position.
+  `columnClass` styles the inner column (e.g. a max width). Rows sit in translated boxes where `position: sticky` misplaces itself, so a pinned
   header is drawn as an overlay instead: rows where `isSticky` holds get `pinned` rendered at the
   top while they are being read, pushed up by the next one. When rows are added or removed above
   the ones being read, the scroll position follows the rows, so the view stays put. `scrollToIndex`,
@@ -15,6 +15,7 @@
   import type { Snippet } from 'svelte';
   import { untrack } from 'svelte';
   import { pinnedRow } from './pinned-row';
+  import { type ScrollAnchor, anchoredScrollTop } from './scroll-anchor';
 
   interface Props {
     /** One entry per row. */
@@ -27,6 +28,9 @@
     /** Called while one of the last `nearEnd` rows is rendered. May fire repeatedly; guard it. */
     onnearend?: () => void;
     nearEnd?: number;
+    /** Like `onnearend`, for the first `nearStart` rows: load more above. New rows above never move the view. */
+    onnearstart?: () => void;
+    nearStart?: number;
     onviewport?: (scrollTop: number, height: number) => void;
     isSticky?: (item: T) => boolean;
     pinned?: Snippet<[T]>;
@@ -40,6 +44,8 @@
     row,
     onnearend,
     nearEnd = 3,
+    onnearstart,
+    nearStart = 3,
     onviewport,
     isSticky,
     pinned,
@@ -58,7 +64,7 @@
   const gutter = $derived(outerWidth - innerWidth);
   let instance: SvelteVirtualizer<HTMLDivElement, HTMLElement> | undefined;
   /** The first row in view and how far into it the view starts, to hold the view across inserts. */
-  let anchor: { key: string | number | bigint; index: number; delta: number } | null = null;
+  let anchor: ScrollAnchor | null = null;
 
   const options = () => ({
     count: items.length,
@@ -101,6 +107,11 @@
     if (last && last.index >= items.length - nearEnd) untrack(() => onnearend?.());
   });
 
+  $effect(() => {
+    const first = rows[0];
+    if (first && first.index <= nearStart) untrack(() => onnearstart?.());
+  });
+
   function measure(node: HTMLElement) {
     instance?.measureElement(node);
     return {
@@ -133,13 +144,21 @@
    * rows' real size turns out to be, the virtualizer corrects once they are measured.
    */
   function holdAnchor() {
-    if (!anchor || !scroller || !instance) return;
-    const index = items.findIndex((item, i) => getKey(item, i) === anchor?.key);
-    if (index < 0 || index === anchor.index) return;
-    const start = instance.getOffsetForIndex(index, 'start')?.[0];
-    if (start === undefined) return;
-    scroller.scrollTop = start + anchor.delta;
-    anchor.index = index;
+    if (!scroller || !instance) return;
+    const inst = instance;
+    const keys = items.map((item, i) => getKey(item, i));
+    const next = anchoredScrollTop(anchor, keys, (i) => inst.getOffsetForIndex(i, 'start')?.[0]);
+    if (!next || !anchor) return;
+    scroller.scrollTop = next.top;
+    anchor.index = next.index;
+  }
+
+  /**
+   * Forgets the row being held. Call before swapping in a different set of rows (not just adding
+   * above), so a row that happens to exist in both is not kept in view over the jump that follows.
+   */
+  export function releaseAnchor() {
+    anchor = null;
   }
 
   const reducedMotion = () =>
@@ -151,6 +170,10 @@
    * start is exact however far the jump. Smooth (unless motion is reduced) for hops back.
    */
   export function scrollToIndex(index: number, smooth = false) {
+    // An instant jump holds its row from now on: rows added above before the first scroll event
+    // must not move it. (A smooth one is followed by the scroll events it causes.)
+    const item = items[index];
+    if (!smooth && item !== undefined) anchor = { key: getKey(item, index), index, delta: 0 };
     scroller?.scrollTo({ top: offsetOf(index), behavior: smooth && !reducedMotion() ? 'smooth' : 'auto' });
   }
 

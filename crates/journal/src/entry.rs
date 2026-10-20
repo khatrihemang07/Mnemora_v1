@@ -1,6 +1,6 @@
 //! The Entry types and the rules that decide whether input is acceptable.
 
-use mnemora_core::error::{AppError, AppResult, ErrorCode};
+use crate::error::JournalError;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -40,6 +40,18 @@ pub struct Entry {
     pub updated_at: i64,
 }
 
+/// Which Pages a `cursor` date selects. Results are always newest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PageDirection {
+    /// Pages strictly before the cursor (older). No cursor: the newest Pages.
+    Older,
+    /// The cursor's own Page and older ones: the feed starting AT a date. No cursor: the newest.
+    From,
+    /// The Pages just after the cursor (newer), nearest first picked; needs a cursor.
+    Newer,
+}
+
 /// Everything the UI supplies to write a new Entry.
 #[derive(Debug, Clone, Deserialize, Type)]
 pub struct NewEntry {
@@ -68,12 +80,12 @@ pub struct Page {
     pub entries: Vec<Entry>,
 }
 
-fn invalid(message: &str) -> AppError {
-    AppError::new(ErrorCode::Validation, message)
+fn invalid(message: &'static str) -> JournalError {
+    JournalError::Validation(message)
 }
 
 /// Text must contain something visible.
-pub fn validate_text(text: &str) -> AppResult<()> {
+pub fn validate_text(text: &str) -> Result<(), JournalError> {
     if text.trim().is_empty() {
         return Err(invalid("An Entry can't be blank"));
     }
@@ -81,7 +93,7 @@ pub fn validate_text(text: &str) -> AppResult<()> {
 }
 
 /// A real calendar date written `YYYY-MM-DD`.
-pub fn validate_page_date(date: &str) -> AppResult<()> {
+pub fn validate_page_date(date: &str) -> Result<(), JournalError> {
     parse_date(date)
         .map(|_| ())
         .ok_or_else(|| invalid("Not a valid date"))
@@ -113,7 +125,7 @@ fn parse_date(date: &str) -> Option<(u32, u32, u32)> {
 }
 
 /// A plausible written zone and offset. Stored as given, so only sanity is checked.
-pub fn validate_written_zone(tz: &str, offset_min: i32) -> AppResult<()> {
+pub fn validate_written_zone(tz: &str, offset_min: i32) -> Result<(), JournalError> {
     if tz.trim().is_empty() || tz.chars().count() > MAX_ZONE_CHARS {
         return Err(invalid("Not a valid time zone"));
     }
@@ -164,7 +176,7 @@ fn task_state_index(line: &str) -> Option<usize> {
 }
 
 /// Flips the checkbox on the 0-based `line` of `body`, leaving every other byte alone.
-pub fn toggle_task(body: &str, line: usize) -> AppResult<String> {
+pub fn toggle_task(body: &str, line: usize) -> Result<String, JournalError> {
     let mut start = 0;
     for (n, text) in body.split('\n').enumerate() {
         if n == line {

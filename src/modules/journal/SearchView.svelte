@@ -16,6 +16,7 @@
   import type { WeekStart } from '../../lib/ui/calendar';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { searchQuery } from './queries';
@@ -112,7 +113,7 @@
 
 <div class="flex h-full flex-col bg-bg {cls}">
   <div class="shrink-0 px-(--pad) pt-2 pb-3">
-    <div class="mx-auto flex max-w-[42.5rem] items-center gap-2">
+    <div class="mx-auto flex max-w-(--journal-width) items-center gap-2">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div bind:this={fieldBox} class="relative min-w-0 flex-1" {onkeydown}>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
@@ -132,17 +133,17 @@
           style="padding-inline: 2.25rem"
         />
         {#if search.query !== ''}
-          <button
-            type="button"
-            aria-label="Clear search"
-            class="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-faint transition-colors duration-(--dur) ease-out hover:bg-hover hover:text-ink"
+          <IconButton
+            icon={X}
+            label="Clear search"
+            size="xs"
+            variant="quiet"
+            class="absolute top-1/2 right-2 -translate-y-1/2"
             onclick={() => {
               search.setQuery('');
               focus(false);
             }}
-          >
-            <X class="size-3.5" />
-          </button>
+          />
         {/if}
       </div>
       <SearchRangeChip
@@ -156,7 +157,7 @@
   </div>
 
   <div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-(--pad) pb-6">
-    <div class="mx-auto max-w-[42.5rem]">
+    <div class="mx-auto max-w-(--journal-width)">
       {#if !enabled}
         <EmptyState
           icon={Search}

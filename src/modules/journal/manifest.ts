@@ -1,8 +1,17 @@
+import CalendarDays from '~icons/lucide/calendar-days';
 import NotebookPen from '~icons/lucide/notebook-pen';
+import PenLine from '~icons/lucide/pen-line';
 import Search from '~icons/lucide/search';
 import { shortcutLabel } from '../../lib/platform';
-import type { ModuleManifest } from '../../lib/router';
+import type { ModuleContext, ModuleManifest } from '../../lib/router';
+import { requestCompose, requestGoToDate } from './launcher.svelte';
 import { requestSearch } from './search.svelte';
+
+/** ⌘N, "New journal entry" and the Home card's Write: Today, composer focused, from anywhere. */
+function compose(ctx: ModuleContext) {
+  requestCompose();
+  ctx.navigate('/journal');
+}
 
 export const journalManifest: ModuleManifest = {
   id: 'journal',
@@ -11,9 +20,21 @@ export const journalManifest: ModuleManifest = {
   accentVar: '--hue-journal',
   routes: [{ path: '/journal', component: () => import('./JournalPage.svelte') }],
   nav: { order: 20, shortcut: 2 },
-  // ⌘N opens the Journal; the composer takes focus on open.
-  create: (ctx) => ctx.navigate('/journal'),
+  homeCard: () => import('./HomeCard.svelte'),
+  settingsSection: {
+    label: 'Journal',
+    icon: NotebookPen,
+    component: () => import('./JournalSettings.svelte'),
+  },
+  create: compose,
   paletteActions: [
+    {
+      id: 'new',
+      label: 'New journal entry',
+      icon: PenLine,
+      shortcut: shortcutLabel('N'),
+      run: compose,
+    },
     {
       id: 'search',
       label: 'Search Journal',
@@ -21,6 +42,16 @@ export const journalManifest: ModuleManifest = {
       shortcut: shortcutLabel('F'),
       run: (ctx) => {
         requestSearch('');
+        ctx.navigate('/journal');
+      },
+    },
+    {
+      id: 'goto',
+      label: 'Go to date…',
+      icon: CalendarDays,
+      shortcut: shortcutLabel('G'),
+      run: (ctx) => {
+        requestGoToDate();
         ctx.navigate('/journal');
       },
     },

@@ -7,17 +7,27 @@ import {
 import { commands, type Entry, type Page } from '../../lib/ipc/bindings';
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
+import { firstParam, newerParam, olderParam, PAGE_SIZE, type PagesParam } from './paging';
 
-/** Pages fetched per request. */
-export const PAGE_SIZE = 30;
+export { PAGE_SIZE };
 
 export const journalKeys = {
   all: ['journal'] as const,
+  /** Every feed window; one window per anchor date (null is the newest Pages). */
   pages: ['journal', 'pages'] as const,
+  window: (anchor: string | null) => ['journal', 'pages', anchor] as const,
   search: (query: string, from: string | null, to: string | null) =>
     ['journal', 'search', query, from, to] as const,
+  today: (date: string) => ['journal', 'today', date] as const,
   monthDays: (year: number, month: number) => ['journal', 'month-days', year, month] as const,
 };
+
+/** What the Home card shows about `date` (the user's local today): the count and the latest snippet. */
+export const todayQuery = (date: string) =>
+  queryOptions({
+    queryKey: journalKeys.today(date),
+    queryFn: () => unwrap(commands.journalToday(date)),
+  });
 
 /** Dates with Entries in a month (`month` is 1-12): the Calendar's dots. */
 export const monthDaysQuery = (year: number, month: number) =>
@@ -39,13 +49,23 @@ export const searchQuery = (query: string, range: { from: string; to: string } |
     staleTime: 30_000,
   });
 
-/** Pages newest first; the cursor is the previous request's last Page date. */
-export const pagesQuery = infiniteQueryOptions({
-  queryKey: journalKeys.pages,
-  queryFn: ({ pageParam }) => unwrap(commands.journalPages(pageParam, PAGE_SIZE)),
-  initialPageParam: null as string | null,
-  getNextPageParam: (last) => (last.length < PAGE_SIZE ? undefined : last.at(-1)?.date),
-});
+/**
+ * The feed as a window of Pages, newest first. With no anchor it starts at the newest Pages and
+ * pages older. With an anchor date (a jump to a far date) it starts AT that date, so only the Pages
+ * around it load: older ones are fetched on scrolling down, newer ones (prepended) on scrolling up.
+ * The previous window stays on screen while the next one loads.
+ */
+export const pagesQuery = (anchor: string | null) =>
+  infiniteQueryOptions({
+    queryKey: journalKeys.window(anchor),
+    queryFn: ({ pageParam }) =>
+      unwrap(commands.journalPages(pageParam.cursor, PAGE_SIZE, pageParam.direction)),
+    initialPageParam: firstParam(anchor),
+    getNextPageParam: (last, _all, lastParam: PagesParam) => olderParam(last, lastParam),
+    getPreviousPageParam: (first, _all, firstParamValue: PagesParam) =>
+      newerParam(first, firstParamValue),
+    placeholderData: keepPreviousData,
+  });
 
 /** Where and when an Entry is written, taken from the device. */
 export interface WrittenWhere {
@@ -107,13 +127,16 @@ export function restoreEntry(id: string): Promise<Entry> {
 
 /** Rewrites the cached Pages; `edit` returns the new Page, or null to drop it. */
 function editCachedPages(edit: (page: Page) => Page | null): void {
-  queryClient.setQueryData<InfiniteData<Page[]>>(journalKeys.pages, (data) => {
-    if (!data) return data;
-    return {
-      ...data,
-      pages: data.pages.map((group) => group.flatMap((page) => edit(page) ?? [])),
-    };
-  });
+  queryClient.setQueriesData<InfiniteData<Page[], PagesParam>>(
+    { queryKey: journalKeys.pages },
+    (data) => {
+      if (!data) return data;
+      return {
+        ...data,
+        pages: data.pages.map((group) => group.flatMap((page) => edit(page) ?? [])),
+      };
+    },
+  );
 }
 
 const withEntries = (page: Page, entries: Entry[]): Page => ({

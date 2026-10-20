@@ -1,7 +1,7 @@
 //! Journal commands. Thin: the rules live in `mnemora-journal`.
 
 use mnemora_core::error::AppError;
-use mnemora_journal::{Entry, NewEntry, Page, SearchResults};
+use mnemora_journal::{Entry, NewEntry, Page, PageDirection, SearchResults, TodaySummary};
 use tauri::State;
 
 use crate::state::{AppState, lock};
@@ -76,16 +76,19 @@ pub fn journal_month_days(
     mnemora_journal::month_days(&lock(&state.db), year, month)
 }
 
-/// Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
-/// from the previous request). Fewer Pages than `limit` means the end.
+/// Up to `limit` Pages, newest first, picked relative to the `cursor` date: `older` continues
+/// before it (the last Page's date from the previous request), `from` starts AT it (a jump to a
+/// date), `newer` takes the Pages just above it (scrolling up after a jump; needs a cursor).
+/// Fewer Pages than `limit` means that end was reached.
 #[tauri::command]
 #[specta::specta]
 pub fn journal_pages(
     state: State<'_, AppState>,
     cursor: Option<String>,
     limit: u32,
+    direction: PageDirection,
 ) -> Result<Vec<Page>, AppError> {
-    mnemora_journal::list_pages(&lock(&state.db), cursor.as_deref(), limit)
+    mnemora_journal::list_pages(&lock(&state.db), cursor.as_deref(), limit, direction)
 }
 
 /// Searches live Entries. Every word is required and matches by prefix; quoted text is an exact
@@ -103,8 +106,18 @@ pub fn journal_search(
     mnemora_journal::search(&lock(&state.db), &query, from.as_deref(), to.as_deref())
 }
 
+/// How many Entries `today` (the user's local date, `YYYY-MM-DD`) holds and the one written
+/// last, as a plain-text snippet. For the Home card.
+#[tauri::command]
+#[specta::specta]
+pub fn journal_today(state: State<'_, AppState>, today: String) -> Result<TodaySummary, AppError> {
+    mnemora_journal::today(&lock(&state.db), &today)
+}
+
 #[cfg(test)]
 mod tests {
+    use mnemora_core::db::migrate::MigrationReport;
+    use mnemora_core::module::Module;
     use serde_json::{Value, json};
 
     use crate::test_support::TestApp;
@@ -120,8 +133,19 @@ mod tests {
     }
 
     fn pages(app: &TestApp, cursor: Option<&str>, limit: u32) -> Vec<Value> {
-        app.invoke("journal_pages", json!({ "cursor": cursor, "limit": limit }))
-            .unwrap()
+        pages_in(app, cursor, limit, "older").unwrap()
+    }
+
+    fn pages_in(
+        app: &TestApp,
+        cursor: Option<&str>,
+        limit: u32,
+        direction: &str,
+    ) -> Result<Vec<Value>, Value> {
+        app.invoke(
+            "journal_pages",
+            json!({ "cursor": cursor, "limit": limit, "direction": direction }),
+        )
     }
 
     fn log_ops(app: &TestApp) -> Vec<(String, String)> {
@@ -530,6 +554,32 @@ mod tests {
         assert_eq!(restore(&app, &e["id"]).unwrap_err()["code"], "unknown_key");
     }
 
+    #[test]
+    fn change_log_snapshots_carry_the_deletion_state() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "keep me").unwrap();
+        delete(&app, &e["id"]).unwrap();
+        restore(&app, &e["id"]).unwrap();
+        let rows: Vec<(String, Value)> = app.with_db(|c| {
+            let mut stmt = c
+                .prepare("SELECT op, snapshot FROM change_log WHERE module = 'journal' ORDER BY at, rowid")
+                .unwrap();
+            stmt.query_map([], |r| {
+                let raw: String = r.get(1)?;
+                Ok((r.get(0)?, serde_json::from_str(&raw).unwrap()))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+        });
+        let ops: Vec<&str> = rows.iter().map(|(op, _)| op.as_str()).collect();
+        assert_eq!(ops, ["create", "delete", "restore"]);
+        assert_eq!(rows[0].1["deleted_at"], Value::Null);
+        assert!(rows[1].1["deleted_at"].as_i64().unwrap() > 1_704_067_200_000);
+        assert_eq!(rows[1].1["body"], "keep me");
+        assert_eq!(rows[2].1["deleted_at"], Value::Null);
+    }
+
     fn deleted_days_ago(app: &TestApp, id: &Value, days: i64) {
         app.with_db(|c| {
             // Ids are generated UUIDs, so formatting them in is safe.
@@ -564,8 +614,12 @@ mod tests {
         deleted_days_ago(&app, &old["id"], 31);
         deleted_days_ago(&app, &recent["id"], 29);
 
-        let purged = app.with_db_mut(|c| mnemora_journal::purge_deleted(c).unwrap());
-        assert_eq!(purged, 1);
+        // The startup hook is what the app runs; it purges through the Module contract.
+        app.with_db_mut(|c| {
+            mnemora_journal::JournalModule
+                .on_startup(c, &MigrationReport::default())
+                .unwrap();
+        });
 
         assert_eq!(row_count(&app, "journal_entries"), 2);
         let logged: Vec<String> = app.with_db(|c| {
@@ -681,6 +735,118 @@ mod tests {
             dates(pages(&app, Some("2026-12-25"), 10)),
             ["2026-10-20", "2026-10-19"]
         );
+    }
+
+    fn page_dates(listed: &[Value]) -> Vec<&str> {
+        listed.iter().map(|p| p["date"].as_str().unwrap()).collect()
+    }
+
+    /// A Journal with Pages spread over two years, one of them with two Entries, plus a future one.
+    fn spread_journal() -> TestApp {
+        let app = TestApp::new();
+        for d in [
+            "2025-03-01",
+            "2025-03-02",
+            "2025-03-02",
+            "2025-06-10",
+            "2026-01-05",
+            "2026-10-19",
+            "2026-10-20",
+            "2026-12-25",
+        ] {
+            create(&app, d, "x").unwrap();
+        }
+        app
+    }
+
+    #[test]
+    fn from_starts_at_the_date_itself_and_goes_older() {
+        let app = spread_journal();
+        let listed = pages_in(&app, Some("2025-06-10"), 2, "from").unwrap();
+        assert_eq!(page_dates(&listed), ["2025-06-10", "2025-03-02"]);
+        assert_eq!(listed[1]["entries"].as_array().unwrap().len(), 2);
+        // A date with no Page starts at the next older one; no cursor is the newest Pages.
+        assert_eq!(
+            page_dates(&pages_in(&app, Some("2025-12-31"), 1, "from").unwrap()),
+            ["2025-06-10"]
+        );
+        assert_eq!(
+            page_dates(&pages_in(&app, None, 2, "from").unwrap()),
+            ["2026-12-25", "2026-10-20"]
+        );
+    }
+
+    #[test]
+    fn older_stays_strictly_before_the_cursor() {
+        let app = spread_journal();
+        let listed = pages_in(&app, Some("2025-06-10"), 10, "older").unwrap();
+        assert_eq!(page_dates(&listed), ["2025-03-02", "2025-03-01"]);
+        assert!(
+            pages_in(&app, Some("2025-03-01"), 10, "older")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn newer_takes_the_nearest_pages_above_the_cursor_newest_first() {
+        let app = spread_journal();
+        // The two nearest above 2025-03-02, shown newest first like everything else.
+        let listed = pages_in(&app, Some("2025-03-02"), 2, "newer").unwrap();
+        assert_eq!(page_dates(&listed), ["2026-01-05", "2025-06-10"]);
+        // Future Pages are included, and a short result means the top was reached.
+        let top = pages_in(&app, Some("2026-10-19"), 10, "newer").unwrap();
+        assert_eq!(page_dates(&top), ["2026-12-25", "2026-10-20"]);
+        assert!(
+            pages_in(&app, Some("2026-12-25"), 10, "newer")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn newer_pages_keep_entries_oldest_first_and_counts() {
+        let app = TestApp::new();
+        let a = create(&app, "2026-10-19", "one two").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let b = create(&app, "2026-10-19", "three").unwrap();
+        create(&app, "2026-10-10", "old").unwrap();
+        let listed = pages_in(&app, Some("2026-10-10"), 5, "newer").unwrap();
+        assert_eq!(listed[0]["entries"], json!([a, b]));
+        assert_eq!(listed[0]["entry_count"], 2);
+        assert_eq!(listed[0]["word_count"], 3);
+    }
+
+    #[test]
+    fn windows_chain_without_gaps_or_overlaps() {
+        let app = spread_journal();
+        // Start in the middle, then extend both ways: together they are the whole Journal.
+        let mid = pages_in(&app, Some("2025-06-10"), 2, "from").unwrap();
+        let above = pages_in(&app, Some("2025-06-10"), 2, "newer").unwrap();
+        let below = pages_in(&app, Some("2025-03-02"), 2, "older").unwrap();
+        let all: Vec<&str> = [&above, &mid, &below]
+            .into_iter()
+            .flat_map(|g| page_dates(g))
+            .collect();
+        assert_eq!(
+            all,
+            [
+                "2026-10-19",
+                "2026-01-05",
+                "2025-06-10",
+                "2025-03-02",
+                "2025-03-01"
+            ]
+        );
+    }
+
+    #[test]
+    fn newer_needs_a_cursor_and_bad_directions_or_dates_are_rejected() {
+        let app = spread_journal();
+        let err = pages_in(&app, None, 5, "newer").unwrap_err();
+        assert_eq!(err["code"], "validation");
+        assert!(pages_in(&app, Some("nope"), 5, "from").is_err());
+        assert!(pages_in(&app, Some("2025-03-01"), 5, "sideways").is_err());
     }
 
     #[test]
@@ -1049,5 +1215,113 @@ mod tests {
         assert!(s.contains(&("site".to_owned(), true)));
         let all: String = s.iter().map(|x| x.0.as_str()).collect();
         assert_eq!(all, "see my site or https://bare.io");
+    }
+
+    fn today(app: &TestApp, date: &str) -> Result<Value, Value> {
+        app.invoke("journal_today", json!({ "today": date }))
+    }
+
+    #[test]
+    fn an_empty_day_has_no_count_and_no_latest() {
+        let app = TestApp::new();
+        create(&app, "2026-10-19", "yesterday").unwrap();
+        let t = today(&app, "2026-10-20").unwrap();
+        assert_eq!(t["count"], 0);
+        assert_eq!(t["latest"], Value::Null);
+    }
+
+    #[test]
+    fn today_counts_live_entries_and_the_latest_is_the_last_written() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "first").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let last = create(&app, "2026-10-20", "second").unwrap();
+        create(&app, "2026-10-19", "other day").unwrap();
+        let t = today(&app, "2026-10-20").unwrap();
+        assert_eq!(t["count"], 2);
+        assert_eq!(t["latest"]["id"], last["id"]);
+        assert_eq!(t["latest"]["snippet"], "second");
+        assert_eq!(t["latest"]["written_at"], last["written_at"]);
+    }
+
+    #[test]
+    fn a_deleted_entry_leaves_the_summary_and_comes_back_with_undo() {
+        let app = TestApp::new();
+        let a = create(&app, "2026-10-20", "keep").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let b = create(&app, "2026-10-20", "drop").unwrap();
+        delete(&app, &b["id"]).unwrap();
+        let t = today(&app, "2026-10-20").unwrap();
+        assert_eq!(
+            (t["count"].clone(), t["latest"]["id"].clone()),
+            (json!(1), a["id"].clone())
+        );
+        let _: Value = app
+            .invoke("journal_entry_restore", json!({ "id": b["id"] }))
+            .unwrap();
+        assert_eq!(today(&app, "2026-10-20").unwrap()["count"], 2);
+    }
+
+    #[test]
+    fn the_today_snippet_is_plain_text_and_cut_short() {
+        let app = TestApp::new();
+        create(
+            &app,
+            "2026-10-20",
+            "# Plan\n\nSome **bold** and [a link](https://x.io)",
+        )
+        .unwrap();
+        assert_eq!(
+            today(&app, "2026-10-20").unwrap()["latest"]["snippet"],
+            "Plan · Some bold and a link"
+        );
+        create(&app, "2026-10-21", &"word ".repeat(100)).unwrap();
+        let snippet = today(&app, "2026-10-21").unwrap()["latest"]["snippet"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(snippet.ends_with('…') && snippet.chars().count() <= 141);
+    }
+
+    #[test]
+    fn today_rejects_a_bad_date() {
+        let app = TestApp::new();
+        assert_eq!(today(&app, "yesterday").unwrap_err()["code"], "validation");
+    }
+
+    fn save_pref(app: &TestApp, key: &str, value: Value) -> Result<(), Value> {
+        app.invoke(
+            "settings_save",
+            json!({ "changes": [{ "key": key, "value": value }] }),
+        )
+    }
+
+    #[test]
+    fn journal_preferences_have_defaults_and_accept_only_allowed_values() {
+        let app = TestApp::new();
+        let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snap["values"]["journal.font"], "serif");
+        assert_eq!(snap["values"]["journal.width"], "default");
+        assert_eq!(snap["values"]["journal.page_summary"], true);
+
+        save_pref(&app, "journal.font", json!("sans")).unwrap();
+        save_pref(&app, "journal.width", json!("wide")).unwrap();
+        save_pref(&app, "journal.page_summary", json!(false)).unwrap();
+        let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snap["values"]["journal.font"], "sans");
+        assert_eq!(snap["values"]["journal.width"], "wide");
+        assert_eq!(snap["values"]["journal.page_summary"], false);
+
+        for (key, bad) in [
+            ("journal.font", json!("mono")),
+            ("journal.font", json!(1)),
+            ("journal.width", json!("huge")),
+            ("journal.page_summary", json!("yes")),
+        ] {
+            let err = save_pref(&app, key, bad).unwrap_err();
+            assert_eq!(err["code"], "validation", "{key}");
+        }
+        let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snap["values"]["journal.font"], "sans");
     }
 }

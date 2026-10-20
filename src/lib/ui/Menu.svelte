@@ -25,6 +25,7 @@
 
 <script lang="ts">
   import { DropdownMenu } from 'bits-ui';
+  import { closeOnBack } from '../router/back-button.svelte';
   import Kbd from './Kbd.svelte';
 
   interface Props {
@@ -45,6 +46,8 @@
     side = 'bottom',
     returnFocus = null,
   }: Props = $props();
+
+  closeOnBack(() => open, () => (open = false));
 
   let picked = false;
 

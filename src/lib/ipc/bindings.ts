@@ -15,6 +15,8 @@ export const commands = {
 	deviceSetSidebar: (width: number, rail: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_sidebar", { width, rail })),
 	/**  Changes the log level immediately and remembers it. */
 	deviceSetLogLevel: (level: string) => typedError<null, AppError>(__TAURI_INVOKE("device_set_log_level", { level })),
+	/**  Turns spellcheck in every text editor on or off, and remembers it on this device. */
+	deviceSetSpellcheck: (enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_spellcheck", { enabled })),
 	/**  Version, environment, folders and the OS account's first name. */
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
 	/**  Forwards a frontend error into the Rust log file. */
@@ -41,10 +43,12 @@ export const commands = {
 	/**  Dates (`YYYY-MM-DD`) in the month (`month` is 1-12) that have live Entries, for calendar dots. */
 	journalMonthDays: (year: number, month: number) => typedError<string[], AppError>(__TAURI_INVOKE("journal_month_days", { year, month })),
 	/**
-	 *  Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
-	 *  from the previous request). Fewer Pages than `limit` means the end.
+	 *  Up to `limit` Pages, newest first, picked relative to the `cursor` date: `older` continues
+	 *  before it (the last Page's date from the previous request), `from` starts AT it (a jump to a
+	 *  date), `newer` takes the Pages just above it (scrolling up after a jump; needs a cursor).
+	 *  Fewer Pages than `limit` means that end was reached.
 	 */
-	journalPages: (cursor: string | null, limit: number) => typedError<Page[], AppError>(__TAURI_INVOKE("journal_pages", { cursor, limit })),
+	journalPages: (cursor: string | null, limit: number, direction: PageDirection) => typedError<Page[], AppError>(__TAURI_INVOKE("journal_pages", { cursor, limit, direction })),
 	/**
 	 *  Searches live Entries. Every word is required and matches by prefix; quoted text is an exact
 	 *  phrase; case and accents are ignored. `from` and `to` are optional inclusive Page dates; with
@@ -52,6 +56,11 @@ export const commands = {
 	 *  typo allowed, never repeating `exact`.
 	 */
 	journalSearch: (query: string, from: string | null, to: string | null) => typedError<SearchResults, AppError>(__TAURI_INVOKE("journal_search", { query, from, to })),
+	/**
+	 *  How many Entries `today` (the user's local date, `YYYY-MM-DD`) holds and the one written
+	 *  last, as a plain-text snippet. For the Home card.
+	 */
+	journalToday: (today: string) => typedError<TodaySummary, AppError>(__TAURI_INVOKE("journal_today", { today })),
 };
 
 /** Events */
@@ -90,6 +99,8 @@ export type DeviceSettings = {
 	sidebar?: SidebarState,
 	/**  `tracing` level: error, warn, info, debug or trace. */
 	log_level?: string,
+	/**  Spellcheck in every text editor. Per device: input methods and dictionaries differ. */
+	spellcheck?: boolean,
 };
 
 /**  One untitled piece of writing on a Page. */
@@ -184,6 +195,15 @@ export type Page = {
 	entries: Entry[],
 };
 
+/**  Which Pages a `cursor` date selects. Results are always newest first. */
+export type PageDirection = 
+/**  Pages strictly before the cursor (older). No cursor: the newest Pages. */
+"older" | 
+/**  The cursor's own Page and older ones: the feed starting AT a date. No cursor: the newest. */
+"from" | 
+/**  The Pages just after the cursor (newer), nearest first picked; needs a cursor. */
+"newer";
+
 /**  The outcome of a search. */
 export type SearchResults = {
 	/**  Entries that match every word and phrase, newest first. */
@@ -245,6 +265,28 @@ export type Span = {
 	text: string,
 	/**  Whether it matched the search. */
 	matched: boolean,
+};
+
+/**  The Entry written last on the day. */
+export type TodayLatest = {
+	/**  `UUIDv7`. */
+	id: string,
+	/**  When it was written: UTC milliseconds. */
+	written_at: number,
+	/**  UTC offset in minutes where it was written. */
+	written_offset_min: number,
+	/**  IANA zone where it was written. */
+	written_tz: string,
+	/**  Its text as plain reading text (no Markdown), cut at about 140 characters. */
+	snippet: string,
+};
+
+/**  What the Home card shows about one day. */
+export type TodaySummary = {
+	/**  Live Entries on the day's Page. */
+	count: number,
+	/**  The Entry written last, `None` on an empty day. */
+	latest: TodayLatest | null,
 };
 
 /**  Last known window geometry. */

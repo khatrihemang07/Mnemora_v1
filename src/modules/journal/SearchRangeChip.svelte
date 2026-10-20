@@ -9,6 +9,7 @@
   import { EMPTY_RANGE, type WeekStart } from '../../lib/ui/calendar';
   import Chip from '../../lib/ui/Chip.svelte';
   import DatePicker from '../../lib/ui/DatePicker.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import { PRESETS, presetRange, rangeLabel, type SearchRange } from './search-state';
 
@@ -60,17 +61,16 @@
     {label}
   </Chip>
   {#if range}
-    <button
-      type="button"
-      aria-label="Clear date filter"
-      class="grid size-6 cursor-pointer place-items-center rounded-full text-faint transition-colors duration-(--dur) ease-out hover:bg-hover hover:text-ink"
+    <IconButton
+      icon={X}
+      label="Clear date filter"
+      size="xs"
+      variant="quiet"
       onclick={() => {
         onchange(null);
         onrestorefocus();
       }}
-    >
-      <X class="size-3.5" />
-    </button>
+    />
   {/if}
 </div>
 

@@ -88,7 +88,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 |---|---|
 | `AppMark` | You need the app's brand mark (sidebar). Brand art, the one place with literal colours |
 | `Button` | Any text action: primary, secondary, ghost or danger; sizes sm/md/lg |
-| `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip); `bind:ref` anchors a popover to it |
+| `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip); `bind:ref` anchors a popover to it; `size="xs"` + `variant="quiet"` is the small faint round × for clearing a field or chip |
 | `Card` | A hairline-bordered surface that groups content |
 | `Dialog` | A small modal needing a decision (confirm, unsaved changes) |
 | `Sheet` | A bottom sheet: the phone More menu, and the DatePicker on a phone |
@@ -106,8 +106,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Switch` | An on/off Setting |
 | `Select` | Pick one of many options |
 | `Input` | A single-line text field |
-| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToIndex(i, smooth?)` / `offsetOf(i)` / `indexAt(offset)` jump to and measure rows (smooth respects reduced motion); rows added or removed above the ones being read never move the view; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
-| `Textarea` | A multi-line text field that grows with its content up to a cap. Unstyled box: the parent supplies the frame |
+| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` / `onnearstart` load more below / above; `scrollToIndex(i, smooth?)` / `offsetOf(i)` / `indexAt(offset)` jump to and measure rows (smooth respects reduced motion); rows added or removed above the ones being read never move the view; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
 | `MarkdownEditor` | Live Markdown writing: CodeMirror 6, loaded on first use. Marks stay visible but faded; shortcuts, list keys, auto-pairs, slash menu, rich-text paste, ⌘/Ctrl-click links. `value` + `onchange`, `onfinish` (Esc, ⌘↵), `bare` for a framed parent, `font`, `spellcheck`, `slashValues`; `focus()` / `run()` via `bind:this`. Never import CodeMirror anywhere else |
 | `MarkdownView` | Read-only Markdown. Same parser and typography as the editor (`markdown.css`: `.md*`), symbols hidden, built from Svelte elements, **never `{@html}`**. Links open externally; checklist rows look like checkboxes; with `ontoggle` the whole row ticks on click (hover tint, ringed box; links and text selections excepted) and the box stays keyboard reachable |
 | `Menu` | A list of actions beside a button or at a point (right-click, long-press): icon + label + optional shortcut hint, hairline `separatorBefore`, red `danger` item. Controlled (`open`, `anchor` = element or `{x, y}`, `items`, `label`); Bits UI gives arrows, typeahead, Esc and outside-click; dismissing returns focus to the anchor (or `returnFocus`). Entry actions use it; never build ad-hoc popups |
@@ -115,6 +114,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Calendar` | A month grid: dots on `marked` days, a ring on today, `selected`, an optional `range` tint and `disabled` predicate, week start from the `weekStart` prop (core Setting), ‹ › month arrows, a month/year picker on the title and an optional Today button. Keyboard (arrows, PageUp/PageDown, Home/End, Enter) and screen-reader grid roles. `hue` tints today and dots with a Module hue token name. Date maths lives in `calendar.ts` (unit-tested) |
 | `DatePicker` | Choose a date: a `Popover` on desktop, a bottom `Sheet` on phone, with Today / Yesterday chips above a `Calendar`. `mode="single"` (`onpick`) or `mode="range"` (two picks, `onrange`; for search); `chips`, `closeOnPick`, `showToday`, `footer` turn it into a browsing calendar (the Journal's go-to-date) |
 | `Chip` | A small pill button that opens a picker (the date chip "Today ▾", the search "Any date ▾"): optional icon, trailing chevron, `tone="warm"` tints it with a Module `hue`. `bind:ref` to anchor a popover |
+| `Pill` | A floating action pill ("↑ Today", "Back to results"): `tone="ink"` neutral dark, or `tone="tinted"` raised with its text in a Module `hue`; optional `icon` and a × (`ondismiss`, `dismissLabel`). The parent positions it with `class` |
 | `KeyboardBar` | The phone formatting row above the keyboard while an editor is focused (B, I, H, bullet, checklist, quote, link). Buttons never steal focus; it follows the visual viewport |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |
@@ -132,8 +132,12 @@ The editor and the read view share one set of rules in `src/lib/ui/markdown/mark
 - **Top bar** (desktop): a 50px drag region (`data-tauri-drag-region`) with a bottom hairline: sidebar toggle, then the `PageHeader` title, then page actions and a compact "Search... ⌘K" button. Windows and Linux add window controls at the right end.
 - **Phone** (under 720px or a mobile OS): no sidebar or top bar. A bottom tab bar shows up to 4 chosen tabs plus **More**. More is highlighted whenever the current Module is not one of the tabs (Settings included) and opens a sheet with the rest. Pages start with a large `PageHeader` title.
 - **Enabled Modules**: a Module is on unless listed in `core.disabled_modules` (so new Modules appear by default). Routes (a disabled Module's URL falls back to Home), sidebar, tab bar and More sheet, ⌘K, ⌘-digit and ⌘N all use only enabled Modules. Switching off hides a Module and keeps its data.
-- **Home cards**: Home lists each enabled Module's lazy `homeCard` below the greeting and clock, in nav order; with none it shows an `EmptyState`.
+- **Home cards**: Home lists each enabled Module's lazy `homeCard` below the greeting and clock, in nav order, handing each the shell's `ModuleContext` (`ctx`) so its buttons can navigate; with none it shows an `EmptyState`. The Journal's card (H2) is a `Card` with the coral notebook tile and "Journal", a primary Write button at the right, the latest Entry of today as a plain-text quote in the display serif (clamped to 3 lines) and "Today · N entries" below; an empty day says "Nothing written today".
 - **Home (H1)**: greeting card and clock tile in a `1.4fr / 1fr` grid at 720px and wider, equal height; stacked below. The clock has a small uppercase "Local time" label, tight tabular digits and smaller seconds.
+
+## Journal keyboard (R4)
+
+On desktop the feed's Entries are one stop each for the keyboard. ↑ / ↓ move a focus ring (the global `:focus-visible` ring plus the hover tint) between Entries across Pages, scrolling the Entry into view clear of the pinned header and composer fade and loading older Pages at the end. Enter edits; Esc, ⌘/Ctrl+Enter or Done leave the editor with that Entry focused again; ⌫ / Delete deletes with Undo and focuses the next Entry; M opens the move picker; C copies; Esc on an Entry returns to the composer. ↑ from an empty composer focuses the last Entry of Today's Page (the newest Entry before Today when Today has none). The keys apply only while the row itself has focus, never inside an editor, the composer or the search field, and there is no ⌘⌫ (macOS uses it to delete to the line start). The ⋯ menu shows the keys as hints on desktop; Settings ▸ Shortcuts lists them.
 
 ## Settings patterns
 
@@ -145,6 +149,8 @@ The editor and the read view share one set of rules in `src/lib/ui/markdown/mark
 - **Data folder**: changing it from the UI is deferred.
 - Phone Settings is a list that drills into one section with a Back button.
 - **Module sections**: a Module's `settingsSection` (label, icon, lazy component) is appended after the core sections, on the same draft, Save bar and leave guard, and drills in on phone.
+- **Preferences and Device settings together**: a Module section may mix both. Preferences go through the draft and SaveBar; a Device setting (the Journal's Spellcheck) saves at once through its own command, like the sidebar layout.
+- **Journal section (Z1)**: Writing font (`SegmentedControl` Serif / Sans), Text width (Narrow / Default / Wide, about 60 / 72 / 90 characters, `35.5rem` / `42.5rem` / `53rem` so it scales with Text size and shrinks to fill narrow windows), Page summaries (`Switch`, on) and Spellcheck (`Switch`, on, this device only). Width is set once as `--journal-width` on the Journal and used by the feed, pinned header, composer and search.
 - **Modules** section: one `Switch` per Module, bound to `core.disabled_modules` through the draft. Home and Settings are `required` and show a disabled, checked switch.
 
 ## Do

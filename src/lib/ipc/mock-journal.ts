@@ -5,8 +5,9 @@
  */
 
 import { toggleTaskLine } from '../ui/markdown/tasks';
-import type { AppError, Entry, NewEntry, Page } from './bindings';
-import { searchEntries } from './mock-journal-search';
+import type { AppError, Entry, NewEntry, Page, PageDirection } from './bindings';
+import { pageDates } from './mock-journal-pages';
+import { plainText, searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
 
 const MAX_OFFSET_MIN = 14 * 60;
@@ -14,6 +15,7 @@ const MAX_ZONE_CHARS = 64;
 const MAX_PAGES = 100;
 const EDIT_GRACE_MS = 10 * 60_000;
 const STYLE_MARKS = /[*_~=`]/g;
+const TODAY_SNIPPET_CHARS = 140;
 
 const fail = (code: AppError['code'], message: string): AppError => ({
   code,
@@ -39,7 +41,7 @@ function stripLinePrefix(line: string): string {
     .trimStart()
     .replace(/^(>\s*)+/, '')
     .replace(/^#+\s*/, '')
-    .replace(/^([-*+]|\d+\.)\s+/, '')
+    .replace(/^([-*+]|\d+[.)])\s+/, '')
     .replace(/^\[[ xX]\]\s+/, '');
 }
 
@@ -53,6 +55,16 @@ function wordCount(text: string): number {
         .split(/\s+/),
     )
     .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+}
+
+/** Mirrors `shorten` in crates/journal/src/today.rs: cut on a word, with an ellipsis. */
+function shorten(text: string): string {
+  const chars = [...text];
+  if (chars.length <= TODAY_SNIPPET_CHARS) return text;
+  let end = TODAY_SNIPPET_CHARS;
+  while (end > 0 && chars[end] !== ' ') end--;
+  if (end === 0) end = TODAY_SNIPPET_CHARS;
+  return `${chars.slice(0, end).join('').trimEnd()}…`;
 }
 
 function mockId(): string {
@@ -173,6 +185,25 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           deleted.delete(entry.id);
           return copy(entry);
         }
+        case 'journal_today': {
+          const date = a.today as string;
+          if (!validDate(date)) throw fail('validation', 'Not a valid date');
+          const day = live().filter((e) => e.page_date === date);
+          const last = day.reduce<Entry | null>(
+            (best, e) => (best === null || e.written_at >= best.written_at ? e : best),
+            null,
+          );
+          return copy({
+            count: day.length,
+            latest: last && {
+              id: last.id,
+              written_at: last.written_at,
+              written_offset_min: last.written_offset_min,
+              written_tz: last.written_tz,
+              snippet: shorten(plainText(last.body)),
+            },
+          });
+        }
         case 'journal_search':
           return copy(
             searchEntries(
@@ -187,11 +218,13 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           if (cursor !== null && !validDate(cursor)) throw fail('validation', 'Not a valid date');
           const limit = Math.min(MAX_PAGES, Math.max(1, a.limit as number));
           const entries = live();
-          const dates = [...new Set(entries.map((e) => e.page_date))]
-            .filter((d) => cursor === null || d < cursor)
-            .sort()
-            .reverse()
-            .slice(0, limit);
+          const dates = pageDates(
+            entries.map((e) => e.page_date),
+            cursor,
+            a.direction as PageDirection,
+            limit,
+          );
+          if (dates === null) throw fail('validation', 'Newer Pages need a date to start from');
           const pages: Page[] = dates.map((date) => {
             const list = entries
               .filter((e) => e.page_date === date)

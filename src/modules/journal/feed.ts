@@ -12,18 +12,20 @@ export function upcomingCount(pages: Page[], today: string): number {
 }
 
 /**
- * Turns the loaded Pages (newest first) into feed rows. Today's Page is always there, empty if
- * nothing is written on it; a Journal with no Pages at all stays empty (the first-run state).
- * Future Pages sit above Today. A month divider sits where the month changes, never above the
- * first row.
+ * Turns the loaded Pages (newest first) into feed rows. Today's Page is there, empty if nothing
+ * is written on it, once the window reaches it (`reachesToday`: no newer Pages are left to load; a
+ * window opened on a far date has not reached it yet); a Journal with no Pages at all stays empty
+ * (the first-run state). Future Pages sit above Today. A month divider sits where the month
+ * changes, never above the first row.
  */
-export function buildFeed(pages: Page[], today: string): FeedItem[] {
+export function buildFeed(pages: Page[], today: string, reachesToday = true): FeedItem[] {
   if (pages.length === 0) return [];
-  const all = pages.some((p) => p.date === today)
-    ? pages
-    : [...pages, { date: today, entry_count: 0, word_count: 0, entries: [] }].sort((a, b) =>
-        b.date.localeCompare(a.date),
-      );
+  const all =
+    !reachesToday || pages.some((p) => p.date === today)
+      ? pages
+      : [...pages, { date: today, entry_count: 0, word_count: 0, entries: [] }].sort((a, b) =>
+          b.date.localeCompare(a.date),
+        );
 
   const items: FeedItem[] = [];
   let month: string | null = null;

@@ -1,3 +1,5 @@
+import { setTimer } from './timing';
+
 /** How long a touch must rest before it counts as a long-press. */
 export const LONG_PRESS_MS = 500;
 /** How far a finger may drift before it is a scroll, not a press. */
@@ -24,10 +26,7 @@ export class LongPress {
 
   constructor(opts: LongPressOptions) {
     this.opts = {
-      setTimer: (fn, ms) => {
-        const t = setTimeout(fn, ms);
-        return () => clearTimeout(t);
-      },
+      setTimer,
       ms: LONG_PRESS_MS,
       slop: LONG_PRESS_SLOP_PX,
       ...opts,

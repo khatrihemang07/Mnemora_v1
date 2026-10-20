@@ -115,10 +115,16 @@ export function monthLabel(date: string): string {
 
 /**
  * The "↑ Today" pill shows once you are more than a screen below where the Journal opens (Today's
- * area: the top, or just under any future Pages).
+ * area: the top, or just under any future Pages), or at once while the loaded window is away from
+ * Today altogether (`away`: a jump to a far date).
  */
-export function showTodayPill(scrollTop: number, viewportHeight: number, todayTop = 0): boolean {
-  return scrollTop - todayTop > viewportHeight;
+export function showTodayPill(
+  scrollTop: number,
+  viewportHeight: number,
+  todayTop = 0,
+  away = false,
+): boolean {
+  return away || scrollTop - todayTop > viewportHeight;
 }
 
 /** Opening on Today lands within a few pixels of its top (row sizes are estimates until measured). */
@@ -133,8 +139,10 @@ export function showUpcomingPill(
   viewportHeight: number,
   todayTop: number,
   upcoming: number,
+  away = false,
 ): boolean {
   return (
+    !away &&
     upcoming > 0 &&
     scrollTop >= todayTop - UPCOMING_SLACK_PX &&
     !showTodayPill(scrollTop, viewportHeight, todayTop)

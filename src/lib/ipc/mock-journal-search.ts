@@ -89,7 +89,7 @@ function stripLinePrefix(line: string): string {
     .trimStart()
     .replace(/^(>\s*)+/, '')
     .replace(/^#+\s*/, '')
-    .replace(/^([-*+]|\d+\.)\s+/, '')
+    .replace(/^([-*+]|\d+[.)])\s+/, '')
     .replace(/^\[[ xX]\]\s+/, '');
 }
 

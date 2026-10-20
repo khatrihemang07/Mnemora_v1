@@ -37,6 +37,17 @@ pub struct SettingsSnapshot {
     pub schema: Vec<SettingSchema>,
 }
 
+/// Saves `value` for `module.key` only when nothing is saved for it yet; true when it wrote.
+/// For Modules pinning a value at upgrade time, so a new registered default cannot reach
+/// existing installs. The value is trusted: it is not validated and announces no event.
+pub fn save_if_unset(conn: &Connection, module: &str, key: &str, value: &Value) -> AppResult<bool> {
+    let written = conn.execute(
+        "INSERT OR IGNORE INTO settings(module, key, value, updated_at) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![module, key, value.to_string(), now_ms()],
+    )?;
+    Ok(written > 0)
+}
+
 /// Reads and writes Settings against a registry, announcing changes on the event bus.
 pub struct SettingsStore {
     registry: Arc<SettingsRegistry>,
@@ -197,11 +208,22 @@ mod tests {
             "core.time_format": "24h",
             "core.date_format": "long",
             "core.week_start": "mon",
-            "core.phone_tabs": ["home"],
+            "core.phone_tabs": ["home", "journal"],
             "core.disabled_modules": []
         });
         assert_eq!(serde_json::to_value(&snap.values).unwrap(), expected);
         assert_eq!(snap.schema.len(), 10);
+    }
+
+    #[test]
+    fn save_if_unset_never_overwrites() {
+        let f = fixture();
+        assert!(save_if_unset(&f.conn, "core", "phone_tabs", &json!(["home"])).unwrap());
+        assert!(!save_if_unset(&f.conn, "core", "phone_tabs", &json!(["a"])).unwrap());
+        assert_eq!(
+            f.store.get_all(&f.conn).unwrap().values["core.phone_tabs"],
+            json!(["home"])
+        );
     }
 
     #[test]

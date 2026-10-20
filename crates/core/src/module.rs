@@ -1,8 +1,11 @@
 //! The compile-time contract every Module implements.
 
+use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
 use serde_json::json;
 
+use crate::db::migrate::MigrationReport;
+use crate::error::AppResult;
 use crate::settings::{SettingsRegistry, validate};
 
 /// A self-contained area of the app. Registered in one place by the app crate.
@@ -16,6 +19,13 @@ pub trait Module: Send + Sync {
 
     /// Declares this Module's Settings keys, defaults and validators.
     fn register_settings(&self, reg: &mut SettingsRegistry);
+
+    /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
+    /// purging old rows, or upgrade steps keyed on what `report` says this run applied). No
+    /// polling: nothing calls this again. Never log user content.
+    fn on_startup(&self, _conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 /// Core's own Module: the `settings` table and the app-wide preferences.
@@ -98,7 +108,13 @@ impl Module for CoreModule {
             json!("mon"),
             validate::one_of(&["mon", "sun"]),
         );
-        reg.register(m, "phone_tabs", json!(["home"]), validate::string_list(4));
+        // New installs get Home + Journal; a saved choice always wins over this default.
+        reg.register(
+            m,
+            "phone_tabs",
+            json!(["home", "journal"]),
+            validate::string_list(4),
+        );
         // Ids of Modules switched off. A list of the exceptions, so a new Module is on by default.
         reg.register(m, "disabled_modules", json!([]), validate::string_list(64));
     }

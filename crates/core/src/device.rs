@@ -66,6 +66,8 @@ pub struct DeviceSettings {
     pub sidebar: SidebarState,
     /// `tracing` level: error, warn, info, debug or trace.
     pub log_level: String,
+    /// Spellcheck in every text editor. Per device: input methods and dictionaries differ.
+    pub spellcheck: bool,
 }
 
 impl Default for DeviceSettings {
@@ -75,6 +77,7 @@ impl Default for DeviceSettings {
             window: WindowState::default(),
             sidebar: SidebarState::default(),
             log_level: "info".to_owned(),
+            spellcheck: true,
         }
     }
 }
@@ -131,6 +134,7 @@ mod tests {
         let s = DeviceSettings::load(&dir.path().join("device.toml"));
         assert_eq!(s, DeviceSettings::default());
         assert_eq!(s.log_level, "info");
+        assert!(s.spellcheck, "spellcheck is on by default");
         assert_eq!((s.window.w, s.window.h), (1200, 780));
     }
 
@@ -164,6 +168,7 @@ mod tests {
         assert!(s.sidebar.rail);
         assert_eq!(s.sidebar.width, SidebarState::default().width);
         assert_eq!(s.window, WindowState::default());
+        assert!(s.spellcheck, "a file from before the flag keeps it on");
     }
 
     #[test]

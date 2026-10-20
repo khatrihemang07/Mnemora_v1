@@ -40,8 +40,13 @@ export async function copyEntryText(entry: Entry): Promise<void> {
 /**
  * Deletes at once and offers Undo for a few seconds. An Entry open for editing is finished first,
  * so its last keystrokes are saved before it goes (and the restore brings them back).
+ * `onrestored` runs once Undo has brought it back, e.g. to give it focus again.
  */
-export async function deleteEntryWithUndo(entry: Entry, editing: Editing): Promise<void> {
+export async function deleteEntryWithUndo(
+  entry: Entry,
+  editing: Editing,
+  onrestored?: () => void,
+): Promise<void> {
   if (editing.id === entry.id) {
     await editing.finisher?.();
     editing.close();
@@ -56,8 +61,14 @@ export async function deleteEntryWithUndo(entry: Entry, editing: Editing): Promi
   }
   notifyUndo('Entry deleted', () => {
     restoreEntry(entry.id)
-      .catch(() => notifyError("Couldn't restore the Entry"))
-      .finally(() => void invalidateJournal());
+      .then(async () => {
+        await invalidateJournal();
+        onrestored?.();
+      })
+      .catch(() => {
+        notifyError("Couldn't restore the Entry");
+        void invalidateJournal();
+      });
   });
 }
 

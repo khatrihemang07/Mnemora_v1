@@ -69,6 +69,8 @@ export interface EditorController {
   focus: () => void;
   run: (command: EditorCommand) => boolean;
   pickSlash: (id: string) => void;
+  /** Turns spellcheck on or off in the open editor. */
+  setSpellcheck: (on: boolean) => void;
   /** Tells assistive tech which menu option is active (null when the menu is closed). */
   setPopup: (listId: string, optionId: string | null) => void;
   destroy: () => void;
@@ -383,6 +385,7 @@ export function createEditor(opts: EditorOptions): EditorController {
       view.focus();
       return run(view, command, true);
     },
+    setSpellcheck: (on) => view.contentDOM.setAttribute('spellcheck', String(on)),
     setPopup(listId, optionId) {
       const el = view.contentDOM;
       if (optionId === null) {

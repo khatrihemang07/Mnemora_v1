@@ -2,15 +2,18 @@
 //! Entry text and snapshots must never reach a log line.
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
-use mnemora_core::error::{AppError, AppResult, ErrorCode};
+use mnemora_core::error::AppResult;
 use mnemora_core::util::{new_id, now_ms};
 use rusqlite::Connection;
 
 use crate::MODULE_ID;
 use crate::entry::{
-    Entry, NewEntry, Page, toggle_task, validate_page_date, validate_text, validate_written_zone,
+    Entry, NewEntry, Page, PageDirection, toggle_task, validate_page_date, validate_text,
+    validate_written_zone,
 };
-use crate::{repo, words};
+use crate::error::JournalError;
+use crate::repo::{self, Window};
+use crate::words;
 
 /// Change-log entity name for Entries.
 const ENTITY: &str = "journal_entry";
@@ -28,16 +31,19 @@ fn edited_after_update(entry: &Entry, now: i64) -> Option<i64> {
         .or_else(|| (now - entry.written_at > EDIT_GRACE_MS).then_some(now))
 }
 
-fn missing() -> AppError {
-    AppError::new(ErrorCode::UnknownKey, "That Entry no longer exists")
-}
-
+/// Writes a change-log record. The snapshot is the Entry plus its `deleted_at`, which the Entry
+/// type does not carry: a delete record shows when it was deleted, every other one shows null.
 fn record(
     conn: &Connection,
     entry: &Entry,
+    deleted_at: Option<i64>,
     op: ChangeOp,
     session_id: Option<&str>,
 ) -> AppResult<()> {
+    let mut snapshot = serde_json::to_value(entry).map_err(JournalError::Snapshot)?;
+    if let Some(fields) = snapshot.as_object_mut() {
+        fields.insert("deleted_at".into(), deleted_at.into());
+    }
     changelog::record(
         conn,
         &Change {
@@ -46,9 +52,7 @@ fn record(
             entity_id: entry.id.clone(),
             op,
             session_id: session_id.map(str::to_owned),
-            snapshot: serde_json::to_value(entry).map_err(|e| {
-                AppError::new(ErrorCode::Internal, "Could not record the change").with_details(e)
-            })?,
+            snapshot,
         },
     )
 }
@@ -74,7 +78,7 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     };
     let tx = conn.transaction()?;
     repo::insert(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Create, Some(&new.session_id))?;
+    record(&tx, &entry, None, ChangeOp::Create, Some(&new.session_id))?;
     tx.commit()?;
     Ok(entry)
 }
@@ -89,7 +93,7 @@ pub fn update_entry(
 ) -> AppResult<Entry> {
     validate_text(&text)?;
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
 
     entry.word_count = words::word_count(&text);
     entry.body = text;
@@ -97,7 +101,7 @@ pub fn update_entry(
     entry.updated_at = now;
     entry.edited_at = edited_after_update(&entry, now);
     repo::update_body(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Update, Some(session_id))?;
+    record(&tx, &entry, None, ChangeOp::Update, Some(session_id))?;
     tx.commit()?;
     Ok(entry)
 }
@@ -106,11 +110,11 @@ pub fn update_entry(
 /// Each tick is its own change-log record: it has no editing session.
 pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResult<Entry> {
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     entry.body = toggle_task(&entry.body, line)?;
     entry.updated_at = now_ms();
     repo::update_body(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Tick, None)?;
+    record(&tx, &entry, None, ChangeOp::Tick, None)?;
     tx.commit()?;
     Ok(entry)
 }
@@ -120,14 +124,14 @@ pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResu
 pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult<Entry> {
     validate_page_date(page_date)?;
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     if entry.page_date == page_date {
         return Ok(entry);
     }
     page_date.clone_into(&mut entry.page_date);
     entry.updated_at = now_ms();
     repo::update_page_date(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Move, None)?;
+    record(&tx, &entry, None, ChangeOp::Move, None)?;
     tx.commit()?;
     Ok(entry)
 }
@@ -135,9 +139,10 @@ pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult
 /// Soft-deletes an Entry: it leaves its Page at once and is erased after 30 days.
 pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
-    let entry = repo::get(&tx, id)?.ok_or_else(missing)?;
-    repo::set_deleted_at(&tx, id, Some(now_ms()))?;
-    record(&tx, &entry, ChangeOp::Delete, None)?;
+    let entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
+    let now = now_ms();
+    repo::set_deleted_at(&tx, id, Some(now))?;
+    record(&tx, &entry, Some(now), ChangeOp::Delete, None)?;
     tx.commit()?;
     Ok(())
 }
@@ -145,9 +150,9 @@ pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
 /// Brings a deleted Entry back. Pages order by the written instant, so it returns to its place.
 pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
     let tx = conn.transaction()?;
-    let entry = repo::get_deleted(&tx, id)?.ok_or_else(missing)?;
+    let entry = repo::get_deleted(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     repo::set_deleted_at(&tx, id, None)?;
-    record(&tx, &entry, ChangeOp::Restore, None)?;
+    record(&tx, &entry, None, ChangeOp::Restore, None)?;
     tx.commit()?;
     Ok(entry)
 }
@@ -168,7 +173,7 @@ pub fn purge_deleted(conn: &mut Connection) -> AppResult<usize> {
 /// Dates in the given month (`month` is 1-12) that hold live Entries, oldest first.
 pub fn month_days(conn: &Connection, year: u32, month: u32) -> AppResult<Vec<String>> {
     if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
-        return Err(AppError::new(ErrorCode::Validation, "Not a valid month"));
+        return Err(JournalError::Validation("Not a valid month").into());
     }
     // Dates are fixed-width text, so the month is a plain range; day 31 bounds every month.
     repo::dates_between(
@@ -178,13 +183,28 @@ pub fn month_days(conn: &Connection, year: u32, month: u32) -> AppResult<Vec<Str
     )
 }
 
-/// Up to `limit` Pages, newest first, continuing before the `cursor` date when given.
-pub fn list_pages(conn: &Connection, cursor: Option<&str>, limit: u32) -> AppResult<Vec<Page>> {
+/// Up to `limit` Pages, newest first, picked relative to the `cursor` date by `direction`: older
+/// than it, starting at it, or the nearest newer ones (see [`PageDirection`]).
+pub fn list_pages(
+    conn: &Connection,
+    cursor: Option<&str>,
+    limit: u32,
+    direction: PageDirection,
+) -> AppResult<Vec<Page>> {
     if let Some(c) = cursor {
         validate_page_date(c)?;
     }
+    let window = match (direction, cursor) {
+        (PageDirection::Older | PageDirection::From, None) => Window::Newest,
+        (PageDirection::Older, Some(c)) => Window::Before(c),
+        (PageDirection::From, Some(c)) => Window::AtOrBefore(c),
+        (PageDirection::Newer, Some(c)) => Window::After(c),
+        (PageDirection::Newer, None) => {
+            return Err(JournalError::Validation("Newer Pages need a date to start from").into());
+        }
+    };
     let limit = limit.clamp(1, MAX_PAGES);
-    Ok(repo::pages(conn, cursor, limit)?
+    Ok(repo::pages(conn, window, limit)?
         .into_iter()
         .map(|(date, entries)| Page {
             date,

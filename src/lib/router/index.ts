@@ -1,7 +1,9 @@
 export { blockNavigation } from 'sv-router';
-export { installBackButton, interceptBack } from './back-button';
+export { closeOnBack, installBackButton, interceptBack } from './back-button.svelte';
 export { createAppRouter } from './create';
 export type {
+  HomeCardLoader,
+  HomeCardProps,
   ModuleAction,
   ModuleContext,
   ModuleManifest,

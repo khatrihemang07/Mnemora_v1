@@ -77,6 +77,13 @@ pub fn device_set_log_level(state: State<'_, AppState>, level: String) -> Result
     state.device.update(|d| d.log_level = level)
 }
 
+/// Turns spellcheck in every text editor on or off, and remembers it on this device.
+#[tauri::command]
+#[specta::specta]
+pub fn device_set_spellcheck(state: State<'_, AppState>, enabled: bool) -> Result<(), AppError> {
+    state.device.update(|d| d.spellcheck = enabled)
+}
+
 /// Version, environment, folders and the OS account's first name.
 #[tauri::command]
 #[specta::specta]
@@ -200,6 +207,43 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err["code"], "unknown_key");
+    }
+
+    #[test]
+    fn spellcheck_is_on_by_default_and_round_trips() {
+        let app = TestApp::new();
+        let device: Value = app.invoke("device_get", json!({})).unwrap();
+        assert_eq!(device["spellcheck"], true);
+        app.invoke::<()>("device_set_spellcheck", json!({ "enabled": false }))
+            .unwrap();
+        let device: Value = app.invoke("device_get", json!({})).unwrap();
+        assert_eq!(device["spellcheck"], false);
+        app.invoke::<()>("device_set_spellcheck", json!({ "enabled": true }))
+            .unwrap();
+        let device: Value = app.invoke("device_get", json!({})).unwrap();
+        assert_eq!(device["spellcheck"], true);
+    }
+
+    #[test]
+    fn phone_tabs_default_to_home_and_journal() {
+        let app = TestApp::new();
+        let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(
+            snapshot["values"]["core.phone_tabs"],
+            json!(["home", "journal"])
+        );
+    }
+
+    #[test]
+    fn a_saved_phone_tabs_choice_is_kept() {
+        let app = TestApp::new();
+        app.invoke::<()>(
+            "settings_save",
+            json!({ "changes": [{ "key": "core.phone_tabs", "value": ["home"] }] }),
+        )
+        .unwrap();
+        let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snapshot["values"]["core.phone_tabs"], json!(["home"]));
     }
 
     #[test]

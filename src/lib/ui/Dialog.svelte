@@ -2,6 +2,7 @@
 <script lang="ts">
   import { Dialog } from 'bits-ui';
   import type { Snippet } from 'svelte';
+  import { closeOnBack } from '../router/back-button.svelte';
 
   interface Props {
     open: boolean;
@@ -11,6 +12,8 @@
     actions: Snippet;
   }
   let { open, title, description, onclose, actions }: Props = $props();
+
+  closeOnBack(() => open, () => onclose());
 </script>
 
 <Dialog.Root {open} onOpenChange={(o) => !o && onclose()}>

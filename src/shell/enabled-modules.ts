@@ -1,4 +1,4 @@
-import type { ModuleManifest, RouteLoader, RoutePath } from '../lib/router';
+import type { HomeCardLoader, ModuleManifest, RoutePath } from '../lib/router';
 import { activeModuleId } from './phone-tabs';
 
 const byOrder = (a: ModuleManifest, b: ModuleManifest) => a.nav.order - b.nav.order;
@@ -19,7 +19,7 @@ export const createTarget = (enabled: ModuleManifest[]) =>
   [...enabled].sort(byOrder).find((m) => m.create);
 
 /** Home cards of the enabled Modules, in nav order. */
-export function homeCards(enabled: ModuleManifest[]): { id: string; load: RouteLoader }[] {
+export function homeCards(enabled: ModuleManifest[]): { id: string; load: HomeCardLoader }[] {
   return [...enabled]
     .sort(byOrder)
     .flatMap((m) => (m.homeCard ? [{ id: m.id, load: m.homeCard }] : []));

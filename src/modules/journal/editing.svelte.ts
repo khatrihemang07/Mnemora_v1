@@ -25,6 +25,9 @@ export class Editing {
   arrived = $state<string | null>(null);
   /** Date and time for the slash menu in the General Settings formats. */
   slashValues: () => SlashValues = () => ({ date: '', time: '' });
+  /** The writing font, from the Journal Preference. */
+  font = $state<'serif' | 'sans'>('serif');
+  /** Spellcheck in every editor, from the Device setting. */
   spellcheck = $state(true);
   /** Set by the open editor: saves and closes it, false when text is still unsaved. */
   finisher: (() => Promise<boolean>) | null = null;

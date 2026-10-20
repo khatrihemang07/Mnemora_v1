@@ -16,6 +16,7 @@ macro_rules! specta_builder_for {
                 commands::device_get,
                 commands::device_set_sidebar,
                 commands::device_set_log_level,
+                commands::device_set_spellcheck,
                 commands::app_info,
                 commands::log_ui_error,
                 commands::backup_now,
@@ -29,6 +30,7 @@ macro_rules! specta_builder_for {
                 journal::journal_month_days,
                 journal::journal_pages,
                 journal::journal_search,
+                journal::journal_today,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
     };
@@ -137,14 +139,11 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir)?;
     tracing::info!(applied = ?report.applied, backup = ?report.backup, "database ready");
 
-    // Once per start, after migrations: no polling. Logs a count, never content.
-    match mnemora_journal::purge_deleted(&mut conn) {
-        Ok(0) => {}
-        Ok(n) => tracing::info!(
-            entries = n,
-            "purged Journal Entries deleted over 30 days ago"
-        ),
-        Err(e) => tracing::warn!(error = %e, "could not purge deleted Journal Entries"),
+    // Once per start, after migrations. A failing Module must not stop the app.
+    for module in &modules {
+        if let Err(e) = module.on_startup(&mut conn, &report) {
+            tracing::warn!(module = module.id(), error = %e, "startup work failed");
+        }
     }
 
     let bus = EventBus::new();
@@ -255,6 +254,8 @@ mod tests {
             "journalMonthDays",
             "journalPages",
             "journalSearch",
+            "journalToday",
+            "deviceSetSpellcheck",
             "settingsChangedEvent",
         ] {
             assert!(ts.contains(name), "bindings are missing {name}");
