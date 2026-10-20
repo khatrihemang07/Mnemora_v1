@@ -105,4 +105,9 @@ impl TestApp {
     pub fn with_db<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
         f(&lock(&self.app.state::<AppState>().db))
     }
+
+    /// Like `with_db`, for code that needs `&mut Connection` (it opens its own transaction).
+    pub fn with_db_mut<R>(&self, f: impl FnOnce(&mut Connection) -> R) -> R {
+        f(&mut lock(&self.app.state::<AppState>().db))
+    }
 }

@@ -3,6 +3,8 @@
  * (blank text rejected, valid dates, word count, ordering). Every result is a JSON copy, like real
  * IPC: handing out live objects would let the UI mutate the "database".
  */
+
+import { toggleTaskLine } from '../ui/markdown/tasks';
 import type { AppError, Entry, NewEntry, Page } from './bindings';
 import { seedJournalEntries } from './mock-journal-seed';
 
@@ -66,7 +68,12 @@ export interface JournalMockFlags {
  * live: flip `failUpdate` to make saves fail, and back to let a Retry succeed.
  */
 export function createJournalMock(seed = false, flags: JournalMockFlags = { failUpdate: false }) {
-  const entries: Entry[] = seed ? seedJournalEntries(new Date(), mockId) : [];
+  const all: Entry[] = seed ? seedJournalEntries(new Date(), mockId) : [];
+  /** id -> when it was deleted. Deleted Entries stay in `all` so a restore keeps their place. */
+  const deleted = new Map<string, number>();
+  const live = () => all.filter((e) => !deleted.has(e.id));
+  const find = (id: unknown) => live().find((e) => e.id === id);
+  const missing = () => fail('unknown_key', 'That Entry no longer exists');
 
   return {
     handles: (cmd: string) => cmd.startsWith('journal_'),
@@ -97,7 +104,7 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
             created_at: now,
             updated_at: now,
           };
-          entries.push(entry);
+          all.push(entry);
           return copy(entry);
         }
         case 'journal_entry_update': {
@@ -109,8 +116,8 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           }
           const text = a.text as string;
           if (!text.trim()) throw fail('validation', "An Entry can't be blank");
-          const entry = entries.find((e) => e.id === a.id);
-          if (!entry) throw fail('unknown_key', 'That Entry no longer exists');
+          const entry = find(a.id);
+          if (!entry) throw missing();
           const now = Date.now();
           entry.body = text;
           entry.word_count = wordCount(text);
@@ -119,10 +126,31 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           entry.edited_at ??= now - entry.written_at > EDIT_GRACE_MS ? now : null;
           return copy(entry);
         }
+        case 'journal_entry_toggle_task': {
+          const entry = find(a.id);
+          if (!entry) throw missing();
+          const body = toggleTaskLine(entry.body, a.line as number);
+          if (body === null) throw fail('validation', 'That line is not a checklist item');
+          entry.body = body;
+          entry.updated_at = Date.now();
+          return copy(entry);
+        }
+        case 'journal_entry_delete': {
+          if (!find(a.id)) throw missing();
+          deleted.set(a.id as string, Date.now());
+          return null;
+        }
+        case 'journal_entry_restore': {
+          const entry = all.find((e) => e.id === a.id && deleted.has(e.id));
+          if (!entry) throw missing();
+          deleted.delete(entry.id);
+          return copy(entry);
+        }
         case 'journal_pages': {
           const cursor = a.cursor as string | null;
           if (cursor !== null && !validDate(cursor)) throw fail('validation', 'Not a valid date');
           const limit = Math.min(MAX_PAGES, Math.max(1, a.limit as number));
+          const entries = live();
           const dates = [...new Set(entries.map((e) => e.page_date))]
             .filter((d) => cursor === null || d < cursor)
             .sort()

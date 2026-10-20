@@ -27,6 +27,12 @@ export const commands = {
 	journalEntryCreate: (entry: NewEntry) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_create", { entry })),
 	/**  Replaces an Entry's text. `session_id` groups a composer session's saves in the change log. */
 	journalEntryUpdate: (id: string, text: string, sessionId: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_update", { id, text, sessionId })),
+	/**  Ticks or unticks the checklist item on the 0-based source `line`. Never marks the Entry edited. */
+	journalEntryToggleTask: (id: string, line: number) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_toggle_task", { id, line })),
+	/**  Deletes an Entry. It can be restored for 30 days, then it is erased. */
+	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
+	/**  Brings a deleted Entry back to its place on its Page. */
+	journalEntryRestore: (id: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_restore", { id })),
 	/**
 	 *  Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
 	 *  from the previous request). Fewer Pages than `limit` means the end.

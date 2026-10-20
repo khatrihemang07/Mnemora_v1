@@ -17,7 +17,8 @@
 />
 
 <style>
-  :global([data-sonner-toaster]) {
+  /* `html` outranks svelte-sonner's own [data-sonner-theme] colours, which ignore our theme. */
+  :global(html [data-sonner-toaster][data-sonner-theme]) {
     --normal-bg: var(--pop);
     --normal-text: var(--ink);
     --normal-border: var(--line);
@@ -30,7 +31,7 @@
     --error-border: var(--danger);
     font-family: var(--f-ui);
   }
-  :global([data-sonner-toast] [data-button]) {
+  :global(html [data-sonner-toast][data-styled='true'] [data-button]) {
     background: var(--accent);
     color: var(--on-accent);
   }

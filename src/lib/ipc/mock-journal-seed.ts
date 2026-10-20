@@ -52,6 +52,9 @@ const x = 1;
 | a | b |
 |---|---|`;
 
+/** An Entry that is only a checklist: ⋯ ▸ Edit or its time is the way into the editor. */
+const CHECKLIST = '- [ ] Call the dentist\n- [ ] Reply to Priya\n- [x] Pick up the parcel';
+
 /** `YYYY-MM-DD` of the device's calendar `days` from `base`. */
 function shift(base: string, days: number): string {
   const [y = 0, m = 1, d = 1] = base.split('-').map(Number);
@@ -92,6 +95,7 @@ export function seedJournalEntries(now: Date, newId: () => string): Entry[] {
 
   add(today, SHOWCASE, at(today, '06:30'));
   add(today, pick(0), at(today, '07:48'));
+  add(today, CHECKLIST, at(today, '09:05'));
   add(today, pick(1), at(today, '13:20'), at(today, '15:05'));
 
   const yesterday = shift(today, -1);

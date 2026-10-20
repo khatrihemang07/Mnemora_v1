@@ -2,7 +2,7 @@
   MarkdownView: the read-only rendering of Markdown text. Symbols are hidden and formatting is shown;
   it is built from the same parser as MarkdownEditor and draws Svelte elements from plain data, never
   raw HTML. Links open in the system browser. Checklist items look like checkboxes; pass `ontoggle`
-  to make them tickable (a later ticket wires it up).
+  to make them tickable: the whole row is the target, and the box itself stays keyboard reachable.
 -->
 <script lang="ts">
   import Check from '~icons/lucide/check';
@@ -20,6 +20,13 @@
   let { source, font = 'serif', ontoggle, class: cls = '' }: Props = $props();
 
   const blocks = $derived(parseMarkdown(source));
+
+  /** A click anywhere on a task row ticks it, unless it is a link or the end of a text selection. */
+  function rowclick(e: MouseEvent, line: number, checked: boolean) {
+    if ((e.target as Element).closest('a') || window.getSelection()?.toString()) return;
+    e.stopPropagation();
+    ontoggle?.(line, !checked);
+  }
 
   function follow(e: MouseEvent, href: string) {
     e.preventDefault();
@@ -56,7 +63,13 @@
         {#each b.items as item, j (j)}
           {#if item.task}
             {@const task = item.task}
-            <li class="md-item md-task" class:md-task-done={task.checked}>
+            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -- the row is a bigger target for the checkbox, which has the keyboard handling -->
+            <li
+              class="md-item md-task"
+              class:md-task-done={task.checked}
+              data-tickable={ontoggle ? '' : undefined}
+              onclick={ontoggle ? (e) => rowclick(e, task.line, task.checked) : undefined}
+            >
               <span
                 class="md-cb"
                 role="checkbox"

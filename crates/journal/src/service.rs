@@ -8,12 +8,14 @@ use rusqlite::Connection;
 
 use crate::MODULE_ID;
 use crate::entry::{
-    Entry, NewEntry, Page, validate_page_date, validate_text, validate_written_zone,
+    Entry, NewEntry, Page, toggle_task, validate_page_date, validate_text, validate_written_zone,
 };
 use crate::{repo, words};
 
 /// Change-log entity name for Entries.
 const ENTITY: &str = "journal_entry";
+/// Deleted Entries are kept this long (for Undo and recovery), then erased for good.
+const PURGE_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// Most Pages one request may return.
 const MAX_PAGES: u32 = 100;
 /// Changes sooner than this after the written instant are typo fixes, not edits.
@@ -26,7 +28,16 @@ fn edited_after_update(entry: &Entry, now: i64) -> Option<i64> {
         .or_else(|| (now - entry.written_at > EDIT_GRACE_MS).then_some(now))
 }
 
-fn record(conn: &Connection, entry: &Entry, op: ChangeOp, session_id: &str) -> AppResult<()> {
+fn missing() -> AppError {
+    AppError::new(ErrorCode::UnknownKey, "That Entry no longer exists")
+}
+
+fn record(
+    conn: &Connection,
+    entry: &Entry,
+    op: ChangeOp,
+    session_id: Option<&str>,
+) -> AppResult<()> {
     changelog::record(
         conn,
         &Change {
@@ -34,7 +45,7 @@ fn record(conn: &Connection, entry: &Entry, op: ChangeOp, session_id: &str) -> A
             entity: ENTITY.into(),
             entity_id: entry.id.clone(),
             op,
-            session_id: Some(session_id.to_owned()),
+            session_id: session_id.map(str::to_owned),
             snapshot: serde_json::to_value(entry).map_err(|e| {
                 AppError::new(ErrorCode::Internal, "Could not record the change").with_details(e)
             })?,
@@ -63,7 +74,7 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     };
     let tx = conn.transaction()?;
     repo::insert(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Create, &new.session_id)?;
+    record(&tx, &entry, ChangeOp::Create, Some(&new.session_id))?;
     tx.commit()?;
     Ok(entry)
 }
@@ -78,8 +89,7 @@ pub fn update_entry(
 ) -> AppResult<Entry> {
     validate_text(&text)?;
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?
-        .ok_or_else(|| AppError::new(ErrorCode::UnknownKey, "That Entry no longer exists"))?;
+    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
 
     entry.word_count = words::word_count(&text);
     entry.body = text;
@@ -87,9 +97,55 @@ pub fn update_entry(
     entry.updated_at = now;
     entry.edited_at = edited_after_update(&entry, now);
     repo::update_body(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Update, session_id)?;
+    record(&tx, &entry, ChangeOp::Update, Some(session_id))?;
     tx.commit()?;
     Ok(entry)
+}
+
+/// Ticks or unticks the checklist item on the 0-based source `line`. Never counts as an edit.
+/// Each tick is its own change-log record: it has no editing session.
+pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResult<Entry> {
+    let tx = conn.transaction()?;
+    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    entry.body = toggle_task(&entry.body, line)?;
+    entry.updated_at = now_ms();
+    repo::update_body(&tx, &entry)?;
+    record(&tx, &entry, ChangeOp::Tick, None)?;
+    tx.commit()?;
+    Ok(entry)
+}
+
+/// Soft-deletes an Entry: it leaves its Page at once and is erased after 30 days.
+pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
+    let tx = conn.transaction()?;
+    let entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    repo::set_deleted_at(&tx, id, Some(now_ms()))?;
+    record(&tx, &entry, ChangeOp::Delete, None)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Brings a deleted Entry back. Pages order by the written instant, so it returns to its place.
+pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
+    let tx = conn.transaction()?;
+    let entry = repo::get_deleted(&tx, id)?.ok_or_else(missing)?;
+    repo::set_deleted_at(&tx, id, None)?;
+    record(&tx, &entry, ChangeOp::Restore, None)?;
+    tx.commit()?;
+    Ok(entry)
+}
+
+/// Permanently removes Entries deleted over 30 days ago, with their change-log records, in one
+/// transaction. Returns how many Entries went. Run once at app start.
+pub fn purge_deleted(conn: &mut Connection) -> AppResult<usize> {
+    let tx = conn.transaction()?;
+    let ids = repo::deleted_before(&tx, now_ms() - PURGE_AFTER_MS)?;
+    for id in &ids {
+        repo::remove(&tx, id)?;
+    }
+    changelog::purge(&tx, ENTITY, &ids)?;
+    tx.commit()?;
+    Ok(ids.len())
 }
 
 /// Up to `limit` Pages, newest first, continuing before the `cursor` date when given.
