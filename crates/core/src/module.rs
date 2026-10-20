@@ -1,8 +1,10 @@
 //! The compile-time contract every Module implements.
 
+use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
 use serde_json::json;
 
+use crate::error::AppResult;
 use crate::settings::{SettingsRegistry, validate};
 
 /// A self-contained area of the app. Registered in one place by the app crate.
@@ -16,6 +18,12 @@ pub trait Module: Send + Sync {
 
     /// Declares this Module's Settings keys, defaults and validators.
     fn register_settings(&self, reg: &mut SettingsRegistry);
+
+    /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
+    /// purging old rows). No polling: nothing calls this again. Never log user content.
+    fn on_startup(&self, _conn: &mut Connection) -> AppResult<()> {
+        Ok(())
+    }
 }
 
 /// Core's own Module: the `settings` table and the app-wide preferences.

@@ -179,6 +179,7 @@ Example id: `journal`.
        fn id(&self) -> &'static str { "journal" }
        fn migrations(&self) -> Migrations<'static> { /* M::up(...) list */ }
        fn register_settings(&self, reg: &mut SettingsRegistry) { /* reg.register("journal", key, default, validator) */ }
+       // Optional: fn on_startup(&self, conn: &mut Connection) -> AppResult<()>, run once per start after migrations.
    }
    ```
 3. Migrations are append-only and tracked per Module. Tables use a UUIDv7 text id, `created_at`/`updated_at`, and a nullable `deleted_at` for soft delete ([ADR 0003](../adr/0003-sync-ready-sqlite.md)).

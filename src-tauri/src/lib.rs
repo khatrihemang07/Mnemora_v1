@@ -139,14 +139,11 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir)?;
     tracing::info!(applied = ?report.applied, backup = ?report.backup, "database ready");
 
-    // Once per start, after migrations: no polling. Logs a count, never content.
-    match mnemora_journal::purge_deleted(&mut conn) {
-        Ok(0) => {}
-        Ok(n) => tracing::info!(
-            entries = n,
-            "purged Journal Entries deleted over 30 days ago"
-        ),
-        Err(e) => tracing::warn!(error = %e, "could not purge deleted Journal Entries"),
+    // Once per start, after migrations. A failing Module must not stop the app.
+    for module in &modules {
+        if let Err(e) = module.on_startup(&mut conn) {
+            tracing::warn!(module = module.id(), error = %e, "startup work failed");
+        }
     }
 
     let bus = EventBus::new();

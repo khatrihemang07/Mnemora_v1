@@ -113,6 +113,7 @@ pub fn journal_today(state: State<'_, AppState>, today: String) -> Result<TodayS
 
 #[cfg(test)]
 mod tests {
+    use mnemora_core::module::Module;
     use serde_json::{Value, json};
 
     use crate::test_support::TestApp;
@@ -572,8 +573,8 @@ mod tests {
         deleted_days_ago(&app, &old["id"], 31);
         deleted_days_ago(&app, &recent["id"], 29);
 
-        let purged = app.with_db_mut(|c| mnemora_journal::purge_deleted(c).unwrap());
-        assert_eq!(purged, 1);
+        // The startup hook is what the app runs; it purges through the Module contract.
+        app.with_db_mut(|c| mnemora_journal::JournalModule.on_startup(c).unwrap());
 
         assert_eq!(row_count(&app, "journal_entries"), 2);
         let logged: Vec<String> = app.with_db(|c| {

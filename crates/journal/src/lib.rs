@@ -15,8 +15,10 @@ mod snippet;
 mod today;
 mod words;
 
+use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
+use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
 
@@ -58,5 +60,16 @@ impl Module for JournalModule {
             validate::one_of(&["narrow", "default", "wide"]),
         );
         reg.register(MODULE_ID, "page_summary", json!(true), validate::boolean());
+    }
+
+    fn on_startup(&self, conn: &mut Connection) -> AppResult<()> {
+        match purge_deleted(conn)? {
+            0 => {}
+            n => tracing::info!(
+                entries = n,
+                "purged Journal Entries deleted over 30 days ago"
+            ),
+        }
+        Ok(())
     }
 }
