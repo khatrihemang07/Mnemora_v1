@@ -442,7 +442,7 @@
         {#snippet row(item)}
           {#if item.kind === 'month'}
             <div
-              class="flex items-center gap-2.5 pt-7 pb-1 text-[11px] font-semibold tracking-[0.08em] text-faint uppercase after:h-px after:flex-1 after:bg-line"
+              class="flex items-center gap-2.5 pt-7 pb-1 text-2xs font-semibold tracking-[0.08em] text-faint uppercase after:h-px after:flex-1 after:bg-line"
             >
               {item.label}
             </div>

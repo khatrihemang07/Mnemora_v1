@@ -35,12 +35,12 @@
         id={hitDomId(id, hit)}
         aria-selected={active === offset + i}
         aria-label="{writtenTime(hit.written_at, hit.written_offset_min, timeFormat)}, {snippetText(hit.snippet)}"
-        class="block w-full cursor-pointer rounded-sm px-2.5 py-2 text-left text-[0.84375rem] leading-normal transition-colors duration-(--dur) ease-out hover:bg-hover
+        class="block w-full cursor-pointer rounded-sm px-2.5 py-2 text-left text-sm leading-normal transition-colors duration-(--dur) ease-out hover:bg-hover
           {active === offset + i ? 'bg-hover' : ''}"
         data-date={date}
         onclick={() => onopen(hit)}
       >
-        <small class="block text-[0.71875rem] text-faint">
+        <small class="block text-xs leading-normal text-faint">
           {writtenTime(hit.written_at, hit.written_offset_min, timeFormat)}
         </small>
         <span class="text-ink">
@@ -76,7 +76,7 @@
     <div role="group" aria-labelledby="{id}-similar" aria-describedby="{id}-similar-note">
       <div
         id="{id}-similar"
-        class="mt-6 mb-1 flex items-center gap-2.5 text-[11px] font-semibold tracking-[0.08em] text-faint uppercase after:h-px after:flex-1 after:bg-line"
+        class="mt-6 mb-1 flex items-center gap-2.5 text-2xs font-semibold tracking-[0.08em] text-faint uppercase after:h-px after:flex-1 after:bg-line"
       >
         Similar matches
       </div>

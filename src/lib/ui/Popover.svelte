@@ -69,7 +69,7 @@
       onInteractOutside={(e) => {
         if (e.target instanceof Node && anchor?.contains(e.target)) e.preventDefault();
       }}
-      class="z-50 rounded-md bg-pop p-3 text-[0.8125rem] shadow-pop outline-none"
+      class="z-50 rounded-md bg-pop p-3 text-sm leading-normal shadow-pop outline-none"
     >
       {@render children()}
     </Popover.Content>

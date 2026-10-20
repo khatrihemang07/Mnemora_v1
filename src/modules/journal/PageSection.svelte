@@ -19,7 +19,7 @@
 <section>
   <PageHeading {page} {today} {summary} />
   {#if page.entries.length === 0}
-    <p class="pt-1.5 pb-0.5 text-[0.84rem] text-faint">Nothing yet today. The box below is ready.</p>
+    <p class="pt-1.5 pb-0.5 text-sm leading-normal text-faint">Nothing yet today. The box below is ready.</p>
   {:else}
     <div>
       {#each page.entries as entry (entry.id)}

@@ -50,7 +50,7 @@ Three layers, all in `src/lib/theme/tokens.css` and `src/app.css`:
    - Module hues (C1): `--hue-home`, `--hue-journal`, `--hue-todo`, `--hue-ai`, `--hue-settings`
    - Hero (S1): `--hero-from`, `--hero-via`, `--hero-to`, `--hero-ink`, `--hero-ink-muted` (darkened so white text passes AA)
    - Shape and depth: `--r1`/`--r2`/`--r3` (8/12/16), `--card-border`, `--elev-card`, `--elev-pop`, `--scroll-thumb`, `--scrim`
-   - Type: `--f-ui`, `--f-display`, `--f-mono`, `--display-weight`, `--display-track`. Sizes use Tailwind's scale (`text-xs` 12px, `text-sm` 14px, `text-base`, `text-lg`) plus one added step, `text-2xs` (11px, tab labels and badges). `text-ui` (13px, `--text-ui: 0.8125rem`, dense UI text between `text-xs` and `text-sm`). No arbitrary `text-[...]` sizes
+   - Type: `--f-ui`, `--f-display`, `--f-mono`, `--display-weight`, `--display-track`. Sizes use Tailwind's scale (`text-xs` 12px, `text-sm` 14px, `text-base`, `text-lg`) plus one added step, `text-2xs` (11px, tab labels and badges). No arbitrary `text-[...]` sizes
    - Layout and density: `--row`, `--pad`, `--gap`, `--fs`, `--titlebar-h`
    - Motion: `--dur`, `--dur-exit`, `--dur-fade`, `--ease`
 3. **Component**: Tailwind utilities generated from the semantic layer in `app.css` (`bg-surface`, `text-muted`, `border-line`, `rounded-md`, `shadow-card`, `font-display`, `ease-out`, `text-hero-ink`). Tailwind's default palette and scales are removed, so a raw colour utility does not exist.

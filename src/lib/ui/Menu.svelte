@@ -80,7 +80,7 @@
       collisionPadding={8}
       aria-label={label}
       {onCloseAutoFocus}
-      class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-[0.8125rem] shadow-pop outline-none"
+      class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-sm leading-normal shadow-pop outline-none"
     >
       {#each items as item (item.label)}
         {#if item.separatorBefore}

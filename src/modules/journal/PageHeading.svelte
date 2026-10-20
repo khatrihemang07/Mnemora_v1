@@ -17,15 +17,15 @@
   class="flex items-baseline gap-2.5 bg-bg pt-3 pb-2 {nav.flashPage === page.date ? 'flash-header' : ''}"
 >
   <h2
-    class="font-display text-[1.45rem] leading-[1.15]"
+    class="font-display text-2xl leading-[1.15]"
     style="font-weight: var(--display-weight); letter-spacing: var(--display-track)"
   >
     {heading.title}
   </h2>
-  {#if heading.year}<span class="font-display text-[1.1rem] text-faint">{heading.year}</span>{/if}
+  {#if heading.year}<span class="font-display text-lg leading-normal text-faint">{heading.year}</span>{/if}
   {#if heading.badge}
     <span
-      class="rounded-full bg-[color-mix(in_oklch,var(--hue-journal)_14%,transparent)] px-2 py-px text-[11px] font-semibold text-(--hue-journal)"
+      class="rounded-full bg-[color-mix(in_oklch,var(--hue-journal)_14%,transparent)] px-2 py-px text-2xs font-semibold text-(--hue-journal)"
     >
       {heading.badge}
     </span>

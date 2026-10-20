@@ -198,9 +198,9 @@
     if (editing.arrived === entry.id) editing.arrived = null;
   }}
 >
-  <time class="text-xs text-faint tabular-nums desktop:pt-[3px] desktop:text-[0.78rem]" title={full}>
+  <time class="text-xs text-faint tabular-nums desktop:pt-[3px]" title={full}>
     {#if writtenDate}
-      <span class="mr-1.5 desktop:mr-0 desktop:block desktop:text-[0.65rem] desktop:leading-[1.3] desktop:whitespace-nowrap">
+      <span class="mr-1.5 desktop:mr-0 desktop:block desktop:text-2xs desktop:leading-[1.3] desktop:whitespace-nowrap">
         {writtenDate}
       </span>
     {/if}
@@ -217,7 +217,7 @@
         ontoggle={(line) => void tickTask(entry, line)}
       />
       {#if edited}
-        <p class="mt-0.5 text-[0.72rem] text-faint" title={edited}>edited</p>
+        <p class="mt-0.5 text-xs leading-normal text-faint" title={edited}>edited</p>
       {/if}
     {/if}
   </div>

@@ -132,7 +132,7 @@
     {#if view === 'days'}
       <button
         type="button"
-        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-[1.05rem] text-ink hover:bg-hover"
+        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-base leading-normal text-ink hover:bg-hover"
         style="font-weight: var(--display-weight)"
         aria-label="Choose month and year, now {MONTHS[monthIndex]} {year}"
         onclick={openMonths}
@@ -156,7 +156,7 @@
     {:else}
       <button
         type="button"
-        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-[1.05rem] text-ink hover:bg-hover"
+        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-base leading-normal text-ink hover:bg-hover"
         style="font-weight: var(--display-weight)"
         aria-label="Back to the days of {MONTHS[monthIndex]} {year}"
         onclick={() => (view = 'days')}
