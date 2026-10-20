@@ -4,8 +4,11 @@ export const SAVE_PAUSE_MS = 600;
 export type ComposerPhase = 'idle' | 'creating' | 'editing' | 'finishing';
 
 export interface ComposerDeps {
-  create: (text: string, sessionId: string) => Promise<{ id: string }>;
+  /** `pageDate` is the date chip's choice; null means the default (Today). */
+  create: (text: string, sessionId: string, pageDate: string | null) => Promise<{ id: string }>;
   update: (id: string, text: string, sessionId: string) => Promise<unknown>;
+  /** Moves the Entry already created to another Page. */
+  move: (id: string, pageDate: string) => Promise<unknown>;
   /** Starts a timer and returns its canceller. */
   setTimer: (fn: () => void, ms: number) => () => void;
   newSessionId: () => string;
@@ -22,6 +25,8 @@ export class Composer {
   text = '';
   /** Id of the Entry the last `finish()` completed, for the feed to welcome it. */
   lastFinishedId: string | null = null;
+  /** The Page the Entry goes on; null is Today. Choosing it after creation moves the Entry. */
+  pageDate: string | null = null;
   #sessionId: string;
   #entryId: string | null = null;
   #saved = '';
@@ -63,6 +68,21 @@ export class Composer {
     return true;
   }
 
+  /** The date chip changed: new Entries go there, and one already created moves there. */
+  setPageDate(date: string | null): void {
+    if (date === this.pageDate) return;
+    this.pageDate = date;
+    if (date === null) return;
+    this.#enqueue(async () => {
+      if (this.#entryId === null) return;
+      try {
+        await this.deps.move(this.#entryId, date);
+      } catch (e) {
+        this.deps.onError(e);
+      }
+    });
+  }
+
   /** Text that is not stored yet: a failed create, or edits a failed update left behind. */
   get unsaved(): boolean {
     if (!this.text.trim()) return false;
@@ -86,6 +106,7 @@ export class Composer {
   #reset() {
     this.phase = 'idle';
     this.text = '';
+    this.pageDate = null;
     this.#entryId = null;
     this.#saved = '';
     this.#sessionId = this.deps.newSessionId();
@@ -96,7 +117,7 @@ export class Composer {
     const text = this.text;
     this.#enqueue(async () => {
       try {
-        const entry = await this.deps.create(text, this.#sessionId);
+        const entry = await this.deps.create(text, this.#sessionId, this.pageDate);
         this.#entryId = entry.id;
         this.#saved = text;
         this.phase = 'editing';

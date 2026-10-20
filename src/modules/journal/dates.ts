@@ -1,4 +1,5 @@
 import type { TimeFormat } from '../../lib/time/format';
+import { addDays } from '../../lib/ui/calendar';
 
 const MINUTE_MS = 60_000;
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -26,13 +27,6 @@ function dateParts(date: string) {
   return { y, d, at, part };
 }
 
-/** The calendar date `days` after `date` (negative for before). */
-function addDays(date: string, days: number): string {
-  const { at } = dateParts(date);
-  at.setUTCDate(at.getUTCDate() + days);
-  return at.toISOString().slice(0, 10);
-}
-
 export interface PageHeading {
   /** "Tuesday, 20 October": the real date, always. */
   title: string;
@@ -56,6 +50,19 @@ export function pageHeading(date: string, today: string): PageHeading {
 function shortDate(date: string): string {
   const { d, part } = dateParts(date);
   return `${part({ weekday: 'short' })} ${d} ${part({ month: 'short' })}`;
+}
+
+/** "Thu 15 Oct", with the year when it is not `today`'s year: a date named in a sentence or chip. */
+export function dayLabel(date: string, today: string): string {
+  const year = date.slice(0, 4);
+  return shortDate(date) + (year !== today.slice(0, 4) ? ` ${year}` : '');
+}
+
+/** The composer and editor date chip: "Today", "Yesterday" or the short date. */
+export function chipLabel(date: string, today: string): string {
+  if (date === today) return 'Today';
+  if (date === addDays(today, -1)) return 'Yesterday';
+  return dayLabel(date, today);
 }
 
 /** The calendar day on the wall clock of the zone an instant was written in. */
@@ -106,7 +113,30 @@ export function monthLabel(date: string): string {
   return `${part({ month: 'long' })} ${y}`;
 }
 
-/** The "↑ Today" pill shows once you are more than a screen away from the top. */
-export function showTodayPill(scrollTop: number, viewportHeight: number): boolean {
-  return scrollTop > viewportHeight;
+/**
+ * The "↑ Today" pill shows once you are more than a screen below where the Journal opens (Today's
+ * area: the top, or just under any future Pages).
+ */
+export function showTodayPill(scrollTop: number, viewportHeight: number, todayTop = 0): boolean {
+  return scrollTop - todayTop > viewportHeight;
+}
+
+/** Opening on Today lands within a few pixels of its top (row sizes are estimates until measured). */
+const UPCOMING_SLACK_PX = 24;
+
+/**
+ * The "↑ Upcoming (n)" pill shows at the top of Today's area: from where Today starts down to a
+ * screen below it (after which the "↑ Today" pill takes over), and only when future Pages exist.
+ */
+export function showUpcomingPill(
+  scrollTop: number,
+  viewportHeight: number,
+  todayTop: number,
+  upcoming: number,
+): boolean {
+  return (
+    upcoming > 0 &&
+    scrollTop >= todayTop - UPCOMING_SLACK_PX &&
+    !showTodayPill(scrollTop, viewportHeight, todayTop)
+  );
 }

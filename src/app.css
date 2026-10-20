@@ -197,3 +197,36 @@ textarea,
     transform: translateY(10px);
   }
 }
+
+/*
+ * Pointing at something: an Entry (a move's "Show") or a Page header (a calendar day) glows in the
+ * Journal's soft tint, then fades. The header sits on --bg (it is pinned over the feed), so it fades
+ * back to that instead of to transparent. Under reduced motion the tint is steady until the class
+ * is removed (the catch-all above cuts the fade to nothing).
+ */
+.flash,
+.flash-header {
+  --flash-tint: color-mix(in oklch, var(--hue-journal) 16%, transparent);
+  animation: flash calc(var(--dur) * 11.5) var(--ease);
+}
+.flash-header {
+  --flash-tint: color-mix(in oklch, var(--hue-journal) 16%, var(--bg));
+  --flash-end: var(--bg);
+}
+@keyframes flash {
+  0%,
+  40% {
+    background-color: var(--flash-tint);
+  }
+  100% {
+    background-color: var(--flash-end, transparent);
+  }
+}
+:root[data-reduce-motion="true"] :is(.flash, .flash-header) {
+  background-color: var(--flash-tint);
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.flash, .flash-header) {
+    background-color: var(--flash-tint);
+  }
+}

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  chipLabel,
+  dayLabel,
   editedLabel,
   fullWritten,
   localDateString,
@@ -7,6 +9,7 @@ import {
   pageHeading,
   pageSummary,
   showTodayPill,
+  showUpcomingPill,
   writtenDateLabel,
   writtenTime,
 } from './dates';
@@ -113,5 +116,45 @@ describe('showTodayPill', () => {
     expect(showTodayPill(0, 800)).toBe(false);
     expect(showTodayPill(800, 800)).toBe(false);
     expect(showTodayPill(801, 800)).toBe(true);
+  });
+
+  it('counts from where Today starts when future Pages sit above it', () => {
+    expect(showTodayPill(1200, 800, 600)).toBe(false);
+    expect(showTodayPill(1401, 800, 600)).toBe(true);
+    // In the Upcoming area, above Today: nothing to go back to.
+    expect(showTodayPill(100, 800, 600)).toBe(false);
+  });
+});
+
+describe('chipLabel and dayLabel', () => {
+  const today = '2026-10-20';
+  it('names Today and Yesterday, else the short date', () => {
+    expect(chipLabel('2026-10-20', today)).toBe('Today');
+    expect(chipLabel('2026-10-19', today)).toBe('Yesterday');
+    expect(chipLabel('2026-10-15', today)).toBe('Thu 15 Oct');
+    expect(chipLabel('2026-10-21', today)).toBe('Wed 21 Oct');
+  });
+
+  it('adds the year only outside the current year', () => {
+    expect(chipLabel('2025-12-30', today)).toBe('Tue 30 Dec 2025');
+    expect(dayLabel('2026-10-19', today)).toBe('Mon 19 Oct');
+    expect(dayLabel('2027-01-01', today)).toBe('Fri 1 Jan 2027');
+  });
+
+  it('Yesterday works across a year boundary', () => {
+    expect(chipLabel('2025-12-31', '2026-01-01')).toBe('Yesterday');
+  });
+});
+
+describe('showUpcomingPill', () => {
+  it('shows from the top of Today down to a screen below it, when future Pages exist', () => {
+    expect(showUpcomingPill(600, 800, 600, 2)).toBe(true);
+    expect(showUpcomingPill(590, 800, 600, 2)).toBe(true); // opening lands a few px off
+    expect(showUpcomingPill(1400, 800, 600, 2)).toBe(true);
+    expect(showUpcomingPill(1401, 800, 600, 2)).toBe(false); // the Today pill takes over
+  });
+  it('hides while reading the Upcoming Pages themselves, or with none', () => {
+    expect(showUpcomingPill(100, 800, 600, 2)).toBe(false);
+    expect(showUpcomingPill(0, 800, 0, 0)).toBe(false);
   });
 });

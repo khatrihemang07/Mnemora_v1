@@ -5,7 +5,9 @@
   more. `onviewport` reports scroll position. `columnClass` styles the inner column (e.g. a max
   width). Rows sit in translated boxes where `position: sticky` misplaces itself, so a pinned
   header is drawn as an overlay instead: rows where `isSticky` holds get `pinned` rendered at the
-  top while they are being read, pushed up by the next one.
+  top while they are being read, pushed up by the next one. When rows are added or removed above
+  the ones being read, the scroll position follows the rows, so the view stays put. `scrollToIndex`,
+  `offsetOf` and `indexAt` let a parent jump to, and measure, rows.
 -->
 <script lang="ts" generics="T">
   import { createVirtualizer, type SvelteVirtualizer, type VirtualItem } from '@tanstack/svelte-virtual';
@@ -55,6 +57,8 @@
   // The scrollbar's width, so the overlay lines up with the rows under it.
   const gutter = $derived(outerWidth - innerWidth);
   let instance: SvelteVirtualizer<HTMLDivElement, HTMLElement> | undefined;
+  /** The first row in view and how far into it the view starts, to hold the view across inserts. */
+  let anchor: { key: string | number | bigint; index: number; delta: number } | null = null;
 
   const options = () => ({
     count: items.length,
@@ -89,6 +93,7 @@
     void estimateSize;
     void getKey;
     get(virtualizer).setOptions(options());
+    untrack(holdAnchor);
   });
 
   $effect(() => {
@@ -117,15 +122,47 @@
   function reported() {
     if (!scroller) return;
     scrollTop = scroller.scrollTop;
+    const first = rows.find((r) => r.start + r.size > scrollTop);
+    anchor = first ? { key: first.key, index: first.index, delta: scrollTop - first.start } : null;
     onviewport?.(scroller.scrollTop, scroller.clientHeight);
   }
 
-  /** Back to the first row; smooth unless motion is reduced. */
-  export function scrollToTop() {
-    const reduce =
-      document.documentElement.dataset.reduceMotion === 'true' ||
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    scroller?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+  /**
+   * Rows inserted or removed above the one being read move it; scroll by the same amount. Only an
+   * index change counts: a row resizing is already followed by the virtualizer. Whatever the new
+   * rows' real size turns out to be, the virtualizer corrects once they are measured.
+   */
+  function holdAnchor() {
+    if (!anchor || !scroller || !instance) return;
+    const index = items.findIndex((item, i) => getKey(item, i) === anchor?.key);
+    if (index < 0 || index === anchor.index) return;
+    const start = instance.getOffsetForIndex(index, 'start')?.[0];
+    if (start === undefined) return;
+    scroller.scrollTop = start + anchor.delta;
+    anchor.index = index;
+  }
+
+  const reducedMotion = () =>
+    document.documentElement.dataset.reduceMotion === 'true' ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /**
+   * Brings row `index` to the top. Rows jumped over keep their estimated heights, so the target's
+   * start is exact however far the jump. Smooth (unless motion is reduced) for hops back.
+   */
+  export function scrollToIndex(index: number, smooth = false) {
+    scroller?.scrollTo({ top: offsetOf(index), behavior: smooth && !reducedMotion() ? 'smooth' : 'auto' });
+  }
+
+  /** Where row `index` starts, in px from the top of the list. */
+  export function offsetOf(index: number): number {
+    return instance?.getOffsetForIndex(index, 'start')?.[0] ?? 0;
+  }
+
+  /** The row at `offset` px from the top of the list (the nearest rendered one when between). */
+  export function indexAt(offset: number): number {
+    const row = rows.find((r) => r.start <= offset && offset < r.start + r.size) ?? rows[0];
+    return row?.index ?? 0;
   }
 </script>
 

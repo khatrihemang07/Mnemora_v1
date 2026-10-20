@@ -32,4 +32,5 @@ export const SHORTCUT_LIST = [
   { label: 'Toggle sidebar', keys: shortcutLabel('\\') },
   { label: 'New', keys: shortcutLabel('N') },
   { label: 'Go to Module 1 to 9', keys: shortcutLabel('1–9') },
+  { label: 'Journal: go to date', keys: shortcutLabel('G') },
 ];

@@ -11,6 +11,8 @@
     variant?: 'ghost' | 'secondary';
     size?: 'sm' | 'md';
     tooltipSide?: 'top' | 'right' | 'bottom' | 'left';
+    /** Bind to anchor a popover to the button. */
+    ref?: HTMLButtonElement | null;
   }
   let {
     icon: Icon,
@@ -19,6 +21,7 @@
     variant = 'ghost',
     size = 'md',
     tooltipSide = 'bottom',
+    ref = $bindable(null),
     class: cls = '',
     ...rest
   }: Props = $props();
@@ -30,6 +33,7 @@
 <Tooltip {label} {shortcut} side={tooltipSide}>
   {#snippet trigger({ props })}
     <button
+      bind:this={ref}
       type="button"
       {...props}
       {...rest}

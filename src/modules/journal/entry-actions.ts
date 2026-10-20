@@ -1,10 +1,13 @@
 import type { Entry } from '../../lib/ipc/bindings';
 import { toggleTaskLine } from '../../lib/ui/markdown/tasks';
-import { notify, notifyError, notifyUndo } from '../../lib/ui/toast';
+import { notify, notifyAction, notifyError, notifyUndo } from '../../lib/ui/toast';
+import { dayLabel } from './dates';
 import type { Editing } from './editing.svelte';
+import type { JournalNav } from './navigation.svelte';
 import {
   deleteEntry,
   invalidateJournal,
+  moveEntry,
   patchEntry,
   removeCachedEntry,
   restoreEntry,
@@ -55,5 +58,30 @@ export async function deleteEntryWithUndo(entry: Entry, editing: Editing): Promi
     restoreEntry(entry.id)
       .catch(() => notifyError("Couldn't restore the Entry"))
       .finally(() => void invalidateJournal());
+  });
+}
+
+/**
+ * Moves the Entry to another Page. An Entry open for editing is finished first (and stays open if
+ * that fails, so no text is lost). The feed stays where it is; the toast's Show scrolls to the
+ * Entry in its new place and flashes it.
+ */
+export async function moveEntryToDate(
+  entry: Entry,
+  date: string,
+  editing: Editing,
+  nav: JournalNav,
+): Promise<void> {
+  if (date === entry.page_date) return;
+  if (editing.id === entry.id && !(await editing.finisher?.())) return;
+  try {
+    await moveEntry(entry.id, date);
+  } catch {
+    notifyError("Couldn't move the Entry");
+    return;
+  }
+  await invalidateJournal();
+  notifyAction(`Moved to ${dayLabel(date, nav.today)}`, 'Show', () => {
+    void nav.scrollTo?.(date, entry.id);
   });
 }
