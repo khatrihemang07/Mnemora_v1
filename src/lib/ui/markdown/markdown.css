@@ -123,6 +123,37 @@ ol.md-list {
 .md-cb[role="checkbox"][tabindex] {
   cursor: pointer;
 }
+/* Tickable rows: the whole row is the target, so it says so on hover. */
+.md-task[data-tickable] {
+  cursor: pointer;
+  margin-inline: -0.4em;
+  padding-inline: 0.4em;
+  border-radius: var(--r1);
+  transition: background-color var(--dur) ease-out;
+}
+/* A checkbox's hit area reaches past its 15px box, sideways only (neighbouring rows touch, so a
+   taller one would tick the wrong item): 45px wide on a phone. The whole row is the target anyway. */
+.md-task[data-tickable] .md-cb::after {
+  content: "";
+  position: absolute;
+  inset: -3px -8px;
+}
+.md-task[data-tickable] .md-cb {
+  transition: box-shadow var(--dur) ease-out;
+}
+@media (hover: hover) {
+  .md-task[data-tickable]:hover {
+    background: color-mix(in oklch, var(--ink) 6%, transparent);
+  }
+  .md-task[data-tickable]:hover > .md-cb {
+    box-shadow: 0 0 0 4px var(--ring);
+  }
+}
+@media (max-width: 719.98px) {
+  .md-task[data-tickable] .md-cb::after {
+    inset: -3px -15px;
+  }
+}
 
 .md-mark {
   background: color-mix(in oklch, var(--warning) 35%, transparent);

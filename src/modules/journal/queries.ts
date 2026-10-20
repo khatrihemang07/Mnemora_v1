@@ -61,22 +61,56 @@ export function invalidateJournal(): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: journalKeys.all });
 }
 
+export function toggleTask(id: string, line: number): Promise<Entry> {
+  return unwrap(commands.journalEntryToggleTask(id, line));
+}
+
+export function deleteEntry(id: string): Promise<null> {
+  return unwrap(commands.journalEntryDelete(id));
+}
+
+export function restoreEntry(id: string): Promise<Entry> {
+  return unwrap(commands.journalEntryRestore(id));
+}
+
+/** Rewrites the cached Pages; `edit` returns the new Page, or null to drop it. */
+function editCachedPages(edit: (page: Page) => Page | null): void {
+  queryClient.setQueryData<InfiniteData<Page[]>>(journalKeys.pages, (data) => {
+    if (!data) return data;
+    return {
+      ...data,
+      pages: data.pages.map((group) => group.flatMap((page) => edit(page) ?? [])),
+    };
+  });
+}
+
+const withEntries = (page: Page, entries: Entry[]): Page => ({
+  ...page,
+  entries,
+  entry_count: entries.length,
+  word_count: entries.reduce((n, e) => n + e.word_count, 0),
+});
+
 /**
  * Puts a saved Entry into the cached feed in place, without a refetch: inline editing saves while
  * the Entry is open, and the feed must neither jump nor flash old text when it closes.
  */
 export function patchEntry(entry: Entry): void {
-  queryClient.setQueryData<InfiniteData<Page[]>>(journalKeys.pages, (data) => {
-    if (!data) return data;
-    return {
-      ...data,
-      pages: data.pages.map((group) =>
-        group.map((page) => {
-          if (!page.entries.some((e) => e.id === entry.id)) return page;
-          const entries = page.entries.map((e) => (e.id === entry.id ? entry : e));
-          return { ...page, entries, word_count: entries.reduce((n, e) => n + e.word_count, 0) };
-        }),
-      ),
-    };
+  editCachedPages((page) =>
+    page.entries.some((e) => e.id === entry.id)
+      ? withEntries(
+          page,
+          page.entries.map((e) => (e.id === entry.id ? entry : e)),
+        )
+      : page,
+  );
+}
+
+/** Takes an Entry out of the cached feed at once (delete); a Page left empty goes with it. */
+export function removeCachedEntry(id: string): void {
+  editCachedPages((page) => {
+    if (!page.entries.some((e) => e.id === id)) return page;
+    const entries = page.entries.filter((e) => e.id !== id);
+    return entries.length === 0 ? null : withEntries(page, entries);
   });
 }
