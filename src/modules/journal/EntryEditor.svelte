@@ -175,7 +175,14 @@
     >
       {chipLabel(entry.page_date, nav.today)}
     </Chip>
-    <Button size="sm" variant="primary" onclick={() => void finishAndFocus()}>Done</Button>
+    <Button
+      size="sm"
+      variant="primary"
+      onpointerdown={(e) => e.preventDefault()}
+      onclick={() => void finishAndFocus()}
+    >
+      Done
+    </Button>
   </div>
 </div>
 <DatePicker
