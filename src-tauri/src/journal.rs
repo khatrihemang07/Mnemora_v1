@@ -1,7 +1,7 @@
 //! Journal commands. Thin: the rules live in `mnemora-journal`.
 
 use mnemora_core::error::AppError;
-use mnemora_journal::{Entry, NewEntry, Page};
+use mnemora_journal::{Entry, NewEntry, Page, SearchResults};
 use tauri::State;
 
 use crate::state::{AppState, lock};
@@ -86,6 +86,21 @@ pub fn journal_pages(
     limit: u32,
 ) -> Result<Vec<Page>, AppError> {
     mnemora_journal::list_pages(&lock(&state.db), cursor.as_deref(), limit)
+}
+
+/// Searches live Entries. Every word is required and matches by prefix; quoted text is an exact
+/// phrase; case and accents are ignored. `from` and `to` are optional inclusive Page dates; with
+/// no words they list every Entry in the range. `similar` holds Entries that match only with a
+/// typo allowed, never repeating `exact`.
+#[tauri::command]
+#[specta::specta]
+pub fn journal_search(
+    state: State<'_, AppState>,
+    query: String,
+    from: Option<String>,
+    to: Option<String>,
+) -> Result<SearchResults, AppError> {
+    mnemora_journal::search(&lock(&state.db), &query, from.as_deref(), to.as_deref())
 }
 
 #[cfg(test)]
@@ -700,5 +715,297 @@ mod tests {
                 .unwrap_err();
             assert_eq!(err["code"], "validation", "{y}-{m}");
         }
+    }
+
+    fn search(app: &TestApp, query: &str, from: Option<&str>, to: Option<&str>) -> Value {
+        app.invoke(
+            "journal_search",
+            json!({ "query": query, "from": from, "to": to }),
+        )
+        .unwrap()
+    }
+
+    /// Ids of a group of Hits mapped back to the text they were created with.
+    fn found(app: &TestApp, query: &str, group: &str) -> Vec<String> {
+        let result = search(app, query, None, None);
+        result[group]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| entry_text(app, h["id"].as_str().unwrap()))
+            .collect()
+    }
+
+    fn entry_text(app: &TestApp, id: &str) -> String {
+        app.with_db(|c| {
+            c.query_row(
+                "SELECT body FROM journal_entries WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        })
+    }
+
+    #[test]
+    fn matching_ignores_case_and_accents_both_ways() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "Coffee at the Café").unwrap();
+        create(&app, "2026-10-19", "plain cafe visit").unwrap();
+        assert_eq!(found(&app, "CAFE", "exact").len(), 2);
+        assert_eq!(found(&app, "café", "exact").len(), 2);
+    }
+
+    #[test]
+    fn words_match_by_prefix_and_every_word_is_required_in_any_order() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "my journal entry").unwrap();
+        create(&app, "2026-10-19", "journal only").unwrap();
+        assert_eq!(found(&app, "jour", "exact").len(), 2);
+        assert_eq!(found(&app, "entry journal", "exact"), ["my journal entry"]);
+        assert!(found(&app, "journal zebra", "exact").is_empty());
+    }
+
+    #[test]
+    fn quoted_text_is_an_exact_phrase() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "the red door opened").unwrap();
+        create(&app, "2026-10-19", "a door that was red").unwrap();
+        assert_eq!(
+            found(&app, "\"red door\"", "exact"),
+            ["the red door opened"]
+        );
+        assert_eq!(found(&app, "red door", "exact").len(), 2);
+        // A quoted word is whole: no prefix matching inside quotes.
+        assert!(found(&app, "\"do\"", "exact").is_empty());
+    }
+
+    #[test]
+    fn results_are_newest_page_first_then_oldest_written_first() {
+        let app = TestApp::new();
+        create(&app, "2026-10-19", "note old").unwrap();
+        create(&app, "2026-10-20", "note a").unwrap();
+        create(&app, "2026-10-20", "note b").unwrap();
+        create(&app, "2027-01-01", "note future").unwrap();
+        assert_eq!(
+            found(&app, "note", "exact"),
+            ["note future", "note a", "note b", "note old"]
+        );
+    }
+
+    #[test]
+    fn a_range_narrows_words_and_alone_lists_every_entry_in_it() {
+        let app = TestApp::new();
+        for (d, t) in [
+            ("2026-10-01", "walk one"),
+            ("2026-10-10", "walk two"),
+            ("2026-10-10", "swim"),
+            ("2026-10-20", "walk three"),
+        ] {
+            create(&app, d, t).unwrap();
+        }
+        let with_words = search(&app, "walk", Some("2026-10-10"), Some("2026-10-20"));
+        assert_eq!(with_words["exact"].as_array().unwrap().len(), 2);
+        let alone = search(&app, "  ", Some("2026-10-10"), Some("2026-10-10"));
+        assert_eq!(alone["exact"].as_array().unwrap().len(), 2);
+        assert!(alone["similar"].as_array().unwrap().is_empty());
+        let open_ended = search(&app, "", Some("2026-10-10"), None);
+        assert_eq!(open_ended["exact"].as_array().unwrap().len(), 3);
+        // Nothing to search for and no range finds nothing.
+        assert!(
+            search(&app, "", None, None)["exact"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_backwards_or_invalid_range_is_rejected() {
+        let app = TestApp::new();
+        for (from, to) in [("2026-10-20", "2026-10-10"), ("2026-02-30", "2026-03-01")] {
+            let err = app
+                .invoke::<Value>(
+                    "journal_search",
+                    json!({ "query": "x", "from": from, "to": to }),
+                )
+                .unwrap_err();
+            assert_eq!(err["code"], "validation");
+        }
+    }
+
+    #[test]
+    fn typos_find_similar_entries_by_word_length_and_never_repeat_exact() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "my journal today").unwrap();
+        create(&app, "2026-10-19", "journals everywhere").unwrap();
+        // 6 letters: one typo is fine ("jurnal" -> "journal"); the prefix match of the second
+        // Entry is exact for "journal" but not for the typo.
+        assert!(found(&app, "jurnal", "exact").is_empty());
+        let similar = found(&app, "jurnal", "similar");
+        assert_eq!(similar, ["my journal today"]);
+        // The exact word finds both exactly and leaves nothing for similar.
+        assert_eq!(found(&app, "journal", "exact").len(), 2);
+        assert!(found(&app, "journal", "similar").is_empty());
+    }
+
+    #[test]
+    fn tolerance_is_one_typo_for_four_to_seven_letters_and_two_for_eight_plus() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "meeting wonderful").unwrap();
+        // 7 letters, two typos: nothing.
+        assert!(found(&app, "mxxting", "similar").is_empty());
+        // 7 letters, one typo.
+        assert_eq!(found(&app, "meetng", "similar").len(), 1);
+        // 9 letters, two typos.
+        assert_eq!(found(&app, "wnderful", "similar").len(), 1);
+        assert_eq!(found(&app, "wxnderfxl", "similar").len(), 1);
+        // 9 letters, three typos.
+        assert!(found(&app, "wxnderfxx", "similar").is_empty());
+    }
+
+    #[test]
+    fn short_words_are_never_fuzzy() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "the cat sat").unwrap();
+        for typo in ["cot", "cta", "sit"] {
+            assert!(found(&app, typo, "similar").is_empty(), "{typo}");
+        }
+    }
+
+    #[test]
+    fn similar_needs_every_word_and_phrases_stay_exact() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "journal about gardens").unwrap();
+        assert_eq!(found(&app, "jurnal gardens", "similar").len(), 1);
+        assert!(found(&app, "jurnal zebra", "similar").is_empty());
+        assert!(found(&app, "\"jurnal about\"", "similar").is_empty());
+    }
+
+    #[test]
+    fn range_applies_to_similar_too() {
+        let app = TestApp::new();
+        create(&app, "2026-10-01", "old journal").unwrap();
+        create(&app, "2026-10-20", "new journal").unwrap();
+        let r = search(&app, "jurnal", Some("2026-10-10"), None);
+        assert_eq!(r["similar"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn deleted_entries_are_never_returned_and_come_back_with_restore() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "secret journal").unwrap();
+        delete(&app, &e["id"]).unwrap();
+        for q in ["secret", "sekret", "journal"] {
+            let r = search(&app, q, None, None);
+            assert!(r["exact"].as_array().unwrap().is_empty(), "{q}");
+            assert!(r["similar"].as_array().unwrap().is_empty(), "{q}");
+        }
+        assert!(
+            search(&app, "", Some("2026-10-01"), Some("2026-10-31"))["exact"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        restore(&app, &e["id"]).unwrap();
+        assert_eq!(found(&app, "secret", "exact").len(), 1);
+    }
+
+    #[test]
+    fn snippets_mark_the_matches_as_plain_spans() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "Coffee at the <b>Café</b> today").unwrap();
+        let r = search(&app, "cafe", None, None);
+        let hit = &r["exact"][0];
+        assert_eq!(hit["page_date"], "2026-10-20");
+        assert_eq!(hit["written_tz"], "Asia/Kolkata");
+        assert_eq!(hit["written_offset_min"], 330);
+        let spans = hit["snippet"].as_array().unwrap();
+        let marked: Vec<&str> = spans
+            .iter()
+            .filter(|s| s["matched"] == true)
+            .map(|s| s["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(marked, ["Café"]);
+        // Markup in the text stays literal text.
+        assert_eq!(spans[0]["text"], "Coffee at the <b>");
+        let sim = search(&app, "cafee", None, None);
+        let marked: Vec<&str> = sim["similar"][0]["snippet"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|s| s["matched"] == true)
+            .map(|s| s["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(marked, ["Café"]);
+    }
+
+    #[test]
+    fn fts_syntax_in_the_query_is_plain_text_and_never_errors() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "cats and dogs, near the body").unwrap();
+        for q in [
+            "\"",
+            "\"\"\"",
+            "*",
+            "-",
+            "( ",
+            "cats OR",
+            "NOT dogs",
+            "body:cats",
+            "cats AND dogs",
+            "NEAR(cats dogs)",
+            "^cats",
+            "cats*",
+            "{body}: x",
+            "a\"b",
+            "'; DROP TABLE x; --",
+        ] {
+            let r: Result<Value, Value> = app.invoke(
+                "journal_search",
+                json!({ "query": q, "from": null, "to": null }),
+            );
+            assert!(r.is_ok(), "{q}: {r:?}");
+        }
+        // Operators are just words: "cats AND dogs" needs the word "and" too, which it has.
+        assert_eq!(found(&app, "cats AND dogs", "exact").len(), 1);
+        assert!(found(&app, "cats OR zebra", "exact").is_empty());
+        assert!(found(&app, "body:zebra", "exact").is_empty());
+    }
+
+    #[test]
+    fn edit_move_and_toggle_keep_the_index_in_sync() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "- [ ] apple pie").unwrap();
+        assert_eq!(found(&app, "apple", "exact").len(), 1);
+        update(&app, &e["id"], "banana split", "s2");
+        assert!(found(&app, "apple", "exact").is_empty());
+        assert_eq!(found(&app, "banana", "exact").len(), 1);
+        move_to(&app, &e["id"], "2026-01-02").unwrap();
+        let r = search(&app, "banana", None, None);
+        assert_eq!(r["exact"][0]["page_date"], "2026-01-02");
+        assert!(
+            search(&app, "banana", Some("2026-10-01"), None)["exact"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let t = create(&app, "2026-10-20", "- [ ] tulip").unwrap();
+        toggle(&app, &t["id"], 0).unwrap();
+        assert_eq!(found(&app, "tulip", "exact"), ["- [x] tulip"]);
+    }
+
+    #[test]
+    fn purging_removes_the_entry_from_the_index_and_vocabulary() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "ephemeral thought").unwrap();
+        delete(&app, &e["id"]).unwrap();
+        deleted_days_ago(&app, &e["id"], 31);
+        app.with_db_mut(|c| mnemora_journal::purge_deleted(c).unwrap());
+        let terms: i64 = app.with_db(|c| {
+            c.query_row("SELECT COUNT(*) FROM journal_fts_vocab", [], |r| r.get(0))
+                .unwrap()
+        });
+        assert_eq!(terms, 0);
     }
 }

@@ -161,3 +161,75 @@ pub fn dates_between(conn: &Connection, first: &str, last: &str) -> AppResult<Ve
         .query_map(params![first, last], |r| r.get(0))?
         .collect::<Result<_, _>>()?)
 }
+
+fn sql_int(n: usize) -> i64 {
+    i64::try_from(n).unwrap_or(i64::MAX)
+}
+
+/// What a search needs from an Entry.
+pub struct SearchRow {
+    pub id: String,
+    pub page_date: String,
+    pub body: String,
+    pub written_at: i64,
+    pub written_offset_min: i32,
+    pub written_tz: String,
+}
+
+/// Live Entries whose Page date is within `from..=to` (each optional). With `matching`, only
+/// those the FTS5 expression matches; with `excluding`, none that expression matches. Newest
+/// Page first, oldest Entry first within a Page (the feed's order).
+pub fn search(
+    conn: &Connection,
+    matching: Option<&str>,
+    excluding: Option<&str>,
+    from: Option<&str>,
+    to: Option<&str>,
+    limit: usize,
+) -> AppResult<Vec<SearchRow>> {
+    let mut sql = String::from(
+        "SELECT e.id, e.page_date, e.body, e.written_at, e.written_offset_min, e.written_tz
+         FROM journal_entries e
+         WHERE e.deleted_at IS NULL
+           AND (?3 IS NULL OR e.page_date >= ?3) AND (?4 IS NULL OR e.page_date <= ?4)",
+    );
+    if matching.is_some() {
+        sql.push_str(" AND e.rowid IN (SELECT rowid FROM journal_fts WHERE journal_fts MATCH ?1)");
+    }
+    if excluding.is_some() {
+        sql.push_str(
+            " AND e.rowid NOT IN (SELECT rowid FROM journal_fts WHERE journal_fts MATCH ?2)",
+        );
+    }
+    sql.push_str(" ORDER BY e.page_date DESC, e.written_at ASC, e.id ASC LIMIT ?5");
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        params![matching, excluding, from, to, sql_int(limit)],
+        |r| {
+            Ok(SearchRow {
+                id: r.get(0)?,
+                page_date: r.get(1)?,
+                body: r.get(2)?,
+                written_at: r.get(3)?,
+                written_offset_min: r.get(4)?,
+                written_tz: r.get(5)?,
+            })
+        },
+    )?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Distinct indexed words of `min_len..=max_len` characters, with how many Entries hold each.
+pub fn vocabulary(
+    conn: &Connection,
+    min_len: usize,
+    max_len: usize,
+) -> AppResult<Vec<(String, u32)>> {
+    let mut stmt = conn
+        .prepare("SELECT term, doc FROM journal_fts_vocab WHERE length(term) BETWEEN ?1 AND ?2")?;
+    let rows = stmt.query_map(params![sql_int(min_len), sql_int(max_len)], |r| {
+        Ok((r.get(0)?, r.get(1)?))
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}

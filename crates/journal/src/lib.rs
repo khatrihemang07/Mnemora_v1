@@ -4,9 +4,14 @@
 #![forbid(unsafe_code)]
 
 mod entry;
+mod fold;
+mod fuzzy;
 mod migrations;
+mod query;
 mod repo;
+mod search;
 mod service;
+mod snippet;
 mod words;
 
 use mnemora_core::module::Module;
@@ -14,10 +19,12 @@ use mnemora_core::settings::SettingsRegistry;
 use rusqlite_migration::Migrations;
 
 pub use entry::{Entry, NewEntry, Page};
+pub use search::{Hit, SearchResults, search};
 pub use service::{
     create_entry, delete_entry, list_pages, month_days, move_entry, purge_deleted, restore_entry,
     toggle_task_line, update_entry,
 };
+pub use snippet::Span;
 
 /// The Journal Module.
 pub struct JournalModule;
