@@ -29,12 +29,19 @@ fn edited_after_update(entry: &Entry, now: i64) -> Option<i64> {
         .or_else(|| (now - entry.written_at > EDIT_GRACE_MS).then_some(now))
 }
 
+/// Writes a change-log record. The snapshot is the Entry plus its `deleted_at`, which the Entry
+/// type does not carry: a delete record shows when it was deleted, every other one shows null.
 fn record(
     conn: &Connection,
     entry: &Entry,
+    deleted_at: Option<i64>,
     op: ChangeOp,
     session_id: Option<&str>,
 ) -> AppResult<()> {
+    let mut snapshot = serde_json::to_value(entry).map_err(JournalError::Snapshot)?;
+    if let Some(fields) = snapshot.as_object_mut() {
+        fields.insert("deleted_at".into(), deleted_at.into());
+    }
     changelog::record(
         conn,
         &Change {
@@ -43,7 +50,7 @@ fn record(
             entity_id: entry.id.clone(),
             op,
             session_id: session_id.map(str::to_owned),
-            snapshot: serde_json::to_value(entry).map_err(JournalError::Snapshot)?,
+            snapshot,
         },
     )
 }
@@ -69,7 +76,7 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     };
     let tx = conn.transaction()?;
     repo::insert(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Create, Some(&new.session_id))?;
+    record(&tx, &entry, None, ChangeOp::Create, Some(&new.session_id))?;
     tx.commit()?;
     Ok(entry)
 }
@@ -92,7 +99,7 @@ pub fn update_entry(
     entry.updated_at = now;
     entry.edited_at = edited_after_update(&entry, now);
     repo::update_body(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Update, Some(session_id))?;
+    record(&tx, &entry, None, ChangeOp::Update, Some(session_id))?;
     tx.commit()?;
     Ok(entry)
 }
@@ -105,7 +112,7 @@ pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResu
     entry.body = toggle_task(&entry.body, line)?;
     entry.updated_at = now_ms();
     repo::update_body(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Tick, None)?;
+    record(&tx, &entry, None, ChangeOp::Tick, None)?;
     tx.commit()?;
     Ok(entry)
 }
@@ -122,7 +129,7 @@ pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult
     page_date.clone_into(&mut entry.page_date);
     entry.updated_at = now_ms();
     repo::update_page_date(&tx, &entry)?;
-    record(&tx, &entry, ChangeOp::Move, None)?;
+    record(&tx, &entry, None, ChangeOp::Move, None)?;
     tx.commit()?;
     Ok(entry)
 }
@@ -131,8 +138,9 @@ pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult
 pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
     let entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
-    repo::set_deleted_at(&tx, id, Some(now_ms()))?;
-    record(&tx, &entry, ChangeOp::Delete, None)?;
+    let now = now_ms();
+    repo::set_deleted_at(&tx, id, Some(now))?;
+    record(&tx, &entry, Some(now), ChangeOp::Delete, None)?;
     tx.commit()?;
     Ok(())
 }
@@ -142,7 +150,7 @@ pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
     let tx = conn.transaction()?;
     let entry = repo::get_deleted(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     repo::set_deleted_at(&tx, id, None)?;
-    record(&tx, &entry, ChangeOp::Restore, None)?;
+    record(&tx, &entry, None, ChangeOp::Restore, None)?;
     tx.commit()?;
     Ok(entry)
 }

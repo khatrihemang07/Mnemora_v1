@@ -539,6 +539,32 @@ mod tests {
         assert_eq!(restore(&app, &e["id"]).unwrap_err()["code"], "unknown_key");
     }
 
+    #[test]
+    fn change_log_snapshots_carry_the_deletion_state() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "keep me").unwrap();
+        delete(&app, &e["id"]).unwrap();
+        restore(&app, &e["id"]).unwrap();
+        let rows: Vec<(String, Value)> = app.with_db(|c| {
+            let mut stmt = c
+                .prepare("SELECT op, snapshot FROM change_log WHERE module = 'journal' ORDER BY at, rowid")
+                .unwrap();
+            stmt.query_map([], |r| {
+                let raw: String = r.get(1)?;
+                Ok((r.get(0)?, serde_json::from_str(&raw).unwrap()))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+        });
+        let ops: Vec<&str> = rows.iter().map(|(op, _)| op.as_str()).collect();
+        assert_eq!(ops, ["create", "delete", "restore"]);
+        assert_eq!(rows[0].1["deleted_at"], Value::Null);
+        assert!(rows[1].1["deleted_at"].as_i64().unwrap() > 1_704_067_200_000);
+        assert_eq!(rows[1].1["body"], "keep me");
+        assert_eq!(rows[2].1["deleted_at"], Value::Null);
+    }
+
     fn deleted_days_ago(app: &TestApp, id: &Value, days: i64) {
         app.with_db(|c| {
             // Ids are generated UUIDs, so formatting them in is safe.
