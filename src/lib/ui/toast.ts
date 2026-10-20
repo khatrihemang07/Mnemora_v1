@@ -5,6 +5,9 @@ export const notify = (message: string) => toast(message);
 
 export const notifyError = (message: string) => toast.error(message);
 
+/** How long the Undo stays on offer. */
+const UNDO_MS = 5000;
+
 /** N10-A: destructive actions complete at once and offer Undo for the toast's lifetime. */
 export const notifyUndo = (message: string, onUndo: () => void) =>
-  toast(message, { action: { label: 'Undo', onClick: onUndo } });
+  toast(message, { duration: UNDO_MS, action: { label: 'Undo', onClick: onUndo } });
