@@ -244,4 +244,93 @@ mod tests {
         assert_eq!(err["code"], "validation");
         assert_eq!(pages(&app, None, 1)[0]["entries"][0]["body"], "keep");
     }
+
+    fn update(app: &TestApp, id: &Value, text: &str, session: &str) -> Value {
+        app.invoke(
+            "journal_entry_update",
+            json!({ "id": id, "text": text, "sessionId": session }),
+        )
+        .unwrap()
+    }
+
+    /// Moves the written instant into the past: the command layer reads the real clock.
+    fn written_minutes_ago(app: &TestApp, id: &Value, minutes: i64) {
+        app.with_db(|c| {
+            // Ids are generated UUIDs, so formatting them in is safe.
+            c.execute(
+                &format!(
+                    "UPDATE journal_entries SET written_at = written_at - {} WHERE id = '{}'",
+                    minutes * 60_000,
+                    id.as_str().unwrap()
+                ),
+                [],
+            )
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn update_within_ten_minutes_of_writing_is_not_an_edit() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "a").unwrap();
+        written_minutes_ago(&app, &e["id"], 9);
+        let u = update(&app, &e["id"], "a b", "s2");
+        assert_eq!(u["edited_at"], Value::Null);
+        assert!(u["updated_at"].as_i64() >= e["updated_at"].as_i64());
+        assert_eq!(
+            pages(&app, None, 1)[0]["entries"][0]["edited_at"],
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn update_after_ten_minutes_marks_edited_and_keeps_the_mark() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "a").unwrap();
+        written_minutes_ago(&app, &e["id"], 11);
+        let u = update(&app, &e["id"], "a b", "s2");
+        let edited = u["edited_at"].as_i64().expect("edited_at is set");
+        assert_eq!(u["updated_at"].as_i64(), Some(edited));
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let again = update(&app, &e["id"], "a b c", "s2");
+        assert!(
+            again["edited_at"].as_i64().unwrap() == edited,
+            "the first edit time stays"
+        );
+        assert!(
+            again["updated_at"].as_i64().unwrap() > edited,
+            "updated_at always moves"
+        );
+    }
+
+    #[test]
+    fn same_session_updates_make_one_record_and_a_new_session_appends() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "a").unwrap();
+        for text in ["a1", "a2", "a3"] {
+            update(&app, &e["id"], text, "s2");
+        }
+        update(&app, &e["id"], "a4", "s3");
+        update(&app, &e["id"], "a5", "s3");
+        assert_eq!(
+            log_ops(&app),
+            [
+                ("create".into(), "s1".into()),
+                ("update".into(), "s2".into()),
+                ("update".into(), "s3".into())
+            ]
+        );
+        let last: String = app.with_db(|c| {
+            c.query_row(
+                "SELECT snapshot FROM change_log WHERE session_id = 's3'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        });
+        assert!(
+            last.contains("a5"),
+            "a session's record holds its latest state"
+        );
+    }
 }
