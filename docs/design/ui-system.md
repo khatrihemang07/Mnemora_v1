@@ -1,6 +1,6 @@
 # UI system
 
-The recorded UI decisions, so the whole app stays consistent. Visual reference: [ui-pitch.html](ui-pitch.html) (open in a browser).
+The recorded UI decisions, so the whole app stays consistent. Visual reference: [ui-pitch.html](ui-pitch.html) (open in a browser). Journal decisions: [journal-prototype.html](journal-prototype.html) (chosen options frozen in its `LOCKED` map).
 
 ## Decisions
 

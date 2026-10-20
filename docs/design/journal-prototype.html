@@ -1,0 +1,1571 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal Prototype</title>
+<!-- Preview-only: fonts and icons load from the web here. The real app bundles them locally. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Fraunces:opsz,wght@9..144,300..800&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/iconify-icon@3.0.3/dist/iconify-icon.min.js"></script>
+<style>
+/* =====================================================================
+   1. DOCUMENT CHROME (neutral, so it never competes with the mocks)
+   ===================================================================== */
+:root {
+  --p-bg: #f4f4f2; --p-surface: #fff; --p-ink: #1b1b1f; --p-muted: #6a6a73; --p-line: #e2e2de;
+  --p-accent: #3d5afe; --p-code: #ececea; --p-good: #13795b; --p-bad: #b42318;
+}
+body[data-mtheme="dark"] {
+  --p-bg: #111113; --p-surface: #19191c; --p-ink: #ececf0; --p-muted: #9a9aa5; --p-line: #2a2a30;
+  --p-accent: #8ea0ff; --p-code: #232328; --p-good: #4cc79a; --p-bad: #f07167;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 15px/1.6 "Inter", ui-sans-serif, system-ui, sans-serif; padding-bottom: 90px; }
+.wrap { max-width: 1500px; margin: 0 auto; padding: 0 16px; }
+header.top { padding: 36px 0 4px; }
+h1 { font-size: clamp(28px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 10px; }
+h2 { font-size: 24px; letter-spacing: -0.01em; margin: 56px 0 4px; padding-top: 18px; border-top: 1px solid var(--p-line); display: flex; gap: 10px; align-items: baseline; }
+h3 { font-size: 16px; margin: 20px 0 6px; }
+p.lead { font-size: 16.5px; color: var(--p-muted); max-width: 900px; margin: 0; }
+.muted { color: var(--p-muted); }
+code, kbd { font: 12.5px "JetBrains Mono", ui-monospace, monospace; background: var(--p-code); padding: 1px 6px; border-radius: 5px; }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+.toc a { text-decoration: none; color: var(--p-ink); border: 1px solid var(--p-line); background: var(--p-surface); padding: 3px 11px; border-radius: 999px; font-size: 13px; }
+.toc a:hover { border-color: var(--p-accent); }
+.toc a .cnt { color: var(--p-muted); font-size: 11px; margin-left: 4px; }
+.toc a.done { border-color: var(--p-good); }
+.secid { font: 600 12px "JetBrains Mono", monospace; background: var(--p-code); padding: 2px 8px; border-radius: 6px; }
+.note { font-size: 13.5px; color: var(--p-muted); background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 12px; padding: 10px 14px; margin: 10px 0; }
+table.dl { width: 100%; border-collapse: collapse; background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 12px; overflow: hidden; font-size: 13.5px; }
+table.dl th, table.dl td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--p-line); vertical-align: top; }
+table.dl th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--p-muted); }
+table.dl td:first-child { white-space: nowrap; font: 600 12px "JetBrains Mono", monospace; }
+
+/* Controls */
+.controls { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--p-bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--p-line); padding: 10px 0; margin-top: 18px; }
+.controls .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.ctl { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ctl > span { color: var(--p-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; font-size: 10.5px; }
+.seg { display: inline-flex; border: 1px solid var(--p-line); border-radius: 9px; overflow: hidden; background: var(--p-surface); }
+.seg button, .pbtn { font: inherit; font-size: 12.5px; color: var(--p-ink); background: var(--p-surface); border: 0; padding: 5px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--p-ink); color: var(--p-bg); }
+.pbtn { border: 1px solid var(--p-line); border-radius: 8px; }
+.pbtn:hover { border-color: var(--p-accent); }
+.pbtn.primary { background: var(--p-ink); color: var(--p-bg); border-color: var(--p-ink); }
+
+/* Stage */
+.stage { display: flex; gap: 28px; align-items: flex-start; margin: 20px 0 8px; flex-wrap: wrap; justify-content: center; }
+.frame-label { font-size: 12px; color: var(--p-muted); margin: 0 0 8px; }
+.desk-wrap { flex: 1 1 820px; max-width: 1120px; min-width: 0; }
+.phone-wrap { flex: 0 0 auto; }
+
+/* Nuance catalogue */
+.nu { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 16px; padding: 16px; margin: 14px 0; scroll-margin-top: 70px; }
+.nu.picked { border-color: color-mix(in srgb, var(--p-good) 55%, var(--p-line)); }
+.nu > header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 2px; }
+.nu > header h4 { margin: 0; font-size: 15.5px; }
+.nu > header .tag { font-size: 11px; color: var(--p-muted); border: 1px solid var(--p-line); border-radius: 999px; padding: 0 8px; }
+.nu > header .tag.live { color: var(--p-accent); border-color: var(--p-accent); }
+.nu > header .tag.settled { color: var(--p-good); border-color: var(--p-good); font-weight: 600; }
+.nu:has(.tag.settled) .nopt:not(.on) { opacity: .45; cursor: default; }
+.nu:has(.tag.settled) .nopt { cursor: default; }
+/* N5 comparison: the same Page on desktop and phone */
+.n5 { display: grid; grid-template-columns: 1fr 190px; gap: 12px; width: 100%; }
+.n5 .lbl { font: 600 10px var(--f-ui); text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin-bottom: 4px; }
+.n5 .col { min-width: 0; }
+.n5 .phonecol { border-left: 1px dashed var(--line); padding-left: 12px; }
+.n5 .row { display: grid; grid-template-columns: 64px 1fr; gap: 10px; padding: 5px 0; font-size: 12.5px; line-height: 1.45; }
+.n5 .phonecol .row { grid-template-columns: 1fr; gap: 1px; }
+.n5 .t { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.n5 .t .wdate { display: block; font-size: 10px; line-height: 1.3; white-space: nowrap; }
+.n5 .phonecol .t .wdate { display: inline; margin-right: 5px; font-size: inherit; }
+.n5 .foot { grid-column: 2; font-size: 10.5px; color: var(--faint); }
+.n5 .phonecol .foot { grid-column: 1; }
+.n5 .hd { font-family: var(--f-display); font-weight: 560; font-size: 14px; margin-bottom: 2px; }
+.n5 .hi { background: var(--journal-soft); border-radius: 6px; margin: 0 -4px; padding: 5px 4px; }
+.nu > p.why { margin: 2px 0 10px; font-size: 13.5px; color: var(--p-muted); max-width: 980px; }
+.nu-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.nopt { border: 1px solid var(--p-line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; background: var(--p-surface); transition: border-color .12s; }
+.nopt:hover { border-color: var(--p-muted); }
+.nopt.on { outline: 2px solid var(--p-accent); outline-offset: -1px; border-color: var(--p-accent); }
+.nopt .demo { padding: 14px; min-height: 96px; display: flex; flex-direction: column; justify-content: center; gap: 8px; position: relative; overflow: hidden; }
+.nopt .demo:empty { display: none; }
+.nopt .meta { padding: 10px 12px; border-top: 1px solid var(--p-line); font-size: 12.5px; flex: 1; }
+.nopt .demo:empty + .meta { border-top: 0; }
+.nopt .meta b { font-size: 13.5px; }
+.nopt .meta p { margin: 4px 0 0; color: var(--p-muted); }
+.rec { font: 600 10px "Inter"; text-transform: uppercase; letter-spacing: .05em; color: var(--p-good); border: 1px solid currentColor; border-radius: 999px; padding: 0 6px; margin-left: 6px; vertical-align: 2px; }
+.chk { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--p-muted); border-radius: 4px; margin-right: 6px; vertical-align: -2px; }
+.nopt.on .chk { background: var(--p-accent); border-color: var(--p-accent); }
+.radio { border-radius: 50%; }
+.nu textarea.nnote { width: 100%; margin-top: 10px; font: inherit; font-size: 13px; color: var(--p-ink); background: var(--p-bg); border: 1px dashed var(--p-line); border-radius: 10px; padding: 7px 10px; resize: vertical; min-height: 36px; }
+
+/* Picks bar */
+.pickbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: color-mix(in srgb, var(--p-surface) 94%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--p-line); padding: 10px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; font-size: 13px; }
+.pickbar .prog { width: 160px; height: 6px; border-radius: 99px; background: var(--p-line); overflow: hidden; }
+.pickbar .prog i { display: block; height: 100%; background: var(--p-good); width: 0; }
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 80; display: none; place-items: center; padding: 16px; }
+.modal.open { display: grid; }
+.modal .box { background: var(--p-surface); border-radius: 16px; width: min(760px, 100%); padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.modal textarea { width: 100%; height: 50vh; font: 12.5px/1.5 "JetBrains Mono", monospace; color: var(--p-ink); background: var(--p-bg); border: 1px solid var(--p-line); border-radius: 10px; padding: 10px; }
+
+/* =====================================================================
+   2. MOCK APP: real Mnemora tokens (src/lib/theme/tokens.css), scoped to .mx
+   ===================================================================== */
+.mx {
+  --bg: oklch(98.2% 0.006 70); --side: oklch(96.2% 0.009 70); --surface: oklch(100% 0 0); --surface-2: oklch(95.6% 0.01 70);
+  --pop: oklch(100% 0 0); --ink: oklch(21% 0.014 60); --muted: oklch(50% 0.016 60); --faint: oklch(62% 0.014 65);
+  --line: oklch(91% 0.011 70); --hover: oklch(30% 0.03 60 / 0.06); --active: oklch(30% 0.03 60 / 0.1);
+  --accent: oklch(55% 0.19 280); --on-accent: oklch(99% 0 0); --accent-soft: oklch(55% 0.19 280 / 0.12); --ring: oklch(55% 0.19 280 / 0.3);
+  --danger: oklch(52% 0.2 27); --danger-soft: oklch(52% 0.2 27 / 0.1); --success: oklch(50% 0.13 160); --warning: oklch(72% 0.15 65);
+  --hue-home: oklch(72% 0.15 65); --hue-journal: oklch(65% 0.17 32); --hue-todo: oklch(63% 0.12 182); --hue-ai: oklch(60% 0.2 295); --hue-settings: oklch(57% 0.03 260);
+  --journal-soft: oklch(65% 0.17 32 / 0.12);
+  --r1: 8px; --r2: 12px; --r3: 16px; --card-border: 1px solid var(--line);
+  --elev-card: 0 1px 2px oklch(30% 0.03 60 / 0.06);
+  --elev-pop: 0 10px 30px -8px oklch(30% 0.03 60 / 0.22), 0 0 0 1px var(--line);
+  --scrim: oklch(20% 0.02 60 / 0.4);
+  --f-ui: "Inter", ui-sans-serif, system-ui, sans-serif; --f-display: "Fraunces", ui-serif, Georgia, serif; --f-mono: "JetBrains Mono", monospace;
+  --display-weight: 560; --display-track: -0.01em;
+  --dur: 140ms; --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --row: 34px; --pad: 16px; --gap: 14px; --fs: 0.9375rem;
+  --measure: 680px; --body-font: var(--f-ui); --body-size: 1rem; --body-lh: 1.65;
+  font-family: var(--f-ui); font-size: var(--fs); color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased;
+}
+body[data-mtheme="dark"] .mx {
+  --bg: oklch(16.5% 0.008 60); --side: oklch(14.6% 0.008 60); --surface: oklch(19.8% 0.01 60); --surface-2: oklch(23.5% 0.011 60);
+  --pop: oklch(25% 0.012 60); --ink: oklch(94% 0.009 80); --muted: oklch(68% 0.013 70); --faint: oklch(58% 0.012 65);
+  --line: oklch(26% 0.01 60); --hover: oklch(100% 0 0 / 0.06); --active: oklch(100% 0 0 / 0.1);
+  --accent: oklch(72% 0.14 280); --on-accent: oklch(18% 0.03 280); --accent-soft: oklch(72% 0.14 280 / 0.16); --ring: oklch(72% 0.14 280 / 0.35);
+  --danger: oklch(70% 0.17 27); --danger-soft: oklch(70% 0.17 27 / 0.14); --success: oklch(75% 0.14 160);
+  --journal-soft: oklch(65% 0.17 32 / 0.18);
+  --elev-card: inset 0 1px 0 oklch(100% 0 0 / 0.035); --elev-pop: 0 0 0 1px var(--line); --scrim: oklch(0% 0 0 / 0.55);
+}
+.mx *::selection { background: color-mix(in oklch, var(--accent) 28%, transparent); }
+.mx button { font: inherit; color: inherit; }
+.mx iconify-icon { display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em; }
+
+/* Frames */
+.desk { display: grid; grid-template-columns: 210px 1fr; height: 720px; border-radius: 14px; overflow: hidden; border: 1px solid var(--p-line); box-shadow: 0 20px 50px -20px rgba(0,0,0,.25); }
+.phone { width: 380px; height: 780px; border-radius: 44px; border: 11px solid #121214; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 50px -20px rgba(0,0,0,.35); position: relative; }
+.sb { background: var(--side); border-right: 1px solid var(--line); padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+.sb .brand { display: flex; gap: 8px; align-items: center; font-weight: 650; padding: 4px 8px 12px; }
+.sb .brand i { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, var(--hue-home), var(--hue-journal), var(--hue-ai)); display: block; }
+.nav { display: flex; align-items: center; gap: 10px; height: var(--row); padding: 0 10px; border-radius: var(--r1); color: var(--muted); font-size: 13.5px; }
+.nav.on { background: var(--active); color: var(--ink); font-weight: 550; }
+.nav.on iconify-icon { color: var(--hue-journal); }
+.nav .kb { margin-left: auto; font-size: 11px; color: var(--faint); }
+.nav.soon { opacity: .5; }
+.sb .spacer { flex: 1; }
+.mn { display: flex; flex-direction: column; min-width: 0; position: relative; background: var(--bg); }
+.tb { height: 50px; flex: 0 0 50px; display: flex; align-items: center; gap: 6px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); }
+.tb .ttl { font-weight: 600; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.tb .ttl iconify-icon { color: var(--hue-journal); }
+.tb .sp { flex: 1; }
+.ib { width: 32px; height: 32px; border-radius: var(--r1); border: 0; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--muted); font-size: 17px; position: relative; }
+.ib:hover { background: var(--hover); color: var(--ink); }
+.ib.on { background: var(--active); color: var(--ink); }
+.ib.prim { background: var(--hue-journal); color: white; }
+.srch { flex: 1; max-width: 420px; display: flex; align-items: center; gap: 8px; height: 32px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r1); padding: 0 10px; }
+.srch input { border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; flex: 1; min-width: 0; }
+.ct { flex: 1; overflow: auto; position: relative; scroll-behavior: smooth; }
+.ct::-webkit-scrollbar { width: 10px; } .ct::-webkit-scrollbar-thumb { background: var(--line); border-radius: 9px; border: 3px solid var(--bg); }
+.split { display: grid; grid-template-columns: 250px 1fr; height: 100%; }
+.split > .pane { border-right: 1px solid var(--line); overflow: auto; padding: 14px 12px; background: var(--bg); }
+.split > .ct { height: 100%; }
+
+/* Feed */
+.feed { max-width: calc(var(--measure) + 120px); margin: 0 auto; padding: 18px 28px 150px; }
+.monthdiv { font: 600 11px var(--f-ui); text-transform: uppercase; letter-spacing: .08em; color: var(--faint); margin: 30px 0 4px; display: flex; gap: 10px; align-items: center; }
+.monthdiv::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.pg { margin: 0 0 26px; scroll-margin-top: 0; }
+.ph { display: flex; align-items: baseline; gap: 10px; padding: 12px 0 8px; background: var(--bg); z-index: 2; }
+.feed[data-sticky="y"] .ph { position: sticky; top: 0; }
+.ph .d { font-family: var(--f-display); font-weight: var(--display-weight); letter-spacing: var(--display-track); font-size: 1.45rem; line-height: 1.15; }
+.ph .badge { font-size: 11px; font-weight: 600; color: var(--hue-journal); background: var(--journal-soft); border-radius: 999px; padding: 1px 8px; }
+.ph .yr { color: var(--faint); font-family: var(--f-display); font-size: 1.1rem; }
+.ph .add { margin-left: auto; opacity: 0; }
+.pg:hover .ph .add, .ph .add:focus { opacity: 1; }
+.ph .pinfo { margin-left: auto; font-size: 12px; color: var(--faint); }
+/* header variant b: big numeral */
+.feed[data-ph="b"] .ph .d { display: flex; align-items: baseline; gap: 10px; font-size: 1rem; }
+.ph .num { font-family: var(--f-display); font-size: 2.3rem; font-weight: 500; line-height: 1; color: var(--ink); }
+.ph .wd { font-family: var(--f-ui); font-weight: 600; font-size: 13px; color: var(--ink); display: block; letter-spacing: 0; }
+.ph .mo { font-family: var(--f-ui); font-size: 12px; color: var(--muted); display: block; letter-spacing: 0; font-weight: 400; }
+/* header variant c: compact */
+.feed[data-ph="c"] .ph .d { font-family: var(--f-ui); font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.feed[data-ph="c"] .ph { border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 6px; }
+
+.en { position: relative; border-radius: var(--r2); padding: 8px 10px; margin: 0 -10px; display: grid; grid-template-columns: 52px 1fr; gap: 0 14px; transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease); cursor: text; }
+.en:hover { background: var(--hover); }
+.en .tm { font-size: 12.5px; color: var(--faint); padding-top: 3px; font-variant-numeric: tabular-nums; }
+.en .meta2 { grid-column: 2; font-size: 11.5px; color: var(--faint); display: flex; gap: 8px; margin-top: 2px; }
+.en .more { position: absolute; top: 6px; right: 6px; opacity: 0; }
+.en:hover .more { opacity: 1; }
+.en.flash { animation: flash 1.6s var(--ease); }
+@keyframes flash { 0%, 40% { background: var(--journal-soft); } 100% { background: transparent; } }
+.feed.dimmed .en:not(.editing) { opacity: .35; }
+.en.editing { background: var(--surface); box-shadow: var(--elev-pop); cursor: auto; }
+/* entry layout variants */
+.feed[data-el="above"] .en { grid-template-columns: 1fr; }
+.feed[data-el="above"] .en .tm { padding: 0 0 2px; }
+.feed[data-el="above"] .en .meta2 { grid-column: 1; }
+.feed[data-el="footer"] .en { grid-template-columns: 1fr; }
+.feed[data-el="footer"] .en .tm { order: 3; padding-top: 4px; }
+.feed[data-el="footer"] .en .meta2 { grid-column: 1; order: 4; }
+/* separators */
+.feed[data-sep="line"] .en + .en::before { content: ""; position: absolute; top: 0; left: 10px; right: 10px; height: 1px; background: var(--line); }
+.phone .feed[data-sep="line"] .en + .en::before { left: 8px; }
+/* P5: Page summary is desktop only */
+.phone .ph .pinfo { display: none; }
+.feed[data-sep="card"] .en { background: var(--surface); border: var(--card-border); box-shadow: var(--elev-card); margin: 0 0 10px; padding: 12px 14px; }
+.feed[data-sep="rail"] .en { margin-left: 0; padding-left: 26px; }
+.feed[data-sep="rail"] .en::after { content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--line); }
+.feed[data-sep="rail"] .en .tm::before { content: ""; position: absolute; left: 4px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: var(--hue-journal); z-index: 1; box-shadow: 0 0 0 3px var(--bg); }
+
+/* Rendered markdown body */
+.bd { font-family: var(--body-font); font-size: var(--body-size); line-height: var(--body-lh); color: var(--ink); overflow-wrap: anywhere; }
+.bd p { margin: 0 0 .55em; } .bd p:last-child { margin-bottom: 0; }
+.bd h1, .bd h2, .bd h3 { font-family: var(--f-display); font-weight: var(--display-weight); letter-spacing: var(--display-track); margin: .2em 0 .35em; line-height: 1.25; }
+.bd h1 { font-size: 1.35em; } .bd h2 { font-size: 1.18em; } .bd h3 { font-size: 1.05em; }
+.mx[data-hfont="ui"] .bd h1, .mx[data-hfont="ui"] .bd h2, .mx[data-hfont="ui"] .bd h3 { font-family: var(--f-ui); font-weight: 650; letter-spacing: 0; }
+.bd ul { margin: 0 0 .55em; padding-left: 1.3em; } .bd li { margin: .1em 0; }
+.bd ul.task { list-style: none; padding-left: .2em; }
+.bd ul.task li { display: flex; gap: 8px; align-items: baseline; }
+.bd .cb { width: 15px; height: 15px; border: 1.5px solid var(--faint); border-radius: 4px; display: inline-grid; place-items: center; flex: 0 0 15px; transform: translateY(2px); cursor: pointer; font-size: 11px; color: white; }
+.bd .cb.x { background: var(--hue-journal); border-color: var(--hue-journal); }
+/* M4: the box is its own target, with a large invisible hit area and a hover ring */
+.bd .cb { position: relative; transition: box-shadow var(--dur) var(--ease); }
+.bd .cb::before { content: ""; position: absolute; inset: -9px; }
+.phone .bd .cb::before { inset: -14px; }
+.bd .cb:hover { box-shadow: 0 0 0 4px var(--journal-soft); border-color: var(--hue-journal); }
+.bd li.additem { color: var(--faint); cursor: pointer; padding-left: 23px; }
+.bd li.additem:hover { color: var(--hue-journal); }
+.en .tm .wdate { display: block; font-size: 10.5px; line-height: 1.3; color: var(--faint); white-space: nowrap; }
+.feed[data-el="gutter"] .en { grid-template-columns: 64px 1fr; }
+.bd li.done > span:last-child { color: var(--muted); text-decoration: line-through; }
+.bd blockquote { margin: 0 0 .55em; padding: 0 0 0 12px; border-left: 3px solid var(--hue-journal); color: var(--muted); font-style: italic; }
+.bd mark { background: color-mix(in oklch, var(--warning) 35%, transparent); color: inherit; border-radius: 3px; padding: 0 2px; }
+.bd code { font-family: var(--f-mono); font-size: .86em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+.bd a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.bd hr { border: 0; height: 1px; background: var(--line); margin: .8em 0; }
+
+/* Editing */
+.ed { width: 100%; border: 0; outline: 0; resize: none; background: transparent; color: var(--ink); font-family: var(--body-font); font-size: var(--body-size); line-height: var(--body-lh); padding: 0; min-height: 3em; field-sizing: content; }
+.edbar { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; color: var(--faint); flex-wrap: wrap; }
+.edbar .sp { flex: 1; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 550; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; background: var(--surface-2); color: var(--ink); cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--faint); }
+.chip.warm { background: var(--journal-soft); border-color: transparent; color: var(--hue-journal); }
+.btn { height: 30px; padding: 0 12px; border-radius: var(--r1); border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 13px; font-weight: 550; display: inline-flex; align-items: center; gap: 6px; color: var(--ink); }
+.btn.prim { background: var(--hue-journal); border-color: transparent; color: white; }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.btn:hover { filter: brightness(.97); }
+
+/* Composer dock (A) */
+.dock { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 20px 16px; background: linear-gradient(to bottom, transparent, var(--bg) 40%); z-index: 4; pointer-events: none; }
+.dockbox { pointer-events: auto; max-width: var(--measure); margin: 0 auto; background: var(--surface); border-radius: var(--r3); box-shadow: var(--elev-pop); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.dockbox .row1 { display: flex; gap: 8px; align-items: flex-end; }
+.dockbox textarea { flex: 1; max-height: 220px; min-height: 24px; overflow: auto; }
+.dockbox .hint { font-size: 11px; color: var(--faint); display: flex; gap: 8px; align-items: center; }
+.dockbox .hint .sp { flex: 1; }
+
+/* Sheet (C) */
+.ov { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; z-index: 20; animation: fade var(--dur) var(--ease); }
+@keyframes fade { from { opacity: 0; } }
+.sheet { width: min(660px, 92%); height: 86%; background: var(--surface); border-radius: var(--r3); box-shadow: var(--elev-pop); display: flex; flex-direction: column; animation: rise var(--dur) var(--ease); }
+@keyframes rise { from { transform: translateY(10px); opacity: 0; } }
+.sheet .sh-h { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.sheet .sh-b { flex: 1; overflow: auto; padding: 22px 34px; }
+.sheet .sh-b .ed { min-height: 100%; }
+.sheet .sh-f { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--faint); }
+.phone .ov { place-items: end stretch; }
+.phone .sheet { width: 100%; height: 100%; border-radius: 0; }
+
+/* Pane (B) */
+.pane .idx { margin-top: 14px; display: flex; flex-direction: column; gap: 2px; }
+.pane .idx button { text-align: left; border: 0; background: transparent; border-radius: var(--r1); padding: 6px 8px; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 0 6px; }
+.pane .idx button:hover { background: var(--hover); }
+.pane .idx button.cur { background: var(--active); }
+.pane .idx b { font-size: 12.5px; font-weight: 600; } .pane .idx small { font-size: 11px; color: var(--faint); }
+.pane .idx span { grid-column: 1 / -1; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.addline { display: flex; gap: 8px; align-items: center; color: var(--faint); font-size: 13.5px; padding: 8px 10px; margin: 2px -10px 0; border-radius: var(--r2); cursor: text; }
+.addline:hover { background: var(--hover); color: var(--muted); }
+
+/* Calendar */
+.cal { width: 268px; }
+.calpop { position: absolute; top: 54px; right: 12px; background: var(--pop); box-shadow: var(--elev-pop); border-radius: var(--r2); padding: 12px; z-index: 15; animation: rise var(--dur) var(--ease); }
+.cal .ch { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+.cal .ch b { font-family: var(--f-display); font-weight: var(--display-weight); font-size: 1.05rem; flex: 1; }
+.cal .ch .ib { width: 28px; height: 28px; font-size: 15px; }
+.cal .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cal .wd { font-size: 10.5px; color: var(--faint); font-weight: 600; padding: 2px 0 4px; }
+.cal .dy { height: 34px; border: 0; background: transparent; border-radius: var(--r1); cursor: pointer; font-size: 12.5px; position: relative; color: var(--ink); font-variant-numeric: tabular-nums; }
+.cal .dy:hover:not(:disabled) { background: var(--hover); }
+.cal .dy.out { color: var(--faint); opacity: .5; }
+.cal .dy:disabled { color: var(--faint); opacity: .35; cursor: default; }
+.cal .dy.today { box-shadow: inset 0 0 0 1.5px var(--hue-journal); font-weight: 650; }
+.cal .dy.sel { background: var(--active); }
+.cal .dy.has::after { content: ""; position: absolute; left: 50%; bottom: 4px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--hue-journal); }
+.cal .empty-msg { margin-top: 10px; padding: 10px; border-radius: var(--r1); background: var(--surface-2); font-size: 12.5px; display: flex; flex-direction: column; gap: 8px; }
+.cal .foot { display: flex; justify-content: space-between; margin-top: 8px; }
+
+/* Search results */
+.res { max-width: var(--measure); margin: 0 auto; padding: 16px 28px 80px; }
+.res .rc { font-size: 12px; color: var(--faint); margin-bottom: 8px; }
+.res .rg { margin-bottom: 16px; }
+.res .rg h5 { margin: 0 0 4px; font: 600 12px var(--f-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.res .ri { display: block; width: 100%; text-align: left; border: 0; background: transparent; border-radius: var(--r1); padding: 8px 10px; cursor: pointer; font-size: 13.5px; line-height: 1.5; }
+.res .ri:hover { background: var(--hover); }
+.res .ri small { color: var(--faint); display: block; font-size: 11.5px; }
+.res mark, .hl { background: color-mix(in oklch, var(--hue-journal) 28%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+/* Misc */
+.toast { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); border-radius: var(--r2); padding: 8px 8px 8px 14px; font-size: 13px; display: flex; gap: 12px; align-items: center; z-index: 30; box-shadow: var(--elev-pop); white-space: nowrap; animation: rise var(--dur) var(--ease); }
+.toast button { border: 0; background: transparent; color: var(--hue-journal); font-weight: 650; cursor: pointer; padding: 4px 8px; border-radius: 6px; filter: brightness(1.25); }
+.pill { position: absolute; top: 62px; left: 50%; transform: translateX(-50%); z-index: 6; border: 0; background: var(--ink); color: var(--bg); border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; display: none; box-shadow: var(--elev-pop); }
+.pill.show { display: inline-flex; gap: 6px; align-items: center; }
+.menu { position: absolute; z-index: 25; background: var(--pop); box-shadow: var(--elev-pop); border-radius: var(--r2); padding: 5px; min-width: 190px; animation: rise var(--dur) var(--ease); }
+.menu button { display: flex; width: 100%; gap: 10px; align-items: center; border: 0; background: transparent; border-radius: var(--r1); padding: 7px 10px; font-size: 13px; cursor: pointer; text-align: left; }
+.menu button:hover { background: var(--hover); }
+.menu button.danger { color: var(--danger); }
+.menu hr { border: 0; height: 1px; background: var(--line); margin: 4px 0; }
+.menu .kb { margin-left: auto; color: var(--faint); font-size: 11px; }
+.es { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 70px 20px; color: var(--muted); }
+.es .ic { width: 52px; height: 52px; border-radius: 16px; background: var(--journal-soft); color: var(--hue-journal); display: grid; place-items: center; font-size: 24px; }
+.es b { color: var(--ink); font-size: 15px; }
+.today-empty { color: var(--faint); font-size: 13.5px; padding: 6px 0 2px; display: flex; gap: 10px; align-items: center; }
+.datein { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; background: var(--surface-2); color: var(--ink); }
+
+/* Phone */
+.phone .status { height: 30px; flex: 0 0 30px; display: flex; justify-content: space-between; align-items: center; padding: 0 22px; font-size: 12px; font-weight: 600; background: var(--bg); }
+.phone .lh { padding: 4px 16px 6px; display: flex; align-items: center; gap: 2px; background: var(--bg); }
+.phone .lh h1 { font-family: var(--f-display); font-weight: var(--display-weight); letter-spacing: var(--display-track); font-size: 30px; margin: 0; flex: 1; }
+.phone .ib { width: 40px; height: 40px; font-size: 20px; }
+.phone .feed { padding: 4px 16px 150px; }
+.phone .en, .phone .feed[data-el] .en { grid-template-columns: 1fr; margin: 0 -8px; padding: 8px; }
+.phone .en .tm .wdate { display: inline; margin-right: 6px; font-size: inherit; }
+.phone .en .tm { padding: 0 0 2px; } .phone .en .meta2 { grid-column: 1; }
+.phone .en .more { opacity: 1; top: 2px; }
+.phone .dock { padding: 18px 10px 8px; }
+.phone .tabs { height: 62px; flex: 0 0 62px; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: var(--side); }
+.phone .tabs div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10.5px; color: var(--muted); }
+.phone .tabs div iconify-icon { font-size: 21px; }
+.phone .tabs div.on { color: var(--hue-journal); font-weight: 600; }
+.phone .calpop { left: 0; right: 0; top: auto; bottom: 0; border-radius: var(--r3) var(--r3) 0 0; padding: 16px 16px 22px; }
+.phone .calpop .cal { width: 100%; }
+.phone .calpop .dy { height: 42px; }
+.phone .scrimfull { position: absolute; inset: 0; background: var(--scrim); z-index: 14; }
+.weekstrip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding: 4px 12px 8px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.weekstrip button { border: 0; background: transparent; border-radius: 10px; padding: 4px 0; display: flex; flex-direction: column; align-items: center; font-size: 10.5px; color: var(--faint); cursor: pointer; position: relative; }
+.weekstrip button b { font-size: 15px; color: var(--ink); font-weight: 550; }
+.weekstrip button.today b { color: var(--hue-journal); }
+.weekstrip button.has::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--hue-journal); margin-top: 2px; }
+.kbbar { display: flex; gap: 2px; padding: 4px 6px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.kbbar button { flex: 1; height: 34px; border: 0; background: transparent; border-radius: 8px; color: var(--ink); font-size: 16px; }
+
+/* Demo-only helpers in the catalogue */
+.demo.mx { background: var(--bg); }
+.mini { font-size: 13px; }
+.mini .en { margin: 0; grid-template-columns: 44px 1fr; padding: 6px 8px; }
+.mini .bd { font-size: 13.5px; }
+.mini .ph .d { font-size: 1.15rem; }
+.mini .ph { padding: 0 0 4px; }
+.ln { padding: 1px 6px; border-radius: 4px; cursor: text; min-height: 1.6em; }
+.ln.cur { background: var(--hover); }
+.ln .caret { display: none; width: 1.5px; height: 1.1em; background: var(--accent); vertical-align: -2px; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+.ln.cur .caret { display: inline-block; }
+@keyframes blink { 50% { opacity: 0; } }
+.mk { color: var(--faint); font-family: var(--f-mono); font-size: .85em; }
+[data-mk="hidden"] .mk { display: none; }
+[data-mk="reveal"] .ln:not(.cur) .mk { display: none; }
+[data-mk="dim"] .rk, [data-mk="reveal"] .ln.cur .rk { display: none; }
+.ln.hd { font-family: var(--f-display); font-size: 1.2em; font-weight: 560; }
+.ln.qt { border-left: 3px solid var(--hue-journal); color: var(--muted); font-style: italic; }
+[data-mk="dim"] .ln.qt, [data-mk="reveal"] .ln.qt.cur { border-left-color: transparent; font-style: normal; }
+.bubble { display: inline-flex; gap: 2px; background: var(--ink); color: var(--bg); border-radius: 8px; padding: 3px; font-size: 13px; }
+.bubble span { padding: 2px 7px; border-radius: 5px; }
+.homecard { background: var(--surface); border: var(--card-border); border-radius: var(--r3); padding: 14px; box-shadow: var(--elev-card); display: flex; flex-direction: column; gap: 8px; }
+.homecard .hh { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.homecard .hh iconify-icon { color: var(--hue-journal); font-size: 15px; }
+.homecard q { font-family: var(--f-display); font-size: 15px; line-height: 1.4; quotes: "\201C" "\201D"; }
+.sk { height: 12px; border-radius: 6px; background: var(--surface-2); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+.banner { border: 1px solid color-mix(in oklch, var(--danger) 35%, transparent); background: var(--danger-soft); color: var(--ink); border-radius: var(--r2); padding: 8px 10px; font-size: 12.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.banner iconify-icon { color: var(--danger); }
+.banner .sp { flex: 1; }
+.heat { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+@media (max-width: 900px) { .desk { grid-template-columns: 0 1fr; } .split { grid-template-columns: 0 1fr; } }
+</style>
+</head>
+<body data-mtheme="light">
+<div class="wrap">
+<header class="top">
+  <h1>Journal: prototypes for every decision</h1>
+  <p class="lead">Two parts. <b>Part 1</b> is a working mock of the Journal on desktop and phone, built from Mnemora's real tokens. Switch between the three overall concepts and try it: write, edit, delete and undo, move an Entry to another Page, use the calendar and search. <b>Part 2</b> is the catalogue: every low-level decision, each with options, a recommendation and a small live demo. Click an option to pick it, add a note if you like, then press <b>Copy my picks</b> at the bottom and paste the result into the chat. Options tagged <span class="tag live" style="font-size:11px;border:1px solid;border-radius:99px;padding:0 6px;color:var(--p-accent)">live</span> also change the mock in Part 1.</p>
+  <nav class="toc" id="toc"></nav>
+</header>
+
+<h2 id="settled"><span class="secid">0</span> Already settled</h2>
+<table class="dl">
+  <tr><th>ID</th><th>Decision</th></tr>
+  <tr><td>D1</td><td><b>Entry</b> is the unit. Each Entry has its own unique id. It has no title, and a Page can hold any number of Entries.</td></tr>
+  <tr><td>D4 / D9</td><td><b>Page</b> means all Entries for one date, like a paper diary page. New Entries go on today's Page by default; you can add to or edit any past Page. In v1 a Page is only a container, but more per-Page data is expected later.</td></tr>
+  <tr><td>D5</td><td>Every Entry keeps its <b>written timestamp</b> (date + time, in the time zone it was written in) and shows it with a faint "edited" mark. The date part is left out when it matches the Page's date: <code>08:12</code>, but <code>Mon 19 Oct, 09:12</code> for an Entry written later (where it sits: N5).</td></tr>
+  <tr><td>D6</td><td>Entries on a Page are ordered oldest first. Pages are ordered newest first.</td></tr>
+  <tr><td>D7</td><td>A blank Entry is never saved. Clearing an existing Entry's text does not delete it.</td></tr>
+  <tr><td>D8</td><td>No late-night handling: a new Entry always defaults to today's Page.</td></tr>
+  <tr><td>D10</td><td>An Entry can move to another Page by changing its Page date. Its written timestamp never changes.</td></tr>
+  <tr><td>D11</td><td>Browsing is one continuous scroll of Pages. Dates with no Entries are skipped silently, and the calendar is how you reach them.</td></tr>
+  <tr><td>D2 / D3</td><td>Bodies are Markdown with live styling. v1 also includes full-text search and calendar navigation. Mood, tags and photos are left out of v1.</td></tr>
+</table>
+
+<h2 id="mock"><span class="secid">1</span> The working mock</h2>
+<div class="controls">
+  <div class="row">
+    <div class="ctl"><span>Concept</span><div class="seg" id="ctl-concept">
+      <button data-v="A" aria-pressed="true">A · Composer dock</button><button data-v="B">B · Diary spread</button><button data-v="C">C · Focus sheet</button></div></div>
+    <div class="ctl"><span>Theme</span><div class="seg" id="ctl-theme"><button data-v="light" aria-pressed="true">Light</button><button data-v="dark">Dark</button></div></div>
+    <div class="ctl"><span>Data</span><div class="seg" id="ctl-data"><button data-v="sample" aria-pressed="true">Sample</button><button data-v="empty">First run</button></div></div>
+    <button class="pbtn" id="ctl-reset">Reset mock</button>
+  </div>
+</div>
+<div class="note" id="concept-note"></div>
+<div class="stage">
+  <div class="desk-wrap"><p class="frame-label">Desktop · 1120 × 720</p><div id="desk"></div></div>
+  <div class="phone-wrap"><p class="frame-label">Android · 380 × 780</p><div id="phone"></div></div>
+</div>
+
+<div id="catalogue"></div>
+
+<footer class="muted" style="margin:60px 0 40px;font-size:13px">Local, throwaway prototype for discussing design. Your picks are saved in this browser only. The real build will use <code>src/lib/ui</code> Components and the tokens in <code>src/lib/theme/tokens.css</code>.</footer>
+</div>
+
+<div class="pickbar">
+  <span id="pk-count">0 / 0 decided</span><span class="prog"><i id="pk-prog"></i></span>
+  <button class="pbtn" id="pk-rec">Use recommended for the rest</button>
+  <button class="pbtn primary" id="pk-copy">Copy my picks</button>
+  <button class="pbtn" id="pk-clear">Clear picks</button>
+</div>
+<div class="modal" id="modal"><div class="box">
+  <b>Your picks: paste this into the chat</b>
+  <span class="muted" id="modal-msg" style="font-size:13px"></span>
+  <textarea id="modal-text" readonly></textarea>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="pbtn" id="modal-close">Close</button><button class="pbtn primary" id="modal-copy">Copy</button></div>
+</div></div>
+
+<script>
+/* =====================================================================
+   Helpers
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ic = (n) => `<iconify-icon icon="lucide:${n}"></iconify-icon>`;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+};
+const WD = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MO = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const pad2 = (n) => String(n).padStart(2, '0');
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
+const dayDiff = (a, b) => Math.round((parseYmd(b) - parseYmd(a)) / 86400000);
+
+/* =====================================================================
+   Mock state
+   ===================================================================== */
+const SAMPLE = [
+  { id: 'e1', page: '2026-10-20', at: '2026-10-20T08:12', edited: false, text: 'Woke up early and walked to the river. The light was **unreal**, mist sitting low on the water.\n\nNeed to do this more often.' },
+  { id: 'e2', page: '2026-10-20', at: '2026-10-20T13:40', edited: true, text: 'Started **Mnemora** today. Feels right to have one quiet place for everything.\n\n- [x] Set up the foundation\n- [ ] Design the Journal' },
+  { id: 'e3', page: '2026-10-19', at: '2026-10-19T19:05', edited: false, text: 'Long day. Meetings back to back, but the ==design review went well==.\n\n> Make it calm, then make it vibrant.' },
+  { id: 'e5', page: '2026-10-16', at: '2026-10-16T13:20', edited: false, text: 'Lunch by the window. Read 40 pages of *The Overstory*.' },
+  { id: 'e4', page: '2026-10-16', at: '2026-10-19T09:12', edited: false, text: 'Coffee with Aarav in the evening. We talked about *slowing down* and what a good week actually looks like.' },
+  { id: 'e6', page: '2026-10-16', at: '2026-10-16T23:05', edited: false, text: '## Small wins\n- Fixed the icon bug\n- Went for a run\n- Called home' },
+  { id: 'e7', page: '2026-10-12', at: '2026-10-12T07:45', edited: false, text: 'First cold morning of the season. Found my old scarf.' },
+  { id: 'e8', page: '2026-09-30', at: '2026-09-30T20:10', edited: false, text: 'End of September. Grateful for: the people, the work, the walks. Notes from the talk: https://example.com/talk' },
+  { id: 'e9', page: '2025-10-20', at: '2025-10-20T22:00', edited: false, text: 'Moved into the new flat. Boxes everywhere, but it already feels like home.' },
+];
+const S = {
+  concept: 'A', data: 'sample',
+  entries: structuredClone(SAMPLE),
+  editing: null, // entry id being edited inline (A, B)
+  draft: null,   // { page, text, surface: 'dock'|'inline'|'sheet', id? }
+  sheet: null,   // { id|null, page, text }
+  cal: null,     // { surface, month: 'YYYY-MM', sel }
+  search: null,  // string while searching
+  menu: null,    // { id, surface, x, y }
+  toast: null, dockPage: null,
+};
+const now = () => ({ date: '2026-10-20', time: '14:05' });
+let PICKS = store.get('mnemora-journal-picks', {});
+let NOTES = store.get('mnemora-journal-notes', {});
+// Decided in the chat: shown as settled in the catalogue and not clickable.
+const LOCKED = { L1: 'A', M4: 'row', M4b: 'editor', M4c: 'margin', N5: 'stack', P1: 'a', P2: 'badge', P3: 'notcurrent', P4: 'y', P5: 'count', P6: 'y', N1: 'gutter', N2: 'line', N3: 'full', N4: 'word', N6: 'h24', N7: 'hover', T1: 'serif', T2: 's16', T3: 'l165', T4: 'ch72', T5: 'gap', M1: ['h', 'b', 's', 'hl', 'ul', 'task', 'q', 'a', 'code', 'hr', 'pre'], M2: 'dim', M3: 'display', M5: 'smart', M6: 'convert', M7: 'off', F1: ['b', 'k', 'x', 'h', 'e', 'l', 'hd'], F2: 'n', F3: 'y', F4: 'y', F5: ['cont', 'exit', 'tab', 'bksp', 'pair'], S1: 'pause', S2: 'quiet', S3: 'banner', S4: 'grace', S5: 'auto', S6: 'session', S7: 'lww', D1: 'both', D2: 'pop', D3: 'yes', D4: 'stay', A1: 'all', A2: ['date', 'copy', 'delete'], A3: 'undo', A4: 'purge30', C1: 'pop', C2: 'sheet', C3: 'dot', C4: 'scroll', C5: 'offer', C6: 'full', C7: 'y', C8: 'mon', R1: 'y', R2: 'today', R3: 'infinite', R4: 'y', Q1: ['btn', 'f', 'k'], Q2: 'list', Q3: 'live', Q4: ['case', 'accent', 'prefix', 'all', 'phrase'], Q5: 'new', Q6: 'jump', Q7: 'y', Q8: 'clear', X1: 'blank', X2: 'show', X3: 'write', X4: 'sk', X5: 'banner', H1: 'go', H2: 'today', H3: 'y', H4: ['new', 'search', 'goto'], H5: ['n', 'f', 'g', 'enter', 'esc'], Z1: ['font', 'spell', 'width'], Z2: 'y', F6: 'on', O1: ['none'] };
+Object.assign(PICKS, LOCKED);
+const today = () => now().date;
+let seq = 100;
+
+/* ---- tiny Markdown renderer (subset the prototype needs) ---- */
+function inline(s) {
+  let t = esc(s);
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  t = t.replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
+  t = t.replace(/_([^_]+)_/g, '<em>$1</em>');
+  t = t.replace(/~~([^~]+)~~/g, '<s>$1</s>');
+  t = t.replace(/==([^=]+)==/g, '<mark>$1</mark>');
+  t = t.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  t = t.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  return t;
+}
+function md(src, entryId) {
+  const out = []; let list = null; let para = [];
+  const flushP = () => { if (para.length) { out.push(`<p>${para.map(inline).join('<br>')}</p>`); para = []; } };
+  const flushL = () => {
+    if (!list) return;
+    const add = list.task && entryId !== 'x' && pick('M4b') === 'quick' ? `<li class="additem" data-additem="${entryId}:${list.last}">+ Add item</li>` : '';
+    out.push(`<ul class="${list.task ? 'task' : ''}">${list.items.join('')}${add}</ul>`); list = null;
+  };
+  src.split('\n').forEach((line, i) => {
+    let m;
+    if ((m = line.match(/^- \[( |x)\] (.*)/))) {
+      flushP(); if (!list || !list.task) { flushL(); list = { task: true, items: [] }; }
+      const x = m[1] === 'x';
+      list.items.push(`<li class="${x ? 'done' : ''}" data-row="${entryId}:${i}"><span class="cb ${x ? 'x' : ''}" data-toggle="${entryId}:${i}">${x ? '✓' : ''}</span><span>${inline(m[2])}</span></li>`);
+      list.last = i;
+    } else if ((m = line.match(/^[-*] (.*)/))) {
+      flushP(); if (!list || list.task) { flushL(); list = { task: false, items: [] }; }
+      list.items.push(`<li>${inline(m[1])}</li>`);
+    } else if ((m = line.match(/^(#{1,3}) (.*)/))) { flushP(); flushL(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); }
+    else if ((m = line.match(/^> (.*)/))) { flushP(); flushL(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
+    else if (/^---$/.test(line)) { flushP(); flushL(); out.push('<hr>'); }
+    else if (line.trim() === '') { flushP(); flushL(); }
+    else { flushL(); para.push(line); }
+  });
+  flushP(); flushL();
+  return out.join('');
+}
+
+/* ---- formatting, driven by picks where relevant ---- */
+function pageTitle(page, variant) {
+  const d = parseYmd(page); const t = today();
+  const rel = page === t ? 'Today' : page === addDays(t, -1) ? 'Yesterday' : null;
+  const relMode = pick('P2') || 'badge';
+  const yearMode = pick('P3') || 'notcurrent';
+  const showYear = yearMode === 'always' || (yearMode === 'notcurrent' && d.getFullYear() !== parseYmd(t).getFullYear());
+  const yr = showYear ? `<span class="yr">${d.getFullYear()}</span>` : '';
+  const badge = rel && relMode === 'badge' ? `<span class="badge">${rel}</span>` : '';
+  if (variant === 'b') {
+    const top = rel && relMode === 'replace' ? rel : WD[d.getDay()];
+    return `<span class="d"><span class="num">${d.getDate()}</span><span><span class="wd">${top}</span><span class="mo">${MO[d.getMonth()]}${showYear ? ' ' + d.getFullYear() : ''}</span></span></span>${badge}`;
+  }
+  if (variant === 'c') {
+    const main = rel && relMode === 'replace' ? rel : `${WD[d.getDay()].slice(0, 3)} ${d.getDate()} ${MO[d.getMonth()].slice(0, 3)}`;
+    return `<span class="d">${main}${showYear ? ' ' + d.getFullYear() : ''}</span>${badge}`;
+  }
+  const main = rel && relMode === 'replace' ? rel : `${WD[d.getDay()]}, ${d.getDate()} ${MO[d.getMonth()]}`;
+  return `<span class="d">${main}</span>${yr}${badge}`;
+}
+const shortDate = (page) => { const d = parseYmd(page); return `${WD[d.getDay()].slice(0, 3)} ${d.getDate()} ${MO[d.getMonth()].slice(0, 3)}`; };
+function fmtTime(at) {
+  const hm = at.slice(11, 16);
+  if ((pick('N6') || 'h24') === 'h12') { let [h, m] = hm.split(':').map(Number); const ap = h < 12 ? 'am' : 'pm'; h = h % 12 || 12; return `${h}:${pad2(m)} ${ap}`; }
+  return hm;
+}
+// D5: show the written timestamp; the date part only when it differs from the Page's date.
+function writtenDate(e) {
+  const wd = e.at.slice(0, 10);
+  if (wd === e.page) return null;
+  return shortDate(wd) + (wd.slice(0, 4) !== e.page.slice(0, 4) ? ' ' + wd.slice(0, 4) : '');
+}
+function fullWritten(e) { const d = parseYmd(e.at.slice(0, 10)); return `Written ${WD[d.getDay()]}, ${d.getDate()} ${MO[d.getMonth()]} ${d.getFullYear()} at ${fmtTime(e.at)} (IST)`; }
+function timeLabel(e) {
+  const wd = writtenDate(e); const t = fmtTime(e.at); const mode = pick('N5') || 'stack';
+  if (!wd || mode === 'meta' || mode === 'chip') return `<span title="${fullWritten(e)}">${t}</span>`;
+  if (mode === 'inline') return `<span title="${fullWritten(e)}">${wd}, ${t}</span>`;
+  return `<span title="${fullWritten(e)}"><span class="wdate">${wd}</span>${t}</span>`;
+}
+function writtenMeta(e) {
+  const wd = writtenDate(e);
+  return wd && pick('N5') === 'meta' ? `<span title="${fullWritten(e)}">written ${wd}</span>` : '';
+}
+function editedMark(e) {
+  if (!e.edited) return '';
+  const m = pick('N4') || 'word';
+  if (m === 'none') return '';
+  if (m === 'icon') return `<span title="Edited Tue 20 Oct, 14:02">${ic('pencil')}</span>`;
+  return '<span title="Edited Tue 20 Oct, 14:02">edited</span>';
+}
+const pages = () => {
+  const map = new Map();
+  S.entries.forEach((e) => { if (!map.has(e.page)) map.set(e.page, []); map.get(e.page).push(e); });
+  map.forEach((list) => list.sort((a, b) => a.at.localeCompare(b.at)));
+  if (!map.has(today()) && S.entries.length) map.set(today(), []);
+  return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+};
+const words = (t) => (t.trim().match(/\S+/g) || []).length;
+
+/* =====================================================================
+   Mock rendering
+   ===================================================================== */
+function feedAttrs() {
+  const el = pick('N5') === 'inline' && (pick('N1') || 'gutter') === 'gutter' ? 'above' : pick('N1') || 'gutter';
+  return `data-ph="${pick('P1') || 'a'}" data-el="${el}" data-sep="${pick('N2') || 'space'}" data-sticky="${(pick('P4') || 'y')}"`;
+}
+function entryHtml(e, surface) {
+  const editing = S.editing === e.id && S.concept !== 'C';
+  const meta = [editedMark(e), writtenMeta(e)].filter(Boolean).join(' · ');
+  if (editing) {
+    return `<div class="en editing" data-id="${e.id}">
+      <div class="tm">${timeLabel(e)}</div>
+      <textarea class="ed" data-edit="${e.id}" spellcheck="true">${esc(e.text)}</textarea>
+      <div class="edbar"><button class="chip" data-act="redate" data-id="${e.id}">${ic('calendar')} ${shortDate(e.page)}</button>
+      <span>${words(e.text)} words</span><span class="sp"></span><span>Esc or click outside to finish</span>
+      <button class="btn ghost" data-act="done">Done</button></div></div>`;
+  }
+  return `<div class="en" data-id="${e.id}" data-open="${e.id}">
+    <div class="tm">${timeLabel(e)}</div>
+    <div class="bd">${writtenDate(e) && pick('N5') === 'chip' ? `<span class="chip" title="${fullWritten(e)}" style="font-size:11px;padding:0 8px;margin-bottom:4px">${ic('pen-line')} ${writtenDate(e)}</span>` : ''}${md(e.text, e.id)}</div>
+    ${meta ? `<div class="meta2">${meta}</div>` : ''}
+    <button class="ib more" data-act="menu" data-id="${e.id}" aria-label="Entry actions">${ic('more-horizontal')}</button></div>`;
+}
+function draftHtml(page) {
+  if (!S.draft || S.draft.surface !== 'inline' || S.draft.page !== page) return '';
+  return `<div class="en editing"><div class="tm">${now().time}</div>
+    <textarea class="ed" data-draft="1" placeholder="${placeholder()}">${esc(S.draft.text)}</textarea>
+    <div class="edbar"><span class="sp"></span><span>Saves as you type</span><button class="btn ghost" data-act="done">Done</button></div></div>`;
+}
+function placeholder() { return { write: 'Write…', mind: 'What’s on your mind?', prompt: 'What made today different?' }[pick('X3') || 'write']; }
+function feedHtml(surface) {
+  if (S.data === 'empty' && !S.entries.length) return emptyFirstRun();
+  const ps = pages(); let lastMonth = null; const parts = [];
+  ps.forEach(([page, list]) => {
+    const mon = page.slice(0, 7);
+    if ((pick('P6') || 'y') === 'y' && lastMonth && mon !== lastMonth) { const d = parseYmd(page); parts.push(`<div class="monthdiv">${MO[d.getMonth()]} ${d.getFullYear()}</div>`); }
+    lastMonth = mon;
+    const isToday = page === today();
+    const wc = list.reduce((n, e) => n + words(e.text), 0);
+    const info = (pick('P5') || 'none') === 'count' && list.length ? `<span class="pinfo">${list.length} ${list.length === 1 ? 'entry' : 'entries'} · ${wc} words</span>` : '';
+    const add = S.concept === 'A' ? '' : `<button class="ib add" data-act="addto" data-page="${page}" aria-label="Add to this page" title="Add to this page">${ic('plus')}</button>`;
+    const body = list.map((e) => entryHtml(e, surface)).join('');
+    let foot = draftHtml(page);
+    if (!foot && S.concept === 'B') foot = `<div class="addline" data-act="addto" data-page="${page}">${ic('plus')} Add to this page…</div>`;
+    const emptyToday = isToday && !list.length && !foot ? `<div class="today-empty">Nothing yet today.${S.concept === 'A' ? ' The box below is ready.' : ` <button class="btn" data-act="addto" data-page="${page}">${ic('pen-line')} Write</button>`}</div>` : '';
+    parts.push(`<section class="pg" id="pg-${surface}-${page}" data-page="${page}"><div class="ph">${pageTitle(page, pick('P1') || 'a')}${info}${add}</div>${body}${emptyToday}${foot}</section>`);
+  });
+  // a draft on a Page that doesn't exist yet (writing on an empty past date)
+  if (S.draft && S.draft.surface === 'inline' && !ps.some(([p]) => p === S.draft.page)) {
+    parts.unshift(`<section class="pg"><div class="ph">${pageTitle(S.draft.page, pick('P1') || 'a')}</div>${draftHtml(S.draft.page)}</section>`);
+  }
+  return `<div class="feed ${S.editing && S.concept === 'A' && (pick('L3') || 'dim') === 'dim' ? 'dimmed' : ''}" ${feedAttrs()}>${parts.join('')}</div>`;
+}
+function emptyFirstRun() {
+  const v = pick('X1') || 'blank';
+  const copy = { blank: ['A blank page', 'Your first Entry starts here. Write a line, or a lot.'], invite: ['Welcome to your Journal', 'Entries live on dated Pages. Today’s Page is ready when you are.'], minimal: ['No entries yet', ''] }[v];
+  const btn = S.concept === 'A' ? '<span style="font-size:12px;color:var(--faint)">Start typing in the box below</span>' : `<button class="btn prim" data-act="new">${ic('pen-line')} Write your first entry</button>`;
+  return `<div class="es"><div class="ic">${ic('notebook-pen')}</div><b>${copy[0]}</b>${copy[1] ? `<span>${copy[1]}</span>` : ''}${btn}</div>`;
+}
+function calHtml(surface) {
+  if (!S.cal || S.cal.surface !== surface) return '';
+  const [y, m] = S.cal.month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const ws = (pick('C8') || 'mon') === 'sun' ? 0 : 1;
+  const offset = (first.getDay() - ws + 7) % 7;
+  const start = new Date(y, m - 1, 1 - offset);
+  const has = new Set(S.entries.map((e) => e.page));
+  const counts = {}; S.entries.forEach((e) => { counts[e.page] = (counts[e.page] || 0) + 1; });
+  const heads = Array.from({ length: 7 }, (_, i) => `<div class="wd">${WD[(i + ws) % 7].slice(0, 2)}</div>`).join('');
+  let cells = '';
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i); const k = ymd(d);
+    const fut = k > today();
+    const cls = [d.getMonth() !== m - 1 ? 'out' : '', k === today() ? 'today' : '', has.has(k) ? 'has' : '', S.cal.sel === k ? 'sel' : ''].join(' ');
+    cells += `<button class="dy ${cls}" data-day="${k}" ${fut && (pick('D3') || 'no') === 'no' ? 'disabled' : ''}>${d.getDate()}</button>`;
+  }
+  let msg = '';
+  if (S.cal.sel && !has.has(S.cal.sel)) {
+    msg = `<div class="empty-msg"><span>No entries on <b>${shortDate(S.cal.sel)}</b>.</span><button class="btn prim" data-act="writeon" data-page="${S.cal.sel}">${ic('pen-line')} Write on this day</button></div>`;
+  }
+  const inner = `<div class="cal"><div class="ch"><b>${MO[m - 1]} ${y}</b><button class="ib" data-act="calprev" aria-label="Previous month">${ic('chevron-left')}</button><button class="ib" data-act="calnext" aria-label="Next month">${ic('chevron-right')}</button></div>
+    <div class="grid">${heads}${cells}</div>${msg}
+    <div class="foot"><button class="btn ghost" data-act="caltoday">Today</button>${surface === 'pane' ? '' : `<button class="btn ghost" data-act="calclose">Close</button>`}</div></div>`;
+  if (surface === 'pane') return inner;
+  return `${surface === 'phone' ? '<div class="scrimfull" data-act="calclose"></div>' : ''}<div class="calpop">${inner}</div>`;
+}
+function searchHtml() {
+  const q = (S.search || '').trim().toLowerCase();
+  if (!q) return `<div class="res"><div class="es" style="padding:50px 0"><div class="ic">${ic('search')}</div><b>Search your Journal</b><span>Words in any Entry. Try “river” or “design”.</span></div></div>`;
+  const norm = (s) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const terms = norm(q).split(/\s+/).filter(Boolean);
+  const hits = S.entries.filter((e) => terms.every((t) => norm(e.text).includes(t))).sort((a, b) => b.page.localeCompare(a.page) || a.at.localeCompare(b.at));
+  if (!hits.length) return `<div class="res"><div class="es" style="padding:50px 0"><div class="ic">${ic('search-x')}</div><b>No entries match “${esc(S.search)}”</b><span>Check the spelling, or try fewer words.</span></div></div>`;
+  const groups = new Map(); hits.forEach((e) => { if (!groups.has(e.page)) groups.set(e.page, []); groups.get(e.page).push(e); });
+  const snip = (text) => {
+    const plain = text.replace(/[*=_`~]+/g, '').replace(/^\s*(#+|>|- \[[ x]\]|[-*])\s/gm, '').replace(/\s+/g, ' ').trim();
+    const i = norm(plain).indexOf(terms[0]); const s = Math.max(0, i - 40);
+    let out = esc((s > 0 ? '…' : '') + plain.slice(s, s + 140) + (plain.length > s + 140 ? '…' : ''));
+    terms.forEach((t) => { out = out.replace(new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark>$1</mark>'); });
+    return out;
+  };
+  return `<div class="res"><div class="rc">${hits.length} ${hits.length === 1 ? 'entry' : 'entries'} · newest first</div>${[...groups.entries()].map(([p, es]) => `<div class="rg"><h5>${shortDate(p)}${p.slice(0, 4) !== today().slice(0, 4) ? ' ' + p.slice(0, 4) : ''}</h5>${es.map((e) => `<button class="ri" data-goto="${e.id}"><small>${fmtTime(e.at)}</small>${snip(e.text)}</button>`).join('')}</div>`).join('')}</div>`;
+}
+function dockHtml(surface) {
+  if (S.concept !== 'A') return '';
+  const page = S.dockPage || today();
+  const label = page === today() ? 'Today' : page === addDays(today(), -1) ? 'Yesterday' : shortDate(page);
+  const txt = S.draft && S.draft.surface === 'dock' ? S.draft.text : '';
+  const kb = surface === 'phone' && S.draft && S.draft.surface === 'dock' && (pick('F3') || 'y') === 'y'
+    ? `<div class="kbbar"><button>${ic('bold')}</button><button>${ic('italic')}</button><button>${ic('heading')}</button><button>${ic('list')}</button><button>${ic('list-checks')}</button><button>${ic('quote')}</button><button>${ic('link')}</button></div>` : '';
+  return `<div class="dock"><div class="dockbox">
+    <div class="row1"><button class="chip" data-act="dockdate">${ic('calendar')} ${label} ${ic('chevron-down')}</button>
+    <textarea class="ed" data-dock="1" rows="1" placeholder="${placeholder()}">${esc(txt)}</textarea>
+    <button class="ib prim" data-act="dockdone" aria-label="Finish entry" title="Finish (⌘↵)">${ic('check')}</button></div>
+    ${surface === 'desk' ? `<div class="hint"><span>Saved as you type · ⌘↵ or Esc to finish</span><span class="sp"></span><span>⌘N focuses this box from anywhere</span></div>` : ''}
+    </div>${kb}</div>`;
+}
+function sheetHtml(surface) {
+  if (S.concept !== 'C' || !S.sheet) return '';
+  const e = S.sheet.id ? S.entries.find((x) => x.id === S.sheet.id) : null;
+  const time = e ? timeLabel(e) : now().time;
+  return `<div class="ov" data-act="sheetclose-bg"><div class="sheet">
+    <div class="sh-h"><button class="chip" data-act="sheetdate">${ic('calendar')} ${shortDate(S.sheet.page)} ${ic('chevron-down')}</button><span style="flex:1"></span>
+    ${e ? `<button class="ib" data-act="menu" data-id="${e.id}" aria-label="Entry actions">${ic('more-horizontal')}</button>` : ''}<button class="btn prim" data-act="sheetdone">Done</button></div>
+    <div class="sh-b"><textarea class="ed" data-sheet="1" placeholder="${placeholder()}" spellcheck="true">${esc(S.sheet.text)}</textarea></div>
+    <div class="sh-f"><span>${time}${e && e.edited ? ' · edited' : ''}</span><span>${words(S.sheet.text)} words</span><span style="flex:1"></span><span>${S.sheet.text.trim() ? 'Saved' : 'Not saved until you type'}</span></div></div></div>`;
+}
+function menuHtml(surface) {
+  if (!S.menu || S.menu.surface !== surface) return '';
+  const items = pick('A2') || ['date', 'copy', 'delete'];
+  const row = { date: `<button data-act="redate" data-id="${S.menu.id}">${ic('calendar-days')} Move to another date…</button>`, copy: `<button data-act="copy" data-id="${S.menu.id}">${ic('copy')} Copy text</button>`, copymd: `<button data-act="copy" data-id="${S.menu.id}">${ic('file-code')} Copy as Markdown</button>`, dup: `<button data-act="dup" data-id="${S.menu.id}">${ic('copy-plus')} Duplicate</button>`, delete: `<hr><button class="danger" data-act="del" data-id="${S.menu.id}">${ic('trash-2')} Delete<span class="kb">⌫</span></button>` };
+  return `<div class="menu" style="left:${S.menu.x}px;top:${S.menu.y}px">${S.concept !== 'C' ? `<button data-act="edit" data-id="${S.menu.id}">${ic('pen-line')} Edit</button>` : ''}${['date', 'copy', 'copymd', 'dup', 'delete'].filter((k) => items.includes(k)).map((k) => row[k]).join('')}</div>`;
+}
+function toastHtml() { return S.toast ? `<div class="toast">${S.toast.msg}${S.toast.act ? `<button data-act="${S.toast.act}">${S.toast.label}</button>` : ''}</div>` : ''; }
+function paneHtml() {
+  const ps = pages().filter(([, l]) => l.length);
+  return `<aside class="pane">${calHtml('pane')}<div class="idx">${ps.map(([p, l]) => `<button data-gopage="${p}"><b>${p === today() ? 'Today' : shortDate(p)}</b><small>${l.length}</small><span>${esc(l[0].text.replace(/[#*>=_\-\[\]]/g, '').slice(0, 60))}</span></button>`).join('')}</div></aside>`;
+}
+function toolbarButtons(surface) {
+  const b = [];
+  if (S.concept !== 'A') b.push(`<button class="ib" data-act="new" title="New entry (⌘N)" aria-label="New entry">${ic('square-pen')}</button>`);
+  if (!(S.concept === 'B' && surface === 'desk')) b.push(`<button class="ib ${S.cal && S.cal.surface === surface ? 'on' : ''}" data-act="cal" title="Go to date (⌘G)" aria-label="Calendar">${ic('calendar')}</button>`);
+  b.push(`<button class="ib ${S.search !== null ? 'on' : ''}" data-act="search" title="Search Journal (⌘F)" aria-label="Search">${ic('search')}</button>`);
+  return b.join('');
+}
+function renderDesk() {
+  const searching = S.search !== null;
+  const main = searching ? searchHtml() : feedHtml('desk');
+  const content = S.concept === 'B' && !searching
+    ? `<div class="split">${paneHtml()}<div class="ct" data-scroll="desk">${main}</div></div>`
+    : `<div class="ct" data-scroll="desk">${main}</div>`;
+  $('#desk').innerHTML = `<div class="mx desk" data-hfont="${pick('M3') || 'display'}" style="${bodyStyle()}">
+    <aside class="sb"><div class="brand"><i></i>Mnemora</div>
+      <div class="nav">${ic('house')} Home<span class="kb">⌘1</span></div>
+      <div class="nav on">${ic('notebook-pen')} Journal<span class="kb">⌘2</span></div>
+      <div class="nav soon">${ic('square-check')} Todo</div><div class="nav soon">${ic('sparkles')} AI</div>
+      <div class="spacer"></div><div class="nav">${ic('settings')} Settings</div></aside>
+    <main class="mn">
+      <div class="tb">${searching ? `<div class="srch">${ic('search')}<input data-search="desk" placeholder="Search Journal" value="${esc(S.search)}"><button class="ib" style="width:24px;height:24px" data-act="searchclose" aria-label="Close search">${ic('x')}</button></div>` : `<span class="ttl">${ic('notebook-pen')} Journal</span>`}<span class="sp"></span>${toolbarButtons('desk')}</div>
+      ${content}
+      <button class="pill" data-pill="desk" data-act="totoday">${ic('arrow-up')} Today</button>
+      ${searching ? '' : dockHtml('desk')}${calHtml('desk')}${sheetHtml('desk')}${menuHtml('desk')}${toastHtml()}
+    </main></div>`;
+}
+function renderPhone() {
+  const searching = S.search !== null;
+  const main = searching ? searchHtml() : feedHtml('phone');
+  const strip = S.concept === 'B' && !searching ? weekStrip() : '';
+  $('#phone').innerHTML = `<div class="mx phone" data-hfont="${pick('M3') || 'display'}" style="${bodyStyle()}">
+    <div class="status"><span>14:05</span><span>${ic('signal')} ${ic('wifi')} ${ic('battery-full')}</span></div>
+    <div class="lh">${searching ? `<div class="srch" style="max-width:none">${ic('search')}<input data-search="phone" placeholder="Search Journal" value="${esc(S.search)}"><button class="ib" style="width:28px;height:28px" data-act="searchclose" aria-label="Close search">${ic('x')}</button></div>` : `<h1>Journal</h1>${toolbarButtons('phone')}`}</div>
+    ${strip}
+    <div class="ct" data-scroll="phone" style="position:relative">${main}</div>
+    <button class="pill" data-pill="phone" data-act="totoday" style="top:110px">${ic('arrow-up')} Today</button>
+    ${searching ? '' : dockHtml('phone')}${calHtml('phone')}${sheetHtml('phone')}${menuHtml('phone')}
+    <div class="tabs"><div>${ic('house')}Home</div><div class="on">${ic('notebook-pen')}Journal</div><div>${ic('square-check')}Todo</div><div>${ic('menu')}More</div></div></div>`;
+}
+function weekStrip() {
+  const t = today(); const d = parseYmd(t); const ws = (pick('C8') || 'mon') === 'sun' ? 0 : 1;
+  const start = addDays(t, -((d.getDay() - ws + 7) % 7));
+  const has = new Set(S.entries.map((e) => e.page));
+  return `<div class="weekstrip">${Array.from({ length: 7 }, (_, i) => { const k = addDays(start, i); const dd = parseYmd(k); return `<button class="${k === t ? 'today' : ''} ${has.has(k) ? 'has' : ''}" data-gopage="${k}" ${k > t ? 'disabled style="opacity:.35"' : ''}>${WD[dd.getDay()].slice(0, 1)}<b>${dd.getDate()}</b></button>`; }).join('')}</div>`;
+}
+function bodyStyle() {
+  const f = pick('T1') || 'sans';
+  const size = { s15: '0.9375rem', s16: '1rem', s17: '1.0625rem' }[pick('T2') || 's16'];
+  const lh = { l15: '1.5', l165: '1.65', l18: '1.8' }[pick('T3') || 'l165'];
+  const meas = { ch72: '42.5rem', m600: '600px', m680: '680px', full: '2000px' }[pick('T4') || 'm680'];
+  return `--body-font:${f === 'serif' ? 'var(--f-display)' : 'var(--f-ui)'};--body-size:${size};--body-lh:${lh};--measure:${meas}`;
+}
+function render(keepFocus) {
+  const focus = document.activeElement && document.activeElement.closest && document.activeElement.closest('.mx') ? { sel: focusSelector(document.activeElement), start: document.activeElement.selectionStart } : null;
+  const scrolls = [...document.querySelectorAll('[data-scroll]')].map((el) => [el.dataset.scroll, el.scrollTop]);
+  renderDesk(); renderPhone();
+  scrolls.forEach(([k, v]) => { const el = $(`[data-scroll="${k}"]`); if (el) el.scrollTop = v; });
+  document.querySelectorAll('.mx .ed').forEach(autoGrow);
+  if (keepFocus && focus && focus.sel) { const el = $(focus.sel); if (el) { el.focus(); try { el.setSelectionRange(focus.start, focus.start); } catch { /* not a text field */ } } }
+  wireScroll();
+}
+function focusSelector(el) {
+  const surface = el.closest('#desk') ? '#desk' : '#phone';
+  for (const a of ['data-edit', 'data-draft', 'data-dock', 'data-sheet', 'data-search']) if (el.hasAttribute(a)) return `${surface} [${a}]`;
+  return null;
+}
+function autoGrow(el) { if (el.closest('.sheet')) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+function wireScroll() {
+  document.querySelectorAll('[data-scroll]').forEach((el) => {
+    el.onscroll = () => { const p = $(`[data-pill="${el.dataset.scroll}"]`); if (p) p.classList.toggle('show', (pick('R1') || 'y') === 'y' && el.scrollTop > 380); };
+  });
+}
+
+/* =====================================================================
+   Mock actions
+   ===================================================================== */
+let toastTimer;
+function toast(msg, act, label) { S.toast = { msg, act, label }; clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = null; render(); }, 5000); }
+let lastDeleted = null;
+function commitDraft() {
+  const d = S.draft; if (!d) return;
+  if (d.text.trim()) {
+    if (d.id) { const e = S.entries.find((x) => x.id === d.id); if (e) e.text = d.text; }
+    else S.entries.push({ id: 'n' + seq++, page: d.page, at: `${now().date}T${now().time}`, edited: false, text: d.text });
+  }
+  S.draft = null;
+}
+function finishEditing() {
+  if (S.editing) { const e = S.entries.find((x) => x.id === S.editing); if (e && e._orig !== undefined && e._orig !== e.text) e.edited = true; if (e) delete e._orig; S.editing = null; }
+  if (S.draft && S.draft.surface !== 'dock') commitDraft();
+}
+function startEdit(id) { finishEditing(); const e = S.entries.find((x) => x.id === id); if (!e) return; e._orig = e.text; S.editing = id; }
+function scrollToPage(page, surface, entryId) {
+  setTimeout(() => {
+    ['desk', 'phone'].forEach((s) => {
+      if (surface && s !== surface) return;
+      const box = $(`[data-scroll="${s}"]`); const el = entryId ? $(`#${s} .en[data-id="${entryId}"]`) : $(`#pg-${s}-${page}`);
+      if (box && el) { box.scrollTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - (entryId ? 60 : 0); if (entryId) { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }
+    });
+  }, 30);
+}
+function pickDate(current, cb) {
+  // Prototype stand-in for the real date picker: a native date prompt.
+  const v = prompt('Move to which date? (YYYY-MM-DD, not in the future)', current);
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return;
+  if (v > today() && (pick('D3') || 'no') === 'no') { alert('Future dates are not allowed (see D3).'); return; }
+  cb(v);
+}
+function writeOn(page, surface) {
+  S.cal = null;
+  if (S.concept === 'A') { S.dockPage = page; render(); setTimeout(() => { const t = $(`#${surface} [data-dock]`); if (t) t.focus(); }, 20); return; }
+  if (S.concept === 'C') { S.sheet = { id: null, page, text: '' }; render(); setTimeout(() => { const t = $(`#${surface} [data-sheet]`); if (t) t.focus(); }, 20); return; }
+  finishEditing(); S.draft = { page, text: '', surface: 'inline' }; render();
+  scrollToPage(page, surface); setTimeout(() => { const t = $(`#${surface} [data-draft]`); if (t) t.focus(); }, 60);
+}
+function doAct(act, el, surface, ev) {
+  const id = el.dataset.id;
+  switch (act) {
+    case 'new': writeOn(today(), surface); return;
+    case 'addto': writeOn(el.dataset.page, surface); return;
+    case 'writeon': writeOn(el.dataset.page, surface); return;
+    case 'done': finishEditing(); break;
+    case 'edit': S.menu = null; startEdit(id); render(); setTimeout(() => { const t = $(`#${surface} [data-edit]`); if (t) t.focus(); }, 20); return;
+    case 'menu': {
+      const host = el.closest('.mn, .phone'); const r = el.getBoundingClientRect(); const h = host.getBoundingClientRect();
+      S.menu = { id, surface, x: Math.min(r.right - h.left - 190, h.width - 200), y: r.bottom - h.top + 4 }; break;
+    }
+    case 'del': {
+      const i = S.entries.findIndex((x) => x.id === id); if (i < 0) break;
+      lastDeleted = { e: S.entries[i], i }; S.entries.splice(i, 1); S.menu = null; S.editing = null;
+      if (S.sheet && S.sheet.id === id) S.sheet = null;
+      if ((pick('A3') || 'undo') === 'confirm' && !confirm('Delete this entry?')) { S.entries.splice(i, 0, lastDeleted.e); break; }
+      toast('Entry deleted', 'undo', 'Undo'); break;
+    }
+    case 'undo': if (lastDeleted) { S.entries.splice(lastDeleted.i, 0, lastDeleted.e); lastDeleted = null; } S.toast = null; break;
+    case 'copy': { const e = S.entries.find((x) => x.id === id); try { navigator.clipboard.writeText(e.text); } catch { /* clipboard blocked */ } S.menu = null; toast('Copied'); break; }
+    case 'dup': { const e = S.entries.find((x) => x.id === id); S.entries.push({ ...e, id: 'n' + seq++, at: `${now().date}T${now().time}`, edited: false }); S.menu = null; toast('Duplicated to the same Page'); break; }
+    case 'redate': {
+      const e = S.entries.find((x) => x.id === id); S.menu = null;
+      pickDate(e.page, (v) => { e.page = v; if (S.sheet && S.sheet.id === id) S.sheet.page = v; const mode = pick('D4') || 'stay'; toast(`Moved to ${shortDate(v)}`, mode === 'stay' ? 'showmoved' : null, 'Show'); S._moved = e.id; render(); if (mode === 'jump') scrollToPage(v, null, e.id); });
+      break;
+    }
+    case 'showmoved': { const e = S.entries.find((x) => x.id === S._moved); S.toast = null; render(); if (e) scrollToPage(e.page, null, e.id); return; }
+    case 'dockdate': {
+      const opts = [today(), addDays(today(), -1)];
+      const cur = S.dockPage || today();
+      const next = cur === opts[0] ? opts[1] : cur === opts[1] ? 'pick' : opts[0];
+      if (next === 'pick') { pickDate(addDays(today(), -2), (v) => { S.dockPage = v; render(); }); return; }
+      S.dockPage = next; break;
+    }
+    case 'dockdone': commitDraft(); S.dockPage = null; break;
+    case 'sheetdate': pickDate(S.sheet.page, (v) => { S.sheet.page = v; const e = S.entries.find((x) => x.id === S.sheet.id); if (e) e.page = v; render(); }); return;
+    case 'sheetdone': closeSheet(); break;
+    case 'sheetclose-bg': if (ev.target === el) closeSheet(); else return; break;
+    case 'cal': S.cal = S.cal && S.cal.surface === surface ? null : { surface, month: today().slice(0, 7), sel: null }; S.menu = null; break;
+    case 'calclose': S.cal = null; break;
+    case 'calprev': case 'calnext': {
+      const c = S.concept === 'B' && surface === 'desk' ? (S.cal && S.cal.surface === 'pane' ? S.cal : (S.cal = { surface: 'pane', month: today().slice(0, 7), sel: null })) : S.cal;
+      const [y, m] = c.month.split('-').map(Number); const d = new Date(y, m - 1 + (act === 'calnext' ? 1 : -1), 1); c.month = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; break;
+    }
+    case 'caltoday': if (S.cal) { S.cal.month = today().slice(0, 7); S.cal.sel = null; } scrollToPage(today(), surface); if (S.cal && S.cal.surface !== 'pane') S.cal = null; break;
+    case 'search': S.search = S.search === null ? '' : null; S.cal = null; render(); setTimeout(() => { const i = $(`#${surface} [data-search]`); if (i) i.focus(); }, 20); return;
+    case 'searchclose': S.search = null; break;
+    case 'totoday': scrollToPage(today(), surface); return;
+    default: return;
+  }
+  render();
+}
+function closeSheet() {
+  const s = S.sheet; if (!s) return;
+  if (s.id) { const e = S.entries.find((x) => x.id === s.id); if (e && e.text !== s.text) { e.text = s.text; e.edited = true; } }
+  else if (s.text.trim()) S.entries.push({ id: 'n' + seq++, page: s.page, at: `${now().date}T${now().time}`, edited: false, text: s.text });
+  S.sheet = null;
+}
+function onClick(ev) {
+  const surfaceEl = ev.target.closest('#desk, #phone'); if (!surfaceEl) return;
+  const surface = surfaceEl.id;
+  const actEl = ev.target.closest('[data-act]');
+  if (S.menu && !ev.target.closest('.menu') && !(actEl && actEl.dataset.act === 'menu')) { S.menu = null; if (!actEl) { render(); return; } }
+  const tog = ev.target.closest('[data-toggle]');
+  const addItem = ev.target.closest('[data-additem]');
+  if (addItem) {
+    const [eid, line] = addItem.dataset.additem.split(':'); const e = S.entries.find((x) => x.id === eid);
+    const v = prompt('New checklist item'); if (!v || !v.trim()) return;
+    const lines = e.text.split('\n'); lines.splice(+line + 1, 0, `- [ ] ${v.trim()}`); e.text = lines.join('\n'); render(); return;
+  }
+  const m4 = pick('M4') || 'y';
+  const togEl = m4 === 'y' ? tog : m4 === 'row' ? ev.target.closest('[data-row]') : null;
+  if (togEl) {
+    const [eid, line] = (togEl.dataset.toggle || togEl.dataset.row).split(':'); const e = S.entries.find((x) => x.id === eid);
+    const lines = e.text.split('\n'); lines[+line] = lines[+line].replace(/^- \[( |x)\]/, (m, c) => (c === 'x' ? '- [ ]' : '- [x]')); e.text = lines.join('\n'); render(); return;
+  }
+  if (actEl) { doAct(actEl.dataset.act, actEl, surface, ev); return; }
+  const day = ev.target.closest('[data-day]');
+  if (day) {
+    const k = day.dataset.day; const has = S.entries.some((e) => e.page === k);
+    if (!S.cal) S.cal = { surface: 'pane', month: k.slice(0, 7), sel: null };
+    S.cal.sel = k;
+    if (has) { const keep = S.cal.surface === 'pane'; if (!keep) S.cal = null; render(); scrollToPage(k, surface); return; }
+    render(); return;
+  }
+  const gp = ev.target.closest('[data-gopage]');
+  if (gp) { const k = gp.dataset.gopage; if (S.entries.some((e) => e.page === k) || k === today()) scrollToPage(k, surface); else writeOn(k, surface); return; }
+  const go = ev.target.closest('[data-goto]');
+  if (go) { const e = S.entries.find((x) => x.id === go.dataset.goto); S.search = null; render(); scrollToPage(e.page, surface, e.id); return; }
+  if (ev.target.closest('a')) return;
+  const open = ev.target.closest('[data-open]');
+  if (open) {
+    const id = open.dataset.open;
+    if (S.concept === 'C') { const e = S.entries.find((x) => x.id === id); S.sheet = { id, page: e.page, text: e.text }; render(); return; }
+    startEdit(id); render(); const t = $(`#${surface} [data-edit]`); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } return;
+  }
+  if (!ev.target.closest('.en.editing, .dockbox, .sheet, .calpop, .pane, textarea, input') && (S.editing || (S.draft && S.draft.surface === 'inline'))) { finishEditing(); render(); }
+}
+function onInput(ev) {
+  const t = ev.target; if (!t.closest('.mx')) return;
+  if (t.dataset.edit) { const e = S.entries.find((x) => x.id === t.dataset.edit); e.text = t.value; autoGrow(t); return; }
+  if (t.dataset.draft) { S.draft.text = t.value; autoGrow(t); return; }
+  if (t.dataset.dock) {
+    if (!S.draft || S.draft.surface !== 'dock') S.draft = { page: S.dockPage || today(), text: '', surface: 'dock' };
+    S.draft.text = t.value; S.draft.page = S.dockPage || today(); autoGrow(t); return;
+  }
+  if (t.dataset.sheet) { S.sheet.text = t.value; const f = t.closest('.sheet').querySelector('.sh-f'); if (f) f.lastElementChild.textContent = t.value.trim() ? 'Saved' : 'Not saved until you type'; return; }
+  if (t.dataset.search !== undefined) { S.search = t.value; render(true); }
+}
+function onKey(ev) {
+  const t = ev.target; const inMock = t.closest && t.closest('.mx');
+  if (ev.key === 'Escape') {
+    if (S.menu) { S.menu = null; render(); return; }
+    if (S.cal) { S.cal = null; render(); return; }
+    if (S.sheet) { closeSheet(); render(); return; }
+    if (inMock && t.dataset.dock !== undefined) { commitDraft(); S.dockPage = null; render(); return; }
+    if (S.editing || S.draft) { finishEditing(); render(); return; }
+    if (S.search !== null) { S.search = null; render(); return; }
+  }
+  if (inMock && ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+    ev.preventDefault();
+    if (t.dataset.dock !== undefined) { commitDraft(); S.dockPage = null; render(); setTimeout(() => { const d = $('#desk [data-dock]'); if (d) d.focus(); }, 20); return; }
+    if (S.sheet) { closeSheet(); render(); return; }
+    finishEditing(); render(); return;
+  }
+  if (inMock && ev.key === 'Enter' && !ev.shiftKey && (pick('F5') || ['cont', 'exit', 'tab', 'bksp']).includes('cont') && t.tagName === 'TEXTAREA') {
+    // list continuation, the way the real editor will do it
+    const v = t.value; const pos = t.selectionStart; const ls = v.lastIndexOf('\n', pos - 1) + 1; const line = v.slice(ls, pos);
+    const m = line.match(/^(- \[[ x]\] |[-*] |(\d+)\. )/);
+    if (m) {
+      ev.preventDefault();
+      if (line.trim() === m[0].trim() && (pick('F5') || ['exit']).includes('exit')) { t.value = v.slice(0, ls) + v.slice(pos); t.setSelectionRange(ls, ls); }
+      else { const marker = m[2] ? `${+m[2] + 1}. ` : m[0].startsWith('- [') ? '- [ ] ' : m[0]; t.value = v.slice(0, pos) + '\n' + marker + v.slice(pos); const np = pos + 1 + marker.length; t.setSelectionRange(np, np); }
+      t.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+}
+function onGlobalKey(ev) {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'n' && document.activeElement.closest && document.activeElement.closest('.mx, #mock, .controls')) { ev.preventDefault(); writeOn(today(), 'desk'); }
+}
+document.addEventListener('click', onClick);
+document.addEventListener('input', onInput);
+document.addEventListener('keydown', (e) => { onKey(e); onGlobalKey(e); });
+document.addEventListener('dblclick', (ev) => {
+  // M4c: double-clicking a checklist item opens the editor with the cursor on that line.
+  const row = ev.target.closest('.mx [data-row]');
+  if (row && pick('M4') === 'row' && pick('M4c') === 'dbl' && S.concept !== 'C') {
+    const [eid, line] = row.dataset.row.split(':'); const e = S.entries.find((x) => x.id === eid);
+    // the two clicks of a double-click each toggled the item, so it is back where it started
+    const lines = e.text.split('\n');
+    const surface = ev.target.closest('#desk') ? 'desk' : 'phone';
+    startEdit(eid); render();
+    const t = $(`#${surface} [data-edit]`); if (t) { const pos = lines.slice(0, +line + 1).join('\n').length; t.focus(); t.setSelectionRange(pos, pos); }
+    return;
+  }
+  const d = ev.target.closest('[data-day]'); if (d && ev.target.closest('.mx')) writeOn(d.dataset.day, ev.target.closest('#desk') ? 'desk' : 'phone'); });
+
+/* =====================================================================
+   Catalogue: every low-level decision
+   ===================================================================== */
+const demoEntry = (time, text, meta = '') => `<div class="mini"><div class="en" style="cursor:default"><div class="tm">${time}</div><div class="bd">${md(text, 'x')}</div>${meta ? `<div class="meta2">${meta}</div>` : ''}</div></div>`;
+const demoFeed = (attrs, inner) => `<div class="feed mini" ${attrs} style="padding:0;max-width:none">${inner}</div>`;
+// N5: the same Friday Page in every variant, desktop and phone side by side.
+function n5Demo(mode) {
+  const rows = [
+    { t: '13:20', text: 'Lunch by the window. Read 40 pages.' },
+    { t: '23:05', text: 'Small wins: fixed the icon bug, went for a run.' },
+    { t: '09:12', wd: 'Mon 19 Oct', text: 'Coffee with Aarav in the evening. We talked about slowing down.', hi: true },
+  ];
+  const time = (r) => {
+    if (!r.wd || mode === 'meta') return r.t;
+    if (mode === 'chip') return `${r.t}`;
+    if (mode === 'inline') return `${r.wd}, ${r.t}`;
+    return `<span class="wdate">${r.wd}</span>${r.t}`;
+  };
+  const col = (cls, label) => `<div class="col ${cls}"><div class="lbl">${label}</div><div class="hd">Friday, 16 October</div>${rows.map((r) => `<div class="row ${r.hi ? 'hi' : ''}" ${mode === 'inline' && cls !== 'phonecol' ? 'style="grid-template-columns:1fr;gap:1px"' : ''}><div class="t">${time(r)}</div><div>${r.wd && mode === 'chip' ? `<span class="chip" style="font-size:10.5px;padding:0 7px;margin-right:6px">${ic('pen-line')} ${r.wd}</span>` : ''}${r.text}</div>${r.wd && mode === 'meta' ? `<div class="foot">written ${r.wd}</div>` : ''}</div>`).join('')}</div>`;
+  return `<div class="n5">${col('', 'Desktop')}${col('phonecol', 'Phone')}</div>`;
+}
+const twoEntries =demoEntry('08:12', 'Walked to the river. The light was **unreal**.') + demoEntry('21:40', 'Started Mnemora today.', 'edited');
+const mkLines = (mode) => `<div data-mk="${mode}" class="mkdemo" style="font-size:13.5px;line-height:1.6">
+  <div class="ln hd" data-ln><span class="mk"># </span>Evening<span class="caret"></span></div>
+  <div class="ln cur" data-ln>Walked to the <span class="mk">**</span><b>river</b><span class="mk">**</span>, it was <span class="mk">_</span><i>quiet</i><span class="mk">_</span>.<span class="caret"></span></div>
+  <div class="ln" data-ln><span class="mk">- [x] </span><span class="rk" style="color:var(--hue-journal)">☑ </span>Call mom<span class="caret"></span></div>
+  <div class="ln qt" data-ln><span class="mk">&gt; </span>Make it calm.<span class="caret"></span></div>
+  <div style="font-size:11px;color:var(--faint);margin-top:4px">Click a line to move the cursor</div></div>`;
+
+const CAT = [
+  { id: 'L', title: 'Overall concept', intro: 'The shape of the whole Journal screen. Try each one in the mock above; the other sections refine whichever you pick.', items: [
+    { id: 'L1', q: 'Which overall experience?', live: true, why: 'This decides where writing happens: a box docked at the bottom, inline on the Page, or a focused sheet.', opts: [
+      { k: 'A', t: 'A · Composer dock', rec: true, d: 'Read the feed; write in a box docked at the bottom, with a date chip for choosing the Page. Click an Entry to edit it in place. Fastest capture, like messaging yourself.' },
+      { k: 'B', t: 'B · Diary spread', d: 'Desktop has a calendar + Page index pane on the left and the paper-like feed on the right. Every Page ends with "Add to this page…". Inline editing. Phone gets a week strip.' },
+      { k: 'C', t: 'C · Focus sheet', d: 'A calm read-only feed. All writing happens in a focused sheet (centred on desktop, full screen on phone) with a date chip. The most distraction-free.' },
+    ] },
+    { id: 'L2', q: 'Dock only (A): when does a new Entry appear in the feed?', why: 'Autosave means the Entry exists from the first character. The question is when you see it in the feed.', opts: [
+      { k: 'finish', t: 'When you finish', rec: true, d: 'It saves in the background while you type and moves into the feed when you press ⌘↵, Esc or ✓. The feed stays still while you type.' },
+      { k: 'live', t: 'Live while typing', d: 'It appears on the Page immediately and grows as you type, so the feed moves while you write.' },
+    ] },
+    { id: 'L3', q: 'Inline editing (A, B): what happens to the rest of the feed?', why: 'When you click into an Entry to edit it.', opts: [
+      { k: 'dim', t: 'Others dim', rec: true, demo: `<div style="opacity:.35">${demoEntry('08:12', 'Walked to the river.')}</div><div class="mini"><div class="en editing"><div class="tm">21:40</div><div class="bd">Started Mnemora today.|</div></div></div>`, d: 'The edited Entry lifts onto a card and the others fade to 35%: focus without leaving the scroll.' },
+      { k: 'none', t: 'Nothing changes', demo: `${demoEntry('08:12', 'Walked to the river.')}<div class="mini"><div class="en editing"><div class="tm">21:40</div><div class="bd">Started Mnemora today.|</div></div></div>`, d: 'Only the edited Entry gets the card. Context stays fully readable.' },
+    ] },
+  ] },
+  { id: 'P', title: 'Pages in the feed', intro: 'How each dated Page is labelled and separated.', items: [
+    { id: 'P1', q: 'Page header style', live: true, why: 'The date is the only heading a Page has, so it does a lot of work.', opts: [
+      { k: 'a', t: 'Written date, serif', rec: true, demo: demoFeed('data-ph="a"', `<div class="ph"><span class="d">Tuesday, 20 October</span><span class="badge">Today</span></div>`), d: 'Full weekday and date in Fraunces. Editorial and diary-like.' },
+      { k: 'b', t: 'Big numeral', demo: demoFeed('data-ph="b"', `<div class="ph"><span class="d"><span class="num">20</span><span><span class="wd">Tuesday</span><span class="mo">October</span></span></span><span class="badge">Today</span></div>`), d: 'A large day number with the weekday and month stacked beside it. Feels like a calendar page.' },
+      { k: 'c', t: 'Compact caps', demo: demoFeed('data-ph="c"', `<div class="ph"><span class="d">Tue 20 Oct</span><span class="badge">Today</span></div>`), d: 'Small uppercase UI label with a hairline under it. Dense, utilitarian.' },
+    ] },
+    { id: 'P2', q: 'Today / Yesterday labels', live: true, opts: [
+      { k: 'badge', t: 'Badge beside the date', rec: true, demo: demoFeed('data-ph="a"', `<div class="ph"><span class="d">Monday, 19 October</span><span class="badge">Yesterday</span></div>`), d: 'Keeps the real date and adds a coral badge.' },
+      { k: 'replace', t: 'Replace the date', demo: demoFeed('data-ph="a"', `<div class="ph"><span class="d">Yesterday</span></div>`), d: 'Friendlier, but the date itself is hidden for the two most recent Pages.' },
+      { k: 'never', t: 'Never', demo: demoFeed('data-ph="a"', `<div class="ph"><span class="d">Monday, 19 October</span></div>`), d: 'Always just the date.' },
+    ] },
+    { id: 'P3', q: 'Showing the year', live: true, opts: [
+      { k: 'notcurrent', t: 'Only when it isn’t this year', rec: true, demo: demoFeed('data-ph="a"', `<div class="ph"><span class="d">Monday, 20 October</span><span class="yr">2025</span></div>`), d: 'Clean for recent Pages, unambiguous for old ones. (Scroll to the bottom of the mock to see it.)' },
+      { k: 'always', t: 'Always', d: 'Every header shows the year.' },
+      { k: 'never', t: 'Never (month dividers carry it)', d: 'Relies on the "October 2025" month dividers.' },
+    ] },
+    { id: 'P4', q: 'Sticky Page header while scrolling', live: true, opts: [
+      { k: 'y', t: 'Sticky', rec: true, d: 'The current Page’s date stays pinned at the top while you scroll through a long Page.' },
+      { k: 'n', t: 'Scrolls away', d: 'Headers scroll with the content.' },
+    ] },
+    { id: 'P5', q: 'Page summary in the header', live: true, opts: [
+      { k: 'none', t: 'Nothing', rec: true, d: 'Just the date. Quiet.' },
+      { k: 'count', t: 'Entry + word count', demo: demoFeed('data-ph="a"', `<div class="ph"><span class="d">Friday, 16 October</span><span class="pinfo">3 entries · 52 words</span></div>`), d: 'Shown faintly on the right of each header.' },
+    ] },
+    { id: 'P6', q: 'Month dividers', live: true, opts: [
+      { k: 'y', t: 'Subtle month divider', rec: true, demo: `<div class="mini"><div class="monthdiv" style="margin:0">September 2026</div></div>`, d: 'A faint "September 2026" rule where the month changes. Helps you keep your place in a long scroll.' },
+      { k: 'n', t: 'None', d: 'Page headers only.' },
+    ] },
+  ] },
+  { id: 'N', title: 'Entries in the feed', intro: 'How one Entry looks while you are reading.', items: [
+    { id: 'N1', q: 'Where the time sits', live: true, opts: [
+      { k: 'gutter', t: 'Left margin', rec: true, demo: demoFeed('data-el="gutter"', twoEntries), d: 'Like a diary margin note. Times line up in a column and the text keeps a clean left edge. Phones always use "above".' },
+      { k: 'above', t: 'Above the text', demo: demoFeed('data-el="above"', twoEntries.replace(/grid-template-columns:44px 1fr/g, '')), d: 'A small time line, then the text at full width.' },
+      { k: 'footer', t: 'After the text', demo: demoFeed('data-el="footer"', twoEntries), d: 'Text first, then the time underneath like a signature.' },
+    ] },
+    { id: 'N2', q: 'Separation between Entries on a Page', live: true, opts: [
+      { k: 'space', t: 'Whitespace only', rec: true, demo: demoFeed('data-sep="space"', twoEntries), d: 'Calmest. Each Entry gets a hover tint.' },
+      { k: 'line', t: 'Hairline', demo: demoFeed('data-sep="line"', twoEntries), d: 'A thin rule between Entries.' },
+      { k: 'card', t: 'Card per Entry', demo: demoFeed('data-sep="card"', twoEntries), d: 'Each Entry is its own card. Clear, but busier.' },
+      { k: 'rail', t: 'Timeline rail', demo: demoFeed('data-sep="rail" data-el="above"', twoEntries), d: 'A vertical line with a coral dot per Entry.' },
+    ] },
+    { id: 'N3', q: 'Long Entries in the feed', opts: [
+      { k: 'full', t: 'Always full text', rec: true, d: 'A diary is for rereading; nothing is hidden. The feed is virtualised, so length doesn’t hurt performance.' },
+      { k: 'clamp', t: 'Clamp to ~8 lines + "Show more"', d: 'Easier skimming, but an extra click to read.' },
+    ] },
+    { id: 'N4', q: 'The "edited" mark', live: true, opts: [
+      { k: 'word', t: 'Faint word "edited"', rec: true, demo: demoEntry('21:40', 'Started Mnemora today.', 'edited'), d: 'Hover (desktop) or long-press (phone) shows the last edit time.' },
+      { k: 'icon', t: 'Small pencil icon', demo: demoEntry('21:40', 'Started Mnemora today.', ic('pencil')), d: 'More compact.' },
+      { k: 'none', t: 'Not shown in the feed', d: 'Only visible inside the Entry’s menu or editor.' },
+    ] },
+    { id: 'N5', wide: true, q: 'Where the written date goes when it differs from the Page’s date', live: true, why: 'Every demo shows the same Page. Friday 16 October has two Entries written that day and one (highlighted) written later, on Mon 19 Oct at 09:12. Same-day Entries always show only the time. If the written year differs from the Page’s, the year is added ("Mon 19 Oct 2025"). Hovering or long-pressing the time always shows the full timestamp and time zone. The highlighted Entry sits last because of D6 (ordered by written timestamp). Picking an option also changes the Friday Page in the mock above.', opts: [
+      { k: 'stack', t: 'Stacked: small date above the time', rec: true, demo: n5Demo('stack'), d: 'The date lives where times always live, so the eye finds it in the margin. The text column is untouched. On phone (no margin) it reads "Mon 19 Oct 09:12" on the time line.' },
+      { k: 'inline', t: 'One line: "Mon 19 Oct, 09:12"', demo: n5Demo('inline'), d: 'The time label simply becomes longer. It doesn’t fit a narrow margin, so with this option desktop puts every time above its text (overrides N1).' },
+      { k: 'meta', t: 'Footnote: time stays, "written Mon 19 Oct" under the text', demo: n5Demo('meta'), d: 'The time column stays uniform; the date reads like a footnote at the end, next to "edited" when both apply.' },
+      { k: 'chip', t: 'Chip: time stays, a small date chip starts the text', demo: n5Demo('chip'), d: 'The most noticeable: you can’t miss that it was written later. It interrupts the first line of the text.' },
+    ] },
+    { id: 'N6', q: 'Time format', live: true, why: 'There is already a core time_format Preference in General Settings.', opts: [
+      { k: 'h24', t: 'Follow the core setting (24h here)', rec: true, d: 'Journal never has its own time format; it always follows Settings ▸ General.' },
+      { k: 'h12', t: 'Preview 12h', d: 'Just to see it: 8:12 am.' },
+    ] },
+    { id: 'N7', q: 'Entry actions button (⋯)', opts: [
+      { k: 'hover', t: 'Appears on hover/focus (desktop), always on phone', rec: true, d: 'A quiet feed; nothing is hidden on touch.' },
+      { k: 'always', t: 'Always visible', d: 'More discoverable, more visual noise.' },
+      { k: 'ctx', t: 'Right-click / long-press only', d: 'Cleanest, least discoverable.' },
+    ] },
+  ] },
+  { id: 'T', title: 'Writing typography', intro: 'How the text of an Entry is set, in both the feed and the editor (they match exactly, so editing never shifts the text).', items: [
+    { id: 'T1', q: 'Body font', live: true, opts: [
+      { k: 'sans', t: 'Inter (UI sans)', rec: true, demo: `<div class="bd" style="font-family:var(--f-ui)">Walked to the river. The light was unreal, mist low on the water.</div>`, d: 'Crisp and neutral, matches the rest of the app. A Serif option could live in Journal Settings (see Z1).' },
+      { k: 'serif', t: 'Fraunces (serif)', demo: `<div class="bd" style="font-family:var(--f-display)">Walked to the river. The light was unreal, mist low on the water.</div>`, d: 'Warm and literary, the most "diary" feel. Fraunces is a display face, so long text can feel heavy.' },
+    ] },
+    { id: 'T2', q: 'Body size (before the Text size setting scales it)', live: true, opts: [
+      { k: 's15', t: '15px', d: 'Same as UI text.' }, { k: 's16', t: '16px', rec: true, d: 'Slightly larger for reading and writing comfort.' }, { k: 's17', t: '17px', d: 'Book-like.' },
+    ] },
+    { id: 'T3', q: 'Line height', live: true, opts: [
+      { k: 'l15', t: '1.5', d: 'Compact.' }, { k: 'l165', t: '1.65', rec: true, d: 'Airy and easy to read.' }, { k: 'l18', t: '1.8', d: 'Very open.' },
+    ] },
+    { id: 'T4', q: 'Text column width', live: true, opts: [
+      { k: 'ch72', t: 'Fill, capped at ~72 characters', d: 'Grows with the window and stops at about 72 characters. The cap scales with the Text size setting. Narrow windows and phones fill the width.' },
+      { k: 'm600', t: '600px', d: 'About 65 characters. Very bookish.' }, { k: 'm680', t: '680px', rec: true, d: 'About 75 characters: comfortable on most windows.' }, { k: 'full', t: 'Fill the window', d: 'Long lines on wide screens.' },
+    ] },
+    { id: 'T5', q: 'Paragraphs', opts: [
+      { k: 'gap', t: 'Blank line = gap between paragraphs', rec: true, d: 'Standard Markdown. One Enter is a line break inside a paragraph.' },
+      { k: 'indent', t: 'First-line indent, no gap', d: 'Book style. Unusual on screens.' },
+    ] },
+  ] },
+  { id: 'M', title: 'Markdown', intro: 'What formatting exists, and how the symbols behave while you type.', items: [
+    { id: 'M1', multi: true, q: 'Which syntax is supported in v1? (pick all that apply)', why: 'Anything not supported is kept as plain text, never lost.', opts: [
+      { k: 'h', t: 'Headings (# ## ###)', rec: true, demo: `<div class="bd"><h2>Small wins</h2></div>` },
+      { k: 'b', t: 'Bold / italic', rec: true, demo: `<div class="bd"><strong>bold</strong> and <em>italic</em></div>` },
+      { k: 's', t: 'Strikethrough ~~ ~~', rec: true, demo: `<div class="bd"><s>cancelled plan</s></div>` },
+      { k: 'hl', t: 'Highlight == ==', rec: true, demo: `<div class="bd"><mark>this mattered</mark></div>` },
+      { k: 'ul', t: 'Bullet + numbered lists', rec: true, demo: `<div class="bd"><ul><li>one</li><li>two</li></ul></div>` },
+      { k: 'task', t: 'Checklists - [ ]', rec: true, demo: `<div class="bd"><ul class="task"><li class="done"><span class="cb x">✓</span><span>Call mom</span></li><li><span class="cb"></span><span>Run</span></li></ul></div>` },
+      { k: 'q', t: 'Quotes >', rec: true, demo: `<div class="bd"><blockquote>Make it calm.</blockquote></div>` },
+      { k: 'a', t: 'Links + bare URLs', rec: true, demo: `<div class="bd"><a>example.com/talk</a></div>` },
+      { k: 'code', t: 'Inline code', rec: true, demo: `<div class="bd">ran <code>make dev</code></div>` },
+      { k: 'hr', t: 'Divider ---', rec: true, demo: `<div class="bd"><hr></div>` },
+      { k: 'pre', t: 'Code blocks ```', d: 'Rare in a diary.' },
+      { k: 'tbl', t: 'Tables', d: 'Awkward to type on a phone.' },
+    ] },
+    { id: 'M2', q: 'Visibility of the Markdown symbols (** # > …)', why: 'This is the core of "live Markdown". Click lines in each demo to move the cursor.', opts: [
+      { k: 'reveal', t: 'Hidden, except on the cursor’s line', rec: true, demo: mkLines('reveal'), d: 'Obsidian-style. Reads clean; the symbols appear only where you are editing, so they stay easy to fix.' },
+      { k: 'dim', t: 'Always shown, faded', demo: mkLines('dim'), d: 'Typora/iA Writer-style. Nothing is ever hidden, at the cost of some noise.' },
+      { k: 'hidden', t: 'Always hidden (WYSIWYG)', demo: mkLines('hidden'), d: 'Pure rich-text feel. Fixing formatting relies on shortcuts or a toolbar.' },
+    ] },
+    { id: 'M3', q: 'Heading font inside an Entry', live: true, opts: [
+      { k: 'display', t: 'Fraunces', rec: true, demo: `<div class="bd"><h2 style="font-family:var(--f-display)">Small wins</h2></div>`, d: 'Echoes the Page headers.' },
+      { k: 'ui', t: 'Inter bold', demo: `<div class="bd"><h2 style="font-family:var(--f-ui);font-weight:650">Small wins</h2></div>`, d: 'Plainer.' },
+    ] },
+    { id: 'M4', q: 'Ticking a checklist item in the read view', live: true, why: 'In the composer dock, clicking an Entry opens it for editing, so the checkbox needs to be its own target. Try each option on today’s 13:40 Entry in the mock.', opts: [
+      { k: 'y', t: 'The box ticks; the text opens the editor', rec: true, demo: `<div class="bd"><ul class="task"><li class="done"><span class="cb x">✓</span><span>Set up the foundation</span></li><li><span class="cb"></span><span>Design the Journal</span></li></ul></div>`, d: 'The box has a hover ring and a large invisible hit area (44px on phone), so it’s easy to hit without opening the editor. Ticking never marks the Entry "edited" (S4).' },
+      { k: 'row', t: 'The whole item row ticks', d: 'The biggest target: anywhere on the item toggles it. Editing an item’s text then needs another way into the editor (question M4c).' },
+      { k: 'n', t: 'Only inside the editor', d: 'Fully read-only feed: click the Entry, then tick. Slower for daily lists.' },
+    ] },
+    { id: 'M4c', q: 'With row-ticking, how do you edit a checklist item’s text?', why: 'Clicking an item ticks it (M4), so clicking can’t also open the editor there. This matters most for an Entry that is only a checklist, where there’s no other text to click.', opts: [
+      { k: 'dbl', t: 'Double-click the item (desktop) · ⋯ ▸ Edit (both)', rec: true, d: 'Double-click opens the editor with the cursor in that item. Single click ticks. On phone, long-press opens the menu with Edit first. Try both in the mock.' },
+      { k: 'pencil', t: 'A pencil button on hover, next to ⋯', d: 'Visible and explicit. One more button on every Entry.' },
+      { k: 'margin', t: 'Click the time or the empty space around the Entry', d: 'No extra UI, but hard to discover and fiddly on phone.' },
+    ] },
+    { id: 'M4b', q: 'Adding or removing checklist items', live: true, opts: [
+      { k: 'editor', t: 'Always in the editor', rec: true, d: 'Click the Entry, put the cursor at the end of the list and press Enter; the next "- [ ]" appears automatically (F5). One way to do it, no extra UI.' },
+      { k: 'quick', t: '"+ Add item" line under each checklist in the read view', demo: `<div class="bd"><ul class="task"><li><span class="cb"></span><span>Design the Journal</span></li><li style="color:var(--faint)">+ Add item</li></ul></div>`, d: 'Quicker for running lists, but adds UI to every checklist. Removing an item still happens in the editor.' },
+    ] },
+    { id: 'M5', q: 'Clicking a link', opts: [
+      { k: 'smart', t: 'Read view: click opens. Editing: ⌘/Ctrl-click opens', rec: true, d: 'Plain clicks while editing place the cursor. Links always open in the system browser.' },
+      { k: 'always', t: 'Click always opens', d: 'Makes editing link text fiddly.' },
+    ] },
+    { id: 'M6', q: 'Pasting from the web or other apps', opts: [
+      { k: 'convert', t: 'Convert formatting to Markdown', rec: true, d: 'Bold, links and lists survive; colours, fonts and images are dropped. ⌘⇧V pastes plain text.' },
+      { k: 'plain', t: 'Always plain text', d: 'Predictable, but loses links and lists.' },
+    ] },
+    { id: 'M7', q: 'Smart typography (" " → “ ”, -- → —)', opts: [
+      { k: 'off', t: 'Off', rec: true, d: 'What you type is what’s stored. Phone keyboards already do this.' },
+      { k: 'on', t: 'On', d: 'Prettier text, occasionally surprising.' },
+    ] },
+  ] },
+  { id: 'F', title: 'Formatting controls', intro: 'How you apply formatting without typing symbols.', items: [
+    { id: 'F1', multi: true, q: 'Keyboard shortcuts (desktop)', why: '⌘1–9 already switch Modules, so headings can’t use ⌘1–3.', opts: [
+      { k: 'b', t: '⌘B bold · ⌘I italic', rec: true }, { k: 'k', t: '⌘K link (when text is selected)', rec: true, d: '⌘K without a selection still opens the command palette.' },
+      { k: 'x', t: '⌘⇧X strikethrough', rec: true }, { k: 'h', t: '⌘⇧H highlight', rec: true }, { k: 'e', t: '⌘E inline code', rec: true },
+      { k: 'l', t: '⌘⇧8 bullets · ⌘⇧7 numbers · ⌘⇧9 checklist', rec: true }, { k: 'hd', t: '⌘⌥1–3 headings', rec: true },
+    ] },
+    { id: 'F2', q: 'Floating toolbar on text selection (desktop)', opts: [
+      { k: 'n', t: 'No', rec: true, d: 'Markdown + shortcuts are enough, and a calm editor matters more.' },
+      { k: 'y', t: 'Yes, a small bubble', demo: `<div class="bubble"><span><b>B</b></span><span><i>I</i></span><span><s>S</s></span><span>H</span><span>🔗</span></div>`, d: 'Discoverable; appears above any selection.' },
+    ] },
+    { id: 'F3', q: 'Formatting bar above the phone keyboard', live: true, opts: [
+      { k: 'y', t: 'Yes', rec: true, demo: `<div class="kbbar mx" style="border-radius:8px"><button>${ic('bold')}</button><button>${ic('italic')}</button><button>${ic('heading')}</button><button>${ic('list')}</button><button>${ic('list-checks')}</button><button>${ic('quote')}</button></div>`, d: 'Typing ** on a phone keyboard is painful. Try typing in the phone mock’s dock.' },
+      { k: 'n', t: 'No', d: 'Markdown symbols only.' },
+    ] },
+    { id: 'F4', q: 'Slash menu ("/" to insert a heading, list…)', opts: [
+      { k: 'n', t: 'Not in v1', rec: true, d: 'A diary rarely needs block insertion, and "/" is a normal character in prose (and/or).' },
+      { k: 'y', t: 'Yes', d: 'Notion-like insertion menu.' },
+    ] },
+    { id: 'F5', multi: true, q: 'List editing behaviour', why: 'Try it in the mock: type "- milk" and press Enter.', opts: [
+      { k: 'cont', t: 'Enter continues the list', rec: true }, { k: 'exit', t: 'Enter on an empty item ends the list', rec: true },
+      { k: 'tab', t: 'Tab / ⇧Tab indents / outdents', rec: true }, { k: 'bksp', t: 'Backspace at item start removes the bullet', rec: true },
+      { k: 'pair', t: 'Auto-close ** ` ( [', d: 'Often fights you in prose.' },
+    ] },
+    { id: 'F6', q: 'Spellcheck', opts: [
+      { k: 'on', t: 'On by default, can be turned off in Journal Settings', rec: true, d: 'Uses the OS spellchecker. Autocorrect and auto-capitalise follow the phone keyboard.' },
+      { k: 'off', t: 'Off by default', d: '' },
+    ] },
+  ] },
+  { id: 'S', title: 'Saving and editing lifecycle', intro: 'Long-form writing autosaves (rule N9). These are its details.', items: [
+    { id: 'S1', q: 'When autosave writes', opts: [
+      { k: 'pause', t: '600ms after you stop typing, plus when you leave', rec: true, d: 'Also flushes on blur, navigation, app background (Android) and window close. Typing never lags.' },
+      { k: 'blur', t: 'Only when you leave the Entry', d: 'Fewer writes; a crash loses the current session.' },
+      { k: 'key', t: 'Every keystroke', d: 'Wasteful, no real benefit.' },
+    ] },
+    { id: 'S2', q: 'Save indicator', opts: [
+      { k: 'quiet', t: 'Silent when fine; speaks up only on failure', rec: true, d: 'Trust is built by never losing text, not by flashing "Saved".' },
+      { k: 'flash', t: 'A faint "Saved" that fades', d: 'Reassuring, slightly busy.' },
+      { k: 'always', t: '"Saving… / Saved" always visible', d: 'Docs-style.' },
+    ] },
+    { id: 'S3', q: 'When a save fails (disk full, DB locked)', opts: [
+      { k: 'banner', t: 'Keep the text, show an inline banner, retry on the next edit', rec: true, demo: `<div class="banner">${ic('triangle-alert')} Couldn’t save this entry. Your text is safe here.<span class="sp"></span><button class="btn">Retry</button><button class="btn ghost">Copy details</button></div>`, d: 'Matches N8. You can’t close the Entry with unsaved text without being asked.' },
+      { k: 'toast', t: 'Error toast only', d: 'Easy to miss.' },
+    ] },
+    { id: 'S4', q: 'What counts as "edited"', why: 'Without a grace period, every Entry you fix a typo in right after writing would show "edited".', opts: [
+      { k: 'grace', t: 'Changes more than 10 minutes after first writing', rec: true, d: 'Writing in bursts or fixing typos straight away doesn’t count. Ticking a checkbox never counts.' },
+      { k: 'session', t: 'Any change after you first close the Entry', d: 'Session-based.' },
+      { k: 'any', t: 'Any change after the first save', d: 'Strict; nearly everything ends up marked edited.' },
+    ] },
+    { id: 'S5', q: 'Finishing an edit', opts: [
+      { k: 'auto', t: 'Esc, click outside, or Done; phone: Back or Done', rec: true, d: 'Nothing to "save", since it’s already saved; finishing just exits.' },
+      { k: 'done', t: 'Only an explicit Done', d: 'More deliberate.' },
+    ] },
+    { id: 'S6', q: 'Undo inside the editor', opts: [
+      { k: 'session', t: '⌘Z / ⌘⇧Z while the Entry is open; history ends when you close it', rec: true, d: 'Standard. Deleting a whole Entry has its own Undo toast.' },
+      { k: 'history', t: 'Keep version history for every Entry', d: 'A real feature with storage cost. Better for later.' },
+    ] },
+    { id: 'S7', q: 'Two windows or devices editing the same Entry', why: 'Not possible in v1 (one window, no sync yet), but it decides the data shape.', opts: [
+      { k: 'lww', t: 'Last write wins for now; revisit when sync arrives', rec: true, d: 'updated_at is already in every table (ADR 0003).' },
+      { k: 'later', t: 'Design merge now', d: 'Premature.' },
+    ] },
+  ] },
+  { id: 'D', title: 'Dates and moving Entries', intro: 'Choosing and changing an Entry’s Page.', items: [
+    { id: 'D1', q: 'Where you change an Entry’s date', opts: [
+      { k: 'both', t: 'Date chip while editing + "Move to another date…" in the ⋯ menu', rec: true, d: 'The chip is visible in context; the menu works without opening the Entry.' },
+      { k: 'menu', t: 'Menu only', d: 'Keeps the editor cleaner.' },
+    ] },
+    { id: 'D2', q: 'The date picker', opts: [
+      { k: 'pop', t: 'Popover: Today / Yesterday chips + month calendar', rec: true, demo: `<div style="display:flex;gap:6px"><span class="chip">Today</span><span class="chip">Yesterday</span><span class="chip">${ic('calendar')} Pick…</span></div>`, d: 'Covers 90% of cases in one tap. On phone it becomes a bottom Sheet. A new DatePicker Component in src/lib/ui. (The mock uses a plain prompt as a stand-in.)' },
+      { k: 'native', t: 'Native OS date input', d: 'Inconsistent look across macOS and Android.' },
+    ] },
+    { id: 'D3', q: 'Future dates', live: true, opts: [
+      { k: 'no', t: 'Not allowed', rec: true, d: 'A diary records what happened. Future days are greyed out in the calendar.' },
+      { k: 'yes', t: 'Allowed', d: 'Lets you pre-write. Blurs the line with Todo.' },
+    ] },
+    { id: 'D4', q: 'After moving an Entry', live: true, opts: [
+      { k: 'stay', t: 'Stay put; toast "Moved to Mon 19 Oct · Show"', rec: true, d: 'You don’t lose your place. "Show" jumps there.' },
+      { k: 'jump', t: 'Jump to the new Page', d: 'Follows the Entry.' },
+    ] },
+  ] },
+  { id: 'A', title: 'Entry actions and deleting', intro: 'The ⋯ menu and what happens when you delete.', items: [
+    { id: 'A1', q: 'How to open the actions', opts: [
+      { k: 'all', t: '⋯ button + right-click (desktop) + long-press (phone)', rec: true, d: 'All three open the same menu.' },
+      { k: 'btn', t: '⋯ button only', d: 'Simplest.' },
+    ] },
+    { id: 'A2', multi: true, q: 'Menu items', live: true, opts: [
+      { k: 'date', t: 'Move to another date…', rec: true }, { k: 'copy', t: 'Copy text', rec: true }, { k: 'copymd', t: 'Copy as Markdown', d: 'Plain copy already keeps Markdown, so this is a duplicate.' },
+      { k: 'dup', t: 'Duplicate', d: 'Rare for diary Entries.' }, { k: 'delete', t: 'Delete', rec: true },
+    ] },
+    { id: 'A3', q: 'Delete confirmation', live: true, opts: [
+      { k: 'undo', t: 'Delete at once + Undo toast (5 s)', rec: true, demo: `<div class="toast" style="position:static;transform:none;align-self:flex-start">Entry deleted<button>Undo</button></div>`, d: 'App-wide rule N10.' },
+      { k: 'confirm', t: 'Confirm dialog first', d: 'Slower; against N10.' },
+      { k: 'long', t: 'Undo toast, plus a confirm for long Entries (200+ words)', d: 'Extra safety for big pieces.' },
+    ] },
+    { id: 'A4', q: 'After the Undo toast is gone', why: 'Entries are soft-deleted in the database (ADR 0003).', opts: [
+      { k: 'purge30', t: 'No Trash screen; permanently purged after 30 days', rec: true, d: 'Recoverable from backups meanwhile. A Trash view can come later.' },
+      { k: 'trash', t: 'A "Recently deleted" view (in Journal Settings) to restore from', d: 'Safer; more UI in v1.' },
+      { k: 'keep', t: 'Keep soft-deleted rows forever', d: 'The database grows; privacy concern.' },
+    ] },
+  ] },
+  { id: 'C', title: 'Calendar', intro: 'Reaching any Page, including empty dates. Open it in the mock with the calendar button (in B it is always visible).', items: [
+    { id: 'C1', q: 'Desktop placement', opts: [
+      { k: 'pop', t: 'Header button → popover', rec: true, d: 'Out of the way until needed. ⌘G opens it.' },
+      { k: 'rail', t: 'Always-visible side panel on wide windows (≥1200px)', d: 'Concept B’s pane. Always one glance away, but uses horizontal space.' },
+    ] },
+    { id: 'C2', q: 'Phone placement', opts: [
+      { k: 'sheet', t: 'Header button → bottom Sheet', rec: true, d: 'Uses the existing Sheet Component.' },
+      { k: 'strip', t: 'Week strip pinned above the feed (+ Sheet for months)', d: 'Concept B on phone. Quick for the current week.' },
+    ] },
+    { id: 'C3', q: 'Marking days that have Entries', opts: [
+      { k: 'dot', t: 'A coral dot', rec: true, demo: `<div class="cal mx" style="width:auto"><div class="grid" style="grid-template-columns:repeat(4,40px)"><button class="dy has">12</button><button class="dy">13</button><button class="dy has">16</button><button class="dy today has">20</button></div></div>`, d: 'Binary: written or not.' },
+      { k: 'heat', t: 'Intensity by count / words', demo: `<div style="display:flex;gap:4px"><i class="heat" style="background:oklch(65% 0.17 32 / .15)"></i><i class="heat" style="background:oklch(65% 0.17 32 / .4)"></i><i class="heat" style="background:oklch(65% 0.17 32 / .7)"></i><i class="heat" style="background:oklch(65% 0.17 32)"></i></div>`, d: 'GitHub-style. Can make light days feel like failures.' },
+    ] },
+    { id: 'C4', q: 'Tapping a day that has Entries', opts: [
+      { k: 'scroll', t: 'Close the calendar and scroll the feed to that Page', rec: true, d: 'The Page header flashes briefly.' },
+      { k: 'filter', t: 'Show only that Page', d: 'Breaks the continuous scroll.' },
+    ] },
+    { id: 'C5', q: 'Tapping an empty past day', opts: [
+      { k: 'offer', t: 'Inline message: "No entries on Thu 15 Oct" + Write on this day', rec: true, d: 'No accidental Entries. Double-click writes straight away (desktop).' },
+      { k: 'direct', t: 'Start writing on that day immediately', d: 'Faster for backfilling.' },
+    ] },
+    { id: 'C6', q: 'Month navigation', opts: [
+      { k: 'full', t: '‹ › arrows + click the title to pick a month/year + "Today"', rec: true, d: 'Gets you to 2023 without 30 clicks.' },
+      { k: 'arrows', t: 'Arrows + Today only', d: 'Simpler.' },
+    ] },
+    { id: 'C7', q: 'Calendar follows the scroll', opts: [
+      { k: 'y', t: 'The Page in view is highlighted', rec: true, d: 'When the calendar is visible (popover or pane).' },
+      { k: 'n', t: 'No', d: '' },
+    ] },
+    { id: 'C8', q: 'First day of the week', live: true, why: 'There is already a core week_start Preference.', opts: [
+      { k: 'mon', t: 'Follow the core setting (Monday here)', rec: true }, { k: 'sun', t: 'Preview Sunday', d: '' },
+    ] },
+  ] },
+  { id: 'R', title: 'Scrolling and position', intro: '', items: [
+    { id: 'R1', q: '"↑ Today" pill when scrolled far away', live: true, opts: [
+      { k: 'y', t: 'Yes', rec: true, d: 'Appears after about a screen’s worth of scrolling. Scroll down in the mock to see it.' }, { k: 'n', t: 'No', d: '' },
+    ] },
+    { id: 'R2', q: 'Opening the Journal lands on…', opts: [
+      { k: 'today', t: 'Today (the top), every time', rec: true, d: 'Predictable; the dock or new Entry is right there.' },
+      { k: 'restore', t: 'Where you left off', d: 'Good for long rereading sessions.' },
+    ] },
+    { id: 'R3', q: 'Loading older Pages', opts: [
+      { k: 'infinite', t: 'Seamless infinite scroll (virtualised)', rec: true, d: 'Loads about 30 Pages at a time; virtualised so years of Entries stay smooth (adds @tanstack/svelte-virtual, already named in standards).' },
+      { k: 'more', t: '"Load older" button', d: 'Explicit, but clunky.' },
+    ] },
+    { id: 'R4', q: 'Keyboard navigation between Entries', opts: [
+      { k: 'n', t: 'Not in v1', rec: true, d: 'Tab moves through Entries for accessibility; no J/K shortcuts.' },
+      { k: 'y', t: '↑/↓ to move, Enter to edit', d: 'Power-user feel.' },
+    ] },
+  ] },
+  { id: 'Q', title: 'Search', intro: 'Full-text search over all Entries. Try the search button in the mock (it ignores accents, so try "river").', items: [
+    { id: 'Q1', multi: true, q: 'Ways to start a search', opts: [
+      { k: 'btn', t: 'Search button in the Journal header', rec: true }, { k: 'f', t: '⌘F inside the Journal', rec: true }, { k: 'k', t: '"Search Journal for …" inside the ⌘K palette', rec: true, d: 'Typing in ⌘K offers to search the Journal (from anywhere).' },
+    ] },
+    { id: 'Q2', q: 'How results appear', opts: [
+      { k: 'list', t: 'A results list replaces the feed, grouped by Page, with highlighted snippets', rec: true, d: 'Scannable; the mock shows this.' },
+      { k: 'filter', t: 'The feed filters to matching Entries in full, with highlights', d: 'More context per hit, slower to scan.' },
+    ] },
+    { id: 'Q3', q: 'When the search runs', opts: [
+      { k: 'live', t: 'Live as you type (after a 150ms pause)', rec: true, d: 'FTS5 is instant on local data.' }, { k: 'enter', t: 'On Enter', d: '' },
+    ] },
+    { id: 'Q4', multi: true, q: 'Matching rules', opts: [
+      { k: 'case', t: 'Ignore case', rec: true }, { k: 'accent', t: 'Ignore accents (cafe = café)', rec: true }, { k: 'prefix', t: 'Prefix matching (jour → journal)', rec: true },
+      { k: 'all', t: 'All words must match, in any order', rec: true }, { k: 'phrase', t: '"Exact phrase" with quotes', rec: true }, { k: 'not', t: '-exclude words', d: 'Rarely used.' },
+    ] },
+    { id: 'Q5', q: 'Result order', opts: [
+      { k: 'new', t: 'Newest first', rec: true, d: 'Matches the feed; relevance is weak on short personal text.' }, { k: 'rel', t: 'Best match first', d: '' },
+    ] },
+    { id: 'Q6', q: 'Opening a result', opts: [
+      { k: 'jump', t: 'Close search, scroll to the Entry and flash it', rec: true, d: 'You see it in its Page context. Back (phone) returns to the results.' },
+      { k: 'inplace', t: 'Expand it inside the results', d: '' },
+    ] },
+    { id: 'Q7', q: 'Search filters in v1 (date range, etc.)', opts: [
+      { k: 'n', t: 'None in v1', rec: true, d: 'The calendar covers date browsing.' }, { k: 'y', t: 'Date range filter', d: '' },
+    ] },
+    { id: 'Q8', q: 'Leaving and coming back', opts: [
+      { k: 'clear', t: 'The query is cleared when you leave search', rec: true }, { k: 'keep', t: 'The last query is remembered', d: '' },
+    ] },
+  ] },
+  { id: 'X', title: 'Empty, loading and error states', intro: 'Switch the mock’s Data control to "First run" to see the empty Journal.', items: [
+    { id: 'X1', q: 'First run (no Entries ever)', live: true, opts: [
+      { k: 'blank', t: '"A blank page"', rec: true, d: 'Icon + "A blank page" + "Your first Entry starts here. Write a line, or a lot." + action.' },
+      { k: 'invite', t: '"Welcome to your Journal"', d: 'Briefly explains Entries and Pages.' },
+      { k: 'minimal', t: '"No entries yet"', d: 'Bare, utilitarian.' },
+    ] },
+    { id: 'X2', q: 'Today has no Entries (but past Pages do)', opts: [
+      { k: 'show', t: 'Today’s Page shows "Nothing yet today." with a Write action', rec: true, d: 'Today is always visible at the top, an invitation without nagging.' },
+      { k: 'hide', t: 'Today’s Page is hidden until it has an Entry', d: 'Pure; the newest Page may be weeks old.' },
+    ] },
+    { id: 'X3', q: 'Placeholder text in an empty editor', live: true, opts: [
+      { k: 'write', t: '"Write…"', rec: true, d: 'Neutral.' }, { k: 'mind', t: '"What’s on your mind?"', d: 'Warmer, a little social-media.' }, { k: 'prompt', t: 'A rotating gentle prompt', d: '"What made today different?" Prompts are otherwise a later feature.' },
+    ] },
+    { id: 'X4', q: 'Loading', opts: [
+      { k: 'sk', t: 'Skeleton Pages, shown only after 300ms', rec: true, demo: `<div style="display:flex;flex-direction:column;gap:8px"><div class="sk" style="width:45%;height:16px"></div><div class="sk"></div><div class="sk" style="width:80%"></div></div>`, d: 'Rule N7. Local SQLite is usually faster than 300ms, so it rarely shows.' },
+    ] },
+    { id: 'X5', q: 'Load failure', opts: [
+      { k: 'banner', t: 'ErrorBanner: "The Journal couldn’t load." Retry · Copy details', rec: true, demo: `<div class="banner">${ic('triangle-alert')} The Journal couldn’t load.<span class="sp"></span><button class="btn">Retry</button></div>`, d: 'Rule N8.' },
+    ] },
+  ] },
+  { id: 'H', title: 'Capture, Home and the shell', intro: 'How the Journal connects to the rest of Mnemora.', items: [
+    { id: 'H1', q: '⌘N from anywhere in the app', opts: [
+      { k: 'go', t: 'Go to the Journal and focus a new Entry on today', rec: true, d: 'Replaces today’s "Nothing to create yet" stub. Later Modules (Todo) will need a "what to create" rule; for now Journal owns ⌘N.' },
+      { k: 'quick', t: 'Quick-capture popover over the current screen', d: 'Doesn’t make you leave where you are, but it’s another surface to build.' },
+    ] },
+    { id: 'H2', q: 'A Journal card on Home', why: 'Home is meant to "surface what matters" from Modules. There is no widget slot yet, so this adds one to the Module manifest.', opts: [
+      { k: 'today', t: '"Today in your Journal" card', rec: true, demo: `<div class="homecard"><div class="hh">${ic('notebook-pen')} Journal</div><q>Started Mnemora today. Feels right to have one quiet place…</q><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--faint)">Today · 2 entries<span class="btn" style="height:26px">${ic('pen-line')} Write</span></div></div>`, d: 'Latest snippet, today’s count and a Write button. Empty day: "Nothing written today" + Write.' },
+      { k: 'none', t: 'No Home card in v1', d: 'Just remove Journal from the "soon" chips.' },
+    ] },
+    { id: 'H3', q: 'Journal as a phone tab by default', opts: [
+      { k: 'y', t: 'Yes: default tabs become Home + Journal', rec: true, d: 'Changes the core.phone_tabs default for new installs; existing choices are kept.' },
+      { k: 'n', t: 'No, it stays under More until chosen', d: '' },
+    ] },
+    { id: 'H4', multi: true, q: '⌘K palette actions', opts: [
+      { k: 'new', t: 'New journal entry', rec: true }, { k: 'search', t: 'Search Journal for "…"', rec: true }, { k: 'goto', t: 'Go to date… (opens the calendar)', rec: true }, { k: 'today', t: 'Go to today’s Page', d: '' },
+    ] },
+    { id: 'H5', multi: true, q: 'Journal keyboard shortcuts', opts: [
+      { k: 'n', t: '⌘N new Entry', rec: true }, { k: 'f', t: '⌘F search', rec: true }, { k: 'g', t: '⌘G go to date', rec: true }, { k: 'enter', t: '⌘↵ finish the Entry', rec: true }, { k: 'esc', t: 'Esc finish / close', rec: true },
+      { k: 'del', t: '⌘⌫ delete the focused Entry', d: 'Risky next to normal typing.' },
+    ] },
+  ] },
+  { id: 'Z', title: 'Journal Settings', intro: 'A Journal section in Settings, using the existing section / row / Save bar pattern.', items: [
+    { id: 'Z1', multi: true, q: 'What the Journal section contains in v1', opts: [
+      { k: 'font', t: 'Writing font: Sans / Serif', rec: true }, { k: 'spell', t: 'Spellcheck on/off', rec: true },
+      { k: 'width', t: 'Text width', d: '' },
+    ] },
+    { id: 'Z2', q: 'Turning the Journal Module off', why: 'core.enabled_modules exists, but nothing uses it yet.', opts: [
+      { k: 'y', t: 'Wire it now: Settings ▸ Modules shows a real Journal on/off switch', rec: true, d: 'Off hides it from the sidebar, tabs, palette and Home, and keeps its data. The first real Module is the right time to build this.' },
+      { k: 'n', t: 'Later', d: 'Journal is always on.' },
+    ] },
+  ] },
+  { id: 'O', title: 'Explicitly out of v1', intro: 'Everything here is out unless you tick it. Ticking pulls it into v1 (and opens a new round of questions).', items: [
+    { id: 'O1', multi: true, q: 'Pull any of these into v1?', opts: [
+      { k: 'none', t: 'None, keep v1 tight', rec: true }, { k: 'stats', t: 'Word counts / writing stats' }, { k: 'streak', t: 'Streaks' }, { k: 'otd', t: '"On this day" (past years)' },
+      { k: 'prompts', t: 'Writing prompts' }, { k: 'export', t: 'Export to Markdown files' }, { k: 'import', t: 'Import (Day One, Markdown)' }, { k: 'lock', t: 'Journal lock (PIN / biometrics)' },
+      { k: 'mood', t: 'Mood' }, { k: 'tags', t: 'Tags' }, { k: 'photos', t: 'Photos' }, { k: 'history', t: 'Version history' },
+    ] },
+  ] },
+  { id: 'K', title: 'Technical choices (my call unless you object)', intro: 'You don’t see these directly, but they shape what the UX can do.', items: [
+    { id: 'K1', q: 'Editor engine', opts: [
+      { k: 'cm6', t: 'CodeMirror 6', rec: true, d: 'Markdown-native: the text stays the source of truth, and live styling is done with decorations (exactly M2’s cursor-line reveal). Mature on Android WebViews, lazy-loaded, around 150 KB gzipped.' },
+      { k: 'pm', t: 'ProseMirror-based (Milkdown / Tiptap)', d: 'True WYSIWYG, but Markdown has to round-trip through a document model and can be rewritten subtly.' },
+    ] },
+    { id: 'K2', q: 'Search engine', opts: [
+      { k: 'fts5', t: 'SQLite FTS5 (unicode61, remove_diacritics, prefix index)', rec: true, d: 'Built into the bundled SQLite, so no new dependency. Snippets and highlights come from FTS5.' },
+    ] },
+    { id: 'K3', q: 'How a Page is stored', why: 'You said Pages may gain their own data later.', opts: [
+      { k: 'col', t: 'Entries store their Page date; add a pages table when Pages get data', rec: true, d: 'Nothing empty to keep in sync now. Migrations are append-only and cheap to add later.' },
+      { k: 'table', t: 'Create a journal_pages table now', d: 'Ready for later fields, but adds a join and orphan cleanup today.' },
+    ] },
+    { id: 'K4', q: 'How written time is stored', opts: [
+      { k: 'tz', t: 'UTC instant + the UTC offset and IANA zone at the time of writing', rec: true, d: 'Shows "22:00" forever (D5) and survives DST changes.' },
+    ] },
+  ] },
+];
+
+/* ---- picks ---- */
+const ALL_ITEMS = CAT.flatMap((s) => s.items);
+function pick(id) { return PICKS[id]; }
+function save() { store.set('mnemora-journal-picks', PICKS); store.set('mnemora-journal-notes', NOTES); }
+function renderCatalogue() {
+  const html = CAT.map((sec, si) => `
+    <h2 id="sec-${sec.id}"><span class="secid">${si + 2} · ${sec.id}</span> ${sec.title}</h2>
+    ${sec.intro ? `<p class="muted" style="margin:0 0 6px;max-width:980px">${sec.intro}</p>` : ''}
+    ${sec.items.map((it) => `
+      <div class="nu ${PICKS[it.id] && (!Array.isArray(PICKS[it.id]) || PICKS[it.id].length) ? 'picked' : ''}" id="nu-${it.id}">
+        <header><span class="secid">${it.id}</span><h4>${it.q}</h4>${LOCKED[it.id] ? '<span class="tag settled">settled</span>' : ''}${it.live ? '<span class="tag live">live in mock</span>' : ''}${it.multi ? '<span class="tag">pick several</span>' : ''}</header>
+        ${it.why ? `<p class="why">${it.why}</p>` : ''}
+        <div class="nu-grid" style="${it.wide ? 'grid-template-columns:repeat(auto-fit,minmax(420px,1fr))' : it.multi && it.opts.every((o) => !o.demo) ? 'grid-template-columns:repeat(auto-fit,minmax(200px,1fr))' : ''}">
+        ${it.opts.map((o) => {
+          const on = it.multi ? (PICKS[it.id] || []).includes(o.k) : PICKS[it.id] === o.k;
+          return `<div class="nopt ${on ? 'on' : ''}" data-n="${it.id}" data-k="${o.k}" role="button" tabindex="0">
+            <div class="demo mx">${o.demo || ''}</div>
+            <div class="meta"><span class="chk ${it.multi ? '' : 'radio'}"></span><b>${o.t}</b>${o.rec ? '<span class="rec">Recommended</span>' : ''}${o.d ? `<p>${o.d}</p>` : ''}</div></div>`;
+        }).join('')}
+        </div>
+        <textarea class="nnote" data-note="${it.id}" rows="1" placeholder="Note or question about ${it.id} (optional)">${esc(NOTES[it.id] || '')}</textarea>
+      </div>`).join('')}`).join('');
+  $('#catalogue').innerHTML = html;
+  updateProgress();
+}
+function updateProgress() {
+  const done = ALL_ITEMS.filter((it) => { const v = PICKS[it.id]; return Array.isArray(v) ? v.length : v; }).length;
+  $('#pk-count').textContent = `${done} / ${ALL_ITEMS.length} decided`;
+  $('#pk-prog').style.width = `${(done / ALL_ITEMS.length) * 100}%`;
+  $('#toc').innerHTML = `<a href="#settled">0 Settled</a><a href="#mock">1 Mock</a>` + CAT.map((s, i) => {
+    const n = s.items.filter((it) => { const v = PICKS[it.id]; return Array.isArray(v) ? v.length : v; }).length;
+    return `<a href="#sec-${s.id}" class="${n === s.items.length ? 'done' : ''}">${i + 2} ${s.title}<span class="cnt">${n}/${s.items.length}</span></a>`;
+  }).join('');
+}
+document.addEventListener('click', (ev) => {
+  const ln = ev.target.closest('[data-ln]');
+  if (ln) { ln.parentElement.querySelectorAll('.ln').forEach((x) => x.classList.toggle('cur', x === ln)); ev.stopPropagation(); return; }
+  const o = ev.target.closest('.nopt'); if (!o) return;
+  const it = ALL_ITEMS.find((x) => x.id === o.dataset.n);
+  if (LOCKED[it.id]) return;
+  if (it.multi) {
+    let arr = PICKS[it.id] || [];
+    arr = arr.includes(o.dataset.k) ? arr.filter((k) => k !== o.dataset.k) : [...arr, o.dataset.k];
+    if (it.id === 'O1') arr = o.dataset.k === 'none' ? (arr.includes('none') ? ['none'] : []) : arr.filter((k) => k !== 'none');
+    PICKS[it.id] = arr;
+  } else PICKS[it.id] = PICKS[it.id] === o.dataset.k ? undefined : o.dataset.k;
+  if (it.id === 'L1' && PICKS.L1) setConcept(PICKS.L1);
+  save();
+  const y = window.scrollY; renderCatalogue(); window.scrollTo(0, y);
+  if (it.live) render();
+}, true);
+document.addEventListener('input', (ev) => { const n = ev.target.dataset && ev.target.dataset.note; if (n) { NOTES[n] = ev.target.value; save(); } });
+$('#pk-rec').onclick = () => {
+  ALL_ITEMS.forEach((it) => {
+    const v = PICKS[it.id]; if (Array.isArray(v) ? v.length : v) return;
+    PICKS[it.id] = it.multi ? it.opts.filter((o) => o.rec).map((o) => o.k) : (it.opts.find((o) => o.rec) || {}).k;
+  });
+  save(); renderCatalogue(); render();
+};
+$('#pk-clear').onclick = () => { if (confirm('Clear all picks and notes?')) { PICKS = { ...LOCKED }; NOTES = {}; save(); renderCatalogue(); render(); } };
+function summary() {
+  const lines = ['Journal prototype picks', ''];
+  let undecided = [];
+  CAT.forEach((s) => {
+    lines.push(`## ${s.id} · ${s.title}`);
+    s.items.forEach((it) => {
+      const v = PICKS[it.id];
+      const has = Array.isArray(v) ? v.length : v;
+      const label = !has ? '(no pick)' : it.multi ? v.map((k) => it.opts.find((o) => o.k === k).t).join('; ') : it.opts.find((o) => o.k === v).t;
+      const recK = it.multi ? null : (it.opts.find((o) => o.rec) || {}).k;
+      const flag = has && !it.multi && recK && v !== recK ? '  [differs from rec]' : '';
+      if (!has) undecided.push(it.id);
+      lines.push(`${it.id} ${it.q.replace(/\s*\(.*?\)\s*$/, '')}: ${label}${flag}`);
+      if (NOTES[it.id] && NOTES[it.id].trim()) lines.push(`   note: ${NOTES[it.id].trim().replace(/\n/g, ' ')}`);
+    });
+    lines.push('');
+  });
+  if (undecided.length) lines.push(`Undecided: ${undecided.join(', ')}`);
+  return lines.join('\n');
+}
+$('#pk-copy').onclick = async () => {
+  const text = summary(); $('#modal-text').value = text; $('#modal').classList.add('open');
+  try { await navigator.clipboard.writeText(text); $('#modal-msg').textContent = 'Copied to the clipboard. You can also select the text below.'; }
+  catch { $('#modal-msg').textContent = 'Press Copy, or select all the text below and copy it.'; }
+};
+$('#modal-copy').onclick = () => { const t = $('#modal-text'); t.select(); try { document.execCommand('copy'); $('#modal-msg').textContent = 'Copied.'; } catch { /* manual copy */ } };
+$('#modal-close').onclick = () => $('#modal').classList.remove('open');
+
+/* ---- controls ---- */
+const NOTES_BY_CONCEPT = {
+  A: '<b>A · Composer dock.</b> Type in the box at the bottom; ⌘↵, Esc or ✓ finishes. Click the date chip to cycle Today → Yesterday → pick a date. Click any Entry to edit it in place (the others dim). ⋯ opens the menu: move, copy, delete (with Undo).',
+  B: '<b>B · Diary spread.</b> The left pane has the calendar and an index of Pages. Hover a Page header for +, or use "Add to this page…" at the end of each Page. Click an Entry to edit inline. On phone, a week strip sits above the feed.',
+  C: '<b>C · Focus sheet.</b> The feed is read-only; clicking an Entry or the new-entry button opens a focused sheet with a date chip. Done or Esc closes it. On phone the sheet is full screen.',
+};
+function setConcept(c) {
+  finishEditing(); if (S.sheet) closeSheet(); commitDraft();
+  S.concept = c; S.cal = null; S.menu = null; S.dockPage = null;
+  document.querySelectorAll('#ctl-concept button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === c)));
+  $('#concept-note').innerHTML = NOTES_BY_CONCEPT[c] + ' Try the calendar and search buttons too. Typing "- " starts a list, and Enter continues it.';
+  render();
+}
+const seg = (id, fn) => document.querySelectorAll(`#${id} button`).forEach((b) => { b.onclick = () => { document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute('aria-pressed', String(x === b))); fn(b.dataset.v); }; });
+seg('ctl-concept', (v) => { setConcept(v); });
+seg('ctl-theme', (v) => { document.body.dataset.mtheme = v; });
+seg('ctl-data', (v) => { S.data = v; S.entries = v === 'empty' ? [] : structuredClone(SAMPLE); S.editing = null; S.draft = null; render(); });
+$('#ctl-reset').onclick = () => { S.entries = structuredClone(SAMPLE); S.data = 'sample'; S.editing = S.draft = S.sheet = S.cal = S.menu = S.search = null; S.search = null; document.querySelectorAll('#ctl-data button').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.v === 'sample'))); render(); };
+
+renderCatalogue();
+setConcept(PICKS.L1 || 'A');
+</script>
+</body>
+</html>
