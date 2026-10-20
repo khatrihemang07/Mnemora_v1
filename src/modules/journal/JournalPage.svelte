@@ -13,6 +13,7 @@
   import ComposerDock from './ComposerDock.svelte';
   import { localDateString, showTodayPill } from './dates';
   import { buildFeed, type FeedItem } from './feed';
+  import PageHeading from './PageHeading.svelte';
   import PageSection from './PageSection.svelte';
   import { pagesQuery } from './queries';
 
@@ -74,9 +75,13 @@
         estimateSize={estimate}
         onnearend={loadOlder}
         onviewport={(top, height) => (pill = showTodayPill(top, height))}
+        isSticky={(item) => item.kind === 'page'}
         class="h-full px-(--pad)"
         columnClass="mx-auto max-w-[42.5rem]"
       >
+        {#snippet pinned(item)}
+          {#if item.kind === 'page'}<PageHeading page={item.page} {today} />{/if}
+        {/snippet}
         {#snippet row(item)}
           {#if item.kind === 'month'}
             <div
@@ -89,10 +94,15 @@
           {/if}
         {/snippet}
       </VirtualList>
+      <!-- The feed fades out above the composer instead of ending on a hard edge. -->
+      <div
+        class="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-linear-to-t from-bg to-transparent"
+      ></div>
+      <!-- Below the pinned Page header, so it never hides the date. -->
       {#if pill}
         <button
           type="button"
-          class="absolute top-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-xs font-semibold text-bg shadow-(--elev-pop)"
+          class="absolute top-[4.25rem] left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-xs font-semibold text-bg shadow-(--elev-pop)"
           onclick={() => list?.scrollToTop()}
         >
           <ArrowUp class="size-3.5" /> Today

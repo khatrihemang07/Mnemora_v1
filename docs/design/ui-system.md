@@ -106,7 +106,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Switch` | An on/off Setting |
 | `Select` | Pick one of many options |
 | `Input` | A single-line text field |
-| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToTop()` respects reduced motion |
+| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToTop()` respects reduced motion; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
 | `Textarea` | A multi-line text field that grows with its content up to a cap. Unstyled box: the parent supplies the frame |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |
