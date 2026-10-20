@@ -17,13 +17,96 @@ export function writtenTime(writtenAt: number, offsetMin: number, format: TimeFo
   return `${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-/** Page header text, e.g. "Tuesday, 20 October"; the year is added for other years than `today`'s. */
-export function pageTitle(date: string, today: string): string {
+/** A calendar date has no zone: UTC on both ends keeps the viewer's zone from shifting it. */
+function dateParts(date: string) {
   const [y = 0, mo = 1, d = 1] = date.split('-').map(Number);
-  // UTC on both ends: a calendar date has no zone, so the viewer's zone must not shift it.
   const at = new Date(Date.UTC(y, mo - 1, d));
   const part = (opts: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'UTC' }).format(at);
-  const text = `${part({ weekday: 'long' })}, ${d} ${part({ month: 'long' })}`;
-  return y === Number(today.slice(0, 4)) ? text : `${text} ${y}`;
+  return { y, d, at, part };
+}
+
+/** The calendar date `days` after `date` (negative for before). */
+function addDays(date: string, days: number): string {
+  const { at } = dateParts(date);
+  at.setUTCDate(at.getUTCDate() + days);
+  return at.toISOString().slice(0, 10);
+}
+
+export interface PageHeading {
+  /** "Tuesday, 20 October": the real date, always. */
+  title: string;
+  /** Only for a Page outside `today`'s year. */
+  year: string | null;
+  badge: 'Today' | 'Yesterday' | null;
+}
+
+/** The pieces of a Page header: date, year (other years only) and the Today/Yesterday badge. */
+export function pageHeading(date: string, today: string): PageHeading {
+  const { y, d, part } = dateParts(date);
+  const badge = date === today ? 'Today' : date === addDays(today, -1) ? 'Yesterday' : null;
+  return {
+    title: `${part({ weekday: 'long' })}, ${d} ${part({ month: 'long' })}`,
+    year: y === Number(today.slice(0, 4)) ? null : String(y),
+    badge,
+  };
+}
+
+/** "Mon 19 Oct": the short date stacked above an Entry's time. */
+function shortDate(date: string): string {
+  const { d, part } = dateParts(date);
+  return `${part({ weekday: 'short' })} ${d} ${part({ month: 'short' })}`;
+}
+
+/** The calendar day on the wall clock of the zone an instant was written in. */
+function wallDate(at: number, offsetMin: number): string {
+  return new Date(at + offsetMin * MINUTE_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * The date to show with an Entry's time: null when it was written on the Page's own date (in the
+ * zone it was written in), else a short date, with the year when it differs from the Page's.
+ */
+export function writtenDateLabel(
+  writtenAt: number,
+  offsetMin: number,
+  pageDate: string,
+): string | null {
+  const wd = wallDate(writtenAt, offsetMin);
+  if (wd === pageDate) return null;
+  const year = wd.slice(0, 4);
+  return shortDate(wd) + (year !== pageDate.slice(0, 4) ? ` ${year}` : '');
+}
+
+/** The tooltip text for an Entry's time: the full date, time and zone it was written in. */
+export function fullWritten(
+  writtenAt: number,
+  offsetMin: number,
+  tz: string,
+  format: TimeFormat,
+): string {
+  const { y, d, part } = dateParts(wallDate(writtenAt, offsetMin));
+  const date = `${part({ weekday: 'long' })}, ${d} ${part({ month: 'long' })} ${y}`;
+  return `Written ${date} at ${writtenTime(writtenAt, offsetMin, format)} (${tz})`;
+}
+
+/** The tooltip text for the "edited" mark: "Edited Tue 20 Oct, 14:02". */
+export function editedLabel(editedAt: number, offsetMin: number, format: TimeFormat): string {
+  return `Edited ${shortDate(wallDate(editedAt, offsetMin))}, ${writtenTime(editedAt, offsetMin, format)}`;
+}
+
+/** The faint desktop header summary, e.g. "2 entries · 40 words". */
+export function pageSummary(entries: number, words: number): string {
+  return `${entries} ${entries === 1 ? 'entry' : 'entries'} · ${words} ${words === 1 ? 'word' : 'words'}`;
+}
+
+/** "September 2026": the month divider text (the UI uppercases it). */
+export function monthLabel(date: string): string {
+  const { y, part } = dateParts(date);
+  return `${part({ month: 'long' })} ${y}`;
+}
+
+/** The "↑ Today" pill shows once you are more than a screen away from the top. */
+export function showTodayPill(scrollTop: number, viewportHeight: number): boolean {
+  return scrollTop > viewportHeight;
 }
