@@ -195,7 +195,7 @@ pub fn list_pages(
         validate_page_date(c)?;
     }
     let window = match (direction, cursor) {
-        (PageDirection::Older, None) | (PageDirection::From, None) => Window::Newest,
+        (PageDirection::Older | PageDirection::From, None) => Window::Newest,
         (PageDirection::Older, Some(c)) => Window::Before(c),
         (PageDirection::From, Some(c)) => Window::AtOrBefore(c),
         (PageDirection::Newer, Some(c)) => Window::After(c),

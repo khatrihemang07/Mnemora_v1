@@ -116,6 +116,7 @@ pub fn journal_today(state: State<'_, AppState>, today: String) -> Result<TodayS
 
 #[cfg(test)]
 mod tests {
+    use mnemora_core::db::migrate::MigrationReport;
     use mnemora_core::module::Module;
     use serde_json::{Value, json};
 
@@ -616,8 +617,8 @@ mod tests {
         // The startup hook is what the app runs; it purges through the Module contract.
         app.with_db_mut(|c| {
             mnemora_journal::JournalModule
-                .on_startup(c, &Default::default())
-                .unwrap()
+                .on_startup(c, &MigrationReport::default())
+                .unwrap();
         });
 
         assert_eq!(row_count(&app, "journal_entries"), 2);
