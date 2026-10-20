@@ -32,5 +32,13 @@ export const SHORTCUT_LIST = [
   { label: 'Toggle sidebar', keys: shortcutLabel('\\') },
   { label: 'New', keys: shortcutLabel('N') },
   { label: 'Go to Module 1 to 9', keys: shortcutLabel('1–9') },
+  { label: 'Journal: search', keys: shortcutLabel('F') },
   { label: 'Journal: go to date', keys: shortcutLabel('G') },
+  { label: 'Journal: finish writing (either key)', keys: [shortcutLabel('↵'), 'Esc'] },
+  { label: 'Journal: move between Entries', keys: ['↑', '↓'] },
+  { label: 'Journal: edit the focused Entry', keys: 'Enter' },
+  { label: 'Journal: delete the focused Entry', keys: '⌫' },
+  { label: 'Journal: move the focused Entry', keys: 'M' },
+  { label: 'Journal: copy the focused Entry', keys: 'C' },
+  { label: 'Journal: from the empty composer to the newest Entry', keys: '↑' },
 ];

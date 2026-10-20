@@ -36,8 +36,11 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'core.time_format': { default: '24h', validate: oneOf('24h', '12h') },
   'core.date_format': { default: 'long', validate: oneOf('long', 'short', 'iso') },
   'core.week_start': { default: 'mon', validate: oneOf('mon', 'sun') },
-  'core.phone_tabs': { default: ['home'], validate: list(4) },
+  'core.phone_tabs': { default: ['home', 'journal'], validate: list(4) },
   'core.disabled_modules': { default: [], validate: list(64) },
+  'journal.font': { default: 'serif', validate: oneOf('serif', 'sans') },
+  'journal.width': { default: 'default', validate: oneOf('narrow', 'default', 'wide') },
+  'journal.page_summary': { default: true, validate: bool },
 };
 
 const err = (code: AppError['code'], message: string): AppError => ({
@@ -53,6 +56,7 @@ export async function installMock() {
   const device: DeviceSettings = {
     sidebar: { width: 248, rail: false },
     log_level: 'info',
+    spellcheck: true,
   };
 
   const query = new URLSearchParams(location.search);
@@ -86,15 +90,20 @@ export async function installMock() {
             if (problem) throw err('validation', `${c.key} ${problem}`);
           }
           for (const c of changes) values[c.key] = JSON.parse(JSON.stringify(c.value));
-          // Same shape the Rust side emits: module + keys without the module prefix.
-          void events.settingsChangedEvent.emit({
-            module: 'core',
-            keys: changes.map((c) => c.key.replace(/^core\./, '')),
-          });
+          // Same shape the Rust side emits: one event per module, keys without the module prefix.
+          for (const module of new Set(changes.map((c) => c.key.split('.')[0] as string))) {
+            void events.settingsChangedEvent.emit({
+              module,
+              keys: changes
+                .filter((c) => c.key.startsWith(`${module}.`))
+                .map((c) => c.key.slice(module.length + 1)),
+            });
+          }
           return null;
         }
         case 'device_get':
-          return device;
+          // A JSON copy, like real IPC.
+          return JSON.parse(JSON.stringify(device));
         case 'device_set_sidebar':
           device.sidebar = {
             width: Math.min(360, Math.max(200, a.width as number)),
@@ -109,6 +118,9 @@ export async function installMock() {
           device.log_level = level;
           return null;
         }
+        case 'device_set_spellcheck':
+          device.spellcheck = a.enabled === true;
+          return null;
         case 'app_info':
           return {
             version: '0.1.0',

@@ -3,6 +3,12 @@ import type { Component } from 'svelte';
 export type RoutePath = `/${string}`;
 export type RouteLoader = () => Promise<{ default: Component }>;
 
+/** What a Home card receives: the shell's context, so its buttons can navigate. */
+export interface HomeCardProps {
+  ctx: ModuleContext;
+}
+export type HomeCardLoader = () => Promise<{ default: Component<HomeCardProps> }>;
+
 /** What the shell hands to a Module's actions, so Modules never import the shell. */
 export interface ModuleContext {
   navigate: (path: RoutePath) => void;
@@ -35,7 +41,7 @@ export interface ModuleManifest {
   /** Home and Settings: always on, no switch in Settings ▸ Modules. */
   required?: true;
   /** A card on Home, loaded only when Home renders it. */
-  homeCard?: RouteLoader;
+  homeCard?: HomeCardLoader;
   /** The Module's own Settings section, appended after the core sections. */
   settingsSection?: { label: string; icon: Component<{ class?: string }>; component: RouteLoader };
   /** What ⌘N does while this Module is enabled (the first enabled Module with one wins). */
