@@ -1,12 +1,13 @@
 //! Journal search: exact matches from the full-text index, then "similar" matches that allow
 //! typos. The text of a query never reaches a log line.
 
-use mnemora_core::error::{AppError, AppResult, ErrorCode};
+use mnemora_core::error::AppResult;
 use rusqlite::Connection;
 use serde::Serialize;
 use specta::Type;
 
 use crate::entry::validate_page_date;
+use crate::error::JournalError;
 use crate::fuzzy::{near_terms, tolerance};
 use crate::query::{self, Term};
 use crate::repo::{self, SearchRow};
@@ -62,15 +63,14 @@ fn hits(rows: Vec<SearchRow>, matcher: &Matcher) -> Vec<Hit> {
         .collect()
 }
 
-fn validate_range(from: Option<&str>, to: Option<&str>) -> AppResult<()> {
+fn validate_range(from: Option<&str>, to: Option<&str>) -> Result<(), JournalError> {
     for date in [from, to].into_iter().flatten() {
         validate_page_date(date)?;
     }
     if let (Some(f), Some(t)) = (from, to)
         && f > t
     {
-        return Err(AppError::new(
-            ErrorCode::Validation,
+        return Err(JournalError::Validation(
             "The start date is after the end date",
         ));
     }

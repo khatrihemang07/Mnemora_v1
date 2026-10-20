@@ -2,7 +2,7 @@
 //! Entry text and snapshots must never reach a log line.
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
-use mnemora_core::error::{AppError, AppResult, ErrorCode};
+use mnemora_core::error::AppResult;
 use mnemora_core::util::{new_id, now_ms};
 use rusqlite::Connection;
 
@@ -10,6 +10,7 @@ use crate::MODULE_ID;
 use crate::entry::{
     Entry, NewEntry, Page, toggle_task, validate_page_date, validate_text, validate_written_zone,
 };
+use crate::error::JournalError;
 use crate::{repo, words};
 
 /// Change-log entity name for Entries.
@@ -28,10 +29,6 @@ fn edited_after_update(entry: &Entry, now: i64) -> Option<i64> {
         .or_else(|| (now - entry.written_at > EDIT_GRACE_MS).then_some(now))
 }
 
-fn missing() -> AppError {
-    AppError::new(ErrorCode::UnknownKey, "That Entry no longer exists")
-}
-
 fn record(
     conn: &Connection,
     entry: &Entry,
@@ -46,9 +43,7 @@ fn record(
             entity_id: entry.id.clone(),
             op,
             session_id: session_id.map(str::to_owned),
-            snapshot: serde_json::to_value(entry).map_err(|e| {
-                AppError::new(ErrorCode::Internal, "Could not record the change").with_details(e)
-            })?,
+            snapshot: serde_json::to_value(entry).map_err(JournalError::Snapshot)?,
         },
     )
 }
@@ -89,7 +84,7 @@ pub fn update_entry(
 ) -> AppResult<Entry> {
     validate_text(&text)?;
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
 
     entry.word_count = words::word_count(&text);
     entry.body = text;
@@ -106,7 +101,7 @@ pub fn update_entry(
 /// Each tick is its own change-log record: it has no editing session.
 pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResult<Entry> {
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     entry.body = toggle_task(&entry.body, line)?;
     entry.updated_at = now_ms();
     repo::update_body(&tx, &entry)?;
@@ -120,7 +115,7 @@ pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResu
 pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult<Entry> {
     validate_page_date(page_date)?;
     let tx = conn.transaction()?;
-    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     if entry.page_date == page_date {
         return Ok(entry);
     }
@@ -135,7 +130,7 @@ pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult
 /// Soft-deletes an Entry: it leaves its Page at once and is erased after 30 days.
 pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
-    let entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    let entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     repo::set_deleted_at(&tx, id, Some(now_ms()))?;
     record(&tx, &entry, ChangeOp::Delete, None)?;
     tx.commit()?;
@@ -145,7 +140,7 @@ pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
 /// Brings a deleted Entry back. Pages order by the written instant, so it returns to its place.
 pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
     let tx = conn.transaction()?;
-    let entry = repo::get_deleted(&tx, id)?.ok_or_else(missing)?;
+    let entry = repo::get_deleted(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     repo::set_deleted_at(&tx, id, None)?;
     record(&tx, &entry, ChangeOp::Restore, None)?;
     tx.commit()?;
@@ -168,7 +163,7 @@ pub fn purge_deleted(conn: &mut Connection) -> AppResult<usize> {
 /// Dates in the given month (`month` is 1-12) that hold live Entries, oldest first.
 pub fn month_days(conn: &Connection, year: u32, month: u32) -> AppResult<Vec<String>> {
     if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
-        return Err(AppError::new(ErrorCode::Validation, "Not a valid month"));
+        return Err(JournalError::Validation("Not a valid month").into());
     }
     // Dates are fixed-width text, so the month is a plain range; day 31 bounds every month.
     repo::dates_between(

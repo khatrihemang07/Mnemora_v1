@@ -13,7 +13,12 @@ use crate::MODULE_ID;
 /// arrives on a database Core had already migrated, its unsaved tabs are pinned to Home only.
 /// A saved choice is never touched.
 pub fn keep_existing_phone_tabs(conn: &Connection, report: &MigrationReport) -> AppResult<()> {
-    let first_run_of = |id: &str| report.applied.iter().any(|(m, from, _)| m == id && *from == 0);
+    let first_run_of = |id: &str| {
+        report
+            .applied
+            .iter()
+            .any(|(m, from, _)| m == id && *from == 0)
+    };
     if first_run_of(MODULE_ID) && !first_run_of("core") {
         save_if_unset(conn, "core", "phone_tabs", &json!(["home"]))?;
     }

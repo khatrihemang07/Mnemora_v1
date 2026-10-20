@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod entry;
+mod error;
 mod fold;
 mod fuzzy;
 mod migrations;
@@ -25,6 +26,7 @@ use rusqlite_migration::Migrations;
 use serde_json::json;
 
 pub use entry::{Entry, NewEntry, Page};
+pub use error::JournalError;
 pub use search::{Hit, SearchResults, search};
 pub use service::{
     create_entry, delete_entry, list_pages, month_days, move_entry, purge_deleted, restore_entry,
