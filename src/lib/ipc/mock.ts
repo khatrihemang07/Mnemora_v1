@@ -8,6 +8,7 @@ import { mockIPC } from '@tauri-apps/api/mocks';
 import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bindings';
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
+import { createTodoMock } from './mock-todo';
 
 type Validator = (v: JsonValue) => string | null;
 
@@ -67,6 +68,8 @@ export async function installMock() {
   // Reachable from the dev console: `__journalMock.failUpdate = false` lets a Retry succeed.
   (window as unknown as { __journalMock: typeof journalFlags }).__journalMock = journalFlags;
   const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
+
+  const todo = createTodoMock();
 
   applyPrePaintAttributes(values);
 
@@ -140,6 +143,7 @@ export async function installMock() {
         case 'open_log_dir':
           return null;
         default:
+          if (todo.handles(cmd)) return todo.handle(cmd, a);
           return journal.handles(cmd) ? journal.handle(cmd, a) : undefined;
       }
     },

@@ -278,4 +278,55 @@ mod tests {
         let again = db::migrate::run(&mut conn, &after, &backups).unwrap();
         assert!(again.applied.is_empty(), "a second run changes nothing");
     }
+
+    // Shared rule fixtures: the same file runs against the browser mock in
+    // src/lib/ipc/mock-todo.test.ts (ADR 0009). Keep `run_rule_case` in step with `run` there.
+    const RULES: &str = include_str!("../../src/lib/ipc/fixtures/todo-rules.json");
+
+    fn run_rule_case(c: &Value) -> Value {
+        let app = TestApp::new();
+        let mut created: Vec<Value> = Vec::new();
+        let mut results = Vec::new();
+        for step in c["steps"].as_array().unwrap() {
+            let op = step["op"].as_str().unwrap();
+            let id = match &step["task"] {
+                Value::Number(n) => created[usize::try_from(n.as_u64().unwrap()).unwrap()].clone(),
+                other => other.clone(),
+            };
+            let outcome: Result<Value, Value> = match op {
+                "create" => app.invoke("todo_task_create", json!({ "title": step["title"] })),
+                _ => app.invoke(&format!("todo_task_{op}"), json!({ "id": id })),
+            };
+            match outcome {
+                Ok(task) => {
+                    if op == "create" {
+                        created.push(task["id"].clone());
+                    }
+                    results.push(json!("ok"));
+                }
+                Err(e) => results.push(e["code"].clone()),
+            }
+        }
+        json!({ "results": results, "inbox": inbox_titles(&app) })
+    }
+
+    #[test]
+    fn the_shared_rule_fixtures_hold() {
+        let rules: Value = serde_json::from_str(RULES).unwrap();
+        let cases = rules["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for c in cases {
+            let actual = run_rule_case(c);
+            let expected = c["expect"].as_object().unwrap();
+            for (key, want) in expected {
+                assert_eq!(
+                    &actual[key],
+                    want,
+                    "{}: {} ({key})",
+                    c["rule"].as_str().unwrap(),
+                    c["name"].as_str().unwrap()
+                );
+            }
+        }
+    }
 }

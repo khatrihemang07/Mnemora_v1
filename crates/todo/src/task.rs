@@ -155,6 +155,7 @@ mod tests {
 
     #[test]
     fn keys_after_always_sort_later() {
+        assert_eq!(key_after(None), "V0000000");
         let mut key = key_after(None);
         for _ in 0..200 {
             let next = key_after(Some(&key));
