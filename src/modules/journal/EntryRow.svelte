@@ -1,17 +1,51 @@
-<!-- EntryRow: one Entry on a Page: its time (where it was written) and its text, line breaks kept. -->
+<!--
+  EntryRow: one Entry on a Page. Desktop puts the time in a 64px left margin, phone puts it above the
+  text. When it was written on another day than its Page, a short date comes with the time (stacked
+  above it on desktop). Hovering the time shows the full written timestamp and zone. Plain text for
+  now: blank lines separate paragraphs, single newlines stay line breaks.
+-->
 <script lang="ts">
   import type { Entry } from '../../lib/ipc/bindings';
   import type { TimeFormat } from '../../lib/time/format';
-  import { writtenTime } from './dates';
+  import { editedLabel, fullWritten, writtenDateLabel, writtenTime } from './dates';
+  import { paragraphs } from './paragraphs';
 
   let { entry, timeFormat }: { entry: Entry; timeFormat: TimeFormat } = $props();
+
+  const time = $derived(writtenTime(entry.written_at, entry.written_offset_min, timeFormat));
+  const writtenDate = $derived(
+    writtenDateLabel(entry.written_at, entry.written_offset_min, entry.page_date),
+  );
+  const full = $derived(
+    fullWritten(entry.written_at, entry.written_offset_min, entry.written_tz, timeFormat),
+  );
+  // The edit time is shown on the viewer's own clock.
+  const edited = $derived(
+    entry.edited_at === null
+      ? null
+      : editedLabel(entry.edited_at, -new Date(entry.edited_at).getTimezoneOffset(), timeFormat),
+  );
 </script>
 
-<article class="grid gap-1 py-3 min-[720px]:grid-cols-[4rem_1fr] min-[720px]:gap-3">
-  <time class="text-xs text-muted tabular-nums min-[720px]:pt-1.5">
-    {writtenTime(entry.written_at, entry.written_offset_min, timeFormat)}
+<article
+  class="relative -mx-2.5 grid gap-0.5 rounded-md px-2.5 py-2 hover:bg-hover min-[720px]:grid-cols-[4rem_1fr] min-[720px]:gap-x-3.5 [&+&]:before:absolute [&+&]:before:inset-x-2.5 [&+&]:before:top-0 [&+&]:before:h-px [&+&]:before:bg-line"
+>
+  <time class="text-xs text-faint tabular-nums min-[720px]:pt-[3px] min-[720px]:text-[0.78rem]" title={full}>
+    {#if writtenDate}
+      <span class="mr-1.5 min-[720px]:mr-0 min-[720px]:block min-[720px]:text-[0.65rem] min-[720px]:leading-[1.3] min-[720px]:whitespace-nowrap">
+        {writtenDate}
+      </span>
+    {/if}
+    {time}
   </time>
-  <p class="selectable font-display text-base leading-[1.65] break-words whitespace-pre-wrap text-ink">
-    {entry.body}
-  </p>
+  <div class="min-w-0">
+    <div class="selectable font-display text-base leading-[1.65] break-words text-ink">
+      {#each paragraphs(entry.body) as p, i (i)}
+        <p class="whitespace-pre-wrap [&:not(:last-child)]:mb-[0.55em]">{p}</p>
+      {/each}
+    </div>
+    {#if edited}
+      <p class="mt-0.5 text-[0.72rem] text-faint" title={edited}>edited</p>
+    {/if}
+  </div>
 </article>

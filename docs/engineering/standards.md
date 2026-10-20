@@ -89,6 +89,10 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 5. Quit and reopen the app: the Entries are still there, newest Page first, oldest Entry first within a Page.
 6. Leaving the Journal mid-sentence still saves the text.
 7. No Entry text appears in the log files (Settings ▸ Data & storage ▸ open the log folder).
+8. Feed: each Page header shows the written date in the serif ("Tuesday, 20 October") with a coral Today/Yesterday badge, the year only for other years, and (desktop only) "N entries · N words" with singular/plural. The header stays pinned while you scroll its Page. A faint uppercase month divider appears where the month changes. Dates with no Entries are skipped.
+9. Entries: the time sits in a left margin on desktop and above the text on a phone; a hairline separates Entries; text is serif with blank-line paragraph gaps. An Entry written on another day than its Page shows a short date (stacked above the time on desktop, on the time line on a phone), with the year if it differs. Hovering the time shows "Written Monday, 19 October 2026 at 09:12 (Asia/Kolkata)". An edited Entry shows a faint "edited" (hover for the time). Switching 12h/24h in Settings changes the times.
+10. Scroll a long Journal (with many Pages): older Pages load before you reach the end with no button; scrolling stays smooth. After about a screen, "↑ Today" appears; it scrolls back smoothly (instantly under Reduce motion) and disappears at the top.
+11. An empty Today with older Pages shows "Nothing yet today. The box below is ready."; a brand-new Journal shows the coral notebook icon, "A blank page" and "Start typing in the box below". A slow load shows a skeleton only after 300ms; a failed load shows "The Journal couldn't load." with Retry and Copy details.
 
 ## Performance budgets
 

@@ -55,7 +55,7 @@ export async function installMock() {
     log_level: 'info',
   };
 
-  const journal = createJournalMock();
+  const journal = createJournalMock(new URLSearchParams(location.search).get('seed') === 'journal');
 
   applyPrePaintAttributes(values);
 
