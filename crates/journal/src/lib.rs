@@ -12,11 +12,13 @@ mod repo;
 mod search;
 mod service;
 mod snippet;
+mod today;
 mod words;
 
 use mnemora_core::module::Module;
-use mnemora_core::settings::SettingsRegistry;
+use mnemora_core::settings::{SettingsRegistry, validate};
 use rusqlite_migration::Migrations;
+use serde_json::json;
 
 pub use entry::{Entry, NewEntry, Page};
 pub use search::{Hit, SearchResults, search};
@@ -25,6 +27,7 @@ pub use service::{
     toggle_task_line, update_entry,
 };
 pub use snippet::Span;
+pub use today::{TodayLatest, TodaySummary, today};
 
 /// The Journal Module.
 pub struct JournalModule;
@@ -41,7 +44,19 @@ impl Module for JournalModule {
         migrations::all()
     }
 
-    fn register_settings(&self, _reg: &mut SettingsRegistry) {
-        // Journal Preferences arrive with its Settings section.
+    fn register_settings(&self, reg: &mut SettingsRegistry) {
+        reg.register(
+            MODULE_ID,
+            "font",
+            json!("serif"),
+            validate::one_of(&["serif", "sans"]),
+        );
+        reg.register(
+            MODULE_ID,
+            "width",
+            json!("default"),
+            validate::one_of(&["narrow", "default", "wide"]),
+        );
+        reg.register(MODULE_ID, "page_summary", json!(true), validate::boolean());
     }
 }

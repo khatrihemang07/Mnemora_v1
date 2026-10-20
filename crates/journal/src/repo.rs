@@ -233,3 +233,24 @@ pub fn vocabulary(
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
+
+/// How many live Entries sit on `date`, and the one written last (by written instant).
+pub fn day_summary(conn: &Connection, date: &str) -> AppResult<(u32, Option<Entry>)> {
+    let count: u32 = conn.query_row(
+        "SELECT COUNT(*) FROM journal_entries WHERE deleted_at IS NULL AND page_date = ?1",
+        params![date],
+        |r| r.get(0),
+    )?;
+    let latest = conn
+        .query_row(
+            &format!(
+                "SELECT {COLUMNS} FROM journal_entries
+                 WHERE deleted_at IS NULL AND page_date = ?1
+                 ORDER BY written_at DESC, id DESC LIMIT 1"
+            ),
+            params![date],
+            from_row,
+        )
+        .optional()?;
+    Ok((count, latest))
+}

@@ -16,6 +16,7 @@ macro_rules! specta_builder_for {
                 commands::device_get,
                 commands::device_set_sidebar,
                 commands::device_set_log_level,
+                commands::device_set_spellcheck,
                 commands::app_info,
                 commands::log_ui_error,
                 commands::backup_now,
@@ -29,6 +30,7 @@ macro_rules! specta_builder_for {
                 journal::journal_month_days,
                 journal::journal_pages,
                 journal::journal_search,
+                journal::journal_today,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
     };
@@ -255,6 +257,8 @@ mod tests {
             "journalMonthDays",
             "journalPages",
             "journalSearch",
+            "journalToday",
+            "deviceSetSpellcheck",
             "settingsChangedEvent",
         ] {
             assert!(ts.contains(name), "bindings are missing {name}");

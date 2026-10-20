@@ -15,6 +15,8 @@ export const commands = {
 	deviceSetSidebar: (width: number, rail: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_sidebar", { width, rail })),
 	/**  Changes the log level immediately and remembers it. */
 	deviceSetLogLevel: (level: string) => typedError<null, AppError>(__TAURI_INVOKE("device_set_log_level", { level })),
+	/**  Turns spellcheck in every text editor on or off, and remembers it on this device. */
+	deviceSetSpellcheck: (enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_spellcheck", { enabled })),
 	/**  Version, environment, folders and the OS account's first name. */
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
 	/**  Forwards a frontend error into the Rust log file. */
@@ -52,6 +54,11 @@ export const commands = {
 	 *  typo allowed, never repeating `exact`.
 	 */
 	journalSearch: (query: string, from: string | null, to: string | null) => typedError<SearchResults, AppError>(__TAURI_INVOKE("journal_search", { query, from, to })),
+	/**
+	 *  How many Entries `today` (the user's local date, `YYYY-MM-DD`) holds and the one written
+	 *  last, as a plain-text snippet. For the Home card.
+	 */
+	journalToday: (today: string) => typedError<TodaySummary, AppError>(__TAURI_INVOKE("journal_today", { today })),
 };
 
 /** Events */
@@ -90,6 +97,8 @@ export type DeviceSettings = {
 	sidebar?: SidebarState,
 	/**  `tracing` level: error, warn, info, debug or trace. */
 	log_level?: string,
+	/**  Spellcheck in every text editor. Per device: input methods and dictionaries differ. */
+	spellcheck?: boolean,
 };
 
 /**  One untitled piece of writing on a Page. */
@@ -245,6 +254,28 @@ export type Span = {
 	text: string,
 	/**  Whether it matched the search. */
 	matched: boolean,
+};
+
+/**  The Entry written last on the day. */
+export type TodayLatest = {
+	/**  `UUIDv7`. */
+	id: string,
+	/**  When it was written: UTC milliseconds. */
+	written_at: number,
+	/**  UTC offset in minutes where it was written. */
+	written_offset_min: number,
+	/**  IANA zone where it was written. */
+	written_tz: string,
+	/**  Its text as plain reading text (no Markdown), cut at about 140 characters. */
+	snippet: string,
+};
+
+/**  What the Home card shows about one day. */
+export type TodaySummary = {
+	/**  Live Entries on the day's Page. */
+	count: number,
+	/**  The Entry written last, `None` on an empty day. */
+	latest: TodayLatest | null,
 };
 
 /**  Last known window geometry. */

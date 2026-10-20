@@ -1,7 +1,7 @@
 //! Journal commands. Thin: the rules live in `mnemora-journal`.
 
 use mnemora_core::error::AppError;
-use mnemora_journal::{Entry, NewEntry, Page, SearchResults};
+use mnemora_journal::{Entry, NewEntry, Page, SearchResults, TodaySummary};
 use tauri::State;
 
 use crate::state::{AppState, lock};
@@ -101,6 +101,14 @@ pub fn journal_search(
     to: Option<String>,
 ) -> Result<SearchResults, AppError> {
     mnemora_journal::search(&lock(&state.db), &query, from.as_deref(), to.as_deref())
+}
+
+/// How many Entries `today` (the user's local date, `YYYY-MM-DD`) holds and the one written
+/// last, as a plain-text snippet. For the Home card.
+#[tauri::command]
+#[specta::specta]
+pub fn journal_today(state: State<'_, AppState>, today: String) -> Result<TodaySummary, AppError> {
+    mnemora_journal::today(&lock(&state.db), &today)
 }
 
 #[cfg(test)]
@@ -1049,5 +1057,113 @@ mod tests {
         assert!(s.contains(&("site".to_owned(), true)));
         let all: String = s.iter().map(|x| x.0.as_str()).collect();
         assert_eq!(all, "see my site or https://bare.io");
+    }
+
+    fn today(app: &TestApp, date: &str) -> Result<Value, Value> {
+        app.invoke("journal_today", json!({ "today": date }))
+    }
+
+    #[test]
+    fn an_empty_day_has_no_count_and_no_latest() {
+        let app = TestApp::new();
+        create(&app, "2026-10-19", "yesterday").unwrap();
+        let t = today(&app, "2026-10-20").unwrap();
+        assert_eq!(t["count"], 0);
+        assert_eq!(t["latest"], Value::Null);
+    }
+
+    #[test]
+    fn today_counts_live_entries_and_the_latest_is_the_last_written() {
+        let app = TestApp::new();
+        create(&app, "2026-10-20", "first").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let last = create(&app, "2026-10-20", "second").unwrap();
+        create(&app, "2026-10-19", "other day").unwrap();
+        let t = today(&app, "2026-10-20").unwrap();
+        assert_eq!(t["count"], 2);
+        assert_eq!(t["latest"]["id"], last["id"]);
+        assert_eq!(t["latest"]["snippet"], "second");
+        assert_eq!(t["latest"]["written_at"], last["written_at"]);
+    }
+
+    #[test]
+    fn a_deleted_entry_leaves_the_summary_and_comes_back_with_undo() {
+        let app = TestApp::new();
+        let a = create(&app, "2026-10-20", "keep").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let b = create(&app, "2026-10-20", "drop").unwrap();
+        delete(&app, &b["id"]).unwrap();
+        let t = today(&app, "2026-10-20").unwrap();
+        assert_eq!(
+            (t["count"].clone(), t["latest"]["id"].clone()),
+            (json!(1), a["id"].clone())
+        );
+        let _: Value = app
+            .invoke("journal_entry_restore", json!({ "id": b["id"] }))
+            .unwrap();
+        assert_eq!(today(&app, "2026-10-20").unwrap()["count"], 2);
+    }
+
+    #[test]
+    fn the_today_snippet_is_plain_text_and_cut_short() {
+        let app = TestApp::new();
+        create(
+            &app,
+            "2026-10-20",
+            "# Plan\n\nSome **bold** and [a link](https://x.io)",
+        )
+        .unwrap();
+        assert_eq!(
+            today(&app, "2026-10-20").unwrap()["latest"]["snippet"],
+            "Plan · Some bold and a link"
+        );
+        create(&app, "2026-10-21", &"word ".repeat(100)).unwrap();
+        let snippet = today(&app, "2026-10-21").unwrap()["latest"]["snippet"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(snippet.ends_with('…') && snippet.chars().count() <= 141);
+    }
+
+    #[test]
+    fn today_rejects_a_bad_date() {
+        let app = TestApp::new();
+        assert_eq!(today(&app, "yesterday").unwrap_err()["code"], "validation");
+    }
+
+    fn save_pref(app: &TestApp, key: &str, value: Value) -> Result<(), Value> {
+        app.invoke(
+            "settings_save",
+            json!({ "changes": [{ "key": key, "value": value }] }),
+        )
+    }
+
+    #[test]
+    fn journal_preferences_have_defaults_and_accept_only_allowed_values() {
+        let app = TestApp::new();
+        let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snap["values"]["journal.font"], "serif");
+        assert_eq!(snap["values"]["journal.width"], "default");
+        assert_eq!(snap["values"]["journal.page_summary"], true);
+
+        save_pref(&app, "journal.font", json!("sans")).unwrap();
+        save_pref(&app, "journal.width", json!("wide")).unwrap();
+        save_pref(&app, "journal.page_summary", json!(false)).unwrap();
+        let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snap["values"]["journal.font"], "sans");
+        assert_eq!(snap["values"]["journal.width"], "wide");
+        assert_eq!(snap["values"]["journal.page_summary"], false);
+
+        for (key, bad) in [
+            ("journal.font", json!("mono")),
+            ("journal.font", json!(1)),
+            ("journal.width", json!("huge")),
+            ("journal.page_summary", json!("yes")),
+        ] {
+            let err = save_pref(&app, key, bad).unwrap_err();
+            assert_eq!(err["code"], "validation", "{key}");
+        }
+        let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(snap["values"]["journal.font"], "sans");
     }
 }
