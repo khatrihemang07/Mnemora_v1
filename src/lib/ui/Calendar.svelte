@@ -132,7 +132,7 @@
     {#if view === 'days'}
       <button
         type="button"
-        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-[1.05rem] text-ink hover:bg-hover"
+        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-base leading-normal text-ink hover:bg-hover"
         style="font-weight: var(--display-weight)"
         aria-label="Choose month and year, now {MONTHS[monthIndex]} {year}"
         onclick={openMonths}
@@ -156,7 +156,7 @@
     {:else}
       <button
         type="button"
-        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-[1.05rem] text-ink hover:bg-hover"
+        class="inline-flex flex-1 cursor-pointer items-center gap-1 rounded-sm px-1.5 py-1 text-left font-display text-base leading-normal text-ink hover:bg-hover"
         style="font-weight: var(--display-weight)"
         aria-label="Back to the days of {MONTHS[monthIndex]} {year}"
         onclick={() => (view = 'days')}
@@ -196,7 +196,7 @@
                   : ''}"
                 aria-current={d.date === today ? 'date' : undefined}
                 aria-disabled={off || undefined}
-                class="relative h-10.5 w-full rounded-sm text-xs tabular-nums transition-colors duration-(--dur) ease-out min-[720px]:h-8.5
+                class="relative h-10.5 w-full rounded-sm text-xs tabular-nums transition-colors duration-(--dur) ease-out desktop:h-8.5
                   {off || !d.inMonth ? 'text-faint' : 'text-ink'}
                   {off ? 'cursor-default opacity-35' : 'cursor-pointer hover:bg-hover'}
                   {!off && !d.inMonth ? 'opacity-50' : ''}

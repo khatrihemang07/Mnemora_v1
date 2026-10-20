@@ -4,9 +4,12 @@
  * plain scans instead of an index, so the search UI can be tried without Rust.
  */
 import type { AppError, Entry, Hit, SearchResults, Span } from './bindings';
+import { validDate } from './mock-journal-pages';
 
 const MAX_EXACT = 500;
 const MAX_SIMILAR = 100;
+/** Most near words kept per query word (MAX_NEAR_PER_WORD in crates/journal/src/fuzzy.rs). */
+const MAX_NEAR = 20;
 const SNIPPET_CHARS = 160;
 const LEAD_CHARS = 40;
 const WORD = /[\p{L}\p{N}\p{M}]+/gu;
@@ -45,22 +48,39 @@ function distance(a: string, b: string, max: number): number {
   return prev[b.length] ?? max + 1;
 }
 
-const near = (token: string, word: string) =>
-  token !== word && distance(token, word, tolerance(word.length)) <= tolerance(word.length);
+/** Per term, the words of `vocab` (word -> Entries using it) a bare word may also match whole. */
+type Near = Set<string>[];
+
+/**
+ * Like `near_terms` in crates/journal/src/fuzzy.rs: per bare word, the vocabulary words within its
+ * tolerance (never the word itself), nearest first, then most used, then alphabetical, cut at
+ * MAX_NEAR. Phrases and short words get none.
+ */
+function nearWords(terms: Term[], vocab: Map<string, number>): Near {
+  return terms.map((t) => {
+    if (!('word' in t) || tolerance(t.word.length) === 0) return new Set();
+    const max = tolerance(t.word.length);
+    const found: [number, number, string][] = [];
+    for (const [tok, docs] of vocab) {
+      if (tok === t.word) continue;
+      const d = distance(t.word, tok, max);
+      if (d <= max) found.push([d, docs, tok]);
+    }
+    found.sort((a, b) => a[0] - b[0] || b[1] - a[1] || (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0));
+    return new Set(found.slice(0, MAX_NEAR).map((f) => f[2]));
+  });
+}
 
 function hasPhrase(tokens: string[], phrase: string[]): boolean {
   return tokens.some((_, i) => phrase.every((p, k) => tokens[i + k] === p));
 }
 
-/** Whether `tokens` satisfy every term; `fuzzy` lets a bare word match a near token too. */
-function matches(tokens: string[], terms: Term[], fuzzy: boolean): boolean {
-  return terms.every((t) =>
+/** Whether `tokens` satisfy every term; a bare word may also match one of its `near` words whole. */
+function matches(tokens: string[], terms: Term[], near: Near): boolean {
+  return terms.every((t, i) =>
     'phrase' in t
       ? hasPhrase(tokens, t.phrase)
-      : tokens.some(
-          (tok) =>
-            tok.startsWith(t.word) || (fuzzy && tolerance(t.word.length) > 0 && near(tok, t.word)),
-        ),
+      : tokens.some((tok) => tok.startsWith(t.word) || near[i]?.has(tok)),
   );
 }
 
@@ -93,7 +113,7 @@ function stripLinePrefix(line: string): string {
     .replace(/^\[[ xX]\]\s+/, '');
 }
 
-function snippet(body: string, terms: Term[], fuzzy: boolean): Span[] {
+function snippet(body: string, terms: Term[], near: Near): Span[] {
   const text = plainText(body);
   const found = [...text.matchAll(WORD)].map((m) => ({
     start: m.index ?? 0,
@@ -101,10 +121,8 @@ function snippet(body: string, terms: Term[], fuzzy: boolean): Span[] {
     token: fold(m[0]),
   }));
   const hit = (tok: string) =>
-    terms.some((t) =>
-      'phrase' in t
-        ? t.phrase.includes(tok)
-        : tok.startsWith(t.word) || (fuzzy && tolerance(t.word.length) > 0 && near(tok, t.word)),
+    terms.some((t, i) =>
+      'phrase' in t ? t.phrase.includes(tok) : tok.startsWith(t.word) || near[i]?.has(tok),
     );
   const marks = found.filter((f) => hit(f.token));
   const first = marks[0]?.start ?? 0;
@@ -131,8 +149,6 @@ function snippet(body: string, terms: Term[], fuzzy: boolean): Span[] {
   if (tailText) spans.push({ text: tailText, matched: false });
   return spans;
 }
-
-const validDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 
 function toHit(e: Entry, spans: Span[]): Hit {
   return {
@@ -167,24 +183,36 @@ export function searchEntries(
   const terms = parse(query);
   const inRange = live
     .filter((e) => (from === null || e.page_date >= from) && (to === null || e.page_date <= to))
-    .sort((a, b) => b.page_date.localeCompare(a.page_date) || a.written_at - b.written_at);
+    .sort(
+      (a, b) =>
+        b.page_date.localeCompare(a.page_date) ||
+        a.written_at - b.written_at ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
   if (terms.length === 0) {
     const all = from === null && to === null ? [] : inRange;
     return {
-      exact: all.slice(0, MAX_EXACT).map((e) => toHit(e, snippet(e.body, terms, false))),
+      exact: all.slice(0, MAX_EXACT).map((e) => toHit(e, snippet(e.body, terms, []))),
       similar: [],
       truncated: all.length > MAX_EXACT,
+      similar_truncated: false,
     };
   }
-  const tokens = new Map(inRange.map((e) => [e.id, words(e.body)]));
-  const exact = inRange.filter((e) => matches(tokens.get(e.id) ?? [], terms, false));
+  const tokens = new Map(live.map((e) => [e.id, words(e.body)]));
+  const vocab = new Map<string, number>();
+  for (const toks of tokens.values()) {
+    for (const tok of new Set(toks)) vocab.set(tok, (vocab.get(tok) ?? 0) + 1);
+  }
+  const near = nearWords(terms, vocab);
+  const exact = inRange.filter((e) => matches(tokens.get(e.id) ?? [], terms, []));
   const exactIds = new Set(exact.map((e) => e.id));
-  const similar = inRange.filter(
-    (e) => !exactIds.has(e.id) && matches(tokens.get(e.id) ?? [], terms, true),
-  );
+  const similar = near.some((n) => n.size > 0)
+    ? inRange.filter((e) => !exactIds.has(e.id) && matches(tokens.get(e.id) ?? [], terms, near))
+    : [];
   return {
-    exact: exact.slice(0, MAX_EXACT).map((e) => toHit(e, snippet(e.body, terms, false))),
-    similar: similar.slice(0, MAX_SIMILAR).map((e) => toHit(e, snippet(e.body, terms, true))),
+    exact: exact.slice(0, MAX_EXACT).map((e) => toHit(e, snippet(e.body, terms, []))),
+    similar: similar.slice(0, MAX_SIMILAR).map((e) => toHit(e, snippet(e.body, terms, near))),
     truncated: exact.length > MAX_EXACT,
+    similar_truncated: similar.length > MAX_SIMILAR,
   };
 }

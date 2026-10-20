@@ -9,8 +9,10 @@ use specta::Type;
 pub enum ErrorCode {
     /// A value failed validation.
     Validation,
-    /// A key or id is not registered or does not exist.
+    /// A key is not registered.
     UnknownKey,
+    /// The record asked for does not exist (or is deleted).
+    NotFound,
     /// Filesystem failure.
     Io,
     /// Database failure.

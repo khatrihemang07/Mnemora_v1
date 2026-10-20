@@ -12,6 +12,27 @@ export function upcomingCount(pages: Page[], today: string): number {
 }
 
 /**
+ * The loaded Pages without the Entry the composer is still writing (it joins the feed when
+ * finished). Counts follow; a Page left with nothing because of it goes too.
+ */
+export function withoutEntry(pages: Page[], id: string | null): Page[] {
+  if (id === null || !pages.some((p) => p.entries.some((e) => e.id === id))) return pages;
+  return pages.flatMap((page) => {
+    const hidden = page.entries.find((e) => e.id === id);
+    if (!hidden) return [page];
+    if (page.entries.length === 1) return [];
+    return [
+      {
+        ...page,
+        entries: page.entries.filter((e) => e.id !== id),
+        entry_count: page.entry_count - 1,
+        word_count: page.word_count - hidden.word_count,
+      },
+    ];
+  });
+}
+
+/**
  * Turns the loaded Pages (newest first) into feed rows. Today's Page is there, empty if nothing
  * is written on it, once the window reaches it (`reachesToday`: no newer Pages are left to load; a
  * window opened on a far date has not reached it yet); a Journal with no Pages at all stays empty

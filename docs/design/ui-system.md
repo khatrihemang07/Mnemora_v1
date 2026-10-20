@@ -91,7 +91,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip); `bind:ref` anchors a popover to it; `size="xs"` + `variant="quiet"` is the small faint round × for clearing a field or chip |
 | `Card` | A hairline-bordered surface that groups content |
 | `Dialog` | A small modal needing a decision (confirm, unsaved changes) |
-| `Sheet` | A bottom sheet: the phone More menu, and the DatePicker on a phone |
+| `Sheet` | A bottom sheet: the phone More menu, and the DatePicker on a phone. Optional `closable` adds a ghost Close button in the title row (on in the DatePicker and calendar sheets) |
 | `CommandPalette` | The ⌘K action list. Mount once in the shell. Filters with `visibleItems` (every typed word in the label); an item with a `queryLabel` is a query action that appears once something is typed ("Search Journal for 'river'") and receives the text in `run` |
 | `Tooltip` / `TooltipProvider` | Names or explains a control; 600ms delay, shows the shortcut. Provider mounts once |
 | `ResizablePanes` | The desktop sidebar + main split. Wraps paneforge; takes a pixel width and reports dragged pixels |
@@ -100,7 +100,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `EmptyState` | Nothing to show yet: icon, sentence, action. Optional `hue` (a Module hue token name, e.g. `--hue-journal`) tints the icon instead of the brand accent |
 | `Skeleton` | Loading placeholder (appears after 300ms) |
 | `ErrorBanner` | An inline failure with Retry and Copy details |
-| `EnvBadge` | The SANDBOX marker (nothing in Production) |
+| `EnvBadge` | The SANDBOX marker (nothing in Production). Also shown next to the phone `PageHeader` title on sandbox builds |
 | `PageHeader` | Every page's title. Desktop: sets the top bar title; phone: large title in the content. Optional actions slot |
 | `SegmentedControl` | Pick one of 2-5 short options. Equal-width segments; a 2x2 grid below 360px for four or more |
 | `Switch` | An on/off Setting |
@@ -130,7 +130,7 @@ The editor and the read view share one set of rules in `src/lib/ui/markdown/mark
 - **Sidebar** (desktop): resizable 200 to 360px (default 248). Dragging below 150px snaps to a 60px icon rail; dragging back past 150px expands. Double-click the divider resets. The toggle button and ⌘\ switch between rail and expanded; it is never fully hidden. Width and rail state persist as Device settings.
 - **Brand row**: under the traffic-light strip, a 22px `AppMark` and "Mnemora" in the display font; the rail shows only the mark, centred.
 - **Top bar** (desktop): a 50px drag region (`data-tauri-drag-region`) with a bottom hairline: sidebar toggle, then the `PageHeader` title, then page actions and a compact "Search... ⌘K" button. Windows and Linux add window controls at the right end.
-- **Phone** (under 720px or a mobile OS): no sidebar or top bar. A bottom tab bar shows up to 4 chosen tabs plus **More**. More is highlighted whenever the current Module is not one of the tabs (Settings included) and opens a sheet with the rest. Pages start with a large `PageHeader` title.
+- **Phone** (under 720px or a mobile OS): no sidebar or top bar. A bottom tab bar shows up to 4 chosen tabs plus **More**. More is highlighted whenever the current Module is not one of the tabs (Settings included) and opens a sheet with the rest. Pages start with a large `PageHeader` title. Phone-only styling uses the `phone:` / `desktop:` variants (driven by `data-phone` on `<html>`, set from `viewport.isPhone`), not a bare width query, so it agrees with the layout switch. A plain width rule (`min-[720px]:`) is only for layout that should follow the window, not the device (the Home grid, Setting rows).
 - **Enabled Modules**: a Module is on unless listed in `core.disabled_modules` (so new Modules appear by default). Routes (a disabled Module's URL falls back to Home), sidebar, tab bar and More sheet, ⌘K, ⌘-digit and ⌘N all use only enabled Modules. Switching off hides a Module and keeps its data.
 - **Home cards**: Home lists each enabled Module's lazy `homeCard` below the greeting and clock, in nav order, handing each the shell's `ModuleContext` (`ctx`) so its buttons can navigate; with none it shows an `EmptyState`. The Journal's card (H2) is a `Card` with the coral notebook tile and "Journal", a primary Write button at the right, the latest Entry of today as a plain-text quote in the display serif (clamped to 3 lines) and "Today · N entries" below; an empty day says "Nothing written today".
 - **Home (H1)**: greeting card and clock tile in a `1.4fr / 1fr` grid at 720px and wider, equal height; stacked below. The clock has a small uppercase "Local time" label, tight tabular digits and smaller seconds.

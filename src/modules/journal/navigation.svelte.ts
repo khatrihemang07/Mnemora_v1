@@ -18,6 +18,8 @@ export class JournalNav {
   weekStart = $state<WeekStart>('mon');
   /** The composer's date chip; null means Today. */
   composerDate = $state<string | null>(null);
+  /** The Entry the composer is writing; the feed hides it until the composer finishes. */
+  composingId = $state<string | null>(null);
   /** Scrolls to a Page, loading older Pages if needed, and flashes it or one of its Entries. */
   scrollTo: ((date: string, entryId?: string) => Promise<void>) | null = null;
   /** Focuses the composer. */
@@ -27,7 +29,12 @@ export class JournalNav {
   #entryTimer: ReturnType<typeof setTimeout> | undefined;
   #pageTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(public today: string) {}
+  /** The user's local date; `JournalPage` moves it at midnight. */
+  today = $state('');
+
+  constructor(today: string) {
+    this.today = today;
+  }
 
   /** Tints an Entry for a moment, restarting if it is already tinted. */
   flashEntryFor(id: string): void {

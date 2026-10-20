@@ -50,3 +50,9 @@ export function resolveEditorShortcut(e: KeyLike, mac: boolean): EditorCommand |
   if (mark) return { type: 'inline', mark };
   return e.code === 'KeyK' ? { type: 'link' } : null;
 }
+
+/** ⌘⇧V (Ctrl+Shift+V off macOS): the next paste is plain text. Physical key, as Shift changes `key`. */
+export function isPlainPasteShortcut(e: KeyLike, mac: boolean): boolean {
+  if (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey) return false;
+  return e.shiftKey && !e.altKey && e.code === 'KeyV';
+}

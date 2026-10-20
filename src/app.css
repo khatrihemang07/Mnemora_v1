@@ -3,6 +3,10 @@
 @import "./lib/theme/tokens.css";
 @import "./lib/ui/markdown/markdown.css";
 
+/* Phone vs desktop follows `viewport.isPhone` (narrow window or a mobile OS), via `data-phone` on <html>. */
+@custom-variant phone (&:where([data-phone] *));
+@custom-variant desktop (&:where(:root:not([data-phone]) *));
+
 /* Remove Tailwind's default palette and scales so only semantic tokens are usable. */
 @theme {
   --color-*: initial;

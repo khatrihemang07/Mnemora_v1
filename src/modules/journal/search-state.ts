@@ -94,6 +94,10 @@ export function goBack(s: SearchSession): SearchSession {
   return s.parked ? openSearch(s) : closeSearch();
 }
 
+/** The header search button: opens when idle; with search active or parked, leaves it for good. */
+export const toggleSearch = (s: SearchSession): SearchSession =>
+  s.active || s.parked !== null ? closeSearch() : openSearch(s);
+
 /** Whether Back means something to search right now. */
 export const wantsBack = (s: SearchSession) => s.active || s.parked !== null;
 

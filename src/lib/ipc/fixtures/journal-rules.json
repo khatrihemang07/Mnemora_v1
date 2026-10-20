@@ -1,0 +1,1995 @@
+{
+  "about": "Rules shared by the Rust commands (src-tauri/src/journal.rs) and the browser mock (src/lib/ipc/mock-journal.test.ts). See ADR 0009. seed: Entries created in order (index = position; repeat expands one into many; id_n sets the id's number; at is the write time in ms after the start). age_minutes: time passes after seeding, before the op. Results are compared on stable fields only, with Entries named by seed index; expect lists just the keys to check.",
+  "cases": [
+    {
+      "rule": "search.fold",
+      "name": "case is ignored",
+      "seed": [
+        {
+          "body": "Coffee at the cafe"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "COFFEE",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.fold",
+      "name": "accents in the text are ignored",
+      "seed": [
+        {
+          "body": "Coffee at the Café"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cafe",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.fold",
+      "name": "accents in the query are ignored",
+      "seed": [
+        {
+          "body": "Coffee at the cafe"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "CAFÉ",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.prefix",
+      "name": "a word matches by prefix",
+      "seed": [
+        {
+          "body": "journal"
+        },
+        {
+          "body": "journals"
+        },
+        {
+          "body": "a jour"
+        },
+        {
+          "body": "projournal"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "jour",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0, 1, 2],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.prefix",
+      "name": "the middle of a word does not match",
+      "seed": [
+        {
+          "body": "journal"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "urnal",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.words",
+      "name": "every word is required, in any order",
+      "seed": [
+        {
+          "body": "red door"
+        },
+        {
+          "body": "door red"
+        },
+        {
+          "body": "red"
+        },
+        {
+          "body": "blue door"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "door red",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0, 1],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.phrase",
+      "name": "quoted text is a whole, ordered phrase",
+      "seed": [
+        {
+          "body": "the red door"
+        },
+        {
+          "body": "door red"
+        },
+        {
+          "body": "the red doors"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "\"red door\"",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.phrase",
+      "name": "an unclosed quote runs to the end and stays whole",
+      "seed": [
+        {
+          "body": "the red door"
+        },
+        {
+          "body": "the red do"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "\"red do",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [1],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.phrase",
+      "name": "a phrase is not fuzzy",
+      "seed": [
+        {
+          "body": "the green door"
+        },
+        {
+          "body": "the grean door"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "\"green door\"",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.query",
+      "name": "nothing to search for returns nothing",
+      "seed": [
+        {
+          "body": "anything"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "  ",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [],
+        "exact_count": 0
+      }
+    },
+    {
+      "rule": "search.query",
+      "name": "FTS syntax is plain text",
+      "seed": [
+        {
+          "body": "cats dogs"
+        },
+        {
+          "body": "a-b"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cats OR dogs NEAR(x) * -y",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "3 letters are exact",
+      "seed": [
+        {
+          "body": "cat"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cot",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "4 letters allow one typo",
+      "seed": [
+        {
+          "body": "bake"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "bike",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "4 letters do not allow two",
+      "seed": [
+        {
+          "body": "bake"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "bikx",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "7 letters allow one typo",
+      "seed": [
+        {
+          "body": "cabbage"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cabbagx",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "7 letters allow a missing letter",
+      "seed": [
+        {
+          "body": "cabbage"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cabbge",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "7 letters do not allow two",
+      "seed": [
+        {
+          "body": "cabbage"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cabbxgx",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "8 letters allow one typo",
+      "seed": [
+        {
+          "body": "elephant"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "elephxnt",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "8 letters allow two",
+      "seed": [
+        {
+          "body": "elephant"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "elxphxnt",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "8 letters do not allow three",
+      "seed": [
+        {
+          "body": "elephant"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "elxphxnx",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "similar never repeats exact",
+      "seed": [
+        {
+          "body": "journal"
+        },
+        {
+          "body": "jurnal"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "journal",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": [1]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "similar never repeats exact, the other way",
+      "seed": [
+        {
+          "body": "journal"
+        },
+        {
+          "body": "jurnal"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "jurnal",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [1],
+        "similar": [0]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "similar needs every word",
+      "seed": [
+        {
+          "body": "green door"
+        },
+        {
+          "body": "grean door"
+        },
+        {
+          "body": "grean wall"
+        },
+        {
+          "body": "grean doar"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "green door",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [0],
+        "similar": [1, 3]
+      }
+    },
+    {
+      "rule": "search.typo",
+      "name": "only the 20 nearest words count, ranked by how many entries use them",
+      "seed": [
+        {
+          "body": "bata"
+        },
+        {
+          "body": "batb"
+        },
+        {
+          "body": "batc"
+        },
+        {
+          "body": "batd"
+        },
+        {
+          "body": "bate"
+        },
+        {
+          "body": "batf"
+        },
+        {
+          "body": "batg"
+        },
+        {
+          "body": "bath"
+        },
+        {
+          "body": "bati"
+        },
+        {
+          "body": "batj"
+        },
+        {
+          "body": "batk"
+        },
+        {
+          "body": "batl"
+        },
+        {
+          "body": "batm"
+        },
+        {
+          "body": "batn"
+        },
+        {
+          "body": "bato"
+        },
+        {
+          "body": "batp"
+        },
+        {
+          "body": "batq"
+        },
+        {
+          "body": "batr"
+        },
+        {
+          "body": "batt"
+        },
+        {
+          "body": "batu"
+        },
+        {
+          "body": "batv"
+        },
+        {
+          "body": "batv"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "bats",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 21]
+      }
+    },
+    {
+      "rule": "search.range",
+      "name": "a range narrows words, inclusive",
+      "seed": [
+        {
+          "body": "note",
+          "page_date": "2026-10-01"
+        },
+        {
+          "body": "note",
+          "page_date": "2026-10-10"
+        },
+        {
+          "body": "note",
+          "page_date": "2026-10-20"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "note",
+        "from": "2026-10-10",
+        "to": "2026-10-19"
+      },
+      "expect": {
+        "exact": [1],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.range",
+      "name": "a range alone lists every entry in it, newest page first",
+      "seed": [
+        {
+          "body": "note",
+          "page_date": "2026-10-01"
+        },
+        {
+          "body": "note",
+          "page_date": "2026-10-10"
+        },
+        {
+          "body": "note",
+          "page_date": "2026-10-20"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "",
+        "from": "2026-10-10",
+        "to": null
+      },
+      "expect": {
+        "exact": [2, 1],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.range",
+      "name": "the range applies to similar too",
+      "seed": [
+        {
+          "body": "journal",
+          "page_date": "2026-10-01"
+        },
+        {
+          "body": "jurnal",
+          "page_date": "2026-10-20"
+        },
+        {
+          "body": "jurnal",
+          "page_date": "2026-10-02"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "journal",
+        "from": "2026-10-01",
+        "to": "2026-10-10"
+      },
+      "expect": {
+        "exact": [0],
+        "similar": [2]
+      }
+    },
+    {
+      "rule": "search.range",
+      "name": "an impossible date is rejected",
+      "seed": [
+        {
+          "body": "x"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "x",
+        "from": "2026-02-30",
+        "to": null
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "search.range",
+      "name": "a badly shaped date is rejected",
+      "seed": [
+        {
+          "body": "x"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "x",
+        "from": null,
+        "to": "2026-1-1"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "search.range",
+      "name": "a backwards range is rejected",
+      "seed": [
+        {
+          "body": "x"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "x",
+        "from": "2026-10-20",
+        "to": "2026-10-10"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "The start date is after the end date"
+        }
+      }
+    },
+    {
+      "rule": "search.order",
+      "name": "newest page first, then oldest written first",
+      "seed": [
+        {
+          "body": "note",
+          "page_date": "2026-10-19"
+        },
+        {
+          "body": "note"
+        },
+        {
+          "body": "note"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "note",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [1, 2, 0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.order",
+      "name": "entries written at the same instant fall back to id",
+      "seed": [
+        {
+          "body": "note",
+          "at": 5,
+          "id_n": 9
+        },
+        {
+          "body": "note",
+          "at": 5,
+          "id_n": 2
+        },
+        {
+          "body": "note",
+          "at": 5,
+          "id_n": 5
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "note",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [1, 2, 0],
+        "similar": []
+      }
+    },
+    {
+      "rule": "search.order",
+      "name": "the same instant on a similar match falls back to id too",
+      "seed": [
+        {
+          "body": "jurnal",
+          "at": 5,
+          "id_n": 9
+        },
+        {
+          "body": "jurnal",
+          "at": 5,
+          "id_n": 2
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "journal",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [1, 0]
+      }
+    },
+    {
+      "rule": "search.cap",
+      "name": "exact hits stop at 500 and say so",
+      "seed": [
+        {
+          "body": "note",
+          "repeat": 501
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "note",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_count": 500,
+        "similar_count": 0,
+        "truncated": true,
+        "similar_truncated": false
+      }
+    },
+    {
+      "rule": "search.cap",
+      "name": "exactly 500 is not truncated",
+      "seed": [
+        {
+          "body": "note",
+          "repeat": 500
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "note",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_count": 500,
+        "truncated": false
+      }
+    },
+    {
+      "rule": "search.cap",
+      "name": "similar hits stop at 100 and say so",
+      "seed": [
+        {
+          "body": "bakery",
+          "repeat": 101
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "bakry",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_count": 0,
+        "similar_count": 100,
+        "truncated": false,
+        "similar_truncated": true
+      }
+    },
+    {
+      "rule": "search.cap",
+      "name": "exactly 100 similar is not truncated",
+      "seed": [
+        {
+          "body": "bakery",
+          "repeat": 100
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "bakry",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "similar_count": 100,
+        "similar_truncated": false
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "the match is marked",
+      "seed": [
+        {
+          "body": "Coffee at the Café"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "cafe",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [[["Coffee at the ", false], ["Café", true]]]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "Markdown is removed and lines are joined",
+      "seed": [
+        {
+          "body": "# A morning plan\n\nSome **bold** words and `code`.\n- [ ] Call the dentist\n- [x] Reply"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "bold",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [
+          [
+            ["A morning plan · Some ", false],
+            ["bold", true],
+            [" words and code. · Call the dentist · Reply", false]
+          ]
+        ]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "link text is shown and its URL is not",
+      "seed": [
+        {
+          "body": "see [my site](https://example.com/x) or https://bare.io"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "site",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [[["see my ", false], ["site", true], [" or https://bare.io", false]]]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "every word of a phrase is marked",
+      "seed": [
+        {
+          "body": "the red door and a red wall"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "\"red door\"",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [
+          [
+            ["the ", false],
+            ["red", true],
+            [" ", false],
+            ["door", true],
+            [" and a ", false],
+            ["red", true],
+            [" wall", false]
+          ]
+        ]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "a similar match marks the near word",
+      "seed": [
+        {
+          "body": "my jurnal today"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "journal",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact": [],
+        "similar": [0],
+        "similar_spans": [[["my ", false], ["jurnal", true], [" today", false]]]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "a date-only search shows the start with nothing marked",
+      "seed": [
+        {
+          "body": "hello world"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "",
+        "from": "2026-10-01",
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [[["hello world", false]]]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "a late match starts on a word with a leading ellipsis",
+      "seed": [
+        {
+          "body": "alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha needle end"
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "needle",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [
+          [
+            ["…", false],
+            ["alpha alpha alpha alpha alpha alpha ", false],
+            ["needle", true],
+            [" end", false]
+          ]
+        ]
+      }
+    },
+    {
+      "rule": "snippet",
+      "name": "a long text is cut on a word with a trailing ellipsis",
+      "seed": [
+        {
+          "body": "needle word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+        }
+      ],
+      "op": "search",
+      "args": {
+        "query": "needle",
+        "from": null,
+        "to": null
+      },
+      "expect": {
+        "exact_spans": [
+          [
+            ["needle", true],
+            [
+              " word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word…",
+              false
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "rule": "edit.grace",
+      "name": "an update 0 minutes after writing is not an edit",
+      "seed": [
+        {
+          "body": "first"
+        }
+      ],
+      "op": "update",
+      "args": {
+        "id": 0,
+        "text": "first, then more",
+        "sessionId": "s2"
+      },
+      "expect": {
+        "entry": {
+          "body": "first, then more",
+          "word_count": 3,
+          "edited": false
+        }
+      }
+    },
+    {
+      "rule": "edit.grace",
+      "name": "an update 9 minutes after writing is not an edit",
+      "seed": [
+        {
+          "body": "first"
+        }
+      ],
+      "age_minutes": 9,
+      "op": "update",
+      "args": {
+        "id": 0,
+        "text": "first, then more",
+        "sessionId": "s2"
+      },
+      "expect": {
+        "entry": {
+          "body": "first, then more",
+          "word_count": 3,
+          "edited": false
+        }
+      }
+    },
+    {
+      "rule": "edit.grace",
+      "name": "an update 11 minutes after writing is an edit",
+      "seed": [
+        {
+          "body": "first"
+        }
+      ],
+      "age_minutes": 11,
+      "op": "update",
+      "args": {
+        "id": 0,
+        "text": "first, then more",
+        "sessionId": "s2"
+      },
+      "expect": {
+        "entry": {
+          "body": "first, then more",
+          "word_count": 3,
+          "edited": true
+        }
+      }
+    },
+    {
+      "rule": "edit.grace",
+      "name": "a task tick never counts as an edit",
+      "seed": [
+        {
+          "body": "- [ ] a"
+        }
+      ],
+      "age_minutes": 11,
+      "op": "toggle_task",
+      "args": {
+        "id": 0,
+        "line": 0
+      },
+      "expect": {
+        "entry": {
+          "body": "- [x] a",
+          "edited": false
+        }
+      }
+    },
+    {
+      "rule": "today",
+      "name": "an empty day has no count and no latest",
+      "seed": [],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "count": 0,
+        "latest": null,
+        "snippet": null
+      }
+    },
+    {
+      "rule": "today",
+      "name": "the latest is the last written, as plain text",
+      "seed": [
+        {
+          "body": "# Plan\n\nSome **bold** and [a link](https://x.io)"
+        },
+        {
+          "body": "second"
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "count": 2,
+        "latest": 1,
+        "snippet": "second"
+      }
+    },
+    {
+      "rule": "today",
+      "name": "the snippet is plain text",
+      "seed": [
+        {
+          "body": "# Plan\n\nSome **bold** and [a link](https://x.io)"
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "count": 1,
+        "latest": 0,
+        "snippet": "Plan · Some bold and a link"
+      }
+    },
+    {
+      "rule": "shorten",
+      "name": "140 characters are kept whole",
+      "seed": [
+        {
+          "body": "abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcde"
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "snippet": "abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcde"
+      }
+    },
+    {
+      "rule": "shorten",
+      "name": "141 characters are cut on a word",
+      "seed": [
+        {
+          "body": "abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd e"
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "snippet": "abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd abcd…"
+      }
+    },
+    {
+      "rule": "shorten",
+      "name": "a long text is cut on a word",
+      "seed": [
+        {
+          "body": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "snippet": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word…"
+      }
+    },
+    {
+      "rule": "shorten",
+      "name": "one long word is cut at 140",
+      "seed": [
+        {
+          "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "snippet": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+      }
+    },
+    {
+      "rule": "shorten",
+      "name": "counts characters, not bytes",
+      "seed": [
+        {
+          "body": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "op": "today",
+      "args": {
+        "today": "2026-10-20"
+      },
+      "expect": {
+        "snippet": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé…"
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects blank text \"\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "An Entry can't be blank"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects blank text \"   \"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "   ",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "An Entry can't be blank"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects blank text \"\\n\\t \\n\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "\n\t \n",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "An Entry can't be blank"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"2026-02-30\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-02-30",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"2026-13-01\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-13-01",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"2026-1-1\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-1-1",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"2026/10/20\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026/10/20",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"0000-01-01\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "0000-01-01",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects the date \"2025-02-29\"",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2025-02-29",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create accepts a leap day and a future date",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2024-02-29",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "created": {
+          "page_date": "2024-02-29",
+          "word_count": 1
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create accepts a far future date",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2999-01-01",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "created": {
+          "page_date": "2999-01-01"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects an empty zone",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid time zone"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects a blank zone",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "  ",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid time zone"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects a 65-character zone",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid time zone"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create accepts a 64-character zone",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "written_offset_min": 0,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "created": {
+          "page_date": "2026-10-20"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects an offset beyond 14 hours",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 841,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid time zone offset"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create rejects an offset beyond -14 hours",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": -841,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid time zone offset"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "create accepts an offset of 14 hours",
+      "seed": [],
+      "op": "create",
+      "args": {
+        "entry": {
+          "page_date": "2026-10-20",
+          "text": "x",
+          "written_tz": "UTC",
+          "written_offset_min": 840,
+          "session_id": "s1"
+        }
+      },
+      "expect": {
+        "created": {
+          "page_date": "2026-10-20"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "update rejects blank text",
+      "seed": [
+        {
+          "body": "a"
+        }
+      ],
+      "op": "update",
+      "args": {
+        "id": 0,
+        "text": "  ",
+        "sessionId": "s2"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "An Entry can't be blank"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "update of an unknown Entry is not_found",
+      "seed": [
+        {
+          "body": "a"
+        }
+      ],
+      "op": "update",
+      "args": {
+        "id": "nope",
+        "text": "b",
+        "sessionId": "s2"
+      },
+      "expect": {
+        "error": {
+          "code": "not_found",
+          "message": "That Entry no longer exists"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "toggle of an unknown Entry is not_found",
+      "seed": [
+        {
+          "body": "a"
+        }
+      ],
+      "op": "toggle_task",
+      "args": {
+        "id": "nope",
+        "line": 0
+      },
+      "expect": {
+        "error": {
+          "code": "not_found",
+          "message": "That Entry no longer exists"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "toggle of a non-task line is rejected",
+      "seed": [
+        {
+          "body": "plain"
+        }
+      ],
+      "op": "toggle_task",
+      "args": {
+        "id": 0,
+        "line": 0
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "That line is not a checklist item"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "toggle flips only that line",
+      "seed": [
+        {
+          "body": "- [ ] a\n- [x] b"
+        }
+      ],
+      "op": "toggle_task",
+      "args": {
+        "id": 0,
+        "line": 1
+      },
+      "expect": {
+        "entry": {
+          "body": "- [ ] a\n- [ ] b"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "move rejects a bad date",
+      "seed": [
+        {
+          "body": "a"
+        }
+      ],
+      "op": "move",
+      "args": {
+        "id": 0,
+        "pageDate": "2026-02-30"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "move of an unknown Entry is not_found",
+      "seed": [
+        {
+          "body": "a"
+        }
+      ],
+      "op": "move",
+      "args": {
+        "id": "nope",
+        "pageDate": "2026-10-20"
+      },
+      "expect": {
+        "error": {
+          "code": "not_found",
+          "message": "That Entry no longer exists"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "move changes only the Page",
+      "seed": [
+        {
+          "body": "a b"
+        }
+      ],
+      "op": "move",
+      "args": {
+        "id": 0,
+        "pageDate": "2026-11-01"
+      },
+      "expect": {
+        "entry": {
+          "page_date": "2026-11-01",
+          "body": "a b",
+          "edited": false
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "today rejects a bad date",
+      "seed": [],
+      "op": "today",
+      "args": {
+        "today": "yesterday"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "pages rejects a bad cursor",
+      "seed": [],
+      "op": "pages",
+      "args": {
+        "cursor": "2026-02-30",
+        "limit": 5,
+        "direction": "older"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid date"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "newer pages need a cursor",
+      "seed": [],
+      "op": "pages",
+      "args": {
+        "cursor": null,
+        "limit": 5,
+        "direction": "newer"
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Newer Pages need a date to start from"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "month_days rejects month 13",
+      "seed": [],
+      "op": "month_days",
+      "args": {
+        "year": 2026,
+        "month": 13
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid month"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "month_days rejects year 0",
+      "seed": [],
+      "op": "month_days",
+      "args": {
+        "year": 0,
+        "month": 1
+      },
+      "expect": {
+        "error": {
+          "code": "validation",
+          "message": "Not a valid month"
+        }
+      }
+    },
+    {
+      "rule": "validation",
+      "name": "month_days lists the dates with entries",
+      "seed": [
+        {
+          "body": "a",
+          "page_date": "2026-10-05"
+        },
+        {
+          "body": "b",
+          "page_date": "2026-10-05"
+        },
+        {
+          "body": "c",
+          "page_date": "2026-09-30"
+        },
+        {
+          "body": "d",
+          "page_date": "2026-10-01"
+        }
+      ],
+      "op": "month_days",
+      "args": {
+        "year": 2026,
+        "month": 10
+      },
+      "expect": {
+        "days": ["2026-10-01", "2026-10-05"]
+      }
+    },
+    {
+      "rule": "pages",
+      "name": "pages are newest first with entries oldest first and counts",
+      "seed": [
+        {
+          "body": "one two",
+          "page_date": "2026-10-19"
+        },
+        {
+          "body": "three",
+          "page_date": "2026-10-20"
+        },
+        {
+          "body": "four five six",
+          "page_date": "2026-10-20"
+        }
+      ],
+      "op": "pages",
+      "args": {
+        "cursor": null,
+        "limit": 10,
+        "direction": "older"
+      },
+      "expect": {
+        "pages": [
+          {
+            "date": "2026-10-20",
+            "entries": [1, 2],
+            "entry_count": 2,
+            "word_count": 4
+          },
+          {
+            "date": "2026-10-19",
+            "entries": [0],
+            "entry_count": 1,
+            "word_count": 2
+          }
+        ]
+      }
+    }
+  ]
+}

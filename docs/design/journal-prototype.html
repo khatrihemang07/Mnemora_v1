@@ -415,7 +415,7 @@ body[data-mtheme="dark"] .mx {
   <tr><td>D4 / D9</td><td><b>Page</b> means all Entries for one date, like a paper diary page. New Entries go on today's Page by default; you can add to or edit any past Page. In v1 a Page is only a container, but more per-Page data is expected later.</td></tr>
   <tr><td>D5</td><td>Every Entry keeps its <b>written timestamp</b> (date + time, in the time zone it was written in) and shows it with a faint "edited" mark. The date part is left out when it matches the Page's date: <code>08:12</code>, but <code>Mon 19 Oct, 09:12</code> for an Entry written later (where it sits: N5).</td></tr>
   <tr><td>D6</td><td>Entries on a Page are ordered oldest first. Pages are ordered newest first.</td></tr>
-  <tr><td>D7</td><td>A blank Entry is never saved. Clearing an existing Entry's text does not delete it.</td></tr>
+  <tr><td>D7</td><td>A blank Entry is never saved. Clearing an existing Entry's text does not delete it: finishing shows "Empty entries aren't saved. Kept the previous text." and the old text stays. A composer Entry that is cleared and finished (any path) is discarded with an Undo toast, "Entry discarded"; while focus stays in the box, empty text just waits.</td></tr>
   <tr><td>D8</td><td>No late-night handling: a new Entry always defaults to today's Page.</td></tr>
   <tr><td>D10</td><td>An Entry can move to another Page by changing its Page date. Its written timestamp never changes.</td></tr>
   <tr><td>D11</td><td>Browsing is one continuous scroll of Pages. Dates with no Entries are skipped silently, and the calendar is how you reach them.</td></tr>
@@ -1112,11 +1112,11 @@ const CAT = [
       { k: 'clamp', t: 'Clamp to ~8 lines + "Show more"', d: 'Easier skimming, but an extra click to read.' },
     ] },
     { id: 'N4', q: 'The "edited" mark', live: true, opts: [
-      { k: 'word', t: 'Faint word "edited"', rec: true, demo: demoEntry('21:40', 'Started Mnemora today.', 'edited'), d: 'Hover (desktop) or long-press (phone) shows the last edit time.' },
+      { k: 'word', t: 'Faint word "edited"', rec: true, demo: demoEntry('21:40', 'Started Mnemora today.', 'edited'), d: 'Hover (desktop only) shows the last edit time; every update past the grace period moves it forward. Not shown on a phone.' },
       { k: 'icon', t: 'Small pencil icon', demo: demoEntry('21:40', 'Started Mnemora today.', ic('pencil')), d: 'More compact.' },
       { k: 'none', t: 'Not shown in the feed', d: 'Only visible inside the Entry’s menu or editor.' },
     ] },
-    { id: 'N5', wide: true, q: 'Where the written date goes when it differs from the Page’s date', live: true, why: 'Every demo shows the same Page. Friday 16 October has two Entries written that day and one (highlighted) written later, on Mon 19 Oct at 09:12. Same-day Entries always show only the time. If the written year differs from the Page’s, the year is added ("Mon 19 Oct 2025"). Hovering or long-pressing the time always shows the full timestamp and time zone. The highlighted Entry sits last because of D6 (ordered by written timestamp). Picking an option also changes the Friday Page in the mock above.', opts: [
+    { id: 'N5', wide: true, q: 'Where the written date goes when it differs from the Page’s date', live: true, why: 'Every demo shows the same Page. Friday 16 October has two Entries written that day and one (highlighted) written later, on Mon 19 Oct at 09:12. Same-day Entries always show only the time. If the written year differs from the Page’s, the year is added ("Mon 19 Oct 2025"). Hovering the time (desktop only) shows the full timestamp and time zone; a phone has no tooltip. The highlighted Entry sits last because of D6 (ordered by written timestamp). Picking an option also changes the Friday Page in the mock above.', opts: [
       { k: 'stack', t: 'Stacked: small date above the time', rec: true, demo: n5Demo('stack'), d: 'The date lives where times always live, so the eye finds it in the margin. The text column is untouched. On phone (no margin) it reads "Mon 19 Oct 09:12" on the time line.' },
       { k: 'inline', t: 'One line: "Mon 19 Oct, 09:12"', demo: n5Demo('inline'), d: 'The time label simply becomes longer. It doesn’t fit a narrow margin, so with this option desktop puts every time above its text (overrides N1).' },
       { k: 'meta', t: 'Footnote: time stays, "written Mon 19 Oct" under the text', demo: n5Demo('meta'), d: 'The time column stays uniform; the date reads like a footnote at the end, next to "edited" when both apply.' },
@@ -1238,7 +1238,7 @@ const CAT = [
       { k: 'key', t: 'Every keystroke', d: 'Wasteful, no real benefit.' },
     ] },
     { id: 'S2', q: 'Save indicator', opts: [
-      { k: 'quiet', t: 'Silent when fine; speaks up only on failure', rec: true, d: 'Trust is built by never losing text, not by flashing "Saved".' },
+      { k: 'quiet', t: 'Silent when fine; speaks up only on failure', rec: true, d: 'Trust is built by never losing text, not by flashing "Saved". The hint line under the box in the mock is intentionally not built.' },
       { k: 'flash', t: 'A faint "Saved" that fades', d: 'Reassuring, slightly busy.' },
       { k: 'always', t: '"Saving… / Saved" always visible', d: 'Docs-style.' },
     ] },
@@ -1320,7 +1320,7 @@ const CAT = [
       { k: 'filter', t: 'Show only that Page', d: 'Breaks the continuous scroll.' },
     ] },
     { id: 'C5', q: 'Tapping an empty past day', opts: [
-      { k: 'offer', t: 'Inline message: "No entries on Thu 15 Oct" + Write on this day', rec: true, d: 'No accidental Entries. Double-click writes straight away (desktop).' },
+      { k: 'offer', t: 'Inline message: "No entries on Thu 15 Oct" + Write on this day', rec: true, d: 'No accidental Entries. No double-click shortcut.' },
       { k: 'direct', t: 'Start writing on that day immediately', d: 'Faster for backfilling.' },
     ] },
     { id: 'C6', q: 'Month navigation', opts: [

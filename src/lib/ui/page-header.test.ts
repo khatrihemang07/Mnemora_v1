@@ -18,3 +18,12 @@ describe('pageHeader', () => {
     expect(pageHeader.current).toBeNull();
   });
 });
+
+describe('pageHeader.env', () => {
+  it('starts unknown and holds what the shell sets', () => {
+    expect(pageHeader.env).toBeNull();
+    pageHeader.env = 'sandbox';
+    expect(pageHeader.env).toBe('sandbox');
+    pageHeader.env = null;
+  });
+});

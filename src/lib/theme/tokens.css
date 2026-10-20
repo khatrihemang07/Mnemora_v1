@@ -127,14 +127,12 @@
 }
 
 /* The phone always uses touch sizes, whatever the density Setting says. */
-@media (max-width: 719.98px) {
-  :root,
-  :root[data-density] {
-    --row: 44px;
-    --pad: 16px;
-    --gap: 14px;
-    --fs: 0.9375rem;
-  }
+:root[data-phone],
+:root[data-phone][data-density] {
+  --row: 44px;
+  --pad: 16px;
+  --gap: 14px;
+  --fs: 0.9375rem;
 }
 
 /* Text size scales every rem. */

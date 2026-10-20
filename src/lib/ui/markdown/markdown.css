@@ -113,7 +113,7 @@ ol.md-list {
   border-radius: 4px;
   transform: translateY(2px);
   color: var(--on-accent);
-  font-size: 11px;
+  font-size: var(--text-2xs);
   line-height: 1;
 }
 .md-cb[data-checked] {
@@ -149,10 +149,8 @@ ol.md-list {
     box-shadow: 0 0 0 4px var(--ring);
   }
 }
-@media (max-width: 719.98px) {
-  .md-task[data-tickable] .md-cb::after {
-    inset: -3px -15px;
-  }
+[data-phone] .md-task[data-tickable] .md-cb::after {
+  inset: -3px -15px;
 }
 
 .md-mark {

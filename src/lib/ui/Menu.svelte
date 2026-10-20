@@ -80,7 +80,7 @@
       collisionPadding={8}
       aria-label={label}
       {onCloseAutoFocus}
-      class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-[0.8125rem] shadow-pop outline-none"
+      class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-sm leading-normal shadow-pop outline-none"
     >
       {#each items as item (item.label)}
         {#if item.separatorBefore}
@@ -94,7 +94,7 @@
             item.onselect();
           }}
           class="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-1.5 select-none data-highlighted:bg-hover
-            min-[720px]:min-h-8 {item.danger ? 'text-danger' : 'text-ink'}"
+            desktop:min-h-8 {item.danger ? 'text-danger' : 'text-ink'}"
         >
           {#if item.icon}<item.icon class="size-4 shrink-0 {item.danger ? '' : 'text-muted'}" />{/if}
           <span class="flex-1">{item.label}</span>

@@ -32,7 +32,10 @@
   import TabBar from './TabBar.svelte';
   import TitleBar from './TitleBar.svelte';
 
-  createQuery(() => appInfoQuery);
+  const info = createQuery(() => appInfoQuery);
+  $effect(() => {
+    pageHeader.env = info.data?.environment ?? null;
+  });
   useAppearance();
   useSidebarPersistence();
   const enabled = useEnabledModules();
@@ -56,7 +59,7 @@
 
 <TooltipProvider>
   <div
-    class="flex h-full flex-col bg-bg text-ink"
+    class="flex h-full flex-col bg-bg text-ink {viewport.isPhone ? 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]' : ''}"
     style:padding-bottom={viewport.isPhone && keyboard.open ? `${keyboard.inset}px` : undefined}
   >
     {#if viewport.isPhone}

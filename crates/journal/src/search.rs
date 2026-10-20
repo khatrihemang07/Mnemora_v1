@@ -15,7 +15,7 @@ use crate::snippet::{Matcher, Span, snippet};
 
 /// Most exact Hits one search returns (newest first); more sets `truncated`.
 const MAX_EXACT: usize = 500;
-/// Most similar Hits one search returns.
+/// Most similar Hits one search returns (newest first); more sets `similar_truncated`.
 const MAX_SIMILAR: usize = 100;
 /// The vocabulary is read for words within this many letters of a query word, the widest
 /// tolerance, so far-off lengths are never fetched.
@@ -48,6 +48,8 @@ pub struct SearchResults {
     pub similar: Vec<Hit>,
     /// Whether `exact` was cut short at the limit.
     pub truncated: bool,
+    /// Whether `similar` was cut short at the limit.
+    pub similar_truncated: bool,
 }
 
 fn hits(rows: Vec<SearchRow>, matcher: &Matcher) -> Vec<Hit> {
@@ -92,6 +94,7 @@ pub fn search(
         exact: Vec::new(),
         similar: Vec::new(),
         truncated: false,
+        similar_truncated: false,
     };
     let Some(exact_match) = query::exact_match(&terms) else {
         if from.is_none() && to.is_none() {
@@ -114,9 +117,9 @@ pub fn search(
     exact.truncate(MAX_EXACT);
 
     let near = near_for(conn, &terms)?;
-    let similar =
+    let (similar, similar_truncated) =
         match query::expand_match(&terms, &near).filter(|_| near.iter().any(|n| !n.is_empty())) {
-            None => Vec::new(),
+            None => (Vec::new(), false),
             Some(expanded) => {
                 let rows = repo::search(
                     conn,
@@ -124,15 +127,19 @@ pub fn search(
                     Some(&exact_match),
                     from,
                     to,
-                    MAX_SIMILAR,
+                    MAX_SIMILAR + 1,
                 )?;
-                hits(rows, &Matcher::new(&terms, &near))
+                let cut = rows.len() > MAX_SIMILAR;
+                let mut similar = hits(rows, &Matcher::new(&terms, &near));
+                similar.truncate(MAX_SIMILAR);
+                (similar, cut)
             }
         };
     Ok(SearchResults {
         exact,
         similar,
         truncated,
+        similar_truncated,
     })
 }
 

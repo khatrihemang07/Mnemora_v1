@@ -136,14 +136,14 @@
       {showToday}
       {ontoday}
       onpick={pick}
-      class="w-full min-[720px]:w-67"
+      class="w-full desktop:w-67"
     />
     {@render footer?.()}
   </div>
 {/snippet}
 
 {#if viewport.isPhone}
-  <Sheet {open} {title} onclose={() => (open = false)} {restoreFocus}>{@render body()}</Sheet>
+  <Sheet {open} {title} onclose={() => (open = false)} {restoreFocus} closable>{@render body()}</Sheet>
 {:else}
   <Popover bind:open {anchor} label={title} focus="[data-date][tabindex='0']" {restoreFocus}>{@render body()}</Popover>
 {/if}

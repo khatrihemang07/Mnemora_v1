@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Page } from '../../lib/ipc/bindings';
+import { localDateString, pageHeading } from './dates';
 import {
   buildFeed,
   calendarStart,
@@ -8,6 +9,7 @@ import {
   pageAt,
   pageIndex,
   upcomingCount,
+  withoutEntry,
 } from './feed';
 
 const page = (date: string, entry_count = 1): Page => ({
@@ -123,5 +125,55 @@ describe('calendarStart', () => {
   });
   it('falls back to Today', () => {
     expect(calendarStart(null, '2026-10-20')).toEqual({ month: '2026-10', selected: '2026-10-20' });
+  });
+});
+
+describe('withoutEntry', () => {
+  const entry = (id: string, words: number) =>
+    ({ id, word_count: words }) as unknown as Page['entries'][number];
+  const full = (date: string, entries: Page['entries']): Page => ({
+    date,
+    entry_count: entries.length,
+    word_count: entries.reduce((n, e) => n + e.word_count, 0),
+    entries,
+  });
+
+  it('hides the Entry and takes it out of the Page counts', () => {
+    const pages = [full('2026-10-20', [entry('a', 3), entry('b', 5)])];
+    const [p] = withoutEntry(pages, 'b');
+    expect(p?.entries.map((e) => e.id)).toEqual(['a']);
+    expect(p?.entry_count).toBe(1);
+    expect(p?.word_count).toBe(3);
+  });
+  it('drops a Page that held only that Entry', () => {
+    const pages = [full('2026-10-20', [entry('a', 3)]), full('2026-10-19', [entry('b', 2)])];
+    expect(withoutEntry(pages, 'a').map((p) => p.date)).toEqual(['2026-10-19']);
+  });
+  it('keeps a Page that was already empty', () => {
+    const pages = [full('2026-10-20', [])];
+    expect(withoutEntry(pages, 'a')).toEqual(pages);
+  });
+  it('returns the same Pages when nothing is composing or the Entry is not loaded', () => {
+    const pages = [full('2026-10-20', [entry('a', 3)])];
+    expect(withoutEntry(pages, null)).toBe(pages);
+    expect(withoutEntry(pages, 'zzz')).toEqual(pages);
+  });
+});
+
+describe('past midnight', () => {
+  it('a clock tick across midnight moves Today: new empty Page, Yesterday badge, upcoming count', () => {
+    const loaded = [page('2026-10-21'), page('2026-10-20')];
+    const before = localDateString(new Date(2026, 9, 21, 23, 59, 59));
+    const after = localDateString(new Date(2026, 9, 22, 0, 0, 0));
+    expect(before).toBe('2026-10-21');
+    expect(after).toBe('2026-10-22');
+
+    const datesOf = (today: string) =>
+      buildFeed(loaded, today).flatMap((i) => (i.kind === 'page' ? [i.page.date] : []));
+    expect(datesOf(before)).toEqual(['2026-10-21', '2026-10-20']);
+    expect(datesOf(after)).toEqual(['2026-10-22', '2026-10-21', '2026-10-20']);
+    expect(pageHeading('2026-10-21', before).badge).toBe('Today');
+    expect(pageHeading('2026-10-21', after).badge).toBe('Yesterday');
+    expect(upcomingCount(loaded, after)).toBe(0);
   });
 });

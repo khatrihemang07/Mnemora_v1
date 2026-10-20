@@ -6,7 +6,7 @@
 
 import { toggleTaskLine } from '../ui/markdown/tasks';
 import type { AppError, Entry, NewEntry, Page, PageDirection } from './bindings';
-import { pageDates } from './mock-journal-pages';
+import { pageDates, validDate } from './mock-journal-pages';
 import { plainText, searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
 
@@ -23,18 +23,6 @@ const fail = (code: AppError['code'], message: string): AppError => ({
   details: null,
 });
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
-
-function validDate(date: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-  const [y = 0, m = 1, d = 1] = date.split('-').map(Number);
-  const probe = new Date(Date.UTC(y, m - 1, d));
-  return (
-    y >= 1 &&
-    probe.getUTCFullYear() === y &&
-    probe.getUTCMonth() === m - 1 &&
-    probe.getUTCDate() === d
-  );
-}
 
 function stripLinePrefix(line: string): string {
   return line
@@ -71,9 +59,13 @@ function mockId(): string {
   return crypto.randomUUID();
 }
 
-/** Switches to simulate failures. `?fail=journal_update` turns `failUpdate` on from the start. */
+/**
+ * Switches to simulate failures. `?fail=journal_update` turns `failUpdate` on from the start, and
+ * `?fail=journal_pages` turns on `failPages`.
+ */
 export interface JournalMockFlags {
   failUpdate: boolean;
+  failPages?: boolean;
 }
 
 /**
@@ -86,7 +78,7 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
   const deleted = new Map<string, number>();
   const live = () => all.filter((e) => !deleted.has(e.id));
   const find = (id: unknown) => live().find((e) => e.id === id);
-  const missing = () => fail('unknown_key', 'That Entry no longer exists');
+  const missing = () => fail('not_found', 'That Entry no longer exists');
 
   return {
     handles: (cmd: string) => cmd.startsWith('journal_'),
@@ -97,12 +89,11 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           const n = a.entry as NewEntry;
           if (!n.text.trim()) throw fail('validation', "An Entry can't be blank");
           if (!validDate(n.page_date)) throw fail('validation', 'Not a valid date');
-          if (
-            !n.written_tz.trim() ||
-            [...n.written_tz].length > MAX_ZONE_CHARS ||
-            Math.abs(n.written_offset_min) > MAX_OFFSET_MIN
-          ) {
+          if (!n.written_tz.trim() || [...n.written_tz].length > MAX_ZONE_CHARS) {
             throw fail('validation', 'Not a valid time zone');
+          }
+          if (Math.abs(n.written_offset_min) > MAX_OFFSET_MIN) {
+            throw fail('validation', 'Not a valid time zone offset');
           }
           const now = Date.now();
           const entry: Entry = {
@@ -135,8 +126,8 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           entry.body = text;
           entry.word_count = wordCount(text);
           entry.updated_at = now;
-          // Edited only once more than 10 minutes have passed since it was written (kept once set).
-          entry.edited_at ??= now - entry.written_at > EDIT_GRACE_MS ? now : null;
+          // The last edit: moves on every update past 10 minutes after it was written.
+          if (now - entry.written_at > EDIT_GRACE_MS) entry.edited_at = now;
           return copy(entry);
         }
         case 'journal_entry_toggle_task': {
@@ -175,14 +166,18 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           ].sort();
         }
         case 'journal_entry_delete': {
-          if (!find(a.id)) throw missing();
-          deleted.set(a.id as string, Date.now());
+          const entry = find(a.id);
+          if (!entry) throw missing();
+          const now = Date.now();
+          entry.updated_at = now;
+          deleted.set(entry.id, now);
           return null;
         }
         case 'journal_entry_restore': {
           const entry = all.find((e) => e.id === a.id && deleted.has(e.id));
           if (!entry) throw missing();
           deleted.delete(entry.id);
+          entry.updated_at = Date.now();
           return copy(entry);
         }
         case 'journal_today': {
@@ -214,6 +209,12 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
             ),
           );
         case 'journal_pages': {
+          if (flags.failPages) {
+            throw {
+              ...fail('database', 'Could not read the Journal'),
+              details: 'mock: simulated load failure',
+            };
+          }
           const cursor = a.cursor as string | null;
           if (cursor !== null && !validDate(cursor)) throw fail('validation', 'Not a valid date');
           const limit = Math.min(MAX_PAGES, Math.max(1, a.limit as number));

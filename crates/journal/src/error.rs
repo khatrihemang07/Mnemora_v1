@@ -20,7 +20,7 @@ impl From<JournalError> for AppError {
     fn from(e: JournalError) -> Self {
         let code = match &e {
             JournalError::Validation(_) => ErrorCode::Validation,
-            JournalError::EntryNotFound => ErrorCode::UnknownKey,
+            JournalError::EntryNotFound => ErrorCode::NotFound,
             JournalError::Snapshot(_) => ErrorCode::Internal,
         };
         let error = Self::new(code, e.to_string());
@@ -43,7 +43,7 @@ mod tests {
             (ErrorCode::Validation, "Not a valid date")
         );
         let n: AppError = JournalError::EntryNotFound.into();
-        assert_eq!(n.code, ErrorCode::UnknownKey);
+        assert_eq!(n.code, ErrorCode::NotFound);
         let s: AppError =
             JournalError::Snapshot(serde_json::from_str::<u8>("x").unwrap_err()).into();
         assert_eq!(s.code, ErrorCode::Internal);

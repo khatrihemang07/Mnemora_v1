@@ -17,7 +17,7 @@ export class EntryFocus {
   /** The loaded Entries in feed order. */
   entries: () => FeedEntryRef[] = () => [];
   /** Today's date, for ↑ from the composer. */
-  today = '';
+  today = $state('');
   /** Scrolls to the Entry (loading its Page into view if needed), gives its row focus. */
   reveal: ((id: string) => Promise<void>) | null = null;
   /** Loads older Pages; resolves when they have arrived. */
