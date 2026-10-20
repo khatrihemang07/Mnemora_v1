@@ -23,6 +23,15 @@ export const commands = {
 	backupNow: () => typedError<string, AppError>(__TAURI_INVOKE("backup_now")),
 	/**  Opens the log folder in the system file manager. */
 	openLogDir: () => typedError<null, AppError>(__TAURI_INVOKE("open_log_dir")),
+	/**  Writes a new Entry on a Page. Rejects blank text and invalid dates or zones. */
+	journalEntryCreate: (entry: NewEntry) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_create", { entry })),
+	/**  Replaces an Entry's text. `session_id` groups a composer session's saves in the change log. */
+	journalEntryUpdate: (id: string, text: string, sessionId: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_update", { id, text, sessionId })),
+	/**
+	 *  Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
+	 *  from the previous request). Fewer Pages than `limit` means the end.
+	 */
+	journalPages: (cursor: string | null, limit: number) => typedError<Page[], AppError>(__TAURI_INVOKE("journal_pages", { cursor, limit })),
 };
 
 /** Events */
@@ -63,6 +72,30 @@ export type DeviceSettings = {
 	log_level?: string,
 };
 
+/**  One untitled piece of writing on a Page. */
+export type Entry = {
+	/**  `UUIDv7`. */
+	id: string,
+	/**  The Page this Entry sits on, `YYYY-MM-DD`. */
+	page_date: string,
+	/**  Markdown text. */
+	body: string,
+	/**  When it was written: UTC milliseconds. Never changes. */
+	written_at: number,
+	/**  UTC offset in minutes where it was written. */
+	written_offset_min: number,
+	/**  IANA zone where it was written. */
+	written_tz: string,
+	/**  When it was last meaningfully edited: UTC milliseconds. */
+	edited_at: number | null,
+	/**  Words in the body, not counting Markdown symbols. */
+	word_count: number,
+	/**  Row creation time: UTC milliseconds. */
+	created_at: number,
+	/**  Row update time: UTC milliseconds. */
+	updated_at: number,
+};
+
 /**  Which data set the app uses. Chosen by the `sandbox` cargo feature of the app crate. */
 export type Environment = 
 /**  The user's real data. */
@@ -88,6 +121,28 @@ export type ErrorCode =
  *  fields stay `serde_json::Value`, which specta cannot export (recursive, i64 numbers).
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**  Everything the UI supplies to write a new Entry. */
+export type NewEntry = {
+	/**  The Page to put it on, `YYYY-MM-DD`. Future dates are fine. */
+	page_date: string,
+	/**  Markdown text. */
+	text: string,
+	/**  IANA zone of the writer's device. */
+	written_tz: string,
+	/**  UTC offset in minutes of the writer's device. */
+	written_offset_min: number,
+	/**  The composer session writing this Entry; groups its autosaves in the change log. */
+	session_id: string,
+};
+
+/**  All Entries of one date, oldest first. */
+export type Page = {
+	/**  `YYYY-MM-DD`. */
+	date: string,
+	/**  Entries by written instant, oldest first. */
+	entries: Entry[],
+};
 
 /**  Wire form of a registered key, so the UI can render defaults and reset buttons. */
 export type SettingSchema = {

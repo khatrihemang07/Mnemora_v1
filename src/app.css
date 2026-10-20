@@ -99,6 +99,11 @@ textarea,
   outline-offset: 1px;
   box-shadow: 0 0 0 4px var(--ring);
 }
+/* A field inside a frame that shows focus itself (the Journal composer). */
+[data-bare]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
 
 /* N11-A: thin scrollbars that appear on hover. */
 * {

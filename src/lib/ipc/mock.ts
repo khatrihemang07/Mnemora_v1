@@ -7,6 +7,7 @@
 import { mockIPC } from '@tauri-apps/api/mocks';
 import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bindings';
 import { events } from './bindings';
+import { createJournalMock } from './mock-journal';
 
 type Validator = (v: JsonValue) => string | null;
 
@@ -53,6 +54,8 @@ export async function installMock() {
     sidebar: { width: 248, rail: false },
     log_level: 'info',
   };
+
+  const journal = createJournalMock();
 
   applyPrePaintAttributes(values);
 
@@ -118,7 +121,7 @@ export async function installMock() {
         case 'open_log_dir':
           return null;
         default:
-          return undefined;
+          return journal.handles(cmd) ? journal.handle(cmd, a) : undefined;
       }
     },
     { shouldMockEvents: true },
