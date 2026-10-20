@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
 use serde_json::json;
 
+use crate::db::migrate::MigrationReport;
 use crate::error::AppResult;
 use crate::settings::{SettingsRegistry, validate};
 
@@ -20,8 +21,9 @@ pub trait Module: Send + Sync {
     fn register_settings(&self, reg: &mut SettingsRegistry);
 
     /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
-    /// purging old rows). No polling: nothing calls this again. Never log user content.
-    fn on_startup(&self, _conn: &mut Connection) -> AppResult<()> {
+    /// purging old rows, or upgrade steps keyed on what `report` says this run applied). No
+    /// polling: nothing calls this again. Never log user content.
+    fn on_startup(&self, _conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {
         Ok(())
     }
 }

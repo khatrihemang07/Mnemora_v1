@@ -574,7 +574,7 @@ mod tests {
         deleted_days_ago(&app, &recent["id"], 29);
 
         // The startup hook is what the app runs; it purges through the Module contract.
-        app.with_db_mut(|c| mnemora_journal::JournalModule.on_startup(c).unwrap());
+        app.with_db_mut(|c| mnemora_journal::JournalModule.on_startup(c, &Default::default()).unwrap());
 
         assert_eq!(row_count(&app, "journal_entries"), 2);
         let logged: Vec<String> = app.with_db(|c| {

@@ -141,7 +141,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
 
     // Once per start, after migrations. A failing Module must not stop the app.
     for module in &modules {
-        if let Err(e) = module.on_startup(&mut conn) {
+        if let Err(e) = module.on_startup(&mut conn, &report) {
             tracing::warn!(module = module.id(), error = %e, "startup work failed");
         }
     }

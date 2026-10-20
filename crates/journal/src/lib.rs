@@ -13,8 +13,10 @@ mod search;
 mod service;
 mod snippet;
 mod today;
+mod upgrade;
 mod words;
 
+use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
@@ -62,7 +64,8 @@ impl Module for JournalModule {
         reg.register(MODULE_ID, "page_summary", json!(true), validate::boolean());
     }
 
-    fn on_startup(&self, conn: &mut Connection) -> AppResult<()> {
+    fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
+        upgrade::keep_existing_phone_tabs(conn, report)?;
         match purge_deleted(conn)? {
             0 => {}
             n => tracing::info!(
