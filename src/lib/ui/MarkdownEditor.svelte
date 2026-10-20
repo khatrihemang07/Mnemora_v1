@@ -156,7 +156,7 @@
 </script>
 
 <div class="md min-w-0 {cls}" data-font={font} style:--md-max-height={maxHeight}>
-  <div bind:this={host}></div>
+  <div bind:this={host} class="scroll-my-16"></div>
   {#if !ctrl}
     <!-- Until CodeMirror has loaded: the same box, so nothing jumps when it arrives. -->
     <div class="md-p {value ? '' : 'text-faint'}">{value || placeholder}</div>
