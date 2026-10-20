@@ -29,6 +29,7 @@
   import IconButton from '../../lib/ui/IconButton.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Pill from '../../lib/ui/Pill.svelte';
+  import { keyboard } from '../../lib/keyboard.svelte';
   import KeyboardBar from '../../lib/ui/KeyboardBar.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import VirtualList from '../../lib/ui/VirtualList.svelte';
@@ -479,11 +480,11 @@
     {/if}
   </div>
   <ComposerDock class={search.active ? 'hidden' : ''} />
+  <KeyboardBar
+    visible={viewport.isPhone && keyboard.open && editing.active !== null}
+    onaction={(command) => editing.active?.run(command)}
+  />
 </div>
-<KeyboardBar
-  visible={viewport.isPhone && editing.active !== null}
-  onaction={(command) => editing.active?.run(command)}
-/>
 <UnsavedEntryDialog />
 <JournalCalendar
   bind:open={calendarOpen}

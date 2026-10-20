@@ -16,6 +16,7 @@
   import ResizablePanes from '../lib/ui/ResizablePanes.svelte';
   import Toaster from '../lib/ui/Toaster.svelte';
   import TooltipProvider from '../lib/ui/TooltipProvider.svelte';
+  import { keyboard } from '../lib/keyboard.svelte';
   import { viewport } from '../lib/viewport.svelte';
   import { useAppearance } from './appearance.svelte';
   import { redirectForDisabled } from './enabled-modules';
@@ -54,12 +55,15 @@
 <svelte:window onkeydown={onKeydown} />
 
 <TooltipProvider>
-  <div class="flex h-full flex-col bg-bg text-ink">
+  <div
+    class="flex h-full flex-col bg-bg text-ink"
+    style:padding-bottom={viewport.isPhone && keyboard.open ? `${keyboard.inset}px` : undefined}
+  >
     {#if viewport.isPhone}
       <main class="min-h-0 flex-1 pt-[env(safe-area-inset-top)]">
         <RouterOutlet pathname={router.pathname} />
       </main>
-      <TabBar />
+      {#if !keyboard.open}<TabBar />{/if}
     {:else if shell.layoutReady}
       <ResizablePanes
         width={shownWidth(shell.layout)}

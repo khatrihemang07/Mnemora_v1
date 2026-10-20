@@ -1,7 +1,8 @@
 <!--
-  KeyboardBar: the phone's formatting row, shown just above the on-screen keyboard while an editor
-  has focus. Bold, italic, heading, bullet, checklist, quote and link run the same commands as the
-  desktop shortcuts. Buttons never take focus, so the editor and its keyboard stay up.
+  KeyboardBar: the phone's formatting row, the last row of the page, so it sits right above the
+  on-screen keyboard (the app shell keeps the page above it). Shown only while an editor has focus
+  and the keyboard is up. Bold, italic, heading, bullet, checklist, quote and link run the same
+  commands as the desktop shortcuts. Buttons never take focus, so the editor and keyboard stay up.
 -->
 <script lang="ts">
   import type { Component } from 'svelte';
@@ -29,32 +30,13 @@
     { label: 'Quote', icon: Quote, command: { type: 'block', kind: 'quote' } },
     { label: 'Link', icon: Link, command: { type: 'link' } },
   ];
-
-  // The keyboard may overlay the page instead of resizing it: follow the visible viewport so the
-  // bar always sits right on top of it.
-  let lift = $state(0);
-  $effect(() => {
-    const vv = window.visualViewport;
-    if (!visible || !vv) return;
-    const update = () => {
-      lift = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-    };
-    update();
-    vv.addEventListener('resize', update);
-    vv.addEventListener('scroll', update);
-    return () => {
-      vv.removeEventListener('resize', update);
-      vv.removeEventListener('scroll', update);
-    };
-  });
 </script>
 
 {#if visible}
   <div
     role="toolbar"
     aria-label="Formatting"
-    class="fixed inset-x-0 z-40 flex gap-0.5 border-t border-line bg-surface-2 px-1.5 py-1"
-    style:bottom="{lift}px"
+    class="flex shrink-0 gap-0.5 border-t border-line bg-surface-2 px-1.5 py-1"
   >
     {#each BUTTONS as b (b.label)}
       <button
