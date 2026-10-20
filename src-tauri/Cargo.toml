@@ -22,6 +22,7 @@ tauri-build.workspace = true
 [dependencies]
 mnemora-core.workspace = true
 mnemora-journal.workspace = true
+mnemora-todo.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true

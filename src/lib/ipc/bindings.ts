@@ -61,6 +61,17 @@ export const commands = {
 	 *  last, as a plain-text snippet. For the Home card.
 	 */
 	journalToday: (today: string) => typedError<TodaySummary, AppError>(__TAURI_INVOKE("journal_today", { today })),
+	/**  The Inbox: open Tasks that belong to no List, in manual order (new Tasks last). */
+	todoInbox: () => typedError<InboxView, AppError>(__TAURI_INVOKE("todo_inbox")),
+	/**
+	 *  Adds a Task to the bottom of the Inbox. Rejects a blank title, one over 500 characters and
+	 *  one with a line break.
+	 */
+	todoTaskCreate: (title: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title })),
+	/**  Marks an open Task done, now. */
+	todoTaskComplete: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_complete", { id })),
+	/**  Brings a done Task back to open, in its old place. */
+	todoTaskReopen: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_reopen", { id })),
 };
 
 /** Events */
@@ -163,6 +174,12 @@ export type Hit = {
 	written_tz: string,
 	/**  A window of its text with the matches marked. */
 	snippet: Span[],
+};
+
+/**  The Inbox: open Tasks that belong to no List, in manual order. */
+export type InboxView = {
+	/**  Open Tasks, first to last. */
+	tasks: Task[],
 };
 
 /**
@@ -270,6 +287,55 @@ export type Span = {
 	/**  Whether it matched the search. */
 	matched: boolean,
 };
+
+/**  One thing to do. */
+export type Task = {
+	/**  `UUIDv7`. */
+	id: string,
+	/**  The List it belongs to; none means the Inbox. */
+	list_id: string | null,
+	/**  One line, up to 500 characters. */
+	title: string,
+	/**  Markdown notes. */
+	notes: string,
+	/**  Due date, `YYYY-MM-DD`. */
+	due_date: string | null,
+	/**  Due time, `HH:MM`, floating local. */
+	due_time: string | null,
+	/**  Repeat unit: `day`, `week`, `month` or `year`. */
+	repeat_freq: string | null,
+	/**  Repeat interval, 1 to 99. */
+	repeat_every: number | null,
+	/**  Weekday bitmask for weekly Repeats. */
+	repeat_days: number | null,
+	/**  `fixed` (from the Due date) or `after` (from the day it was done). */
+	repeat_mode: string | null,
+	/**  1 (highest) to 4 (none). */
+	priority: number,
+	/**  Open, done or Won't do. */
+	state: TaskState,
+	/**  When it was done or marked Won't do: UTC milliseconds. */
+	closed_at: number | null,
+	/**  For an occurrence copy, the Task it was made from. */
+	repeat_of: string | null,
+	/**  What the natural-language parser recognised, as JSON. */
+	understood: string | null,
+	/**  Text that sorts bytewise into the manual order, shared by every Task. */
+	sort_key: string,
+	/**  Row creation time: UTC milliseconds. */
+	created_at: number,
+	/**  Row update time: UTC milliseconds. */
+	updated_at: number,
+};
+
+/**  Where a Task stands. A Task is open until it is done or marked Won't do. */
+export type TaskState = 
+/**  Still to do. */
+"open" | 
+/**  Completed; `closed_at` says when. */
+"done" | 
+/**  Decided against; `closed_at` says when. */
+"wont";
 
 /**  The Entry written last on the day. */
 export type TodayLatest = {

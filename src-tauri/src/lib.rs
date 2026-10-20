@@ -31,6 +31,10 @@ macro_rules! specta_builder_for {
                 journal::journal_pages,
                 journal::journal_search,
                 journal::journal_today,
+                todo::todo_inbox,
+                todo::todo_task_create,
+                todo::todo_task_complete,
+                todo::todo_task_reopen,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
     };
@@ -43,6 +47,7 @@ mod state;
 #[cfg(test)]
 mod test_support;
 mod theme_inject;
+mod todo;
 #[cfg(desktop)]
 mod window_state;
 
@@ -58,6 +63,7 @@ use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::{SettingsRegistry, SettingsStore};
 use mnemora_journal::JournalModule;
+use mnemora_todo::TodoModule;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{Manager, WebviewWindowBuilder};
@@ -82,7 +88,11 @@ pub struct SettingsChangedEvent(pub SettingsChanged);
 
 /// Every Module in the app, in migration order. The one place Modules are registered.
 fn modules() -> Vec<Box<dyn Module>> {
-    vec![Box::new(CoreModule), Box::new(JournalModule)]
+    vec![
+        Box::new(CoreModule),
+        Box::new(JournalModule),
+        Box::new(TodoModule),
+    ]
 }
 
 /// A Settings store over every Module's registered keys.
@@ -255,6 +265,10 @@ mod tests {
             "journalPages",
             "journalSearch",
             "journalToday",
+            "todoInbox",
+            "todoTaskCreate",
+            "todoTaskComplete",
+            "todoTaskReopen",
             "deviceSetSpellcheck",
             "settingsChangedEvent",
         ] {

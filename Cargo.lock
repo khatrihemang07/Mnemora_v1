@@ -2127,6 +2127,7 @@ version = "0.1.0"
 dependencies = [
  "mnemora-core",
  "mnemora-journal",
+ "mnemora-todo",
  "serde",
  "serde_json",
  "specta",
@@ -2160,6 +2161,21 @@ dependencies = [
 
 [[package]]
 name = "mnemora-journal"
+version = "0.1.0"
+dependencies = [
+ "mnemora-core",
+ "rusqlite",
+ "rusqlite_migration",
+ "serde",
+ "serde_json",
+ "specta",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "mnemora-todo"
 version = "0.1.0"
 dependencies = [
  "mnemora-core",
