@@ -140,3 +140,24 @@ pub fn pages(
     }
     Ok(out)
 }
+
+/// Sets the Page date only.
+pub fn update_page_date(conn: &Connection, e: &Entry) -> AppResult<()> {
+    conn.execute(
+        "UPDATE journal_entries SET page_date = ?2, updated_at = ?3 WHERE id = ?1",
+        params![e.id, e.page_date, e.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Distinct dates with live Entries between `first` and `last` inclusive, oldest first.
+pub fn dates_between(conn: &Connection, first: &str, last: &str) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT page_date FROM journal_entries
+         WHERE deleted_at IS NULL AND page_date BETWEEN ?1 AND ?2
+         ORDER BY page_date",
+    )?;
+    Ok(stmt
+        .query_map(params![first, last], |r| r.get(0))?
+        .collect::<Result<_, _>>()?)
+}

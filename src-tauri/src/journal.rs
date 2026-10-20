@@ -53,6 +53,29 @@ pub fn journal_entry_restore(state: State<'_, AppState>, id: String) -> Result<E
     mnemora_journal::restore_entry(&mut lock(&state.db), &id)
 }
 
+/// Moves an Entry to another Page. Only the Page date changes; the written timestamp never does.
+/// Future dates are allowed.
+#[tauri::command]
+#[specta::specta]
+pub fn journal_entry_move(
+    state: State<'_, AppState>,
+    id: String,
+    page_date: String,
+) -> Result<Entry, AppError> {
+    mnemora_journal::move_entry(&mut lock(&state.db), &id, &page_date)
+}
+
+/// Dates (`YYYY-MM-DD`) in the month (`month` is 1-12) that have live Entries, for calendar dots.
+#[tauri::command]
+#[specta::specta]
+pub fn journal_month_days(
+    state: State<'_, AppState>,
+    year: u32,
+    month: u32,
+) -> Result<Vec<String>, AppError> {
+    mnemora_journal::month_days(&lock(&state.db), year, month)
+}
+
 /// Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
 /// from the previous request). Fewer Pages than `limit` means the end.
 #[tauri::command]
@@ -549,5 +572,133 @@ mod tests {
             app.with_db_mut(|c| mnemora_journal::purge_deleted(c).unwrap()),
             0
         );
+    }
+
+    fn move_to(app: &TestApp, id: &Value, date: &str) -> Result<Value, Value> {
+        app.invoke("journal_entry_move", json!({ "id": id, "pageDate": date }))
+    }
+
+    fn month_days(app: &TestApp, year: u32, month: u32) -> Vec<String> {
+        app.invoke(
+            "journal_month_days",
+            json!({ "year": year, "month": month }),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn move_changes_only_the_page_and_logs_a_move() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "- [ ] keep").unwrap();
+        written_minutes_ago(&app, &e["id"], 60);
+        let e = pages(&app, None, 1)[0]["entries"][0].clone();
+
+        let m = move_to(&app, &e["id"], "2026-10-19").unwrap();
+        assert_eq!(m["page_date"], "2026-10-19");
+        for field in [
+            "written_at",
+            "written_tz",
+            "written_offset_min",
+            "body",
+            "edited_at",
+        ] {
+            assert_eq!(m[field], e[field], "{field} is untouched by a move");
+        }
+        let listed = pages(&app, None, 10);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0]["date"], "2026-10-19");
+        assert_eq!(listed[0]["entries"][0], m);
+        let ops: Vec<String> = log_ops(&app).into_iter().map(|(op, _)| op).collect();
+        assert_eq!(ops, ["create", "move"]);
+    }
+
+    #[test]
+    fn move_accepts_a_future_date_and_rejects_bad_ones() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "x").unwrap();
+        assert_eq!(
+            move_to(&app, &e["id"], "2999-01-01").unwrap()["page_date"],
+            "2999-01-01"
+        );
+        assert_eq!(
+            move_to(&app, &e["id"], "2026-02-30").unwrap_err()["code"],
+            "validation"
+        );
+        assert_eq!(pages(&app, None, 1)[0]["date"], "2999-01-01");
+        // Moving to where it already is changes nothing and logs nothing.
+        move_to(&app, &e["id"], "2999-01-01").unwrap();
+        assert_eq!(log_ops(&app).len(), 2);
+    }
+
+    #[test]
+    fn a_deleted_or_unknown_entry_cannot_be_moved() {
+        let app = TestApp::new();
+        let e = create(&app, "2026-10-20", "x").unwrap();
+        delete(&app, &e["id"]).unwrap();
+        assert_eq!(
+            move_to(&app, &e["id"], "2026-10-19").unwrap_err()["code"],
+            "unknown_key"
+        );
+        assert_eq!(
+            move_to(&app, &json!("nope"), "2026-10-19").unwrap_err()["code"],
+            "unknown_key"
+        );
+        // Restoring it brings it back where it was, not where the move was attempted.
+        assert_eq!(restore(&app, &e["id"]).unwrap()["page_date"], "2026-10-20");
+    }
+
+    #[test]
+    fn future_pages_come_before_today_and_cursor_paging_still_works() {
+        let app = TestApp::new();
+        for d in ["2026-10-20", "2026-12-25", "2026-10-19", "2027-01-01"] {
+            create(&app, d, "x").unwrap();
+        }
+        let dates = |p: Vec<Value>| -> Vec<String> {
+            p.iter()
+                .map(|p| p["date"].as_str().unwrap().into())
+                .collect()
+        };
+        assert_eq!(
+            dates(pages(&app, None, 10)),
+            ["2027-01-01", "2026-12-25", "2026-10-20", "2026-10-19"]
+        );
+        assert_eq!(
+            dates(pages(&app, Some("2026-12-25"), 10)),
+            ["2026-10-20", "2026-10-19"]
+        );
+    }
+
+    #[test]
+    fn month_days_lists_exactly_the_dates_with_live_entries_in_that_month() {
+        let app = TestApp::new();
+        let gone = create(&app, "2026-10-12", "gone").unwrap();
+        delete(&app, &gone["id"]).unwrap();
+        for d in [
+            "2026-09-30",
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-05",
+            "2026-10-31",
+            "2026-11-01",
+            "2027-10-05",
+        ] {
+            create(&app, d, "x").unwrap();
+        }
+        let both = create(&app, "2026-10-20", "x").unwrap();
+        create(&app, "2026-10-20", "y").unwrap();
+        assert_eq!(
+            month_days(&app, 2026, 10),
+            ["2026-10-01", "2026-10-05", "2026-10-20", "2026-10-31"]
+        );
+        // Deleting one of two Entries on a day keeps the day; a move shifts it.
+        delete(&app, &both["id"]).unwrap();
+        assert!(month_days(&app, 2026, 10).contains(&"2026-10-20".to_owned()));
+        assert!(month_days(&app, 2026, 12).is_empty());
+        for (y, m) in [(2026, 0), (2026, 13), (0, 1)] {
+            let err = app
+                .invoke::<Value>("journal_month_days", json!({ "year": y, "month": m }))
+                .unwrap_err();
+            assert_eq!(err["code"], "validation", "{y}-{m}");
+        }
     }
 }

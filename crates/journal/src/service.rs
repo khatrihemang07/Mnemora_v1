@@ -115,6 +115,23 @@ pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResu
     Ok(entry)
 }
 
+/// Moves an Entry to another Page (future dates are fine). Only the Page changes: the written
+/// instant, text and "edited" mark stay as they were.
+pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult<Entry> {
+    validate_page_date(page_date)?;
+    let tx = conn.transaction()?;
+    let mut entry = repo::get(&tx, id)?.ok_or_else(missing)?;
+    if entry.page_date == page_date {
+        return Ok(entry);
+    }
+    page_date.clone_into(&mut entry.page_date);
+    entry.updated_at = now_ms();
+    repo::update_page_date(&tx, &entry)?;
+    record(&tx, &entry, ChangeOp::Move, None)?;
+    tx.commit()?;
+    Ok(entry)
+}
+
 /// Soft-deletes an Entry: it leaves its Page at once and is erased after 30 days.
 pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
@@ -146,6 +163,19 @@ pub fn purge_deleted(conn: &mut Connection) -> AppResult<usize> {
     changelog::purge(&tx, ENTITY, &ids)?;
     tx.commit()?;
     Ok(ids.len())
+}
+
+/// Dates in the given month (`month` is 1-12) that hold live Entries, oldest first.
+pub fn month_days(conn: &Connection, year: u32, month: u32) -> AppResult<Vec<String>> {
+    if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
+        return Err(AppError::new(ErrorCode::Validation, "Not a valid month"));
+    }
+    // Dates are fixed-width text, so the month is a plain range; day 31 bounds every month.
+    repo::dates_between(
+        conn,
+        &format!("{year:04}-{month:02}-01"),
+        &format!("{year:04}-{month:02}-31"),
+    )
 }
 
 /// Up to `limit` Pages, newest first, continuing before the `cursor` date when given.

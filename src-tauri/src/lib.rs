@@ -25,6 +25,8 @@ macro_rules! specta_builder_for {
                 journal::journal_entry_toggle_task,
                 journal::journal_entry_delete,
                 journal::journal_entry_restore,
+                journal::journal_entry_move,
+                journal::journal_month_days,
                 journal::journal_pages,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
@@ -248,6 +250,8 @@ mod tests {
             "journalEntryToggleTask",
             "journalEntryDelete",
             "journalEntryRestore",
+            "journalEntryMove",
+            "journalMonthDays",
             "journalPages",
             "settingsChangedEvent",
         ] {

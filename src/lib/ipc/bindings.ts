@@ -34,6 +34,13 @@ export const commands = {
 	/**  Brings a deleted Entry back to its place on its Page. */
 	journalEntryRestore: (id: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_restore", { id })),
 	/**
+	 *  Moves an Entry to another Page. Only the Page date changes; the written timestamp never does.
+	 *  Future dates are allowed.
+	 */
+	journalEntryMove: (id: string, pageDate: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_move", { id, pageDate })),
+	/**  Dates (`YYYY-MM-DD`) in the month (`month` is 1-12) that have live Entries, for calendar dots. */
+	journalMonthDays: (year: number, month: number) => typedError<string[], AppError>(__TAURI_INVOKE("journal_month_days", { year, month })),
+	/**
 	 *  Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
 	 *  from the previous request). Fewer Pages than `limit` means the end.
 	 */
