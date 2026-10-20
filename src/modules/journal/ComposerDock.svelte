@@ -119,6 +119,7 @@
         value={text}
         onchange={(t) => {
           text = t;
+          editing.arrived = null;
           composer.input(t);
         }}
         onfinish={() => void finish()}

@@ -359,7 +359,11 @@ export function createEditor(opts: EditorOptions): EditorController {
 
   const view = new EditorView({
     parent: opts.parent,
-    state: EditorState.create({ doc: opts.doc, extensions }),
+    state: EditorState.create({
+      doc: opts.doc,
+      selection: EditorSelection.cursor(opts.doc.length),
+      extensions,
+    }),
   });
 
   // Web fonts change line metrics after the first measure.
@@ -384,12 +388,10 @@ export function createEditor(opts: EditorOptions): EditorController {
       if (optionId === null) {
         el.removeAttribute('aria-activedescendant');
         el.removeAttribute('aria-controls');
-        el.setAttribute('aria-expanded', 'false');
         return;
       }
       el.setAttribute('aria-controls', listId);
       el.setAttribute('aria-activedescendant', optionId);
-      el.setAttribute('aria-expanded', 'true');
     },
     pickSlash: (id) =>
       chooseSlash(

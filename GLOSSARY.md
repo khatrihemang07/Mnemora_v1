@@ -48,5 +48,9 @@ _Avoid_: Note, post, log, record
 **Page**:
 All the Entries for one calendar date, like a dated page in a paper diary. Today's Page is the default, but an Entry can be written on or moved to any past Page.
 _Avoid_: Day, day page, date
+
+**Editing session**:
+One continuous stretch of writing or editing an Entry, from opening it (or starting the composer) until you finish. All its autosaves become one record in the change log. An Entry counts as edited only when a change comes more than 10 minutes after it was written.
+_Avoid_: Draft, revision
 _Avoid_: Dashboard, landing page
 

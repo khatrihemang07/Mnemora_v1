@@ -108,10 +108,17 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Input` | A single-line text field |
 | `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToTop()` respects reduced motion; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
 | `Textarea` | A multi-line text field that grows with its content up to a cap. Unstyled box: the parent supplies the frame |
+| `MarkdownEditor` | Live Markdown writing: CodeMirror 6, loaded on first use. Marks stay visible but faded; shortcuts, list keys, auto-pairs, slash menu, rich-text paste, ⌘/Ctrl-click links. `value` + `onchange`, `onfinish` (Esc, ⌘↵), `bare` for a framed parent, `font`, `spellcheck`, `slashValues`; `focus()` / `run()` via `bind:this`. Never import CodeMirror anywhere else |
+| `MarkdownView` | Read-only Markdown. Same parser and typography as the editor (`markdown.css`: `.md*`), symbols hidden, built from Svelte elements, **never `{@html}`**. Links open externally; checklist rows look like checkboxes and take an `ontoggle` hook |
+| `KeyboardBar` | The phone formatting row above the keyboard while an editor is focused (B, I, H, bullet, checklist, quote, link). Buttons never steal focus; it follows the visual viewport |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |
 | `SettingRow` | One Setting: label + hint left, control right (stacked on phone) |
 | `SaveBar` | Appears while a form has unsaved edits (Save / Discard) |
+
+## Markdown typography
+
+The editor and the read view share one set of rules in `src/lib/ui/markdown/markdown.css` so that writing and reading line up: body in the display serif by default (`font="sans"` for the UI font), 16px, line-height 1.65; headings 1–3 in the display serif at `--display-weight` (1.35em, 1.18em, 1.05em); blocks 0.55em apart; quotes with a coral bar; highlight from `--warning`; code on `--surface-2`. While editing, every Markdown mark is visible at `--faint`, and the editor reproduces the block gaps (a blank line is 0.55em tall, a block directly followed by another is padded 0.55em), so only the marks themselves move the text.
 
 ## Layout
 
