@@ -1,20 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { Composer, SAVE_PAUSE_MS } from './composer';
 
-function setup(opts: { failCreate?: boolean; failUpdate?: boolean } = {}) {
+function setup(opts: { failCreate?: boolean; failUpdate?: boolean; failMove?: boolean } = {}) {
   const calls: string[] = [];
   const errors: unknown[] = [];
   let timer: (() => void) | null = null;
   let sessions = 0;
   const c = new Composer({
-    create: async (text, session) => {
-      calls.push(`create:${text}:${session}`);
+    create: async (text, session, pageDate) => {
+      calls.push(`create:${text}:${session}${pageDate ? `@${pageDate}` : ''}`);
       if (opts.failCreate) throw new Error('nope');
       return { id: 'e1' };
     },
     update: async (id, text, session) => {
       calls.push(`update:${id}:${text}:${session}`);
       if (opts.failUpdate) throw new Error('nope');
+    },
+    move: async (id, date) => {
+      calls.push(`move:${id}:${date}`);
+      if (opts.failMove) throw new Error('nope');
     },
     setTimer: (fn, ms) => {
       expect(ms).toBe(SAVE_PAUSE_MS);
@@ -127,5 +131,45 @@ describe('Composer', () => {
     await settle();
     expect(await c.finish()).toBe(true);
     expect(c.lastFinishedId).toBe('e1');
+  });
+
+  it('creates the Entry on the chosen Page', async () => {
+    const { c, calls, settle } = setup();
+    c.setPageDate('2026-10-15');
+    c.input('backfill');
+    await settle();
+    expect(calls).toEqual(['create:backfill:s1@2026-10-15']);
+  });
+
+  it('moves an Entry already created when the chip changes, in order with its saves', async () => {
+    const { c, calls, settle } = setup();
+    c.input('a');
+    await settle();
+    c.setPageDate('2026-10-25');
+    c.input('ab');
+    expect(await c.finish()).toBe(true);
+    expect(calls).toEqual(['create:a:s1', 'move:e1:2026-10-25', 'update:e1:ab:s1']);
+  });
+
+  it('finishing resets the chip to Today for the next Entry', async () => {
+    const { c, calls, settle } = setup();
+    c.setPageDate('2026-10-15');
+    c.input('a');
+    await settle();
+    await c.finish();
+    expect(c.pageDate).toBeNull();
+    c.input('b');
+    await settle();
+    expect(calls.at(-1)).toBe('create:b:s2');
+  });
+
+  it('reports a failed move without losing the text', async () => {
+    const { c, errors, settle } = setup({ failMove: true });
+    c.input('a');
+    await settle();
+    c.setPageDate('2026-10-25');
+    await settle();
+    expect(errors).toHaveLength(1);
+    expect(c.text).toBe('a');
   });
 });

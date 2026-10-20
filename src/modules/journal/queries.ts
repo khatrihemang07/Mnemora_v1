@@ -1,4 +1,4 @@
-import { type InfiniteData, infiniteQueryOptions } from '@tanstack/svelte-query';
+import { type InfiniteData, infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
 import { commands, type Entry, type Page } from '../../lib/ipc/bindings';
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
@@ -9,7 +9,16 @@ export const PAGE_SIZE = 30;
 export const journalKeys = {
   all: ['journal'] as const,
   pages: ['journal', 'pages'] as const,
+  monthDays: (year: number, month: number) => ['journal', 'month-days', year, month] as const,
 };
+
+/** Dates with Entries in a month (`month` is 1-12): the Calendar's dots. */
+export const monthDaysQuery = (year: number, month: number) =>
+  queryOptions({
+    queryKey: journalKeys.monthDays(year, month),
+    queryFn: () => unwrap(commands.journalMonthDays(year, month)),
+    staleTime: 30_000,
+  });
 
 /** Pages newest first; the cursor is the previous request's last Page date. */
 export const pagesQuery = infiniteQueryOptions({
@@ -59,6 +68,10 @@ export function updateEntry(id: string, text: string, sessionId: string): Promis
  */
 export function invalidateJournal(): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: journalKeys.all });
+}
+
+export function moveEntry(id: string, pageDate: string): Promise<Entry> {
+  return unwrap(commands.journalEntryMove(id, pageDate));
 }
 
 export function toggleTask(id: string, line: number): Promise<Entry> {

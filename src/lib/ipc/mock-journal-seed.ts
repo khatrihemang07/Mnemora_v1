@@ -1,7 +1,8 @@
 /**
  * Dev-only sample Journal for the browser mock, loaded by `?seed=journal`. It spreads Entries over
- * today, yesterday, a backfilled week-old day, last month, the previous year and ~60 older Pages,
- * so every feed state (badges, month dividers, years, written dates, scrolling) can be seen.
+ * today, yesterday, a backfilled week-old day, last month, the previous year, ~60 older Pages and
+ * two future Pages, so every feed state (badges, month dividers, years, written dates, Upcoming,
+ * scrolling) can be seen.
  */
 import type { Entry } from './bindings';
 
@@ -97,6 +98,16 @@ export function seedJournalEntries(now: Date, newId: () => string): Entry[] {
   add(today, pick(0), at(today, '07:48'));
   add(today, CHECKLIST, at(today, '09:05'));
   add(today, pick(1), at(today, '13:20'), at(today, '15:05'));
+
+  // Pre-written days ahead: future Pages sit above Today, with the "Upcoming" pill.
+  const soon = shift(today, 3);
+  add(
+    soon,
+    'Dentist at ten, then lunch with Mira. Remember to bring the old photos.',
+    at(today, '08:10'),
+  );
+  const later = shift(today, 9);
+  add(later, '- [ ] Book the train\n- [ ] Pack the green bag', at(today, '08:12'));
 
   const yesterday = shift(today, -1);
   add(yesterday, pick(2), at(yesterday, '21:10'));

@@ -1,6 +1,6 @@
 /**
  * In-memory Journal for the browser-only IPC mock. Mirrors the rules in crates/journal
- * (blank text rejected, valid dates, word count, ordering). Every result is a JSON copy, like real
+ * (blank text rejected, valid dates, word count, ordering, moves, month days). Every result is a JSON copy, like real
  * IPC: handing out live objects would let the UI mutate the "database".
  */
 
@@ -134,6 +134,32 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           entry.body = body;
           entry.updated_at = Date.now();
           return copy(entry);
+        }
+        case 'journal_entry_move': {
+          const pageDate = a.pageDate as string;
+          if (!validDate(pageDate)) throw fail('validation', 'Not a valid date');
+          const entry = find(a.id);
+          if (!entry) throw missing();
+          if (entry.page_date !== pageDate) {
+            entry.page_date = pageDate;
+            entry.updated_at = Date.now();
+          }
+          return copy(entry);
+        }
+        case 'journal_month_days': {
+          const year = a.year as number;
+          const month = a.month as number;
+          if (!(year >= 1 && year <= 9999) || !(month >= 1 && month <= 12)) {
+            throw fail('validation', 'Not a valid month');
+          }
+          const prefix = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-`;
+          return [
+            ...new Set(
+              live()
+                .filter((e) => e.page_date.startsWith(prefix))
+                .map((e) => e.page_date),
+            ),
+          ].sort();
         }
         case 'journal_entry_delete': {
           if (!find(a.id)) throw missing();

@@ -1,16 +1,21 @@
 <!--
   PageHeading: a Page's header: written date in the display serif, the year when it is not this
   year, a Today/Yesterday badge and a desktop-only summary. Used in the feed and as its pinned copy.
+  Flashes when the calendar just pointed at its day.
 -->
 <script lang="ts">
   import type { Page } from '../../lib/ipc/bindings';
   import { pageHeading, pageSummary } from './dates';
+  import { useNav } from './navigation.svelte';
 
   let { page, today }: { page: Page; today: string } = $props();
+  const nav = useNav();
   const heading = $derived(pageHeading(page.date, today));
 </script>
 
-<header class="flex items-baseline gap-2.5 bg-bg pt-3 pb-2">
+<header
+  class="flex items-baseline gap-2.5 bg-bg pt-3 pb-2 {nav.flashPage === page.date ? 'flash-header' : ''}"
+>
   <h2
     class="font-display text-[1.45rem] leading-[1.15]"
     style="font-weight: var(--display-weight); letter-spacing: var(--display-track)"

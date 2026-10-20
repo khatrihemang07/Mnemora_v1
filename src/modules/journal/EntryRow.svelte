@@ -4,9 +4,12 @@
   above it on desktop). Hovering the time shows the full written timestamp and zone. The text is
   rendered Markdown; clicking it (not a link or a checklist row) opens it for editing in place on a
   lifted card while the other Entries dim. A checklist row ticks on click instead. A ⋯ button (on
-  hover or focus on desktop, always on a phone), right-click and long-press open the actions Menu.
+  hover or focus on desktop, always on a phone), right-click and long-press open the actions Menu
+  (Edit, Move to another date…, Copy text, Delete). Move opens the DatePicker; a flash tints the
+  row when the Entry was just moved here or found through the move toast's Show.
 -->
 <script lang="ts">
+  import CalendarDays from '~icons/lucide/calendar-days';
   import Copy from '~icons/lucide/copy';
   import Ellipsis from '~icons/lucide/ellipsis';
   import PenLine from '~icons/lucide/pen-line';
@@ -14,17 +17,20 @@
   import type { Entry } from '../../lib/ipc/bindings';
   import { LongPress } from '../../lib/long-press';
   import type { TimeFormat } from '../../lib/time/format';
+  import DatePicker from '../../lib/ui/DatePicker.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
   import MarkdownView from '../../lib/ui/MarkdownView.svelte';
   import { editedLabel, fullWritten, writtenDateLabel, writtenTime } from './dates';
-  import { copyEntryText, deleteEntryWithUndo, tickTask } from './entry-actions';
+  import { copyEntryText, deleteEntryWithUndo, moveEntryToDate, tickTask } from './entry-actions';
   import { useEditing } from './editing.svelte';
   import EntryEditor from './EntryEditor.svelte';
+  import { useNav } from './navigation.svelte';
 
   let { entry, timeFormat }: { entry: Entry; timeFormat: TimeFormat } = $props();
 
   const editing = useEditing();
+  const nav = useNav();
   const open = $derived(editing.id === entry.id);
   const dimmed = $derived(editing.id !== null && !open);
 
@@ -45,9 +51,20 @@
   let row = $state<HTMLElement | null>(null);
   let menuOpen = $state(false);
   let menuAnchor = $state.raw<MenuAnchor | null>(null);
+  let moveOpen = $state(false);
+  let moveAnchor = $state.raw<HTMLElement | null>(null);
 
   const actions: MenuItem[] = [
     { label: 'Edit', icon: PenLine, onselect: () => void editing.open(entry.id) },
+    {
+      label: 'Move to another date…',
+      icon: CalendarDays,
+      // After the menu has closed, so its dismissal cannot count as an outside click on the picker.
+      onselect: () => {
+        moveAnchor = menuAnchor instanceof HTMLElement ? menuAnchor : row;
+        setTimeout(() => (moveOpen = true), 0);
+      },
+    },
     { label: 'Copy text', icon: Copy, onselect: () => void copyEntryText(entry) },
     {
       label: 'Delete',
@@ -101,7 +118,8 @@
   aria-label="Entry at {time}"
   class="group relative -mx-2.5 grid gap-0.5 rounded-md px-2.5 py-2 transition-[opacity,background-color,box-shadow] duration-(--dur) ease-out min-[720px]:grid-cols-[4rem_1fr] min-[720px]:gap-x-3.5 [&+&]:before:absolute [&+&]:before:inset-x-2.5 [&+&]:before:top-0 [&+&]:before:h-px [&+&]:before:bg-line
     {open ? 'bg-surface shadow-pop' : 'cursor-text hover:bg-hover'} {dimmed ? 'opacity-35' : ''}
-    {editing.arrived === entry.id ? 'slide-in' : ''}"
+    {editing.arrived === entry.id ? 'slide-in' : ''} {nav.flashEntry === entry.id ? 'flash' : ''}"
+  data-entry-id={entry.id}
   onclick={onrowclick}
   onkeydown={onrowkeydown}
   {oncontextmenu}
@@ -151,3 +169,13 @@
   {/if}
 </article>
 <Menu bind:open={menuOpen} anchor={menuAnchor} items={actions} label="Entry actions" returnFocus={row} />
+<DatePicker
+  bind:open={moveOpen}
+  anchor={moveAnchor}
+  title="Move to another date"
+  today={nav.today}
+  weekStart={nav.weekStart}
+  value={entry.page_date}
+  hue="--hue-journal"
+  onpick={(date) => void moveEntryToDate(entry, date, editing, nav)}
+/>
