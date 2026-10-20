@@ -58,15 +58,12 @@ fn strip_links(s: &str) -> String {
             let url = &after[close + 2..];
             url.find(')').map(|end| (&after[..close], &url[end + 1..]))
         });
-        match link {
-            Some((text, tail)) => {
-                out.push_str(text);
-                rest = tail;
-            }
-            None => {
-                out.push('[');
-                rest = after;
-            }
+        if let Some((text, tail)) = link {
+            out.push_str(text);
+            rest = tail;
+        } else {
+            out.push('[');
+            rest = after;
         }
     }
     out.push_str(rest);

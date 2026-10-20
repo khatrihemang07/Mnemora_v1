@@ -35,7 +35,7 @@ use crate::{SettingsChangedEvent, commands, journal, modules, settings_store};
 pub struct TestApp {
     // Field order matters: the app (and its database) drops before the folder.
     window: WebviewWindow<MockRuntime>,
-    _app: tauri::App<MockRuntime>,
+    app: tauri::App<MockRuntime>,
     _dir: TempDir,
 }
 
@@ -73,7 +73,7 @@ impl TestApp {
             .unwrap();
         Self {
             window,
-            _app: app,
+            app,
             _dir: dir,
         }
     }
@@ -103,6 +103,6 @@ impl TestApp {
 
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).
     pub fn with_db<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
-        f(&lock(&self._app.state::<AppState>().db))
+        f(&lock(&self.app.state::<AppState>().db))
     }
 }

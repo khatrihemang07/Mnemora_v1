@@ -80,6 +80,16 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 4. A Module's Settings section appears after the core sections (and drills in on phone) only while the Module is on.
 5. ⌘N runs the first enabled Module's create action; with none it shows "Nothing to create yet".
 
+### Journal
+
+1. ⌘2 opens the Journal; it also appears in the sidebar (and can be switched off and on in Settings ▸ Modules). An empty Journal shows "A blank page".
+2. Desktop: the composer ("Write…") is focused on open; on a phone it is not. It is as wide as the text column.
+3. Type one character: exactly one Entry is created (check again after typing more; no second Entry). Pause 600ms and keep typing: the same Entry updates. A blank or whitespace-only composer never creates anything.
+4. Finish with ⌘↵ / Ctrl+↵, Esc and the ✓ button (one each): the composer clears and the Entry appears on Today's Page with its time and line breaks kept.
+5. Quit and reopen the app: the Entries are still there, newest Page first, oldest Entry first within a Page.
+6. Leaving the Journal mid-sentence still saves the text.
+7. No Entry text appears in the log files (Settings ▸ Data & storage ▸ open the log folder).
+
 ## Performance budgets
 
 - First-load JS stays small: lazy-load route components (the registry already does) and heavy libraries (state machines, charts).
