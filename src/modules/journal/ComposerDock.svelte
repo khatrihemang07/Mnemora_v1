@@ -206,6 +206,7 @@
         label="Finish Entry"
         shortcut={shortcutLabel('↵')}
         tooltipSide="top"
+        onpointerdown={(e) => e.preventDefault()}
         onclick={finish}
       />
     </div>

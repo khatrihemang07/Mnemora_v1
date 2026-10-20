@@ -19,24 +19,26 @@
 
   // A tap focuses the button, which would open the tooltip: ignore opens that follow touch.
   trackPointerType();
-  let open = $state(false);
+  let suppressed = $state(false);
   const hint = $derived(shownShortcut(shortcut, viewport.isPhone));
 </script>
 
-<Tooltip.Root delayDuration={600} {open} onOpenChange={(o) => (open = o && tooltipAllowedNow())}>
+<Tooltip.Root delayDuration={600} onOpenChange={(o) => (suppressed = o && !tooltipAllowedNow())}>
   <Tooltip.Trigger>
     {#snippet child({ props })}
       {@render trigger({ props })}
     {/snippet}
   </Tooltip.Trigger>
-  <Tooltip.Portal>
-    <Tooltip.Content
-      {side}
-      sideOffset={6}
-      class="z-50 flex items-center gap-2 rounded-sm bg-pop px-2 py-1 text-xs text-ink shadow-pop"
-    >
-      {label}
-      {#if hint}<Kbd keys={hint} />{/if}
-    </Tooltip.Content>
-  </Tooltip.Portal>
+  {#if !suppressed}
+    <Tooltip.Portal>
+      <Tooltip.Content
+        {side}
+        sideOffset={6}
+        class="z-50 flex items-center gap-2 rounded-sm bg-pop px-2 py-1 text-xs text-ink shadow-pop"
+      >
+        {label}
+        {#if hint}<Kbd keys={hint} />{/if}
+      </Tooltip.Content>
+    </Tooltip.Portal>
+  {/if}
 </Tooltip.Root>
