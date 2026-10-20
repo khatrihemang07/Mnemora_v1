@@ -9,6 +9,7 @@ import { seedJournalEntries } from './mock-journal-seed';
 const MAX_OFFSET_MIN = 14 * 60;
 const MAX_ZONE_CHARS = 64;
 const MAX_PAGES = 100;
+const EDIT_GRACE_MS = 10 * 60_000;
 const STYLE_MARKS = /[*_~=`]/g;
 
 const fail = (code: AppError['code'], message: string): AppError => ({
@@ -55,8 +56,16 @@ function mockId(): string {
   return crypto.randomUUID();
 }
 
-/** `seed` fills a sample Journal (dev only: `?seed=journal`); otherwise it starts empty. */
-export function createJournalMock(seed = false) {
+/** Switches to simulate failures. `?fail=journal_update` turns `failUpdate` on from the start. */
+export interface JournalMockFlags {
+  failUpdate: boolean;
+}
+
+/**
+ * `seed` fills a sample Journal (dev only: `?seed=journal`); otherwise it starts empty. `flags` is
+ * live: flip `failUpdate` to make saves fail, and back to let a Retry succeed.
+ */
+export function createJournalMock(seed = false, flags: JournalMockFlags = { failUpdate: false }) {
   const entries: Entry[] = seed ? seedJournalEntries(new Date(), mockId) : [];
 
   return {
@@ -92,13 +101,22 @@ export function createJournalMock(seed = false) {
           return copy(entry);
         }
         case 'journal_entry_update': {
+          if (flags.failUpdate) {
+            throw {
+              ...fail('database', 'Could not save the entry'),
+              details: 'mock: simulated save failure',
+            };
+          }
           const text = a.text as string;
           if (!text.trim()) throw fail('validation', "An Entry can't be blank");
           const entry = entries.find((e) => e.id === a.id);
           if (!entry) throw fail('unknown_key', 'That Entry no longer exists');
+          const now = Date.now();
           entry.body = text;
           entry.word_count = wordCount(text);
-          entry.updated_at = Date.now();
+          entry.updated_at = now;
+          // Edited only once more than 10 minutes have passed since it was written (kept once set).
+          entry.edited_at ??= now - entry.written_at > EDIT_GRACE_MS ? now : null;
           return copy(entry);
         }
         case 'journal_pages': {

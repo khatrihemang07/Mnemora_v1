@@ -55,7 +55,11 @@ export async function installMock() {
     log_level: 'info',
   };
 
-  const journal = createJournalMock(new URLSearchParams(location.search).get('seed') === 'journal');
+  const query = new URLSearchParams(location.search);
+  const journalFlags = { failUpdate: query.get('fail') === 'journal_update' };
+  // Reachable from the dev console: `__journalMock.failUpdate = false` lets a Retry succeed.
+  (window as unknown as { __journalMock: typeof journalFlags }).__journalMock = journalFlags;
+  const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
 
   applyPrePaintAttributes(values);
 
