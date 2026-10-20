@@ -109,4 +109,15 @@ describe('EntryEditing', () => {
     expect(await e.flush()).toBe(true);
     expect(saved).toEqual(['b']);
   });
+
+  it('reports blank text over a stored Entry as kept, never saved', async () => {
+    const { e, calls } = setup('hello');
+    expect(e.blankKept).toBe(false);
+    e.input('  \n');
+    expect(e.blankKept).toBe(true);
+    expect(await e.flush()).toBe(true);
+    expect(calls).toEqual([]);
+    e.input('hello');
+    expect(e.blankKept).toBe(false);
+  });
 });

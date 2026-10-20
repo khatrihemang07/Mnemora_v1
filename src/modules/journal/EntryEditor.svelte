@@ -4,7 +4,8 @@
   save keeps the text and shows a banner; the next edit retries. Finishes on Esc, ⌘/Ctrl+Enter, a
   click outside, Done, or Back on a phone; on desktop the keyboard ways (Esc, ⌘/Ctrl+Enter, Done)
   leave the Entry focused so ↑ ↓ carry on from it. The bottom bar holds a date chip (the Entry's Page; it
-  opens the DatePicker to move the Entry) and Done.
+  opens the DatePicker to move the Entry, which stays open) and Done. Finishing with all text
+  cleared keeps the previous text and says so.
 -->
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from 'svelte';
@@ -17,9 +18,10 @@
   import DatePicker from '../../lib/ui/DatePicker.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import MarkdownEditor from '../../lib/ui/MarkdownEditor.svelte';
+  import { notify } from '../../lib/ui/toast';
   import { viewport } from '../../lib/viewport.svelte';
   import { chipLabel } from './dates';
-  import { moveEntryToDate } from './entry-actions';
+  import { moveEditedEntry } from './entry-actions';
   import { EntryEditing } from './entry-editing';
   import { journalLeaveGuard, useEditing } from './editing.svelte';
   import { useFocus } from './focus.svelte';
@@ -64,6 +66,7 @@
     closing ??= (async () => {
       const saved = await session.flush();
       if (saved) {
+        if (session.blankKept) notify("Empty entries aren't saved. Kept the previous text.");
         editing.close();
         void invalidateJournal();
       }
@@ -195,5 +198,5 @@
   marked={pickerDays.marked}
   onmonthchange={(m) => (pickerMonth = m)}
   hue="--hue-journal"
-  onpick={(date) => void moveEntryToDate(entry, date, editing, nav)}
+  onpick={(date) => void moveEditedEntry(entry, date, () => session.flush(), nav)}
 />

@@ -96,3 +96,26 @@ export async function moveEntryToDate(
     void nav.scrollTo?.(date, entry.id);
   });
 }
+
+/**
+ * Moves the Entry that is open in the editor, from the editor's own date chip. Unlike the ⋯ menu
+ * the editor stays open: pending text is saved without closing (and nothing moves if that fails),
+ * then the Entry is scrolled to in its new Page, where its row reopens in editing mode (the
+ * session is keyed by the Entry id). No Moved toast, since you are already looking at it.
+ */
+export async function moveEditedEntry(
+  entry: Entry,
+  date: string,
+  flush: () => Promise<boolean>,
+  nav: JournalNav,
+): Promise<void> {
+  if (date === entry.page_date || !(await flush())) return;
+  try {
+    await moveEntry(entry.id, date);
+  } catch {
+    notifyError("Couldn't move the Entry");
+    return;
+  }
+  await invalidateJournal();
+  await nav.scrollTo?.(date, entry.id);
+}

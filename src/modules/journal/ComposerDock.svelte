@@ -1,7 +1,9 @@
 <!--
   ComposerDock: the writing box docked at the bottom of the Journal, as wide as the text column.
   The first visible character creates the Entry; later typing autosaves after a pause. Finishing
-  (⌘/Ctrl+Enter, Esc or the check) clears the box and the Entry slides into its Page. A failed save
+  (⌘/Ctrl+Enter, Esc or the check) clears the box and the Entry slides into its Page. Until then the
+  feed hides it. Clearing the text and finishing (any way, including clicking away or leaving)
+  discards the Entry with an Undo; while the box keeps focus, empty text just waits. A failed save
   keeps the text and shows a banner; the next edit retries. The date chip ("Today ▾") puts the Entry
   on any other Page, past or future; it resets to Today when the Entry is finished. ↑ in an empty
   composer hands the keyboard focus to the newest Entry. The box is as wide as the Journal's text column.
@@ -12,6 +14,7 @@
   import Check from '~icons/lucide/check';
   import { blockNavigation, interceptBack } from '../../lib/router';
   import { setTimer } from '../../lib/timing';
+  import { notifyUndo } from '../../lib/ui/toast';
   import { shortcutLabel } from '../../lib/platform';
   import Chip from '../../lib/ui/Chip.svelte';
   import DatePicker from '../../lib/ui/DatePicker.svelte';
@@ -27,9 +30,11 @@
   import { useMarkedDays } from './marked-days.svelte';
   import {
     createEntry,
+    deleteEntry,
     deviceWrittenWhere,
     invalidateJournal,
     moveEntry,
+    restoreEntry,
     updateEntry,
   } from './queries';
 
@@ -56,6 +61,7 @@
         sessionId,
       );
       error = null;
+      nav.composingId = entry.id;
       return entry;
     },
     update: async (id, body, sessionId) => {
@@ -67,6 +73,12 @@
       const entry = await moveEntry(id, date);
       error = null;
       return entry;
+    },
+    discard: async (id) => {
+      await deleteEntry(id);
+      notifyUndo('Entry discarded', () => {
+        void restoreEntry(id).then(invalidateJournal);
+      });
     },
     setTimer,
     newSessionId: () => crypto.randomUUID(),
@@ -87,10 +99,11 @@
       editor?.focus();
     };
 
+    // Best effort: a blank box discards, anything else saves.
     const hidden = () => {
-      if (document.visibilityState === 'hidden') void composer.saveNow();
+      if (document.visibilityState === 'hidden') void settle();
     };
-    const leaving = () => void composer.saveNow();
+    const leaving = () => void settle();
     document.addEventListener('visibilitychange', hidden);
     window.addEventListener('pagehide', leaving);
     window.addEventListener('beforeunload', leaving);
@@ -103,9 +116,13 @@
     };
   });
 
-  // Leaving the Journal mid-sentence still saves it.
+  // Leaving the Journal mid-sentence still saves it; leaving it cleared discards the Entry.
   onDestroy(() => {
-    if (composer.text.trim()) void composer.finish().then(invalidateJournal);
+    if (composer.text.trim() || composer.entryId !== null) {
+      void composer.finish().then(() => {
+        void invalidateJournal().then(() => (nav.composingId = null));
+      });
+    }
     if (editing.active === editor) editing.active = null;
   });
 
@@ -121,7 +138,8 @@
     return interceptBack(() => void finish());
   });
 
-  async function finish() {
+  /** Finishes, or discards a cleared Entry. `refocus` is off when focus is leaving on purpose. */
+  async function finish(refocus = true) {
     if (!(await composer.finish())) return;
     const id = composer.lastFinishedId;
     text = '';
@@ -129,7 +147,14 @@
     nav.composerDate = null;
     if (id) editing.arrived = id;
     await invalidateJournal();
-    if (!viewport.isPhone) editor?.focus();
+    nav.composingId = null;
+    if (refocus && !viewport.isPhone) editor?.focus();
+  }
+
+  /** Blur, hiding and closing: a cleared Entry is discarded, any other text is only saved. */
+  async function settle() {
+    if (composer.entryId !== null && !composer.text.trim()) await finish(false);
+    else await composer.saveNow();
   }
 
   /** ↑ in an empty box (capture phase, before the editor treats it as a caret move) leaves for the feed. */
@@ -189,7 +214,7 @@
           if (f) editing.active = editor;
           else {
             if (editing.active === editor) editing.active = null;
-            void composer.saveNow();
+            void settle();
           }
         }}
         label="Write a Journal Entry"
@@ -207,7 +232,7 @@
         shortcut={shortcutLabel('↵')}
         tooltipSide="top"
         onpointerdown={(e) => e.preventDefault()}
-        onclick={finish}
+        onclick={() => void finish()}
       />
     </div>
   </div>

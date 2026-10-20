@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { Composer, SAVE_PAUSE_MS } from './composer';
 
-function setup(opts: { failCreate?: boolean; failUpdate?: boolean; failMove?: boolean } = {}) {
+function setup(
+  opts: {
+    failCreate?: boolean;
+    failUpdate?: boolean;
+    failMove?: boolean;
+    failDiscard?: boolean;
+  } = {},
+) {
   const calls: string[] = [];
   const errors: unknown[] = [];
   let timer: (() => void) | null = null;
@@ -19,6 +26,10 @@ function setup(opts: { failCreate?: boolean; failUpdate?: boolean; failMove?: bo
     move: async (id, date) => {
       calls.push(`move:${id}:${date}`);
       if (opts.failMove) throw new Error('nope');
+    },
+    discard: async (id) => {
+      calls.push(`discard:${id}`);
+      if (opts.failDiscard) throw new Error('nope');
     },
     setTimer: (fn, ms) => {
       expect(ms).toBe(SAVE_PAUSE_MS);
@@ -171,5 +182,92 @@ describe('Composer', () => {
     await settle();
     expect(errors).toHaveLength(1);
     expect(c.text).toBe('a');
+  });
+
+  describe('discarding a cleared composer', () => {
+    it('finishing blank text discards the Entry already created', async () => {
+      const { c, calls, settle } = setup();
+      c.input('a');
+      await settle();
+      c.input('');
+      expect(await c.finish()).toBe(true);
+      expect(calls).toEqual(['create:a:s1', 'discard:e1']);
+      expect(c.lastFinishedId).toBeNull();
+      expect(c.phase).toBe('idle');
+      expect(c.text).toBe('');
+    });
+
+    it('waits while blank, and retyping updates the same Entry', async () => {
+      const { c, calls, fire, settle } = setup();
+      c.input('a');
+      await settle();
+      c.input('');
+      fire();
+      await settle();
+      expect(calls).toEqual(['create:a:s1']);
+      c.input('b');
+      fire();
+      await settle();
+      expect(calls).toEqual(['create:a:s1', 'update:e1:b:s1']);
+      expect(c.entryId).toBe('e1');
+    });
+
+    it('discards an Entry still being created when blanked right away', async () => {
+      const { c, calls } = setup();
+      c.input('a');
+      c.input('');
+      expect(await c.finish()).toBe(true);
+      expect(calls).toEqual(['create:a:s1', 'discard:e1']);
+    });
+
+    it('guards a double finish: one discard, the second call is refused', async () => {
+      const { c, calls, settle } = setup();
+      c.input('a');
+      await settle();
+      c.input('');
+      const first = c.finish();
+      expect(c.phase).toBe('finishing');
+      expect(await c.finish()).toBe(false);
+      expect(await first).toBe(true);
+      expect(calls.filter((x) => x.startsWith('discard'))).toEqual(['discard:e1']);
+    });
+
+    it('keeps the composer usable when the discard fails', async () => {
+      const { c, errors, settle } = setup({ failDiscard: true });
+      c.input('a');
+      await settle();
+      c.input('');
+      expect(await c.finish()).toBe(false);
+      expect(errors).toHaveLength(1);
+      expect(c.phase).toBe('editing');
+      expect(c.entryId).toBe('e1');
+    });
+
+    it('a blank composer that never made an Entry discards nothing', async () => {
+      const { c, calls } = setup();
+      c.input('  ');
+      expect(await c.finish()).toBe(true);
+      expect(calls).toEqual([]);
+    });
+
+    it('a new session starts after a discard', async () => {
+      const { c, calls, settle } = setup();
+      c.input('a');
+      await settle();
+      c.input('');
+      await c.finish();
+      expect(c.entryId).toBeNull();
+      c.input('b');
+      await settle();
+      expect(calls.at(-1)).toBe('create:b:s2');
+    });
+  });
+
+  it('exposes the id of the Entry being written', async () => {
+    const { c, settle } = setup();
+    expect(c.entryId).toBeNull();
+    c.input('a');
+    await settle();
+    expect(c.entryId).toBe('e1');
   });
 });

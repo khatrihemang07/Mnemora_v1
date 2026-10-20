@@ -8,6 +8,7 @@ import {
   pageAt,
   pageIndex,
   upcomingCount,
+  withoutEntry,
 } from './feed';
 
 const page = (date: string, entry_count = 1): Page => ({
@@ -123,5 +124,37 @@ describe('calendarStart', () => {
   });
   it('falls back to Today', () => {
     expect(calendarStart(null, '2026-10-20')).toEqual({ month: '2026-10', selected: '2026-10-20' });
+  });
+});
+
+describe('withoutEntry', () => {
+  const entry = (id: string, words: number) =>
+    ({ id, word_count: words }) as unknown as Page['entries'][number];
+  const full = (date: string, entries: Page['entries']): Page => ({
+    date,
+    entry_count: entries.length,
+    word_count: entries.reduce((n, e) => n + e.word_count, 0),
+    entries,
+  });
+
+  it('hides the Entry and takes it out of the Page counts', () => {
+    const pages = [full('2026-10-20', [entry('a', 3), entry('b', 5)])];
+    const [p] = withoutEntry(pages, 'b');
+    expect(p?.entries.map((e) => e.id)).toEqual(['a']);
+    expect(p?.entry_count).toBe(1);
+    expect(p?.word_count).toBe(3);
+  });
+  it('drops a Page that held only that Entry', () => {
+    const pages = [full('2026-10-20', [entry('a', 3)]), full('2026-10-19', [entry('b', 2)])];
+    expect(withoutEntry(pages, 'a').map((p) => p.date)).toEqual(['2026-10-19']);
+  });
+  it('keeps a Page that was already empty', () => {
+    const pages = [full('2026-10-20', [])];
+    expect(withoutEntry(pages, 'a')).toEqual(pages);
+  });
+  it('returns the same Pages when nothing is composing or the Entry is not loaded', () => {
+    const pages = [full('2026-10-20', [entry('a', 3)])];
+    expect(withoutEntry(pages, null)).toBe(pages);
+    expect(withoutEntry(pages, 'zzz')).toEqual(pages);
   });
 });

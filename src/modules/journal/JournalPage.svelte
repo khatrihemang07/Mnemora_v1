@@ -37,7 +37,15 @@
   import ComposerDock from './ComposerDock.svelte';
   import { localDateString, showTodayPill, showUpcomingPill } from './dates';
   import { Editing, provideEditing } from './editing.svelte';
-  import { buildFeed, type FeedItem, openIndex, pageAt, pageIndex, upcomingCount } from './feed';
+  import {
+    buildFeed,
+    type FeedItem,
+    openIndex,
+    pageAt,
+    pageIndex,
+    upcomingCount,
+    withoutEntry,
+  } from './feed';
   import { feedEntries } from './focus-nav';
   import { EntryFocus, provideFocus } from './focus.svelte';
   import JournalCalendar from './JournalCalendar.svelte';
@@ -101,7 +109,7 @@
     nav.weekStart = core.weekStart;
   });
 
-  const loaded = $derived(pages.data?.pages.flat() ?? []);
+  const loaded = $derived(withoutEntry(pages.data?.pages.flat() ?? [], nav.composingId));
   // Today joins the feed once the window reaches it: no newer Pages are left to load.
   const feed = $derived(buildFeed(loaded, today, !pages.hasPreviousPage));
   const upcoming = $derived(upcomingCount(loaded, today));

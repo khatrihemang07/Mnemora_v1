@@ -36,6 +36,11 @@ export class EntryEditing<E> {
     return this.text.trim() !== '' && this.text !== this.#saved;
   }
 
+  /** Blank text over a stored Entry: it can't be saved, so the previous text stays (D7). */
+  get blankKept(): boolean {
+    return this.text.trim() === '' && this.text !== this.#saved;
+  }
+
   /** The text changed (every keystroke). */
   input(text: string): void {
     this.text = text;

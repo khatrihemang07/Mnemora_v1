@@ -9,6 +9,8 @@ export interface ComposerDeps {
   update: (id: string, text: string, sessionId: string) => Promise<unknown>;
   /** Moves the Entry already created to another Page. */
   move: (id: string, pageDate: string) => Promise<unknown>;
+  /** Deletes the Entry already created, once its text was cleared and the composer finished. */
+  discard: (id: string) => Promise<unknown>;
   /** Starts a timer and returns its canceller. */
   setTimer: (fn: () => void, ms: number) => () => void;
   newSessionId: () => string;
@@ -18,13 +20,19 @@ export interface ComposerDeps {
 /**
  * The composer's life: idle → creating → editing → finishing → idle. The first visible character
  * creates the Entry, later typing updates it after a pause, finishing flushes and starts over.
- * A blank composer never creates anything. All saves run one after another.
+ * A blank composer never creates anything, and clearing an Entry already created then finishing
+ * discards it. While the box keeps focus, blank text only waits (retyping reuses the same Entry).
+ * All saves run one after another.
  */
 export class Composer {
   phase: ComposerPhase = 'idle';
   text = '';
   /** Id of the Entry the last `finish()` completed, for the feed to welcome it. */
   lastFinishedId: string | null = null;
+  /** The Entry being written, once created. */
+  get entryId(): string | null {
+    return this.#entryId;
+  }
   /** The Page the Entry goes on; null is Today. Choosing it after creation moves the Entry. */
   pageDate: string | null = null;
   #sessionId: string;
@@ -49,21 +57,38 @@ export class Composer {
   }
 
   /**
-   * Saves what is pending and starts a fresh session. Returns false, keeping the text, when a save
-   * failed so nothing is lost.
+   * Saves what is pending and starts a fresh session; blank text discards the Entry already
+   * created. Returns false, keeping the text, when a save failed so nothing is lost.
    */
   async finish(): Promise<boolean> {
     if (this.phase === 'finishing') return false;
     this.#cancelTimer?.();
     this.#cancelTimer = null;
     if (this.phase === 'idle' && this.text.trim()) this.#create();
-    this.#save();
+    else this.#save();
+    this.phase = 'finishing';
     await this.#queue;
 
-    const blank = !this.text.trim();
-    const saved = this.#entryId !== null && (blank || this.text === this.#saved);
-    if (!saved && !(this.phase === 'idle' && blank)) return false;
-    this.lastFinishedId = this.#entryId;
+    const id = this.#entryId;
+    if (!this.text.trim()) {
+      if (id !== null) {
+        try {
+          await this.deps.discard(id);
+        } catch (e) {
+          this.deps.onError(e);
+          this.phase = 'editing';
+          return false;
+        }
+      }
+      this.lastFinishedId = null;
+      this.#reset();
+      return true;
+    }
+    if (id === null || this.text !== this.#saved) {
+      this.phase = id === null ? 'idle' : 'editing';
+      return false;
+    }
+    this.lastFinishedId = id;
     this.#reset();
     return true;
   }
@@ -120,10 +145,10 @@ export class Composer {
         const entry = await this.deps.create(text, this.#sessionId, this.pageDate);
         this.#entryId = entry.id;
         this.#saved = text;
-        this.phase = 'editing';
+        if (this.phase === 'creating') this.phase = 'editing';
         if (this.text !== text) this.#schedule();
       } catch (e) {
-        this.phase = 'idle';
+        if (this.phase === 'creating') this.phase = 'idle';
         this.deps.onError(e);
       }
     });
