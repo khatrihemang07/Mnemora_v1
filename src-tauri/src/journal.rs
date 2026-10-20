@@ -1,7 +1,7 @@
 //! Journal commands. Thin: the rules live in `mnemora-journal`.
 
 use mnemora_core::error::AppError;
-use mnemora_journal::{Entry, NewEntry, Page, SearchResults, TodaySummary};
+use mnemora_journal::{Entry, NewEntry, Page, PageDirection, SearchResults, TodaySummary};
 use tauri::State;
 
 use crate::state::{AppState, lock};
@@ -76,16 +76,19 @@ pub fn journal_month_days(
     mnemora_journal::month_days(&lock(&state.db), year, month)
 }
 
-/// Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
-/// from the previous request). Fewer Pages than `limit` means the end.
+/// Up to `limit` Pages, newest first, picked relative to the `cursor` date: `older` continues
+/// before it (the last Page's date from the previous request), `from` starts AT it (a jump to a
+/// date), `newer` takes the Pages just above it (scrolling up after a jump; needs a cursor).
+/// Fewer Pages than `limit` means that end was reached.
 #[tauri::command]
 #[specta::specta]
 pub fn journal_pages(
     state: State<'_, AppState>,
     cursor: Option<String>,
     limit: u32,
+    direction: PageDirection,
 ) -> Result<Vec<Page>, AppError> {
-    mnemora_journal::list_pages(&lock(&state.db), cursor.as_deref(), limit)
+    mnemora_journal::list_pages(&lock(&state.db), cursor.as_deref(), limit, direction)
 }
 
 /// Searches live Entries. Every word is required and matches by prefix; quoted text is an exact
@@ -129,8 +132,19 @@ mod tests {
     }
 
     fn pages(app: &TestApp, cursor: Option<&str>, limit: u32) -> Vec<Value> {
-        app.invoke("journal_pages", json!({ "cursor": cursor, "limit": limit }))
-            .unwrap()
+        pages_in(app, cursor, limit, "older").unwrap()
+    }
+
+    fn pages_in(
+        app: &TestApp,
+        cursor: Option<&str>,
+        limit: u32,
+        direction: &str,
+    ) -> Result<Vec<Value>, Value> {
+        app.invoke(
+            "journal_pages",
+            json!({ "cursor": cursor, "limit": limit, "direction": direction }),
+        )
     }
 
     fn log_ops(app: &TestApp) -> Vec<(String, String)> {
@@ -600,7 +614,11 @@ mod tests {
         deleted_days_ago(&app, &recent["id"], 29);
 
         // The startup hook is what the app runs; it purges through the Module contract.
-        app.with_db_mut(|c| mnemora_journal::JournalModule.on_startup(c, &Default::default()).unwrap());
+        app.with_db_mut(|c| {
+            mnemora_journal::JournalModule
+                .on_startup(c, &Default::default())
+                .unwrap()
+        });
 
         assert_eq!(row_count(&app, "journal_entries"), 2);
         let logged: Vec<String> = app.with_db(|c| {
@@ -716,6 +734,118 @@ mod tests {
             dates(pages(&app, Some("2026-12-25"), 10)),
             ["2026-10-20", "2026-10-19"]
         );
+    }
+
+    fn page_dates(listed: &[Value]) -> Vec<&str> {
+        listed.iter().map(|p| p["date"].as_str().unwrap()).collect()
+    }
+
+    /// A Journal with Pages spread over two years, one of them with two Entries, plus a future one.
+    fn spread_journal() -> TestApp {
+        let app = TestApp::new();
+        for d in [
+            "2025-03-01",
+            "2025-03-02",
+            "2025-03-02",
+            "2025-06-10",
+            "2026-01-05",
+            "2026-10-19",
+            "2026-10-20",
+            "2026-12-25",
+        ] {
+            create(&app, d, "x").unwrap();
+        }
+        app
+    }
+
+    #[test]
+    fn from_starts_at_the_date_itself_and_goes_older() {
+        let app = spread_journal();
+        let listed = pages_in(&app, Some("2025-06-10"), 2, "from").unwrap();
+        assert_eq!(page_dates(&listed), ["2025-06-10", "2025-03-02"]);
+        assert_eq!(listed[1]["entries"].as_array().unwrap().len(), 2);
+        // A date with no Page starts at the next older one; no cursor is the newest Pages.
+        assert_eq!(
+            page_dates(&pages_in(&app, Some("2025-12-31"), 1, "from").unwrap()),
+            ["2025-06-10"]
+        );
+        assert_eq!(
+            page_dates(&pages_in(&app, None, 2, "from").unwrap()),
+            ["2026-12-25", "2026-10-20"]
+        );
+    }
+
+    #[test]
+    fn older_stays_strictly_before_the_cursor() {
+        let app = spread_journal();
+        let listed = pages_in(&app, Some("2025-06-10"), 10, "older").unwrap();
+        assert_eq!(page_dates(&listed), ["2025-03-02", "2025-03-01"]);
+        assert!(
+            pages_in(&app, Some("2025-03-01"), 10, "older")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn newer_takes_the_nearest_pages_above_the_cursor_newest_first() {
+        let app = spread_journal();
+        // The two nearest above 2025-03-02, shown newest first like everything else.
+        let listed = pages_in(&app, Some("2025-03-02"), 2, "newer").unwrap();
+        assert_eq!(page_dates(&listed), ["2026-01-05", "2025-06-10"]);
+        // Future Pages are included, and a short result means the top was reached.
+        let top = pages_in(&app, Some("2026-10-19"), 10, "newer").unwrap();
+        assert_eq!(page_dates(&top), ["2026-12-25", "2026-10-20"]);
+        assert!(
+            pages_in(&app, Some("2026-12-25"), 10, "newer")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn newer_pages_keep_entries_oldest_first_and_counts() {
+        let app = TestApp::new();
+        let a = create(&app, "2026-10-19", "one two").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        let b = create(&app, "2026-10-19", "three").unwrap();
+        create(&app, "2026-10-10", "old").unwrap();
+        let listed = pages_in(&app, Some("2026-10-10"), 5, "newer").unwrap();
+        assert_eq!(listed[0]["entries"], json!([a, b]));
+        assert_eq!(listed[0]["entry_count"], 2);
+        assert_eq!(listed[0]["word_count"], 3);
+    }
+
+    #[test]
+    fn windows_chain_without_gaps_or_overlaps() {
+        let app = spread_journal();
+        // Start in the middle, then extend both ways: together they are the whole Journal.
+        let mid = pages_in(&app, Some("2025-06-10"), 2, "from").unwrap();
+        let above = pages_in(&app, Some("2025-06-10"), 2, "newer").unwrap();
+        let below = pages_in(&app, Some("2025-03-02"), 2, "older").unwrap();
+        let all: Vec<&str> = [&above, &mid, &below]
+            .into_iter()
+            .flat_map(|g| page_dates(g))
+            .collect();
+        assert_eq!(
+            all,
+            [
+                "2026-10-19",
+                "2026-01-05",
+                "2025-06-10",
+                "2025-03-02",
+                "2025-03-01"
+            ]
+        );
+    }
+
+    #[test]
+    fn newer_needs_a_cursor_and_bad_directions_or_dates_are_rejected() {
+        let app = spread_journal();
+        let err = pages_in(&app, None, 5, "newer").unwrap_err();
+        assert_eq!(err["code"], "validation");
+        assert!(pages_in(&app, Some("nope"), 5, "from").is_err());
+        assert!(pages_in(&app, Some("2025-03-01"), 5, "sideways").is_err());
     }
 
     #[test]

@@ -25,7 +25,7 @@ use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
 
-pub use entry::{Entry, NewEntry, Page};
+pub use entry::{Entry, NewEntry, Page, PageDirection};
 pub use error::JournalError;
 pub use search::{Hit, SearchResults, search};
 pub use service::{

@@ -8,10 +8,12 @@ use rusqlite::Connection;
 
 use crate::MODULE_ID;
 use crate::entry::{
-    Entry, NewEntry, Page, toggle_task, validate_page_date, validate_text, validate_written_zone,
+    Entry, NewEntry, Page, PageDirection, toggle_task, validate_page_date, validate_text,
+    validate_written_zone,
 };
 use crate::error::JournalError;
-use crate::{repo, words};
+use crate::repo::{self, Window};
+use crate::words;
 
 /// Change-log entity name for Entries.
 const ENTITY: &str = "journal_entry";
@@ -181,13 +183,28 @@ pub fn month_days(conn: &Connection, year: u32, month: u32) -> AppResult<Vec<Str
     )
 }
 
-/// Up to `limit` Pages, newest first, continuing before the `cursor` date when given.
-pub fn list_pages(conn: &Connection, cursor: Option<&str>, limit: u32) -> AppResult<Vec<Page>> {
+/// Up to `limit` Pages, newest first, picked relative to the `cursor` date by `direction`: older
+/// than it, starting at it, or the nearest newer ones (see [`PageDirection`]).
+pub fn list_pages(
+    conn: &Connection,
+    cursor: Option<&str>,
+    limit: u32,
+    direction: PageDirection,
+) -> AppResult<Vec<Page>> {
     if let Some(c) = cursor {
         validate_page_date(c)?;
     }
+    let window = match (direction, cursor) {
+        (PageDirection::Older, None) | (PageDirection::From, None) => Window::Newest,
+        (PageDirection::Older, Some(c)) => Window::Before(c),
+        (PageDirection::From, Some(c)) => Window::AtOrBefore(c),
+        (PageDirection::Newer, Some(c)) => Window::After(c),
+        (PageDirection::Newer, None) => {
+            return Err(JournalError::Validation("Newer Pages need a date to start from").into());
+        }
+    };
     let limit = limit.clamp(1, MAX_PAGES);
-    Ok(repo::pages(conn, cursor, limit)?
+    Ok(repo::pages(conn, window, limit)?
         .into_iter()
         .map(|(date, entries)| Page {
             date,

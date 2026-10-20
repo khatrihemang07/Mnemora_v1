@@ -40,12 +40,7 @@ pub struct SettingsSnapshot {
 /// Saves `value` for `module.key` only when nothing is saved for it yet; true when it wrote.
 /// For Modules pinning a value at upgrade time, so a new registered default cannot reach
 /// existing installs. The value is trusted: it is not validated and announces no event.
-pub fn save_if_unset(
-    conn: &Connection,
-    module: &str,
-    key: &str,
-    value: &Value,
-) -> AppResult<bool> {
+pub fn save_if_unset(conn: &Connection, module: &str, key: &str, value: &Value) -> AppResult<bool> {
     let written = conn.execute(
         "INSERT OR IGNORE INTO settings(module, key, value, updated_at) VALUES (?1, ?2, ?3, ?4)",
         rusqlite::params![module, key, value.to_string(), now_ms()],

@@ -40,6 +40,18 @@ pub struct Entry {
     pub updated_at: i64,
 }
 
+/// Which Pages a `cursor` date selects. Results are always newest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PageDirection {
+    /// Pages strictly before the cursor (older). No cursor: the newest Pages.
+    Older,
+    /// The cursor's own Page and older ones: the feed starting AT a date. No cursor: the newest.
+    From,
+    /// The Pages just after the cursor (newer), nearest first picked; needs a cursor.
+    Newer,
+}
+
 /// Everything the UI supplies to write a new Entry.
 #[derive(Debug, Clone, Deserialize, Type)]
 pub struct NewEntry {

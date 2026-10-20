@@ -43,10 +43,12 @@ export const commands = {
 	/**  Dates (`YYYY-MM-DD`) in the month (`month` is 1-12) that have live Entries, for calendar dots. */
 	journalMonthDays: (year: number, month: number) => typedError<string[], AppError>(__TAURI_INVOKE("journal_month_days", { year, month })),
 	/**
-	 *  Up to `limit` Pages, newest first, continuing before the `cursor` date (the last Page's date
-	 *  from the previous request). Fewer Pages than `limit` means the end.
+	 *  Up to `limit` Pages, newest first, picked relative to the `cursor` date: `older` continues
+	 *  before it (the last Page's date from the previous request), `from` starts AT it (a jump to a
+	 *  date), `newer` takes the Pages just above it (scrolling up after a jump; needs a cursor).
+	 *  Fewer Pages than `limit` means that end was reached.
 	 */
-	journalPages: (cursor: string | null, limit: number) => typedError<Page[], AppError>(__TAURI_INVOKE("journal_pages", { cursor, limit })),
+	journalPages: (cursor: string | null, limit: number, direction: PageDirection) => typedError<Page[], AppError>(__TAURI_INVOKE("journal_pages", { cursor, limit, direction })),
 	/**
 	 *  Searches live Entries. Every word is required and matches by prefix; quoted text is an exact
 	 *  phrase; case and accents are ignored. `from` and `to` are optional inclusive Page dates; with
@@ -192,6 +194,15 @@ export type Page = {
 	/**  Entries by written instant, oldest first. */
 	entries: Entry[],
 };
+
+/**  Which Pages a `cursor` date selects. Results are always newest first. */
+export type PageDirection = 
+/**  Pages strictly before the cursor (older). No cursor: the newest Pages. */
+"older" | 
+/**  The cursor's own Page and older ones: the feed starting AT a date. No cursor: the newest. */
+"from" | 
+/**  The Pages just after the cursor (newer), nearest first picked; needs a cursor. */
+"newer";
 
 /**  The outcome of a search. */
 export type SearchResults = {

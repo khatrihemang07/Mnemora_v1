@@ -103,21 +103,43 @@ pub fn update_body(conn: &Connection, e: &Entry) -> AppResult<()> {
     Ok(())
 }
 
-/// Up to `limit` dates (newest first, strictly before `before` when given) with all their live
-/// Entries, ordered newest date first and oldest Entry first within a date.
+/// Which dates [`pages`] picks, relative to a cursor date.
+#[derive(Clone, Copy)]
+pub enum Window<'a> {
+    /// The newest dates.
+    Newest,
+    /// Dates strictly before the cursor, newest first.
+    Before(&'a str),
+    /// The cursor date and older ones, newest first.
+    AtOrBefore(&'a str),
+    /// The dates just after the cursor: the nearest ones, however many `limit` allows.
+    After(&'a str),
+}
+
+/// Up to `limit` dates picked by `window`, with all their live Entries, ordered newest date first
+/// and oldest Entry first within a date (also for `After`: the picked dates are re-sorted).
 pub fn pages(
     conn: &Connection,
-    before: Option<&str>,
+    window: Window<'_>,
     limit: u32,
 ) -> AppResult<Vec<(String, Vec<Entry>)>> {
-    let mut dates = conn.prepare(
+    let (cursor, filter, order) = match window {
+        Window::Newest => (None, "?1 IS NULL", "DESC"),
+        Window::Before(c) => (Some(c), "page_date < ?1", "DESC"),
+        Window::AtOrBefore(c) => (Some(c), "page_date <= ?1", "DESC"),
+        Window::After(c) => (Some(c), "page_date > ?1", "ASC"),
+    };
+    let mut dates = conn.prepare(&format!(
         "SELECT DISTINCT page_date FROM journal_entries
-         WHERE deleted_at IS NULL AND (?1 IS NULL OR page_date < ?1)
-         ORDER BY page_date DESC LIMIT ?2",
-    )?;
-    let dates: Vec<String> = dates
-        .query_map(params![before, limit], |r| r.get(0))?
+         WHERE deleted_at IS NULL AND {filter}
+         ORDER BY page_date {order} LIMIT ?2"
+    ))?;
+    let mut dates: Vec<String> = dates
+        .query_map(params![cursor, limit], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
+    if order == "ASC" {
+        dates.reverse();
+    }
     let (Some(newest), Some(oldest)) = (dates.first(), dates.last()) else {
         return Ok(Vec::new());
     };

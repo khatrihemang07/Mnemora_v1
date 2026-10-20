@@ -50,7 +50,7 @@ export const searchQuery = (query: string, range: { from: string; to: string } |
 /** Pages newest first; the cursor is the previous request's last Page date. */
 export const pagesQuery = infiniteQueryOptions({
   queryKey: journalKeys.pages,
-  queryFn: ({ pageParam }) => unwrap(commands.journalPages(pageParam, PAGE_SIZE)),
+  queryFn: ({ pageParam }) => unwrap(commands.journalPages(pageParam, PAGE_SIZE, 'older')),
   initialPageParam: null as string | null,
   getNextPageParam: (last) => (last.length < PAGE_SIZE ? undefined : last.at(-1)?.date),
 });

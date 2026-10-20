@@ -5,7 +5,8 @@
  */
 
 import { toggleTaskLine } from '../ui/markdown/tasks';
-import type { AppError, Entry, NewEntry, Page } from './bindings';
+import type { AppError, Entry, NewEntry, Page, PageDirection } from './bindings';
+import { pageDates } from './mock-journal-pages';
 import { plainText, searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
 
@@ -40,7 +41,7 @@ function stripLinePrefix(line: string): string {
     .trimStart()
     .replace(/^(>\s*)+/, '')
     .replace(/^#+\s*/, '')
-    .replace(/^([-*+]|\d+\.)\s+/, '')
+    .replace(/^([-*+]|\d+[.)])\s+/, '')
     .replace(/^\[[ xX]\]\s+/, '');
 }
 
@@ -217,11 +218,13 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           if (cursor !== null && !validDate(cursor)) throw fail('validation', 'Not a valid date');
           const limit = Math.min(MAX_PAGES, Math.max(1, a.limit as number));
           const entries = live();
-          const dates = [...new Set(entries.map((e) => e.page_date))]
-            .filter((d) => cursor === null || d < cursor)
-            .sort()
-            .reverse()
-            .slice(0, limit);
+          const dates = pageDates(
+            entries.map((e) => e.page_date),
+            cursor,
+            a.direction as PageDirection,
+            limit,
+          );
+          if (dates === null) throw fail('validation', 'Newer Pages need a date to start from');
           const pages: Page[] = dates.map((date) => {
             const list = entries
               .filter((e) => e.page_date === date)
