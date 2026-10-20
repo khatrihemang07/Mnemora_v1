@@ -158,3 +158,11 @@ describe('showUpcomingPill', () => {
     expect(showUpcomingPill(0, 800, 0, 0)).toBe(false);
   });
 });
+
+describe('pills while the window is away from Today', () => {
+  it('shows Today at once and never Upcoming', () => {
+    expect(showTodayPill(0, 800, 0, true)).toBe(true);
+    expect(showUpcomingPill(0, 800, 0, 3, true)).toBe(false);
+    expect(showUpcomingPill(0, 800, 0, 3)).toBe(true);
+  });
+});

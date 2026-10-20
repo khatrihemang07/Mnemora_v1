@@ -22,6 +22,8 @@ export class EntryFocus {
   reveal: ((id: string) => Promise<void>) | null = null;
   /** Loads older Pages; resolves when they have arrived. */
   loadOlder: (() => Promise<void>) | null = null;
+  /** Brings Today's Pages back when the feed was opened on a far date. */
+  toToday: (() => Promise<void>) | null = null;
 
   get id(): string | null {
     return this.state.id;
@@ -43,6 +45,7 @@ export class EntryFocus {
 
   /** ↑ from an empty composer. */
   async fromComposer(): Promise<void> {
+    await this.toToday?.();
     this.send({ type: 'from-composer', today: this.today });
     if (this.state.id !== null) await this.reveal?.(this.state.id);
   }
@@ -50,6 +53,7 @@ export class EntryFocus {
   dispose(): void {
     this.reveal = null;
     this.loadOlder = null;
+    this.toToday = null;
   }
 }
 

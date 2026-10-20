@@ -2,8 +2,8 @@
   VirtualList: a scrolling list that only renders the rows in view, so thousands of rows stay smooth.
   Wraps @tanstack/svelte-virtual. Rows may differ in height: each is measured once it renders, and
   `estimateSize` only guesses until then. `onnearend` fires while the last rows are in view, to load
-  more. `onviewport` reports scroll position. `columnClass` styles the inner column (e.g. a max
-  width). Rows sit in translated boxes where `position: sticky` misplaces itself, so a pinned
+  more; `onnearstart` while the first rows are (more above). `onviewport` reports scroll position.
+  `columnClass` styles the inner column (e.g. a max width). Rows sit in translated boxes where `position: sticky` misplaces itself, so a pinned
   header is drawn as an overlay instead: rows where `isSticky` holds get `pinned` rendered at the
   top while they are being read, pushed up by the next one. When rows are added or removed above
   the ones being read, the scroll position follows the rows, so the view stays put. `scrollToIndex`,
@@ -27,6 +27,9 @@
     /** Called while one of the last `nearEnd` rows is rendered. May fire repeatedly; guard it. */
     onnearend?: () => void;
     nearEnd?: number;
+    /** Like `onnearend`, for the first `nearStart` rows: load more above. New rows above never move the view. */
+    onnearstart?: () => void;
+    nearStart?: number;
     onviewport?: (scrollTop: number, height: number) => void;
     isSticky?: (item: T) => boolean;
     pinned?: Snippet<[T]>;
@@ -40,6 +43,8 @@
     row,
     onnearend,
     nearEnd = 3,
+    onnearstart,
+    nearStart = 3,
     onviewport,
     isSticky,
     pinned,
@@ -101,6 +106,11 @@
     if (last && last.index >= items.length - nearEnd) untrack(() => onnearend?.());
   });
 
+  $effect(() => {
+    const first = rows[0];
+    if (first && first.index <= nearStart) untrack(() => onnearstart?.());
+  });
+
   function measure(node: HTMLElement) {
     instance?.measureElement(node);
     return {
@@ -151,6 +161,10 @@
    * start is exact however far the jump. Smooth (unless motion is reduced) for hops back.
    */
   export function scrollToIndex(index: number, smooth = false) {
+    // An instant jump holds its row from now on: rows added above before the first scroll event
+    // must not move it. (A smooth one is followed by the scroll events it causes.)
+    const item = items[index];
+    if (!smooth && item !== undefined) anchor = { key: getKey(item, index), index, delta: 0 };
     scroller?.scrollTo({ top: offsetOf(index), behavior: smooth && !reducedMotion() ? 'smooth' : 'auto' });
   }
 

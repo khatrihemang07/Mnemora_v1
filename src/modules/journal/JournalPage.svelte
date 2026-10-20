@@ -60,7 +60,10 @@
   /** The command palette finishes handing focus back within this long of closing. */
   const PALETTE_CLOSE_MS = 80;
 
-  const pages = createInfiniteQuery(() => pagesQuery);
+  // Where the feed window starts: null is the newest Pages (the Journal opens on Today); a date is a
+  // jump to a far date, which loads only the Pages around it (older below, newer above).
+  let anchor = $state<string | null>(null);
+  const pages = createInfiniteQuery(() => pagesQuery(anchor));
   const settings = createQuery(() => settingsQuery);
   const core = $derived(readCore(settings.data?.values));
   const timeFormat = $derived(core.timeFormat);
@@ -84,6 +87,7 @@
   focus.entries = () => feedEntries(loaded);
   focus.reveal = revealEntry;
   focus.loadOlder = loadOlderNow;
+  focus.toToday = goToToday;
   provideFocus(focus);
   const search = new JournalSearch();
   let searchView = $state<ReturnType<typeof SearchView> | null>(null);
@@ -97,14 +101,21 @@
   });
 
   const loaded = $derived(pages.data?.pages.flat() ?? []);
-  const feed = $derived(buildFeed(loaded, today));
+  // Today joins the feed once the window reaches it: no newer Pages are left to load.
+  const feed = $derived(buildFeed(loaded, today, !pages.hasPreviousPage));
   const upcoming = $derived(upcomingCount(loaded, today));
+  /** A window opened on a far date that does not (yet) include Today. */
+  const away = $derived(anchor !== null && pageIndex(feed, today) < 0);
   /** Where the Journal opens: Today's Page when future Pages sit above it. */
   const open = $derived(openIndex(feed, today));
 
   let list = $state<ReturnType<typeof VirtualList<FeedItem>> | null>(null);
   let scrolled = $state({ top: 0, height: 0 });
   let opened = false;
+  /** Resolves a `goToToday` that is waiting for the newest Pages. */
+  let openedDone: (() => void) | null = null;
+  /** A jump to a date outside the loaded window, waiting for the window that starts there. */
+  let jump = $state.raw<{ date: string; entryId?: string; done: () => void } | null>(null);
   let calendarOpen = $state(false);
   let calendarAnchor = $state<HTMLButtonElement | null>(null);
   let calendarHighlight = $state(today);
@@ -116,8 +127,10 @@
     void scrolled;
     return list && open > 0 ? list.offsetOf(open) : 0;
   });
-  const pill = $derived(showTodayPill(scrolled.top, scrolled.height, todayTop));
-  const upcomingPill = $derived(showUpcomingPill(scrolled.top, scrolled.height, todayTop, upcoming));
+  const pill = $derived(showTodayPill(scrolled.top, scrolled.height, todayTop, away));
+  const upcomingPill = $derived(
+    showUpcomingPill(scrolled.top, scrolled.height, todayTop, upcoming, away),
+  );
 
   const estimate = (item: FeedItem) =>
     item.kind === 'month'
@@ -128,17 +141,43 @@
     if (pages.hasNextPage && !pages.isFetchingNextPage) void pages.fetchNextPage();
   }
 
-  // Open on Today, not the top, once any future Pages above it are loaded.
+  /** Newer Pages are prepended; the view stays on the rows being read. */
+  function loadNewer() {
+    if (pages.hasPreviousPage && !pages.isFetchingPreviousPage) void pages.fetchPreviousPage();
+  }
+
+  // Open on Today, not the top, once any future Pages above it are loaded. Also runs again after
+  // `goToToday` drops a far window, with `opened` cleared.
   $effect(() => {
-    if (opened || !list || feed.length === 0) return;
+    void anchor;
+    if (opened || !list || feed.length === 0 || pages.isPlaceholderData) return;
     const last = loaded.at(-1);
     if (last && last.date > today && pages.hasNextPage) {
       loadOlder(); // still inside the Upcoming Pages
       return;
     }
     opened = true;
-    if (open > 0) void tick().then(() => list?.scrollToIndex(open));
+    openedDone?.();
+    openedDone = null;
+    void tick().then(() => list?.scrollToIndex(open));
   });
+
+  /**
+   * Back to where the Journal opens, Today. Where Today is loaded it is a scroll (smooth for a
+   * hop back); from a far window it drops that window for the newest Pages and resolves once
+   * they are in and scrolled to.
+   */
+  async function goToToday(smooth = false) {
+    if (!away) {
+      list?.scrollToIndex(open, smooth);
+      return;
+    }
+    await new Promise<void>((done) => {
+      openedDone = done;
+      opened = false;
+      anchor = null;
+    });
+  }
 
   // A search asked for from ⌘K (possibly just before this page mounted) opens with its words.
   $effect(() => {
@@ -206,7 +245,7 @@
     if (search.active || search.parked) search.close();
     await editing.finisher?.();
     await tick();
-    if (list) list.scrollToIndex(open);
+    await goToToday();
     // The palette gives focus back as it closes; take it again once it has.
     setTimeout(() => nav.compose?.(), PALETTE_CLOSE_MS);
   }
@@ -243,18 +282,38 @@
   }
 
   /**
-   * Scrolls to the Page for `date` (loading older Pages until it is there) and flashes its header,
-   * or the Entry `entryId` on it. Gives up quietly when no Page has that date.
+   * Scrolls to the Page for `date` and flashes its header, or the Entry `entryId` on it. A Page
+   * outside the loaded window opens a new window starting AT that date, so only the Pages around
+   * it load (not every Page in between). Gives up quietly when no Page has that date.
    */
   async function scrollTo(date: string, entryId?: string) {
     if (search.active) search.close(); // a calendar jump or a toast's Show leaves search
     await settle();
-    while (pageIndex(feed, date) < 0 && pages.hasNextPage && (loaded.at(-1)?.date ?? '') > date) {
-      const before = loaded.length;
-      await pages.fetchNextPage();
-      await settle();
-      if (loaded.length === before) break;
+    if (pageIndex(feed, date) >= 0) return land(date, entryId);
+    if (date === today) return goToToday();
+    await new Promise<void>((done) => {
+      jump = { date, entryId, done };
+      anchor = date;
+    });
+  }
+
+  // A jump waits for the window that starts at its date, then lands on it.
+  $effect(() => {
+    const target = jump;
+    if (!target || !list || pages.isPlaceholderData) return;
+    if (pageIndex(feed, target.date) < 0) {
+      if (pages.isFetching) return;
+      jump = null; // that date has no Page any more
+      target.done();
+      return;
     }
+    jump = null;
+    // Let the list take the new rows first, so the jump measures the window it lands in.
+    untrack(() => void settle().then(() => land(target.date, target.entryId)).then(target.done));
+  });
+
+  /** Jumps to a loaded Page, flashes its header or the Entry on it. */
+  async function land(date: string, entryId?: string) {
     const index = pageIndex(feed, date);
     if (index < 0 || !list) return;
     list.scrollToIndex(index);
@@ -350,6 +409,7 @@
         getKey={(item) => item.key}
         estimateSize={estimate}
         onnearend={loadOlder}
+        onnearstart={loadNewer}
         onviewport={(top, height) => (scrolled = { top, height })}
         isSticky={(item) => item.kind === 'page'}
         class="h-full px-(--pad)"
@@ -375,7 +435,7 @@
         class="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-linear-to-t from-bg to-transparent"
       ></div>
       {#if pill}
-        <Pill class={PILL_POSITION} icon={ArrowUp} onclick={() => list?.scrollToIndex(open, true)}>
+        <Pill class={PILL_POSITION} icon={ArrowUp} onclick={() => void goToToday(true)}>
           Today
         </Pill>
       {:else if upcomingPill}

@@ -29,6 +29,11 @@ describe('buildFeed', () => {
     const first = items[0];
     expect(first?.kind === 'page' && first.page.entry_count).toBe(0);
   });
+  it('leaves Today out while the window has not reached it', () => {
+    expect(kinds(buildFeed([page('2025-03-02'), page('2025-03-01')], '2026-10-20', false))).toEqual(
+      ['2025-03-02', '2025-03-01'],
+    );
+  });
   it('does not duplicate a Today that has Entries', () => {
     expect(kinds(buildFeed([page('2026-10-20'), page('2026-10-19')], '2026-10-20'))).toEqual([
       '2026-10-20',
