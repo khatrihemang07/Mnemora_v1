@@ -88,10 +88,10 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 |---|---|
 | `AppMark` | You need the app's brand mark (sidebar). Brand art, the one place with literal colours |
 | `Button` | Any text action: primary, secondary, ghost or danger; sizes sm/md/lg |
-| `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip) |
+| `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip); `bind:ref` anchors a popover to it |
 | `Card` | A hairline-bordered surface that groups content |
 | `Dialog` | A small modal needing a decision (confirm, unsaved changes) |
-| `Sheet` | The phone bottom sheet (the More menu) |
+| `Sheet` | A bottom sheet: the phone More menu, and the DatePicker on a phone |
 | `CommandPalette` | The ⌘K action list. Mount once in the shell |
 | `Tooltip` / `TooltipProvider` | Names or explains a control; 600ms delay, shows the shortcut. Provider mounts once |
 | `ResizablePanes` | The desktop sidebar + main split. Wraps paneforge; takes a pixel width and reports dragged pixels |
@@ -106,11 +106,15 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Switch` | An on/off Setting |
 | `Select` | Pick one of many options |
 | `Input` | A single-line text field |
-| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToTop()` respects reduced motion; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
+| `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` loads more; `scrollToIndex(i, smooth?)` / `offsetOf(i)` / `indexAt(offset)` jump to and measure rows (smooth respects reduced motion); rows added or removed above the ones being read never move the view; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
 | `Textarea` | A multi-line text field that grows with its content up to a cap. Unstyled box: the parent supplies the frame |
 | `MarkdownEditor` | Live Markdown writing: CodeMirror 6, loaded on first use. Marks stay visible but faded; shortcuts, list keys, auto-pairs, slash menu, rich-text paste, ⌘/Ctrl-click links. `value` + `onchange`, `onfinish` (Esc, ⌘↵), `bare` for a framed parent, `font`, `spellcheck`, `slashValues`; `focus()` / `run()` via `bind:this`. Never import CodeMirror anywhere else |
 | `MarkdownView` | Read-only Markdown. Same parser and typography as the editor (`markdown.css`: `.md*`), symbols hidden, built from Svelte elements, **never `{@html}`**. Links open externally; checklist rows look like checkboxes; with `ontoggle` the whole row ticks on click (hover tint, ringed box; links and text selections excepted) and the box stays keyboard reachable |
 | `Menu` | A list of actions beside a button or at a point (right-click, long-press): icon + label + optional shortcut hint, hairline `separatorBefore`, red `danger` item. Controlled (`open`, `anchor` = element or `{x, y}`, `items`, `label`); Bits UI gives arrows, typeahead, Esc and outside-click; dismissing returns focus to the anchor (or `returnFocus`). Entry actions use it; never build ad-hoc popups |
+| `Popover` | A small floating panel hung off a button (pickers). Controlled (`open`, `anchor` element, `label`); Bits UI gives Esc, outside-click and focus; clicking the anchor toggles it; `focus` picks what to focus, `restoreFocus` where focus goes on close. Marked `data-editor-popup` so an open Entry editor is not closed by clicks inside |
+| `Calendar` | A month grid: dots on `marked` days, a ring on today, `selected`, an optional `range` tint and `disabled` predicate, week start from the `weekStart` prop (core Setting), ‹ › month arrows, a month/year picker on the title and an optional Today button. Keyboard (arrows, PageUp/PageDown, Home/End, Enter) and screen-reader grid roles. `hue` tints today and dots with a Module hue token name. Date maths lives in `calendar.ts` (unit-tested) |
+| `DatePicker` | Choose a date: a `Popover` on desktop, a bottom `Sheet` on phone, with Today / Yesterday chips above a `Calendar`. `mode="single"` (`onpick`) or `mode="range"` (two picks, `onrange`; for search); `chips`, `closeOnPick`, `showToday`, `footer` turn it into a browsing calendar (the Journal's go-to-date) |
+| `Chip` | A small pill button that opens a picker (the date chip "Today ▾"): optional icon, trailing chevron, `tone="warm"` tints it with a Module `hue`. `bind:ref` to anchor a popover |
 | `KeyboardBar` | The phone formatting row above the keyboard while an editor is focused (B, I, H, bullet, checklist, quote, link). Buttons never steal focus; it follows the visual viewport |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |
