@@ -16,6 +16,7 @@
   import type { WeekStart } from '../../lib/ui/calendar';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { searchQuery } from './queries';
@@ -132,17 +133,17 @@
           style="padding-inline: 2.25rem"
         />
         {#if search.query !== ''}
-          <button
-            type="button"
-            aria-label="Clear search"
-            class="absolute top-1/2 right-2 grid size-6 -translate-y-1/2 cursor-pointer place-items-center rounded-full text-faint transition-colors duration-(--dur) ease-out hover:bg-hover hover:text-ink"
+          <IconButton
+            icon={X}
+            label="Clear search"
+            size="xs"
+            variant="quiet"
+            class="absolute top-1/2 right-2 -translate-y-1/2"
             onclick={() => {
               search.setQuery('');
               focus(false);
             }}
-          >
-            <X class="size-3.5" />
-          </button>
+          />
         {/if}
       </div>
       <SearchRangeChip

@@ -19,7 +19,6 @@
   import CalendarDays from '~icons/lucide/calendar-days';
   import NotebookPen from '~icons/lucide/notebook-pen';
   import Search from '~icons/lucide/search';
-  import X from '~icons/lucide/x';
   import type { Hit } from '../../lib/ipc/bindings';
   import { hasMod, shortcutLabel } from '../../lib/platform';
   import { readCore } from '../../lib/settings/core';
@@ -29,6 +28,7 @@
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import Pill from '../../lib/ui/Pill.svelte';
   import KeyboardBar from '../../lib/ui/KeyboardBar.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import VirtualList from '../../lib/ui/VirtualList.svelte';
@@ -55,6 +55,8 @@
   const PAGE_ESTIMATE_PX = 70;
   const ENTRY_ESTIMATE_PX = 90;
   const MONTH_ESTIMATE_PX = 52;
+  // Below the pinned Page header, so the pill never hides the date.
+  const PILL_POSITION = 'absolute top-[4.25rem] left-1/2 z-10 -translate-x-1/2';
   /** The command palette finishes handing focus back within this long of closing. */
   const PALETTE_CLOSE_MS = 80;
 
@@ -372,23 +374,20 @@
       <div
         class="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-linear-to-t from-bg to-transparent"
       ></div>
-      <!-- Below the pinned Page header, so it never hides the date. -->
       {#if pill}
-        <button
-          type="button"
-          class="absolute top-[4.25rem] left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-xs font-semibold text-bg shadow-(--elev-pop)"
-          onclick={() => list?.scrollToIndex(open, true)}
-        >
-          <ArrowUp class="size-3.5" /> Today
-        </button>
+        <Pill class={PILL_POSITION} icon={ArrowUp} onclick={() => list?.scrollToIndex(open, true)}>
+          Today
+        </Pill>
       {:else if upcomingPill}
-        <button
-          type="button"
-          class="absolute top-[4.25rem] left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-pop px-3.5 py-1.5 text-xs font-semibold text-(--hue-journal) shadow-(--elev-pop)"
+        <Pill
+          class={PILL_POSITION}
+          tone="tinted"
+          hue="--hue-journal"
+          icon={ArrowUp}
           onclick={() => list?.scrollToIndex(0, true)}
         >
-          <ArrowUp class="size-3.5" /> Upcoming ({upcoming})
-        </button>
+          Upcoming ({upcoming})
+        </Pill>
       {/if}
     {/if}
     </div>
@@ -404,25 +403,17 @@
         class="absolute inset-0 z-20"
       />
     {:else if search.parked}
-      <div
-        class="absolute bottom-8 left-1/2 z-10 inline-flex -translate-x-1/2 items-center rounded-full border border-line bg-pop text-xs font-semibold shadow-(--elev-pop)"
+      <Pill
+        class="absolute bottom-8 left-1/2 z-10 -translate-x-1/2"
+        tone="tinted"
+        hue="--hue-journal"
+        icon={ArrowLeft}
+        onclick={() => search.open()}
+        ondismiss={() => search.close()}
+        dismissLabel="Dismiss search results"
       >
-        <button
-          type="button"
-          class="inline-flex cursor-pointer items-center gap-1.5 rounded-l-full py-1.5 pr-2 pl-3.5 text-(--hue-journal) hover:bg-hover"
-          onclick={() => search.open()}
-        >
-          <ArrowLeft class="size-3.5" /> Back to results
-        </button>
-        <button
-          type="button"
-          aria-label="Dismiss search results"
-          class="grid cursor-pointer place-items-center rounded-r-full py-1.5 pr-2.5 pl-1.5 text-faint hover:bg-hover hover:text-ink"
-          onclick={() => search.close()}
-        >
-          <X class="size-3.5" />
-        </button>
-      </div>
+        Back to results
+      </Pill>
     {/if}
   </div>
   <ComposerDock class={search.active ? 'hidden' : ''} />

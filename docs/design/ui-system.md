@@ -88,7 +88,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 |---|---|
 | `AppMark` | You need the app's brand mark (sidebar). Brand art, the one place with literal colours |
 | `Button` | Any text action: primary, secondary, ghost or danger; sizes sm/md/lg |
-| `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip); `bind:ref` anchors a popover to it |
+| `IconButton` | An icon-only action. Needs a `label` (aria-label and tooltip); `bind:ref` anchors a popover to it; `size="xs"` + `variant="quiet"` is the small faint round × for clearing a field or chip |
 | `Card` | A hairline-bordered surface that groups content |
 | `Dialog` | A small modal needing a decision (confirm, unsaved changes) |
 | `Sheet` | A bottom sheet: the phone More menu, and the DatePicker on a phone |
@@ -114,6 +114,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Calendar` | A month grid: dots on `marked` days, a ring on today, `selected`, an optional `range` tint and `disabled` predicate, week start from the `weekStart` prop (core Setting), ‹ › month arrows, a month/year picker on the title and an optional Today button. Keyboard (arrows, PageUp/PageDown, Home/End, Enter) and screen-reader grid roles. `hue` tints today and dots with a Module hue token name. Date maths lives in `calendar.ts` (unit-tested) |
 | `DatePicker` | Choose a date: a `Popover` on desktop, a bottom `Sheet` on phone, with Today / Yesterday chips above a `Calendar`. `mode="single"` (`onpick`) or `mode="range"` (two picks, `onrange`; for search); `chips`, `closeOnPick`, `showToday`, `footer` turn it into a browsing calendar (the Journal's go-to-date) |
 | `Chip` | A small pill button that opens a picker (the date chip "Today ▾", the search "Any date ▾"): optional icon, trailing chevron, `tone="warm"` tints it with a Module `hue`. `bind:ref` to anchor a popover |
+| `Pill` | A floating action pill ("↑ Today", "Back to results"): `tone="ink"` neutral dark, or `tone="tinted"` raised with its text in a Module `hue`; optional `icon` and a × (`ondismiss`, `dismissLabel`). The parent positions it with `class` |
 | `KeyboardBar` | The phone formatting row above the keyboard while an editor is focused (B, I, H, bullet, checklist, quote, link). Buttons never steal focus; it follows the visual viewport |
 | `SettingsLayout` | The section nav + panel frame for Settings (drills in on phone) |
 | `SettingSection` | A titled group of rows in a Card |
