@@ -69,9 +69,11 @@
   let calendarAnchor = $state<HTMLButtonElement | null>(null);
   let calendarHighlight = $state(today);
 
-  // Where Today's area starts: the pills and the opening scroll are measured from here.
+  // Where Today's area starts: the pills and the opening scroll are measured from here. Row
+  // measurements aren't reactive, so it is read again on every scroll, not just when the feed changes.
   const todayTop = $derived.by(() => {
     void feed;
+    void scrolled;
     return list && open > 0 ? list.offsetOf(open) : 0;
   });
   const pill = $derived(showTodayPill(scrolled.top, scrolled.height, todayTop));

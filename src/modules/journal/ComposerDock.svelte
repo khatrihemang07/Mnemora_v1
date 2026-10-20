@@ -21,6 +21,7 @@
   import { chipLabel, localDateString } from './dates';
   import { journalLeaveGuard, useEditing } from './editing.svelte';
   import { useNav } from './navigation.svelte';
+  import { useMarkedDays } from './marked-days.svelte';
   import {
     createEntry,
     deviceWrittenWhere,
@@ -123,6 +124,10 @@
     await invalidateJournal();
     if (!viewport.isPhone) editor?.focus();
   }
+
+  // The picker's coral dots: days that already have Entries.
+  let pickerMonth = $state(nav.today.slice(0, 7));
+  const pickerDays = useMarkedDays(() => ({ month: pickerMonth, open: dateOpen }));
 </script>
 
 <div class="shrink-0 px-(--pad) pb-(--pad) {cls}">
@@ -195,6 +200,8 @@
   today={nav.today}
   weekStart={nav.weekStart}
   value={pageDate}
+  marked={pickerDays.marked}
+  onmonthchange={(m) => (pickerMonth = m)}
   hue="--hue-journal"
   onpick={(date) => {
     nav.composerDate = date;

@@ -21,6 +21,7 @@
   import { EntryEditing } from './entry-editing';
   import { journalLeaveGuard, useEditing } from './editing.svelte';
   import { useNav } from './navigation.svelte';
+  import { useMarkedDays } from './marked-days.svelte';
   import { invalidateJournal, patchEntry, updateEntry } from './queries';
 
   let { entry }: { entry: Entry } = $props();
@@ -115,6 +116,10 @@
     if (!viewport.isPhone) return;
     return interceptBack(() => void finish());
   });
+
+  // The picker's coral dots: days that already have Entries.
+  let pickerMonth = $state(nav.today.slice(0, 7));
+  const pickerDays = useMarkedDays(() => ({ month: pickerMonth, open: dateOpen }));
 </script>
 
 <div bind:this={card} class="min-w-0">
@@ -171,6 +176,8 @@
   today={nav.today}
   weekStart={nav.weekStart}
   value={entry.page_date}
+  marked={pickerDays.marked}
+  onmonthchange={(m) => (pickerMonth = m)}
   hue="--hue-journal"
   onpick={(date) => void moveEntryToDate(entry, date, editing, nav)}
 />

@@ -26,6 +26,7 @@
   import { useEditing } from './editing.svelte';
   import EntryEditor from './EntryEditor.svelte';
   import { useNav } from './navigation.svelte';
+  import { useMarkedDays } from './marked-days.svelte';
 
   let { entry, timeFormat }: { entry: Entry; timeFormat: TimeFormat } = $props();
 
@@ -109,6 +110,10 @@
     e.preventDefault();
     void editing.open(entry.id);
   }
+
+  // The picker's coral dots: days that already have Entries.
+  let pickerMonth = $state(nav.today.slice(0, 7));
+  const pickerDays = useMarkedDays(() => ({ month: pickerMonth, open: moveOpen }));
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -- the row is the click-to-edit target; Enter on it opens the editor from the keyboard -->
@@ -176,6 +181,8 @@
   today={nav.today}
   weekStart={nav.weekStart}
   value={entry.page_date}
+  marked={pickerDays.marked}
+  onmonthchange={(m) => (pickerMonth = m)}
   hue="--hue-journal"
   onpick={(date) => void moveEntryToDate(entry, date, editing, nav)}
 />

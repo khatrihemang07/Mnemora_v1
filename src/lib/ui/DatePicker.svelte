@@ -143,7 +143,7 @@
 {/snippet}
 
 {#if viewport.isPhone}
-  <Sheet {open} {title} onclose={() => (open = false)}>{@render body()}</Sheet>
+  <Sheet {open} {title} onclose={() => (open = false)} {restoreFocus}>{@render body()}</Sheet>
 {:else}
   <Popover bind:open {anchor} label={title} focus="[data-date][tabindex='0']" {restoreFocus}>{@render body()}</Popover>
 {/if}

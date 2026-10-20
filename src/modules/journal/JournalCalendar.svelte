@@ -6,14 +6,13 @@
   there; tapping an empty day says so and offers "Write on this day".
 -->
 <script lang="ts">
-  import { createQuery } from '@tanstack/svelte-query';
   import { untrack } from 'svelte';
   import PenLine from '~icons/lucide/pen-line';
   import Button from '../../lib/ui/Button.svelte';
-  import { parseYmd, shiftMonth, type WeekStart } from '../../lib/ui/calendar';
+  import type { WeekStart } from '../../lib/ui/calendar';
   import DatePicker from '../../lib/ui/DatePicker.svelte';
   import { dayLabel } from './dates';
-  import { monthDaysQuery } from './queries';
+  import { useMarkedDays } from './marked-days.svelte';
 
   interface Props {
     open: boolean;
@@ -31,24 +30,11 @@
   let month = $state(untrack(() => today.slice(0, 7)));
   /** The day last tapped; null until one is. Moves the highlight and decides the empty-day note. */
   let tapped = $state<string | null>(null);
+  // "Write on this day": closing hands focus to the composer, not back to the calendar button.
+  let writing: string | null = null;
 
-  // The month on show and the two beside it, so the grey days at the edges get their dots too.
-  const around = $derived([-1, 0, 1].map((d) => parseYmd(shiftMonth(month, d))));
-  const prev = createQuery(() => ({
-    ...monthDaysQuery(around[0]?.[0] ?? 1970, around[0]?.[1] ?? 1),
-    enabled: open,
-  }));
-  const here = createQuery(() => ({
-    ...monthDaysQuery(around[1]?.[0] ?? 1970, around[1]?.[1] ?? 1),
-    enabled: open,
-  }));
-  const next = createQuery(() => ({
-    ...monthDaysQuery(around[2]?.[0] ?? 1970, around[2]?.[1] ?? 1),
-    enabled: open,
-  }));
-  const marked = $derived(
-    new Set([...(prev.data ?? []), ...(here.data ?? []), ...(next.data ?? [])]),
-  );
+  const days = useMarkedDays(() => ({ month, open }));
+  const marked = $derived(days.marked);
 
   // Forget the tap on closing, so the next opening starts from the Page in view.
   $effect(() => {
@@ -69,6 +55,11 @@
 <DatePicker
   bind:open
   {anchor}
+  restoreFocus={() => {
+    if (writing) onwrite(writing);
+    else anchor?.focus();
+    writing = null;
+  }}
   title="Go to date"
   {today}
   {weekStart}
@@ -93,8 +84,8 @@
           variant="primary"
           size="sm"
           onclick={() => {
+            writing = empty;
             open = false;
-            onwrite(empty);
           }}
         >
           <PenLine class="size-3.5" /> Write on this day
