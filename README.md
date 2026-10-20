@@ -17,7 +17,7 @@ pnpm install
 make setup      # one-time Android toolchain + signing (optional if you only target desktop)
 ```
 
-`make setup` runs `scripts/setup-android.sh` (installs only the NDK, adds the arm64 Rust target, writes a git-ignored `.env.local`) and `scripts/setup-signing.sh` (creates signing keys under `~/.mnemora/`, with passwords in the macOS Keychain). It changes your system, so read both scripts first.
+`make setup` runs `scripts/setup-android.sh` (installs and prunes the NDK, removes the emulator, adds the arm64 Rust target, writes a git-ignored `.env.local`) and `scripts/setup-signing.sh` (creates signing keys under `~/.mnemora/`, with passwords in the macOS Keychain). It changes your system, so read both scripts first. Never re-run `cargo tauri android init`: `src-tauri/gen/android` is committed and customised (see [standards](docs/engineering/standards.md#android-project)).
 
 ## Daily commands
 

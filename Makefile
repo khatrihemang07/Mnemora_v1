@@ -11,7 +11,7 @@ DEV_PORT := 47821
 # means a CLI that ignored the config could still never start Sandbox on Production data
 # (the app also refuses to start when identifier and build Environment disagree).
 
-.PHONY: help dev sandbox build android-dev android test lint fmt bindings clean-heavy setup
+.PHONY: help dev sandbox build android-dev android test lint fmt bindings trim clean-heavy setup
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -36,12 +36,13 @@ build: ## Release build for this machine (.app/.dmg), signed if setup-signing wa
 
 android-dev: ## Hot reload on a USB-connected phone (Sandbox data)
 	$(require_free_port)
-	@trap 'adb reverse --remove tcp:$(DEV_PORT) >/dev/null 2>&1 || true' EXIT; \
+	@export MNEMORA_ANDROID_SANDBOX=1; \
+	  trap 'adb reverse --remove tcp:$(DEV_PORT) >/dev/null 2>&1 || true' EXIT; \
 	  $(RUN) adb reverse tcp:$(DEV_PORT) tcp:$(DEV_PORT) && \
-	  $(RUN) cargo tauri android dev $(SANDBOX_ARGS)
+	  $(RUN) cargo tauri android dev --features sandbox
 
 android: ## Signed arm64 release APK, installed on the connected phone
-	@set -e; eval "$$(./scripts/signing-env.sh android)"; \
+	@set -e; unset MNEMORA_ANDROID_SANDBOX; eval "$$(./scripts/signing-env.sh android)"; \
 	$(RUN) cargo tauri android build --target aarch64 --apk; \
 	apk=$$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' ! -name '*unsigned*' -print0 | xargs -0 ls -t | head -1); \
 	test -n "$$apk" || { echo "no signed release APK found (run make setup?)"; exit 1; }; \
@@ -65,6 +66,13 @@ fmt: ## Format Rust and frontend code
 
 bindings: ## Regenerate src/lib/ipc/bindings.ts without launching the app
 	$(RUN) cargo test -p mnemora-app regenerate_bindings -- --ignored
+
+trim: ## Free disk, keeping compiled deps: incremental dirs, docs, Gradle outputs
+	@before=$$(du -sk target 2>/dev/null | cut -f1); \
+	rm -rf target/*/incremental target/*/*/incremental target/*/doc \
+	  src-tauri/gen/android/build src-tauri/gen/android/app/build; \
+	after=$$(du -sk target 2>/dev/null | cut -f1); \
+	echo "target/: $$((before/1024)) MB -> $$((after/1024)) MB"
 
 clean-heavy: ## Delete target/, node_modules and Android build dirs (asks first)
 	@read -r -p "Delete target/, node_modules/ and src-tauri/gen/android build dirs? [y/N] " ans; \

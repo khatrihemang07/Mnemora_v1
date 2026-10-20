@@ -4,6 +4,7 @@
 #![cfg_attr(mobile, allow(unsafe_code))]
 
 mod commands;
+mod env_guard;
 mod state;
 mod theme_inject;
 #[cfg(desktop)]
@@ -76,19 +77,15 @@ pub fn export_bindings(path: &std::path::Path) -> Result<(), Box<dyn Error>> {
 }
 
 fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<dyn Error>> {
-    // Refuse to start if the build-time Environment and the Tauri config disagree, e.g. the
-    // sandbox config without the `sandbox` feature, which would write into Production data.
-    let identifier = &app.config().identifier;
-    if identifier != ENVIRONMENT.app_identifier() {
-        return Err(format!(
-            "environment mismatch: config identifier {identifier} vs build {}",
-            ENVIRONMENT.app_identifier()
-        )
-        .into());
-    }
+    let base = app.path().data_dir()?;
+    env_guard::check(
+        ENVIRONMENT,
+        &app.config().identifier,
+        &base.to_string_lossy(),
+        cfg!(target_os = "android"),
+    )?;
 
     // Logging first so everything after it (including a corrupt device.toml) is recorded.
-    let base = app.path().data_dir()?;
     let boot_paths = AppPaths::resolve(ENVIRONMENT, &base, None);
     let log = logging::init(&boot_paths.log_dir, "info")?;
     tracing::info!(

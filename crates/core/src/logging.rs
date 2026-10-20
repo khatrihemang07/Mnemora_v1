@@ -1,4 +1,4 @@
-//! Tracing setup: daily rolling files, a console layer, logcat on Android, 7-day pruning.
+//! Tracing setup: daily rolling files, a console layer (which is logcat on Android), 7-day pruning.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -71,14 +71,17 @@ pub fn init(log_dir: &Path, level: &str) -> AppResult<LogHandle> {
         .with_writer(writer)
         .with_ansi(false)
         .with_target(true);
-    let console_layer = fmt::layer().with_writer(std::io::stderr).with_target(true);
+    // On Android, stderr is already forwarded to logcat (tag RustStdoutStderr); a second logcat
+    // layer would duplicate every line, and ANSI colours show up as garbage there.
+    let console_layer = fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_ansi(!cfg!(target_os = "android"))
+        .with_target(true);
 
     let subscriber = tracing_subscriber::registry()
         .with(filter)
         .with(file_layer)
         .with(console_layer);
-    #[cfg(target_os = "android")]
-    let subscriber = subscriber.with(tracing_android::layer("mnemora").ok());
 
     subscriber.try_init().map_err(|e| {
         AppError::new(ErrorCode::Internal, "Logging was already initialised").with_details(e)

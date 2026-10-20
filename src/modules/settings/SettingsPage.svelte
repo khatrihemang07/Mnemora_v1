@@ -31,15 +31,18 @@
 
   const settings = createQuery(() => settingsQuery);
 
-  const sections: { id: string; label: string; icon: Component<{ class?: string }>; view: Component }[] = [
+  const allSections: { id: string; label: string; icon: Component<{ class?: string }>; view: Component; desktopOnly?: true }[] = [
     { id: 'appearance', label: 'Appearance', icon: Palette, view: Appearance },
     { id: 'general', label: 'General', icon: SlidersHorizontal, view: General },
     { id: 'navigation', label: 'Navigation', icon: PanelLeft, view: Navigation },
     { id: 'data', label: 'Data & storage', icon: Database, view: DataStorage },
     { id: 'modules', label: 'Modules', icon: Boxes, view: ModulesSection },
-    { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard, view: Shortcuts },
+    { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard, view: Shortcuts, desktopOnly: true },
     { id: 'about', label: 'About', icon: Info, view: About },
   ];
+
+  // Keyboard shortcuts mean nothing on a touch phone.
+  const sections = $derived(viewport.isPhone ? allSections.filter((s) => !s.desktopOnly) : allSections);
 
   // Desktop always shows a section; the phone starts at the list.
   const active = $derived(viewport.isPhone ? settingsNav.section : (settingsNav.section ?? 'appearance'));

@@ -121,12 +121,55 @@ pub fn open_log_dir(app: AppHandle, state: State<'_, AppState>) -> Result<(), Ap
         .map_err(|e| AppError::new(ErrorCode::Io, "Could not open the log folder").with_details(e))
 }
 
-/// First token of the OS real name, else the account name, else a friendly fallback.
+/// Names the OS reports when there is no real account name (Android returns "Anonymous").
+const PLACEHOLDER_NAMES: [&str; 2] = ["anonymous", "unknown"];
+
+/// First token of the name, or `None` when it is empty or a placeholder.
+fn sanitize_first_name(name: &str) -> Option<String> {
+    let first = name.split_whitespace().next()?;
+    let lower = first.to_lowercase();
+    (!PLACEHOLDER_NAMES.contains(&lower.as_str())).then(|| first.to_owned())
+}
+
+/// First token of the OS real name, else the account name; empty on phones or placeholders so
+/// the UI shows a plain greeting.
 fn os_first_name() -> String {
-    let first = |s: String| s.split_whitespace().next().map(str::to_owned);
+    if cfg!(mobile) {
+        return String::new();
+    }
     whoami::realname()
         .ok()
-        .and_then(first)
-        .or_else(|| whoami::username().ok().and_then(first))
-        .unwrap_or_else(|| "friend".to_owned())
+        .and_then(|n| sanitize_first_name(&n))
+        .or_else(|| {
+            whoami::username()
+                .ok()
+                .and_then(|n| sanitize_first_name(&n))
+        })
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_first_name;
+
+    #[test]
+    fn keeps_a_real_first_name() {
+        assert_eq!(
+            sanitize_first_name("  Hemang Khatri"),
+            Some("Hemang".into())
+        );
+    }
+
+    #[test]
+    fn root_and_user_may_be_real_names() {
+        assert_eq!(sanitize_first_name("root"), Some("root".into()));
+        assert_eq!(sanitize_first_name("User"), Some("User".into()));
+    }
+
+    #[test]
+    fn placeholders_and_blanks_are_no_name() {
+        for n in ["Anonymous", "UNKNOWN", "", "   "] {
+            assert_eq!(sanitize_first_name(n), None, "{n:?}");
+        }
+    }
 }

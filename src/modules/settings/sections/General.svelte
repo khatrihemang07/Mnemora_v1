@@ -16,7 +16,7 @@
 <SettingSection title="General">
   <SettingRow
     label="Display name"
-    hint={`Used in the greeting. Leave empty to use ${info.data?.os_first_name ?? 'your system name'}.`}
+    hint={`Used in the greeting. Leave empty to use ${info.data?.os_first_name || 'your system name'}.`}
   >
     <Input
       label="Display name"

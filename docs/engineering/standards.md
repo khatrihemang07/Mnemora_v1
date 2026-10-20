@@ -90,6 +90,18 @@ The dev machine is an 8 GB Mac with limited disk.
 - No browsers or emulators on this machine; test on a real phone via adb.
 - `make clean-heavy` frees `target/`, `node_modules/` and Android build output.
 
+## Android project
+
+`src-tauri/gen/android` is committed and customised. Do **not** re-run `cargo tauri android init`. The customisations are:
+
+- AGP 8.13.0 and the Gradle 8.14.3-all wrapper, chosen to reuse the local cache.
+- arm64 only (`abiFilters`, `RustPlugin.kt` defaults); R8 off.
+- Release signing (fails loudly if not set up) and the Sandbox switch (`MNEMORA_ANDROID_SANDBOX=1` gives `com.hemang.mnemora.sandbox` and the "Mnemora Sandbox" label; `src-tauri/build.rs` keeps the JNI package on the Production one).
+- Memory limits in `gradle.properties`.
+- The `MainActivity` system-bars bridge.
+
+If it is ever re-run, re-apply these with `git diff` / `git checkout -p`.
+
 ## How to add a Module
 
 Example id: `journal`.
