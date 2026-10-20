@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { onMount, tick } from 'svelte';
+  import { keyboard } from '../keyboard.svelte';
   import { openExternal } from '../open-external';
   import { formatDate } from '../time/format';
   import type { EditorController, SlashState } from './markdown/editor-core';
@@ -60,6 +61,7 @@
   let ctrl = $state.raw<EditorController | null>(null);
   let slash = $state.raw<SlashState | null>(null);
   let wantsFocus = false;
+  let hasFocus = $state(false);
 
   /** Focuses the editor (once it has loaded, if it has not yet). */
   export function focus() {
@@ -86,7 +88,10 @@
         bare,
         onchange: (text) => onchange(text),
         onfinish: () => onfinish?.(),
-        onfocuschange: (f) => onfocuschange?.(f),
+        onfocuschange: (f) => {
+          hasFocus = f;
+          onfocuschange?.(f);
+        },
         onslash: (s) => {
           slash = s;
         },
@@ -105,6 +110,15 @@
   // The text can change from outside (the composer clearing after Finish).
   $effect(() => {
     ctrl?.setDoc(value);
+  });
+
+  // The keyboard shrinks the page under a focused editor: once the layout has settled, scroll the
+  // editor into view so the line being typed is not left under the composer or the keyboard.
+  $effect(() => {
+    // Re-runs as the keyboard's inset settles.
+    if (!keyboard.open || !hasFocus || keyboard.inset < 0) return;
+    const frame = requestAnimationFrame(() => host?.scrollIntoView({ block: 'nearest' }));
+    return () => cancelAnimationFrame(frame);
   });
 
   // Spellcheck follows the Device setting while the editor is open.
