@@ -12,7 +12,7 @@
   visibleToasts={3}
   duration={4000}
   offset={16}
-  mobileOffset={{ bottom: viewport.isPhone ? 'calc(72px + env(safe-area-inset-bottom))' : 16, left: 16, right: 16 }}
+  mobileOffset={{ bottom: viewport.isPhone ? 'calc(72px + env(safe-area-inset-bottom))' : 16, left: 'calc(16px + env(safe-area-inset-left))', right: 'calc(16px + env(safe-area-inset-right))' }}
   toastOptions={{ class: 'mnemora-toast' }}
 />
 

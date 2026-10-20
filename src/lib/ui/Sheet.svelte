@@ -35,7 +35,7 @@
         e.preventDefault();
         restoreFocus();
       }}
-      class="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-lg bg-pop p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-pop"
+      class="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-lg bg-pop pt-3 pr-[calc(0.75rem+env(safe-area-inset-right))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] pl-[calc(0.75rem+env(safe-area-inset-left))] shadow-pop"
     >
       <div class="flex items-center justify-between gap-2 pb-2">
         <Dialog.Title class="px-2 pt-1 text-xs font-medium text-faint">{title}</Dialog.Title>

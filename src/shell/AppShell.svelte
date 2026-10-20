@@ -59,7 +59,7 @@
 
 <TooltipProvider>
   <div
-    class="flex h-full flex-col bg-bg text-ink"
+    class="flex h-full flex-col bg-bg text-ink {viewport.isPhone ? 'pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]' : ''}"
     style:padding-bottom={viewport.isPhone && keyboard.open ? `${keyboard.inset}px` : undefined}
   >
     {#if viewport.isPhone}
