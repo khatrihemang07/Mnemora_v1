@@ -16,6 +16,17 @@ export function interceptBack(handler: () => void): () => void {
 }
 
 /**
+ * For an overlay (Sheet, Popover, Menu, Dialog): while `isOpen()` is true, Android Back calls
+ * `close` instead of navigating. Call it during component init; it registers its own effect.
+ */
+export function closeOnBack(isOpen: () => boolean, close: () => void): void {
+  $effect(() => {
+    if (!isOpen()) return;
+    return interceptBack(close);
+  });
+}
+
+/**
  * Android hardware back: finish an open editor, else go back in history, or exit at the root. A
  * no-op on desktop and in a browser, where the platform already handles back.
  */

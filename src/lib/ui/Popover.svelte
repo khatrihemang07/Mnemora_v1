@@ -9,6 +9,7 @@
 <script lang="ts">
   import { Popover } from 'bits-ui';
   import type { Snippet } from 'svelte';
+  import { closeOnBack } from '../router/back-button.svelte';
 
   interface Props {
     open: boolean;
@@ -32,6 +33,8 @@
     restoreFocus,
     children,
   }: Props = $props();
+
+  closeOnBack(() => open, () => (open = false));
 
   let content = $state<HTMLElement | null>(null);
 
