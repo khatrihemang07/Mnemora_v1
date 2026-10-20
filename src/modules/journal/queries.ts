@@ -16,8 +16,16 @@ export const journalKeys = {
   pages: ['journal', 'pages'] as const,
   search: (query: string, from: string | null, to: string | null) =>
     ['journal', 'search', query, from, to] as const,
+  today: (date: string) => ['journal', 'today', date] as const,
   monthDays: (year: number, month: number) => ['journal', 'month-days', year, month] as const,
 };
+
+/** What the Home card shows about `date` (the user's local today): the count and the latest snippet. */
+export const todayQuery = (date: string) =>
+  queryOptions({
+    queryKey: journalKeys.today(date),
+    queryFn: () => unwrap(commands.journalToday(date)),
+  });
 
 /** Dates with Entries in a month (`month` is 1-12): the Calendar's dots. */
 export const monthDaysQuery = (year: number, month: number) =>

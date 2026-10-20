@@ -132,8 +132,12 @@ The editor and the read view share one set of rules in `src/lib/ui/markdown/mark
 - **Top bar** (desktop): a 50px drag region (`data-tauri-drag-region`) with a bottom hairline: sidebar toggle, then the `PageHeader` title, then page actions and a compact "Search... ⌘K" button. Windows and Linux add window controls at the right end.
 - **Phone** (under 720px or a mobile OS): no sidebar or top bar. A bottom tab bar shows up to 4 chosen tabs plus **More**. More is highlighted whenever the current Module is not one of the tabs (Settings included) and opens a sheet with the rest. Pages start with a large `PageHeader` title.
 - **Enabled Modules**: a Module is on unless listed in `core.disabled_modules` (so new Modules appear by default). Routes (a disabled Module's URL falls back to Home), sidebar, tab bar and More sheet, ⌘K, ⌘-digit and ⌘N all use only enabled Modules. Switching off hides a Module and keeps its data.
-- **Home cards**: Home lists each enabled Module's lazy `homeCard` below the greeting and clock, in nav order; with none it shows an `EmptyState`.
+- **Home cards**: Home lists each enabled Module's lazy `homeCard` below the greeting and clock, in nav order, handing each the shell's `ModuleContext` (`ctx`) so its buttons can navigate; with none it shows an `EmptyState`. The Journal's card (H2) is a `Card` with the coral notebook tile and "Journal", a primary Write button at the right, the latest Entry of today as a plain-text quote in the display serif (clamped to 3 lines) and "Today · N entries" below; an empty day says "Nothing written today".
 - **Home (H1)**: greeting card and clock tile in a `1.4fr / 1fr` grid at 720px and wider, equal height; stacked below. The clock has a small uppercase "Local time" label, tight tabular digits and smaller seconds.
+
+## Journal keyboard (R4)
+
+On desktop the feed's Entries are one stop each for the keyboard. ↑ / ↓ move a focus ring (the global `:focus-visible` ring plus the hover tint) between Entries across Pages, scrolling the Entry into view clear of the pinned header and composer fade and loading older Pages at the end. Enter edits; Esc, ⌘/Ctrl+Enter or Done leave the editor with that Entry focused again; ⌫ / Delete deletes with Undo and focuses the next Entry; M opens the move picker; C copies; Esc on an Entry returns to the composer. ↑ from an empty composer focuses the last Entry of Today's Page (the newest Entry before Today when Today has none). The keys apply only while the row itself has focus, never inside an editor, the composer or the search field, and there is no ⌘⌫ (macOS uses it to delete to the line start). The ⋯ menu shows the keys as hints on desktop; Settings ▸ Shortcuts lists them.
 
 ## Settings patterns
 
@@ -145,6 +149,8 @@ The editor and the read view share one set of rules in `src/lib/ui/markdown/mark
 - **Data folder**: changing it from the UI is deferred.
 - Phone Settings is a list that drills into one section with a Back button.
 - **Module sections**: a Module's `settingsSection` (label, icon, lazy component) is appended after the core sections, on the same draft, Save bar and leave guard, and drills in on phone.
+- **Preferences and Device settings together**: a Module section may mix both. Preferences go through the draft and SaveBar; a Device setting (the Journal's Spellcheck) saves at once through its own command, like the sidebar layout.
+- **Journal section (Z1)**: Writing font (`SegmentedControl` Serif / Sans), Text width (Narrow / Default / Wide, about 60 / 72 / 90 characters, `35.5rem` / `42.5rem` / `53rem` so it scales with Text size and shrinks to fill narrow windows), Page summaries (`Switch`, on) and Spellcheck (`Switch`, on, this device only). Width is set once as `--journal-width` on the Journal and used by the feed, pinned header, composer and search.
 - **Modules** section: one `Switch` per Module, bound to `core.disabled_modules` through the draft. Home and Settings are `required` and show a disabled, checked switch.
 
 ## Do

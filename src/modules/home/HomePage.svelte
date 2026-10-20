@@ -1,4 +1,4 @@
-<!-- HomePage (H1): greeting card, clock tile and the cards of enabled Modules. -->
+<!-- HomePage (H1): greeting card, clock tile and the cards of enabled Modules (given the shell's context). -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import Sparkles from '~icons/lucide/sparkles';
@@ -10,6 +10,7 @@
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import { homeCards } from '../../shell/enabled-modules';
   import { useEnabledModules } from '../../shell/enabled.svelte';
+  import { moduleContext } from '../../shell/module-context';
   import ClockTile from './ClockTile.svelte';
   import GreetingCard from './GreetingCard.svelte';
   import { homeName } from './greeting-name';
@@ -34,7 +35,7 @@
     </div>
     {#each cards as c (c.id)}
       {#await c.load() then card}
-        <card.default />
+        <card.default ctx={moduleContext} />
       {/await}
     {:else}
       <Card>

@@ -112,7 +112,7 @@
 
 <div class="flex h-full flex-col bg-bg {cls}">
   <div class="shrink-0 px-(--pad) pt-2 pb-3">
-    <div class="mx-auto flex max-w-[42.5rem] items-center gap-2">
+    <div class="mx-auto flex max-w-(--journal-width) items-center gap-2">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div bind:this={fieldBox} class="relative min-w-0 flex-1" {onkeydown}>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
@@ -156,7 +156,7 @@
   </div>
 
   <div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-(--pad) pb-6">
-    <div class="mx-auto max-w-[42.5rem]">
+    <div class="mx-auto max-w-(--journal-width)">
       {#if !enabled}
         <EmptyState
           icon={Search}

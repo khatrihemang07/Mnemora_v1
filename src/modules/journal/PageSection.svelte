@@ -8,11 +8,16 @@
   import EntryRow from './EntryRow.svelte';
   import PageHeading from './PageHeading.svelte';
 
-  let { page, today, timeFormat }: { page: Page; today: string; timeFormat: TimeFormat } = $props();
+  let {
+    page,
+    today,
+    timeFormat,
+    summary,
+  }: { page: Page; today: string; timeFormat: TimeFormat; summary: boolean } = $props();
 </script>
 
 <section>
-  <PageHeading {page} {today} />
+  <PageHeading {page} {today} {summary} />
   {#if page.entries.length === 0}
     <p class="pt-1.5 pb-0.5 text-[0.84rem] text-faint">Nothing yet today. The box below is ready.</p>
   {:else}

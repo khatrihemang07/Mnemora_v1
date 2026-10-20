@@ -5,11 +5,15 @@
   JournalCalendar. `JournalNav` (context) lets Entry actions and the calendar scroll and flash.
   The header search button (⌘F, or ⌘K's "Search Journal") lays SearchView over the feed, which stays
   mounted underneath so its scroll place survives; opening a result parks the search (a "Back to
-  results" pill, ⌘F and Android Back return to it), and every other way out clears it.
+  results" pill, ⌘F and Android Back return to it), and every other way out clears it. `EntryFocus`
+  (context) is the keyboard ring across Entries: it asks this page to scroll an Entry into view and
+  to load older Pages. Requests from outside (⌘N, ⌘K, the Home card) arrive through `launcher`. The
+  Journal Preferences (font, text width, Page summaries) and the spellcheck Device setting are read
+  here and handed down: the width as the `--journal-width` custom property every part of the column uses.
 -->
 <script lang="ts">
   import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query';
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import ArrowUp from '~icons/lucide/arrow-up';
   import ArrowLeft from '~icons/lucide/arrow-left';
   import CalendarDays from '~icons/lucide/calendar-days';
@@ -20,7 +24,7 @@
   import { hasMod, shortcutLabel } from '../../lib/platform';
   import { readCore } from '../../lib/settings/core';
   import { interceptBack } from '../../lib/router';
-  import { settingsQuery } from '../../lib/settings/queries';
+  import { deviceQuery, settingsQuery } from '../../lib/settings/queries';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
@@ -33,12 +37,16 @@
   import { localDateString, showTodayPill, showUpcomingPill } from './dates';
   import { Editing, provideEditing } from './editing.svelte';
   import { buildFeed, type FeedItem, openIndex, pageAt, pageIndex, upcomingCount } from './feed';
+  import { feedEntries } from './focus-nav';
+  import { EntryFocus, provideFocus } from './focus.svelte';
   import JournalCalendar from './JournalCalendar.svelte';
+  import { launcher, type JournalRequest } from './launcher.svelte';
   import { JournalNav, provideNav } from './navigation.svelte';
   import PageHeading from './PageHeading.svelte';
   import PageSection from './PageSection.svelte';
   import { pagesQuery } from './queries';
   import { JournalSearch, searchLauncher } from './search.svelte';
+  import { columnWidth, readJournal } from './settings';
   import SearchView from './SearchView.svelte';
   import { slashValues } from './slash-values';
   import UnsavedEntryDialog from './UnsavedEntryDialog.svelte';
@@ -54,19 +62,32 @@
   const settings = createQuery(() => settingsQuery);
   const core = $derived(readCore(settings.data?.values));
   const timeFormat = $derived(core.timeFormat);
+  const prefs = $derived(readJournal(settings.data?.values));
+  const device = createQuery(() => deviceQuery);
 
   // Which Entry is open for editing, which editor the phone bar drives, and the slash menu formats.
   const editing = new Editing();
   editing.slashValues = () => slashValues(new Date(), core.dateFormat, core.timeFormat);
   provideEditing(editing);
+  $effect(() => {
+    editing.font = prefs.font;
+    editing.spellcheck = device.data?.spellcheck ?? true;
+  });
   const today = localDateString(new Date());
   const nav = new JournalNav(today);
   provideNav(nav);
   nav.scrollTo = scrollTo;
+  const focus = new EntryFocus();
+  focus.today = today;
+  focus.entries = () => feedEntries(loaded);
+  focus.reveal = revealEntry;
+  focus.loadOlder = loadOlderNow;
+  provideFocus(focus);
   const search = new JournalSearch();
   let searchView = $state<ReturnType<typeof SearchView> | null>(null);
   onDestroy(() => {
     nav.dispose();
+    focus.dispose();
     search.dispose();
   });
   $effect(() => {
@@ -137,9 +158,63 @@
     });
   });
 
+  /** Loads the next batch of older Pages and waits until they are in the feed. */
+  async function loadOlderNow() {
+    if (!pages.hasNextPage || pages.isFetchingNextPage) return;
+    await pages.fetchNextPage();
+    await settle();
+  }
+
+  /**
+   * Gives the Entry's row the keyboard focus and scrolls it into view (clear of the pinned header
+   * and the composer fade, through the row's scroll margins). A row that is not rendered yet is
+   * reached by jumping to its Page first.
+   */
+  async function revealEntry(id: string) {
+    const rowFor = () => document.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(id)}"]`);
+    let row = rowFor();
+    if (!row) {
+      const date = feedEntries(loaded).find((e) => e.id === id)?.date;
+      const index = date ? pageIndex(feed, date) : -1;
+      if (index < 0 || !list) return;
+      list.scrollToIndex(index);
+      for (let i = 0; i < 30 && !row; i++) {
+        await nextFrames(1);
+        row = rowFor();
+      }
+    }
+    if (!row) return;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'nearest' });
+  }
+
   function focusComposerSoon() {
     if (!viewport.isPhone) void tick().then(() => nav.focusComposer?.());
   }
+
+  /** A launcher request taken once the page is up: ⌘N / the Home card's Write, or ⌘K's Go to date. */
+  async function takeRequest(request: JournalRequest) {
+    if (request === 'go-to-date') {
+      setTimeout(() => {
+        if (!calendarOpen) openCalendar();
+      }, PALETTE_CLOSE_MS);
+      return;
+    }
+    // Search steps aside and an open edit is saved, so the composer is the one thing in front of you.
+    if (search.active || search.parked) search.close();
+    await editing.finisher?.();
+    await tick();
+    if (list) list.scrollToIndex(open);
+    // The palette gives focus back as it closes; take it again once it has.
+    setTimeout(() => nav.compose?.(), PALETTE_CLOSE_MS);
+  }
+
+  $effect(() => {
+    const request = launcher.pending;
+    if (request === null) return;
+    launcher.pending = null;
+    untrack(() => void takeRequest(request));
+  });
 
   /** Opening a result: search steps aside (kept for Back), the feed scrolls to the Entry and flashes it. */
   async function openHit(hit: Hit, scrollTop: number) {
@@ -237,7 +312,7 @@
   />
 {/snippet}
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col" style:--journal-width={columnWidth(prefs.width)}>
   <!-- Phone shows a large title here; on desktop PageHeader renders nothing and the box collapses. -->
   <div class="shrink-0 px-(--pad) pt-(--pad) empty:hidden">
     <PageHeader title="Journal" actions={headerActions} />
@@ -245,16 +320,16 @@
   <div class="relative min-h-0 flex-1">
     <div class="h-full" inert={search.active}>
     {#if pages.isPending}
-      <div class="mx-auto flex max-w-[42.5rem] flex-col gap-3 px-(--pad) py-4">
+      <div class="mx-auto flex max-w-(--journal-width) flex-col gap-3 px-(--pad) py-4">
         <Skeleton class="h-6 w-48" />
         <Skeleton class="h-16 w-full" />
       </div>
     {:else if pages.isError}
-      <div class="mx-auto max-w-[42.5rem] px-(--pad) py-4">
+      <div class="mx-auto max-w-(--journal-width) px-(--pad) py-4">
         <ErrorBanner error={pages.error} onretry={() => pages.refetch()} />
       </div>
     {:else if feed.length === 0}
-      <div class="mx-auto max-w-[42.5rem] px-(--pad)">
+      <div class="mx-auto max-w-(--journal-width) px-(--pad)">
         <EmptyState
           icon={NotebookPen}
           hue="--hue-journal"
@@ -276,10 +351,10 @@
         onviewport={(top, height) => (scrolled = { top, height })}
         isSticky={(item) => item.kind === 'page'}
         class="h-full px-(--pad)"
-        columnClass="mx-auto max-w-[42.5rem]"
+        columnClass="mx-auto max-w-(--journal-width)"
       >
         {#snippet pinned(item)}
-          {#if item.kind === 'page'}<PageHeading page={item.page} {today} />{/if}
+          {#if item.kind === 'page'}<PageHeading page={item.page} {today} summary={prefs.pageSummary} />{/if}
         {/snippet}
         {#snippet row(item)}
           {#if item.kind === 'month'}
@@ -289,7 +364,7 @@
               {item.label}
             </div>
           {:else}
-            <PageSection page={item.page} {today} {timeFormat} />
+            <PageSection page={item.page} {today} {timeFormat} summary={prefs.pageSummary} />
           {/if}
         {/snippet}
       </VirtualList>

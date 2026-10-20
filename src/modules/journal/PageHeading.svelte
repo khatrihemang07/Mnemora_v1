@@ -1,6 +1,6 @@
 <!--
   PageHeading: a Page's header: written date in the display serif, the year when it is not this
-  year, a Today/Yesterday badge and a desktop-only summary. Used in the feed and as its pinned copy.
+  year, a Today/Yesterday badge and a desktop-only summary (hidden when Page summaries is off). Used in the feed and as its pinned copy.
   Flashes when the calendar just pointed at its day.
 -->
 <script lang="ts">
@@ -8,7 +8,7 @@
   import { pageHeading, pageSummary } from './dates';
   import { useNav } from './navigation.svelte';
 
-  let { page, today }: { page: Page; today: string } = $props();
+  let { page, today, summary }: { page: Page; today: string; summary: boolean } = $props();
   const nav = useNav();
   const heading = $derived(pageHeading(page.date, today));
 </script>
@@ -30,7 +30,7 @@
       {heading.badge}
     </span>
   {/if}
-  {#if page.entry_count > 0}
+  {#if summary && page.entry_count > 0}
     <span class="ml-auto hidden text-xs text-faint tabular-nums min-[720px]:block">
       {pageSummary(page.entry_count, page.word_count)}
     </span>
