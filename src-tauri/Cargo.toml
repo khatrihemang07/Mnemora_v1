@@ -32,6 +32,8 @@ tracing.workspace = true
 whoami.workspace = true
 
 [dev-dependencies]
+# `test` adds the mock runtime used by the command-layer test harness; tests only, never in a release build.
+tauri = { workspace = true, features = ["test"] }
 tempfile.workspace = true
 
 [lints]

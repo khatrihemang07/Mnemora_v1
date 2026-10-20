@@ -3,9 +3,33 @@
 // `#[tauri::mobile_entry_point]` expands to an `extern "C"` export that trips `unsafe_code`.
 #![cfg_attr(mobile, allow(unsafe_code))]
 
+// Defined before the modules so the test harness can reuse it.
+/// Every command and event for one concrete runtime: `Wry` in the app, the mock in tests.
+/// A macro because `#[specta::specta]` cannot see a generic runtime parameter of an outer fn.
+macro_rules! specta_builder_for {
+    ($runtime:ty) => {
+        tauri_specta::Builder::<$runtime>::new()
+            .disable_serde_phases()
+            .commands(tauri_specta::collect_commands![
+                commands::settings_get_all,
+                commands::settings_save,
+                commands::device_get,
+                commands::device_set_sidebar,
+                commands::device_set_log_level,
+                commands::app_info,
+                commands::log_ui_error,
+                commands::backup_now,
+                commands::open_log_dir::<$runtime>,
+            ])
+            .events(tauri_specta::collect_events![SettingsChangedEvent])
+    };
+}
+
 mod commands;
 mod env_guard;
 mod state;
+#[cfg(test)]
+mod test_support;
 mod theme_inject;
 #[cfg(desktop)]
 mod window_state;
@@ -24,7 +48,7 @@ use mnemora_core::settings::{SettingsRegistry, SettingsStore};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{Manager, WebviewWindowBuilder};
-use tauri_specta::{Builder, Event, collect_commands, collect_events};
+use tauri_specta::{Builder, Event};
 
 use crate::state::{AppState, DeviceStore};
 
@@ -48,22 +72,18 @@ fn modules() -> Vec<Box<dyn Module>> {
     vec![Box::new(CoreModule)]
 }
 
+/// A Settings store over every Module's registered keys.
+fn settings_store(modules: &[Box<dyn Module>], bus: &EventBus) -> SettingsStore {
+    let mut registry = SettingsRegistry::new();
+    for module in modules {
+        module.register_settings(&mut registry);
+    }
+    SettingsStore::new(Arc::new(registry), bus.clone())
+}
+
 /// Commands and events exposed over IPC. Also used to export bindings.
 pub fn specta_builder() -> Builder<tauri::Wry> {
-    Builder::<tauri::Wry>::new()
-        .disable_serde_phases()
-        .commands(collect_commands![
-            commands::settings_get_all,
-            commands::settings_save,
-            commands::device_get,
-            commands::device_set_sidebar,
-            commands::device_set_log_level,
-            commands::app_info,
-            commands::log_ui_error,
-            commands::backup_now,
-            commands::open_log_dir,
-        ])
-        .events(collect_events![SettingsChangedEvent])
+    specta_builder_for!(tauri::Wry)
 }
 
 /// Writes `src/lib/ipc/bindings.ts`.
@@ -106,12 +126,8 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir)?;
     tracing::info!(applied = ?report.applied, backup = ?report.backup, "database ready");
 
-    let mut registry = SettingsRegistry::new();
-    for module in &modules {
-        module.register_settings(&mut registry);
-    }
     let bus = EventBus::new();
-    let settings = SettingsStore::new(Arc::new(registry), bus.clone());
+    let settings = settings_store(&modules, &bus);
     let snapshot = settings.get_all(&conn)?;
 
     // Bridge core's in-process event to a typed IPC event.
