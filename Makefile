@@ -11,7 +11,7 @@ DEV_PORT := 47821
 # means a CLI that ignored the config could still never start Sandbox on Production data
 # (the app also refuses to start when identifier and build Environment disagree).
 
-.PHONY: help dev sandbox build android-dev android test lint fmt bindings trim clean-heavy setup
+.PHONY: help dev sandbox build android-dev android test lint fmt icons bindings trim clean-heavy setup
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -63,6 +63,9 @@ lint: ## clippy -D warnings, rustfmt check, raw-colour check, Biome, svelte-chec
 fmt: ## Format Rust and frontend code
 	$(RUN) cargo fmt --all
 	$(RUN) pnpm biome check --write .
+
+icons: ## Regenerate all app icons + favicon from src-tauri/icons/source/*.svg
+	./scripts/make-icons.sh
 
 bindings: ## Regenerate src/lib/ipc/bindings.ts without launching the app
 	$(RUN) cargo test -p mnemora-app regenerate_bindings -- --ignored

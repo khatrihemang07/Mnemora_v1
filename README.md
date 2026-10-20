@@ -33,6 +33,7 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make fmt` | Format Rust and frontend code |
 | `make clean-heavy` | Delete `target/`, `node_modules/` and Android build dirs (asks first) |
 | `make bindings` | Regenerate `src/lib/ipc/bindings.ts` without launching the app |
+| `make icons` | Regenerate every app icon and the favicon from `src-tauri/icons/source/*.svg` |
 
 Every target runs with `CARGO_BUILD_JOBS=2` and cleans up the processes it started.
 
