@@ -163,7 +163,7 @@ mod tests {
             key = next;
         }
         assert_eq!(key_after(Some("0000000z")), "00000010");
-        assert!(key_after(Some("zzzzzzzz")) > "zzzzzzzz".to_owned());
-        assert!(key_after(Some("a0V")) > "a0V".to_owned());
+        assert!(key_after(Some("zzzzzzzz")).as_str() > "zzzzzzzz");
+        assert!(key_after(Some("a0V")).as_str() > "a0V");
     }
 }

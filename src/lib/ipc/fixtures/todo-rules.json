@@ -11,9 +11,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "validation"
-        ],
+        "results": ["validation"],
         "inbox": []
       }
     },
@@ -27,9 +25,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "validation"
-        ],
+        "results": ["validation"],
         "inbox": []
       }
     },
@@ -43,12 +39,8 @@
         }
       ],
       "expect": {
-        "results": [
-          "ok"
-        ],
-        "inbox": [
-          "Buy oat milk"
-        ]
+        "results": ["ok"],
+        "inbox": ["Buy oat milk"]
       }
     },
     {
@@ -61,9 +53,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "validation"
-        ],
+        "results": ["validation"],
         "inbox": []
       }
     },
@@ -77,9 +67,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "validation"
-        ],
+        "results": ["validation"],
         "inbox": []
       }
     },
@@ -93,9 +81,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "ok"
-        ]
+        "results": ["ok"]
       }
     },
     {
@@ -108,9 +94,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "validation"
-        ],
+        "results": ["validation"],
         "inbox": []
       }
     },
@@ -132,11 +116,7 @@
         }
       ],
       "expect": {
-        "inbox": [
-          "one",
-          "two",
-          "three"
-        ]
+        "inbox": ["one", "two", "three"]
       }
     },
     {
@@ -157,14 +137,8 @@
         }
       ],
       "expect": {
-        "results": [
-          "ok",
-          "ok",
-          "ok"
-        ],
-        "inbox": [
-          "b"
-        ]
+        "results": ["ok", "ok", "ok"],
+        "inbox": ["b"]
       }
     },
     {
@@ -185,11 +159,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "ok",
-          "ok",
-          "validation"
-        ],
+        "results": ["ok", "ok", "validation"],
         "inbox": []
       }
     },
@@ -215,10 +185,7 @@
         }
       ],
       "expect": {
-        "inbox": [
-          "a",
-          "b"
-        ]
+        "inbox": ["a", "b"]
       }
     },
     {
@@ -235,13 +202,8 @@
         }
       ],
       "expect": {
-        "results": [
-          "ok",
-          "validation"
-        ],
-        "inbox": [
-          "a"
-        ]
+        "results": ["ok", "validation"],
+        "inbox": ["a"]
       }
     },
     {
@@ -258,10 +220,7 @@
         }
       ],
       "expect": {
-        "results": [
-          "not_found",
-          "not_found"
-        ]
+        "results": ["not_found", "not_found"]
       }
     },
     {
@@ -286,10 +245,7 @@
         }
       ],
       "expect": {
-        "inbox": [
-          "a",
-          "c"
-        ]
+        "inbox": ["a", "c"]
       }
     }
   ]
