@@ -68,7 +68,8 @@
       bind:el
       label="Write a Journal Entry"
       placeholder="Write…"
-      class="max-h-48 min-h-8 overflow-y-auto px-1 py-1 font-display text-base leading-[1.65]"
+      bare
+      class="max-h-48 min-h-8 px-1 py-1 font-display text-base leading-[1.65]"
       oninput={(e) => composer.input(e.currentTarget.value)}
       {onkeydown}
     />

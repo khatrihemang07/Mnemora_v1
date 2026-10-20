@@ -22,7 +22,8 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <PageHeader title="Journal" />
+  <!-- Phone shows a large title here; on desktop PageHeader renders nothing and the box collapses. -->
+  <div class="shrink-0 px-(--pad) pt-(--pad) empty:hidden"><PageHeader title="Journal" /></div>
   <div class="min-h-0 flex-1 overflow-y-auto px-(--pad)">
     <div class="mx-auto max-w-[42.5rem] pb-6">
       {#if pages.isPending}
