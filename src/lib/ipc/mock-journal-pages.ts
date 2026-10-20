@@ -19,3 +19,16 @@ export function pageDates(
   const keep = (d: string) => cursor === null || (direction === 'from' ? d <= cursor : d < cursor);
   return sorted.filter(keep).slice(0, limit);
 }
+
+/** A real calendar date written `YYYY-MM-DD` (mirrors `validate_page_date` in crates/journal). */
+export function validDate(date: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  const [y = 0, m = 1, d = 1] = date.split('-').map(Number);
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  return (
+    y >= 1 &&
+    probe.getUTCFullYear() === y &&
+    probe.getUTCMonth() === m - 1 &&
+    probe.getUTCDate() === d
+  );
+}

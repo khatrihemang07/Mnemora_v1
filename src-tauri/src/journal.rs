@@ -116,6 +116,8 @@ pub fn journal_today(state: State<'_, AppState>, today: String) -> Result<TodayS
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use mnemora_core::db::migrate::MigrationReport;
     use mnemora_core::module::Module;
     use serde_json::{Value, json};
@@ -1361,5 +1363,152 @@ mod tests {
         }
         let snap: Value = app.invoke("settings_get_all", json!({})).unwrap();
         assert_eq!(snap["values"]["journal.font"], "sans");
+    }
+
+    // Shared rule fixtures: the same file runs against the browser mock in
+    // src/lib/ipc/mock-journal.test.ts (ADR 0009). Keep `rule_normalise` in step with `normalise`
+    // there.
+    const RULES: &str = include_str!("../../src/lib/ipc/fixtures/journal-rules.json");
+
+    fn rule_id(n: u64) -> String {
+        format!("id-{n:04}")
+    }
+
+    fn rule_spans(hit: &Value) -> Value {
+        Value::Array(
+            hit["snippet"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| json!([s["text"], s["matched"]]))
+                .collect(),
+        )
+    }
+
+    /// The comparable shape of a result: Entries by seed index, no ids or timestamps.
+    fn rule_normalise(op: &str, result: &Value, index: &HashMap<String, u64>) -> Value {
+        let at = |id: &Value| json!(index.get(id.as_str().unwrap()));
+        let ids = |hits: &Value| -> Vec<Value> {
+            hits.as_array()
+                .unwrap()
+                .iter()
+                .map(|h| at(&h["id"]))
+                .collect()
+        };
+        let entry = |e: &Value| {
+            json!({
+                "body": e["body"], "page_date": e["page_date"], "word_count": e["word_count"],
+                "edited": !e["edited_at"].is_null(),
+            })
+        };
+        match op {
+            "search" => json!({
+                "exact": ids(&result["exact"]),
+                "similar": ids(&result["similar"]),
+                "exact_count": result["exact"].as_array().unwrap().len(),
+                "similar_count": result["similar"].as_array().unwrap().len(),
+                "truncated": result["truncated"],
+                "similar_truncated": result["similar_truncated"],
+                "exact_spans": result["exact"].as_array().unwrap().iter().map(rule_spans).collect::<Vec<_>>(),
+                "similar_spans": result["similar"].as_array().unwrap().iter().map(rule_spans).collect::<Vec<_>>(),
+            }),
+            "create" => json!({ "created": entry(result) }),
+            "update" | "toggle_task" | "move" => json!({ "entry": entry(result) }),
+            "today" => {
+                let latest = &result["latest"];
+                json!({
+                    "count": result["count"],
+                    "latest": if latest.is_null() { Value::Null } else { at(&latest["id"]) },
+                    "snippet": if latest.is_null() { Value::Null } else { latest["snippet"].clone() },
+                })
+            }
+            "pages" => json!({ "pages": result.as_array().unwrap().iter().map(|p| json!({
+                "date": p["date"],
+                "entries": p["entries"].as_array().unwrap().iter().map(|e| at(&e["id"])).collect::<Vec<_>>(),
+                "entry_count": p["entry_count"],
+                "word_count": p["word_count"],
+            })).collect::<Vec<_>>() }),
+            _ => json!({ "days": result }),
+        }
+    }
+
+    /// The part of `actual` that `expected` names: objects key by key, the rest whole.
+    fn rule_pick(actual: &Value, expected: &Value) -> Value {
+        match expected {
+            Value::Object(map) => Value::Object(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), rule_pick(&actual[k], v)))
+                    .collect(),
+            ),
+            _ => actual.clone(),
+        }
+    }
+
+    fn run_rule_case(c: &Value) -> Value {
+        let app = TestApp::new();
+        let age_ms = c["age_minutes"].as_i64().unwrap_or(0) * 60_000;
+        let start = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
+        )
+        .unwrap();
+        let mut index = HashMap::new();
+        let mut ids = Vec::new();
+        let mut i = 0u64;
+        for seed in c["seed"].as_array().unwrap() {
+            for _ in 0..seed["repeat"].as_u64().unwrap_or(1) {
+                let page_date = seed["page_date"].as_str().unwrap_or("2026-10-20");
+                let e = create(&app, page_date, seed["body"].as_str().unwrap()).unwrap();
+                let n = seed["id_n"].as_u64().unwrap_or(i);
+                let at = seed["at"]
+                    .as_i64()
+                    .unwrap_or_else(|| i64::try_from(i * 10).unwrap());
+                // Both ids are made here (the old one is a generated UUID), so formatting is safe.
+                let sql = format!(
+                    "UPDATE journal_entries SET id = '{}', written_at = {} WHERE id = '{}'",
+                    rule_id(n),
+                    start + at - age_ms,
+                    e["id"].as_str().unwrap()
+                );
+                app.with_db(|c| c.execute(&sql, []).unwrap());
+                index.insert(rule_id(n), i);
+                ids.push(rule_id(n));
+                i += 1;
+            }
+        }
+
+        let op = c["op"].as_str().unwrap();
+        let mut args = c["args"].clone();
+        if let Some(n) = args["id"].as_u64() {
+            args["id"] = json!(ids[usize::try_from(n).unwrap()]);
+        }
+        let command = if ["create", "update", "toggle_task", "move"].contains(&op) {
+            format!("journal_entry_{op}")
+        } else {
+            format!("journal_{op}")
+        };
+        match app.invoke::<Value>(&command, args) {
+            Ok(result) => rule_normalise(op, &result, &index),
+            Err(e) => json!({ "error": { "code": e["code"], "message": e["message"] } }),
+        }
+    }
+
+    #[test]
+    fn the_shared_rule_fixtures_hold() {
+        let rules: Value = serde_json::from_str(RULES).unwrap();
+        let cases = rules["cases"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for c in cases {
+            let actual = rule_pick(&run_rule_case(c), &c["expect"]);
+            assert_eq!(
+                actual,
+                c["expect"],
+                "{}: {}",
+                c["rule"].as_str().unwrap(),
+                c["name"].as_str().unwrap()
+            );
+        }
     }
 }

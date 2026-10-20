@@ -6,7 +6,7 @@
 
 import { toggleTaskLine } from '../ui/markdown/tasks';
 import type { AppError, Entry, NewEntry, Page, PageDirection } from './bindings';
-import { pageDates } from './mock-journal-pages';
+import { pageDates, validDate } from './mock-journal-pages';
 import { plainText, searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
 
@@ -23,18 +23,6 @@ const fail = (code: AppError['code'], message: string): AppError => ({
   details: null,
 });
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
-
-function validDate(date: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
-  const [y = 0, m = 1, d = 1] = date.split('-').map(Number);
-  const probe = new Date(Date.UTC(y, m - 1, d));
-  return (
-    y >= 1 &&
-    probe.getUTCFullYear() === y &&
-    probe.getUTCMonth() === m - 1 &&
-    probe.getUTCDate() === d
-  );
-}
 
 function stripLinePrefix(line: string): string {
   return line
@@ -97,12 +85,11 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           const n = a.entry as NewEntry;
           if (!n.text.trim()) throw fail('validation', "An Entry can't be blank");
           if (!validDate(n.page_date)) throw fail('validation', 'Not a valid date');
-          if (
-            !n.written_tz.trim() ||
-            [...n.written_tz].length > MAX_ZONE_CHARS ||
-            Math.abs(n.written_offset_min) > MAX_OFFSET_MIN
-          ) {
+          if (!n.written_tz.trim() || [...n.written_tz].length > MAX_ZONE_CHARS) {
             throw fail('validation', 'Not a valid time zone');
+          }
+          if (Math.abs(n.written_offset_min) > MAX_OFFSET_MIN) {
+            throw fail('validation', 'Not a valid time zone offset');
           }
           const now = Date.now();
           const entry: Entry = {
