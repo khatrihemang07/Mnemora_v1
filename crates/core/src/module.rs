@@ -80,6 +80,7 @@ impl Module for CoreModule {
             validate::one_of(&["mon", "sun"]),
         );
         reg.register(m, "phone_tabs", json!(["home"]), validate::string_list(4));
-        reg.register(m, "enabled_modules", json!([]), validate::string_list(64));
+        // Ids of Modules switched off. A list of the exceptions, so a new Module is on by default.
+        reg.register(m, "disabled_modules", json!([]), validate::string_list(64));
     }
 }

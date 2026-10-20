@@ -8,4 +8,5 @@ export const homeManifest: ModuleManifest = {
   accentVar: '--hue-home',
   routes: [{ path: '/', component: () => import('./HomePage.svelte') }],
   nav: { order: 10, shortcut: 1 },
+  required: true,
 };

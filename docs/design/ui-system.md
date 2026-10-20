@@ -1,6 +1,6 @@
 # UI system
 
-The recorded UI decisions, so the whole app stays consistent. Visual reference: [ui-pitch.html](ui-pitch.html) (open in a browser).
+The recorded UI decisions, so the whole app stays consistent. Visual reference: [ui-pitch.html](ui-pitch.html) (open in a browser). Journal decisions: [journal-prototype.html](journal-prototype.html) (chosen options frozen in its `LOCKED` map).
 
 ## Decisions
 
@@ -117,6 +117,8 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 - **Brand row**: under the traffic-light strip, a 22px `AppMark` and "Mnemora" in the display font; the rail shows only the mark, centred.
 - **Top bar** (desktop): a 50px drag region (`data-tauri-drag-region`) with a bottom hairline: sidebar toggle, then the `PageHeader` title, then page actions and a compact "Search... ⌘K" button. Windows and Linux add window controls at the right end.
 - **Phone** (under 720px or a mobile OS): no sidebar or top bar. A bottom tab bar shows up to 4 chosen tabs plus **More**. More is highlighted whenever the current Module is not one of the tabs (Settings included) and opens a sheet with the rest. Pages start with a large `PageHeader` title.
+- **Enabled Modules**: a Module is on unless listed in `core.disabled_modules` (so new Modules appear by default). Routes (a disabled Module's URL falls back to Home), sidebar, tab bar and More sheet, ⌘K, ⌘-digit and ⌘N all use only enabled Modules. Switching off hides a Module and keeps its data.
+- **Home cards**: Home lists each enabled Module's lazy `homeCard` below the greeting and clock, in nav order; with none it shows an `EmptyState`.
 - **Home (H1)**: greeting card and clock tile in a `1.4fr / 1fr` grid at 720px and wider, equal height; stacked below. The clock has a small uppercase "Local time" label, tight tabular digits and smaller seconds.
 
 ## Settings patterns
@@ -128,6 +130,8 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 - **Palette theme commands** (⌘K) apply and save immediately: they are explicit commands, not form edits.
 - **Data folder**: changing it from the UI is deferred.
 - Phone Settings is a list that drills into one section with a Back button.
+- **Module sections**: a Module's `settingsSection` (label, icon, lazy component) is appended after the core sections, on the same draft, Save bar and leave guard, and drills in on phone.
+- **Modules** section: one `Switch` per Module, bound to `core.disabled_modules` through the draft. Home and Settings are `required` and show a disabled, checked switch.
 
 ## Do
 

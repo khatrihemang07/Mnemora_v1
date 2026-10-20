@@ -1,9 +1,11 @@
 import { commands } from '../lib/ipc/bindings';
 import { unwrap } from '../lib/ipc/unwrap';
+import type { ModuleManifest } from '../lib/router';
 import { notify, notifyError } from '../lib/ui/toast';
 import { viewport } from '../lib/viewport.svelte';
+import { createTarget } from './enabled-modules';
+import { moduleContext } from './module-context';
 import { buildPaletteItems } from './palette-items';
-import { modules } from './registry';
 import { router } from './router';
 import { shell } from './shell-state.svelte';
 import type { ShortcutAction } from './shortcuts';
@@ -18,13 +20,16 @@ async function setTheme(theme: string) {
   }
 }
 
-export const paletteItems = buildPaletteItems({
-  setTheme: (t) => void setTheme(t),
-  toggleSidebar: () => shell.toggleSidebar(),
-});
+/** ⌘K items for the given enabled Modules. */
+export const paletteItemsFor = (enabled: ModuleManifest[]) =>
+  buildPaletteItems({
+    setTheme: (t) => void setTheme(t),
+    toggleSidebar: () => shell.toggleSidebar(),
+    enabled,
+  });
 
-/** Carries out a resolved keyboard shortcut. */
-export function runShortcut(a: ShortcutAction) {
+/** Carries out a resolved keyboard shortcut; `enabled` are the Modules currently on. */
+export function runShortcut(a: ShortcutAction, enabled: ModuleManifest[]) {
   switch (a.type) {
     case 'palette':
       shell.paletteOpen = !shell.paletteOpen;
@@ -35,11 +40,14 @@ export function runShortcut(a: ShortcutAction) {
     case 'sidebar':
       if (!viewport.isPhone) shell.toggleSidebar();
       break;
-    case 'create':
-      notify('Nothing to create yet');
+    case 'create': {
+      const target = createTarget(enabled);
+      if (target?.create) target.create(moduleContext);
+      else notify('Nothing to create yet');
       break;
+    }
     case 'module': {
-      const route = modules.find((x) => x.nav.shortcut === a.digit)?.routes[0];
+      const route = enabled.find((x) => x.nav.shortcut === a.digit)?.routes[0];
       if (route) void router.navigate(route.path);
       break;
     }

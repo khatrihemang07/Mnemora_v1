@@ -17,6 +17,8 @@
   import SettingsLayout from '../../lib/ui/SettingsLayout.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { viewport } from '../../lib/viewport.svelte';
+  import { moduleSettingsSections } from '../../shell/enabled-modules';
+  import { useEnabledModules } from '../../shell/enabled.svelte';
   import { leaveGuard } from './leave-guard.svelte';
   import { save } from './save.svelte';
   import { settingsNav } from './settings-nav.svelte';
@@ -41,12 +43,23 @@
     { id: 'about', label: 'About', icon: Info, view: About },
   ];
 
+  // Enabled Modules add their own sections after the core ones.
+  const enabled = useEnabledModules();
+  const moduleSections = $derived(moduleSettingsSections(enabled.list));
+  const allWithModules = $derived([
+    ...allSections,
+    ...moduleSections.map((s) => ({ id: `module-${s.id}`, label: s.label, icon: s.icon })),
+  ]);
+
   // Keyboard shortcuts mean nothing on a touch phone.
-  const sections = $derived(viewport.isPhone ? allSections.filter((s) => !s.desktopOnly) : allSections);
+  const sections = $derived(viewport.isPhone ? allWithModules.filter((s) => !('desktopOnly' in s)) : allWithModules);
 
   // Desktop always shows a section; the phone starts at the list.
-  const active = $derived(viewport.isPhone ? settingsNav.section : (settingsNav.section ?? 'appearance'));
-  const View = $derived(sections.find((s) => s.id === active)?.view);
+  // A remembered section can vanish (its Module was switched off), so check it still exists.
+  const remembered = $derived(sections.some((s) => s.id === settingsNav.section) ? settingsNav.section : null);
+  const active = $derived(viewport.isPhone ? remembered : (remembered ?? 'appearance'));
+  const View = $derived(allSections.find((s) => s.id === active)?.view);
+  const moduleSection = $derived(moduleSections.find((s) => `module-${s.id}` === active));
 
   $effect(() => {
     if (!settingsDraft.dirty) return;
@@ -66,7 +79,11 @@
     {#if save.error}
       <div class="mb-4"><ErrorBanner error={save.error} onretry={() => save.run()} /></div>
     {/if}
-    {#if View}<View />{/if}
+    {#if View}
+      <View />
+    {:else if moduleSection}
+      {#await moduleSection.component() then section}<section.default />{/await}
+    {/if}
     {#snippet footer()}
       <SaveBar
         visible={settingsDraft.dirty}

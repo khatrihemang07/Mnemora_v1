@@ -198,7 +198,7 @@ mod tests {
             "core.date_format": "long",
             "core.week_start": "mon",
             "core.phone_tabs": ["home"],
-            "core.enabled_modules": []
+            "core.disabled_modules": []
         });
         assert_eq!(serde_json::to_value(&snap.values).unwrap(), expected);
         assert_eq!(snap.schema.len(), 10);

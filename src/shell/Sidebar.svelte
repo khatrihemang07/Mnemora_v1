@@ -9,14 +9,15 @@
   import EnvBadge from '../lib/ui/EnvBadge.svelte';
   import NavItem from './NavItem.svelte';
   import TitleBar from './TitleBar.svelte';
-  import { modules } from './registry';
+  import { useEnabledModules } from './enabled.svelte';
   import { router } from './router';
   import { shell } from './shell-state.svelte';
 
   const info = createQuery(() => appInfoQuery);
-  const entries = navEntries(modules);
-  const main = entries.filter((e) => e.manifest.nav.placement !== 'bottom');
-  const bottom = entries.filter((e) => e.manifest.nav.placement === 'bottom');
+  const enabled = useEnabledModules();
+  const entries = $derived(navEntries(enabled.list));
+  const main = $derived(entries.filter((e) => e.manifest.nav.placement !== 'bottom'));
+  const bottom = $derived(entries.filter((e) => e.manifest.nav.placement === 'bottom'));
   const rail = $derived(shell.layout.rail);
 
   const hint = (digit: number | null) => (digit ? shortcutLabel(String(digit)) : undefined);

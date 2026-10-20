@@ -10,10 +10,11 @@
   import SettingRow from '../../../lib/ui/SettingRow.svelte';
   import SettingSection from '../../../lib/ui/SettingSection.svelte';
   import { MAX_TABS, moveTab, toggleTab } from '../../../shell/phone-tabs';
-  import { modules } from '../../../shell/registry';
+  import { useEnabledModules } from '../../../shell/enabled.svelte';
   import { shell } from '../../../shell/shell-state.svelte';
 
-  const entries = navEntries(modules);
+  const enabled = useEnabledModules();
+  const entries = $derived(navEntries(enabled.list));
   const nameOf = (id: string) => entries.find((e) => e.id === id)?.manifest.name ?? id;
   const tabs = $derived(
     ((d.get('core.phone_tabs') as string[]) ?? []).filter((id) => entries.some((e) => e.id === id)),

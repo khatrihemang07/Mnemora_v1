@@ -30,6 +30,6 @@ export const SHORTCUT_LIST = [
   { label: 'Command palette', keys: shortcutLabel('K') },
   { label: 'Open Settings', keys: shortcutLabel(',') },
   { label: 'Toggle sidebar', keys: shortcutLabel('\\') },
-  { label: 'New (not available yet)', keys: shortcutLabel('N') },
+  { label: 'New', keys: shortcutLabel('N') },
   { label: 'Go to Module 1 to 9', keys: shortcutLabel('1–9') },
 ];
