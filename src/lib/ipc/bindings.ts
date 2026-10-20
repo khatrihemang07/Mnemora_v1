@@ -81,7 +81,7 @@ export type Entry = {
 	/**  Markdown text. */
 	body: string,
 	/**  When it was written: UTC milliseconds. Never changes. */
-	written_at: number | null,
+	written_at: number,
 	/**  UTC offset in minutes where it was written. */
 	written_offset_min: number,
 	/**  IANA zone where it was written. */
@@ -91,9 +91,9 @@ export type Entry = {
 	/**  Words in the body, not counting Markdown symbols. */
 	word_count: number,
 	/**  Row creation time: UTC milliseconds. */
-	created_at: number | null,
+	created_at: number,
 	/**  Row update time: UTC milliseconds. */
-	updated_at: number | null,
+	updated_at: number,
 };
 
 /**  Which data set the app uses. Chosen by the `sandbox` cargo feature of the app crate. */

@@ -9,6 +9,8 @@ const MAX_OFFSET_MIN: i32 = 14 * 60;
 /// Longest IANA zone name is well under this.
 const MAX_ZONE_CHARS: usize = 64;
 
+// Millisecond instants are i64, which specta refuses to export. They fit a JS number (< 2^53), so
+// they are typed `u32` for the bindings only: it makes TypeScript see a plain `number`.
 /// One untitled piece of writing on a Page.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct Entry {
@@ -19,22 +21,22 @@ pub struct Entry {
     /// Markdown text.
     pub body: String,
     /// When it was written: UTC milliseconds. Never changes.
-    #[specta(type = f64)]
+    #[specta(type = u32)]
     pub written_at: i64,
     /// UTC offset in minutes where it was written.
     pub written_offset_min: i32,
     /// IANA zone where it was written.
     pub written_tz: String,
     /// When it was last meaningfully edited: UTC milliseconds.
-    #[specta(type = Option<f64>)]
+    #[specta(type = Option<u32>)]
     pub edited_at: Option<i64>,
     /// Words in the body, not counting Markdown symbols.
     pub word_count: u32,
     /// Row creation time: UTC milliseconds.
-    #[specta(type = f64)]
+    #[specta(type = u32)]
     pub created_at: i64,
     /// Row update time: UTC milliseconds.
-    #[specta(type = f64)]
+    #[specta(type = u32)]
     pub updated_at: i64,
 }
 
