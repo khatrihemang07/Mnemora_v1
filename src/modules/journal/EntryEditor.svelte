@@ -129,7 +129,8 @@
     bare
   />
   {#if error !== null}
-    <div class="mt-3">
+    <!-- A failed save must be seen, even when the Entry runs below the composer. -->
+    <div class="mt-3" {@attach (el) => el.scrollIntoView({ block: 'nearest' })}>
       <ErrorBanner
         {error}
         message="Couldn't save this entry. Your text is safe here."

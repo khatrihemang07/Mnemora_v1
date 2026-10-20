@@ -61,6 +61,19 @@
 .md-list {
   padding-left: 1.3em;
 }
+/* The Tailwind reset removes list markers; bring them back, faint like the syntax marks. */
+ul.md-list {
+  list-style: disc;
+}
+ul.md-list ul.md-list {
+  list-style: circle;
+}
+ol.md-list {
+  list-style: decimal;
+}
+.md-list > .md-item::marker {
+  color: var(--faint);
+}
 .md-list .md-list,
 .md-item > .md-p {
   margin-bottom: 0;
@@ -71,6 +84,10 @@
 .md-tasks {
   list-style: none;
   padding-left: 0.2em;
+}
+/* A plain item in a list that also holds checklist items keeps its bullet inside the column. */
+.md-tasks > .md-item:not(.md-task) {
+  margin-left: 1.1em;
 }
 .md-task {
   display: flex;
