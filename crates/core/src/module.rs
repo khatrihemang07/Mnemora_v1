@@ -27,15 +27,34 @@ impl Module for CoreModule {
     }
 
     fn migrations(&self) -> Migrations<'static> {
-        Migrations::new(vec![M::up(
-            "CREATE TABLE settings(
+        Migrations::new(vec![
+            M::up(
+                "CREATE TABLE settings(
                  module TEXT NOT NULL,
                  key TEXT NOT NULL,
                  value TEXT NOT NULL,
                  updated_at INTEGER NOT NULL,
                  PRIMARY KEY(module, key)
              ) STRICT",
-        )])
+            ),
+            // App-wide change log (ADR 0008). The partial unique index is what lets one editing
+            // session keep a single record per entity.
+            M::up(
+                "CREATE TABLE change_log(
+                 id TEXT PRIMARY KEY NOT NULL,
+                 module TEXT NOT NULL,
+                 entity TEXT NOT NULL,
+                 entity_id TEXT NOT NULL,
+                 op TEXT NOT NULL,
+                 session_id TEXT,
+                 snapshot TEXT NOT NULL,
+                 at INTEGER NOT NULL
+             ) STRICT;
+             CREATE INDEX change_log_entity ON change_log(entity, entity_id);
+             CREATE UNIQUE INDEX change_log_session
+                 ON change_log(entity, entity_id, session_id) WHERE session_id IS NOT NULL;",
+            ),
+        ])
     }
 
     fn register_settings(&self, reg: &mut SettingsRegistry) {
