@@ -159,7 +159,8 @@
     opened = true;
     openedDone?.();
     openedDone = null;
-    void tick().then(() => list?.scrollToIndex(open));
+    // Once the rows are rendered and the data is final, so nothing re-anchors over the scroll.
+    void settle().then(() => list?.scrollToIndex(open));
   });
 
   /**
@@ -173,6 +174,7 @@
       return;
     }
     await new Promise<void>((done) => {
+      list?.releaseAnchor(); // the cached newest window shares rows with this one; do not hold them
       openedDone = done;
       opened = false;
       anchor = null;

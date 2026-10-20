@@ -15,6 +15,7 @@
   import type { Snippet } from 'svelte';
   import { untrack } from 'svelte';
   import { pinnedRow } from './pinned-row';
+  import { type ScrollAnchor, anchoredScrollTop } from './scroll-anchor';
 
   interface Props {
     /** One entry per row. */
@@ -63,7 +64,7 @@
   const gutter = $derived(outerWidth - innerWidth);
   let instance: SvelteVirtualizer<HTMLDivElement, HTMLElement> | undefined;
   /** The first row in view and how far into it the view starts, to hold the view across inserts. */
-  let anchor: { key: string | number | bigint; index: number; delta: number } | null = null;
+  let anchor: ScrollAnchor | null = null;
 
   const options = () => ({
     count: items.length,
@@ -143,13 +144,21 @@
    * rows' real size turns out to be, the virtualizer corrects once they are measured.
    */
   function holdAnchor() {
-    if (!anchor || !scroller || !instance) return;
-    const index = items.findIndex((item, i) => getKey(item, i) === anchor?.key);
-    if (index < 0 || index === anchor.index) return;
-    const start = instance.getOffsetForIndex(index, 'start')?.[0];
-    if (start === undefined) return;
-    scroller.scrollTop = start + anchor.delta;
-    anchor.index = index;
+    if (!scroller || !instance) return;
+    const inst = instance;
+    const keys = items.map((item, i) => getKey(item, i));
+    const next = anchoredScrollTop(anchor, keys, (i) => inst.getOffsetForIndex(i, 'start')?.[0]);
+    if (!next || !anchor) return;
+    scroller.scrollTop = next.top;
+    anchor.index = next.index;
+  }
+
+  /**
+   * Forgets the row being held. Call before swapping in a different set of rows (not just adding
+   * above), so a row that happens to exist in both is not kept in view over the jump that follows.
+   */
+  export function releaseAnchor() {
+    anchor = null;
   }
 
   const reducedMotion = () =>
