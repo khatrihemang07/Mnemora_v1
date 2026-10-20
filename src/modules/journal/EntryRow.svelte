@@ -71,7 +71,12 @@
   async function deleteFocused() {
     focus.send({ type: 'deleted', id: entry.id });
     const next = focus.id;
-    await deleteEntryWithUndo(entry, editing);
+    const id = entry.id;
+    // Undo puts the ring back on the restored Entry, so the keys carry on from where they were.
+    await deleteEntryWithUndo(entry, editing, () => {
+      focus.send({ type: 'focus', id });
+      void focus.reveal?.(id);
+    });
     await tick();
     if (next) await focus.reveal?.(next);
     else nav.focusComposer?.();
