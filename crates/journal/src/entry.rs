@@ -123,9 +123,93 @@ pub fn validate_written_zone(tz: &str, offset_min: i32) -> AppResult<()> {
     Ok(())
 }
 
+/// Byte index of the `[ ]`/`[x]` state character if `line` is a task item: optional quote marks
+/// and indent, a bullet (`-`, `*`, `+`) or number (`1.`, `1)`), a space, then the box. This is
+/// what the Markdown parser treats as a task, so the read view and this agree on what ticks.
+fn task_state_index(line: &str) -> Option<usize> {
+    let b = line.as_bytes();
+    let mut i = 0;
+    // Quote prefixes and indent, in any mix.
+    while i < b.len() && matches!(b[i], b' ' | b'\t' | b'>') {
+        i += 1;
+    }
+    match b.get(i)? {
+        b'-' | b'*' | b'+' => i += 1,
+        b'0'..=b'9' => {
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+            }
+            if !matches!(b.get(i)?, b'.' | b')') {
+                return None;
+            }
+            i += 1;
+        }
+        _ => return None,
+    }
+    if !matches!(b.get(i)?, b' ' | b'\t') {
+        return None;
+    }
+    while i < b.len() && matches!(b[i], b' ' | b'\t') {
+        i += 1;
+    }
+    if b.get(i) == Some(&b'[')
+        && matches!(b.get(i + 1)?, b' ' | b'x' | b'X')
+        && b.get(i + 2) == Some(&b']')
+        && b.get(i + 3)
+            .is_none_or(|c| matches!(c, b' ' | b'\t' | b'\r'))
+    {
+        return Some(i + 1);
+    }
+    None
+}
+
+/// Flips the checkbox on the 0-based `line` of `body`, leaving every other byte alone.
+pub fn toggle_task(body: &str, line: usize) -> AppResult<String> {
+    let mut start = 0;
+    for (n, text) in body.split('\n').enumerate() {
+        if n == line {
+            let at = task_state_index(text)
+                .ok_or_else(|| invalid("That line is not a checklist item"))?;
+            let flipped = if text.as_bytes()[at] == b' ' {
+                'x'
+            } else {
+                ' '
+            };
+            let mut out = String::with_capacity(body.len());
+            out.push_str(&body[..start + at]);
+            out.push(flipped);
+            out.push_str(&body[start + at + 1..]);
+            return Ok(out);
+        }
+        start += text.len() + 1;
+    }
+    Err(invalid("That line is not a checklist item"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toggle_task_flips_one_marker_and_rejects_everything_else() {
+        assert_eq!(
+            toggle_task("a\n- [ ] b\n- [ ] c", 2).unwrap(),
+            "a\n- [ ] b\n- [x] c"
+        );
+        assert_eq!(toggle_task("  + [X] b", 0).unwrap(), "  + [ ] b");
+        assert_eq!(toggle_task("- [ ]\r\n", 0).unwrap(), "- [x]\r\n");
+        for (body, line) in [
+            ("- [ ]x", 0),
+            ("- [] a", 0),
+            ("-[ ] a", 0),
+            ("[ ] a", 0),
+            ("1 [ ] a", 0),
+            ("- [ ] a", 1),
+            ("", 0),
+        ] {
+            assert!(toggle_task(body, line).is_err(), "{body:?} line {line}");
+        }
+    }
 
     #[test]
     fn page_dates_must_be_real_calendar_dates() {

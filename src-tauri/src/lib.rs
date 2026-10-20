@@ -22,6 +22,9 @@ macro_rules! specta_builder_for {
                 commands::open_log_dir::<$runtime>,
                 journal::journal_entry_create,
                 journal::journal_entry_update,
+                journal::journal_entry_toggle_task,
+                journal::journal_entry_delete,
+                journal::journal_entry_restore,
                 journal::journal_pages,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
@@ -131,6 +134,16 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir)?;
     tracing::info!(applied = ?report.applied, backup = ?report.backup, "database ready");
 
+    // Once per start, after migrations: no polling. Logs a count, never content.
+    match mnemora_journal::purge_deleted(&mut conn) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(
+            entries = n,
+            "purged Journal Entries deleted over 30 days ago"
+        ),
+        Err(e) => tracing::warn!(error = %e, "could not purge deleted Journal Entries"),
+    }
+
     let bus = EventBus::new();
     let settings = settings_store(&modules, &bus);
     let snapshot = settings.get_all(&conn)?;
@@ -232,6 +245,9 @@ mod tests {
             "openLogDir",
             "journalEntryCreate",
             "journalEntryUpdate",
+            "journalEntryToggleTask",
+            "journalEntryDelete",
+            "journalEntryRestore",
             "journalPages",
             "settingsChangedEvent",
         ] {

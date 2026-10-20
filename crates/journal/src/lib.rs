@@ -14,7 +14,10 @@ use mnemora_core::settings::SettingsRegistry;
 use rusqlite_migration::Migrations;
 
 pub use entry::{Entry, NewEntry, Page};
-pub use service::{create_entry, list_pages, update_entry};
+pub use service::{
+    create_entry, delete_entry, list_pages, purge_deleted, restore_entry, toggle_task_line,
+    update_entry,
+};
 
 /// The Journal Module.
 pub struct JournalModule;
