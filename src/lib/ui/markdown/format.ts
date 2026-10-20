@@ -1,4 +1,4 @@
-import { type Edit, lineBounds, selectedLineStarts } from './edit';
+import { type Edit, type TextChange, lineBounds, selectedLineStarts } from './edit';
 
 export type InlineMark = '**' | '*' | '~~' | '==' | '`';
 export type BlockKind = 'h1' | 'h2' | 'h3' | 'bullet' | 'numbered' | 'task' | 'quote';
@@ -113,8 +113,7 @@ export function toggleBlock(doc: string, from: number, to: number, kind: BlockKi
   const remove = targets.length > 0 && targets.every((l) => blockKind(l.text) === kind);
 
   let n = 0;
-  return {
-    changes: targets.map((l) => {
+  const changes = targets.map((l) => {
       const m = BLOCK_PREFIX.exec(l.text);
       const indent = /^[ \t]*/.exec(l.text)?.[0] ?? '';
       const keepIndent = KEEPS_INDENT.has(kind) && !remove;
@@ -126,8 +125,22 @@ export function toggleBlock(doc: string, from: number, to: number, kind: BlockKi
         to: l.start + oldLength,
         insert: remove ? '' : (keepIndent && m ? m[1] : '') + PREFIXES[kind](n),
       };
-    }),
-  };
+  });
+  return from === to ? { changes, selection: caretAfter(changes, from) } : { changes };
+}
+
+/**
+ * Where a caret ends up after `changes`: a change that ends at or before it moves it, so a marker
+ * inserted AT the caret (an empty line, or the start of a line) leaves the caret after it; a
+ * replaced prefix that held the caret puts it after the new text.
+ */
+function caretAfter(changes: TextChange[], pos: number): { anchor: number; head: number } {
+  let caret = pos;
+  for (const c of changes) {
+    if (c.to <= pos) caret += c.insert.length - (c.to - c.from);
+    else if (c.from < pos) caret = c.from + c.insert.length;
+  }
+  return { anchor: caret, head: caret };
 }
 
 const URL_ONLY = /^https?:\/\/\S+$/i;

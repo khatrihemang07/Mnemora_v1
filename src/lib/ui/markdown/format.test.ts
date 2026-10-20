@@ -127,3 +127,27 @@ describe('linkTemplate', () => {
     expect(r.doc.slice(r.anchor, r.head)).toBe('text');
   });
 });
+
+describe('toggleBlock caret', () => {
+  const at = (doc: string, pos: number, kind: Parameters<typeof toggleBlock>[3]) => {
+    const r = applyEdit(doc, toggleBlock(doc, pos, pos, kind));
+    return [r.doc, r.head] as const;
+  };
+
+  it('lands after the marker on an empty line', () => {
+    expect(at('', 0, 'task')).toEqual(['- [ ] ', 6]);
+    expect(at('', 0, 'bullet')).toEqual(['- ', 2]);
+    expect(at('', 0, 'quote')).toEqual(['> ', 2]);
+    expect(at('', 0, 'h2')).toEqual(['## ', 3]);
+  });
+
+  it('keeps the caret in the text when the line has words', () => {
+    expect(at('hello', 0, 'task')).toEqual(['- [ ] hello', 6]);
+    expect(at('hello', 3, 'bullet')).toEqual(['- hello', 5]);
+  });
+
+  it('moves the caret back when the marker is removed or swapped', () => {
+    expect(at('- hi', 4, 'bullet')).toEqual(['hi', 2]);
+    expect(at('# hi', 1, 'h2')).toEqual(['## hi', 3]);
+  });
+});
