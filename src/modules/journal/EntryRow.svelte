@@ -6,7 +6,9 @@
   lifted card while the other Entries dim. A checklist row ticks on click instead. A ⋯ button (on
   hover or focus on desktop, always on a phone), right-click and long-press open the actions Menu
   (Edit, Move to another date…, Copy text, Delete). Move opens the DatePicker; a flash tints the
-  row when the Entry was just moved here or found through the move toast's Show.
+  row when the Entry was just moved here or found through the move toast's Show. On desktop the row
+  is also a stop for the keyboard focus ring (↑ ↓ move between Entries across Pages, Enter edits,
+  ⌫ / Delete deletes with Undo, M moves, C copies, Esc returns to the composer).
 -->
 <script lang="ts">
   import CalendarDays from '~icons/lucide/calendar-days';
@@ -15,16 +17,19 @@
   import PenLine from '~icons/lucide/pen-line';
   import Trash2 from '~icons/lucide/trash-2';
   import type { Entry } from '../../lib/ipc/bindings';
+  import { tick } from 'svelte';
   import { LongPress } from '../../lib/long-press';
   import type { TimeFormat } from '../../lib/time/format';
   import DatePicker from '../../lib/ui/DatePicker.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
   import MarkdownView from '../../lib/ui/MarkdownView.svelte';
+  import { viewport } from '../../lib/viewport.svelte';
   import { editedLabel, fullWritten, writtenDateLabel, writtenTime } from './dates';
   import { copyEntryText, deleteEntryWithUndo, moveEntryToDate, tickTask } from './entry-actions';
   import { useEditing } from './editing.svelte';
   import EntryEditor from './EntryEditor.svelte';
+  import { useFocus } from './focus.svelte';
   import { useNav } from './navigation.svelte';
   import { useMarkedDays } from './marked-days.svelte';
 
@@ -32,6 +37,7 @@
 
   const editing = useEditing();
   const nav = useNav();
+  const focus = useFocus();
   const open = $derived(editing.id === entry.id);
   const dimmed = $derived(editing.id !== null && !open);
 
@@ -55,26 +61,46 @@
   let moveOpen = $state(false);
   let moveAnchor = $state.raw<HTMLElement | null>(null);
 
-  const actions: MenuItem[] = [
-    { label: 'Edit', icon: PenLine, onselect: () => void editing.open(entry.id) },
+  /** Opens the editor; the Entry keeps the keyboard focus. */
+  function openEditor() {
+    focus.send({ type: 'edit', id: entry.id });
+    void editing.open(entry.id);
+  }
+
+  /** Deletes with Undo, then the ring moves to the next Entry (or the composer when none is left). */
+  async function deleteFocused() {
+    focus.send({ type: 'deleted', id: entry.id });
+    const next = focus.id;
+    await deleteEntryWithUndo(entry, editing);
+    await tick();
+    if (next) await focus.reveal?.(next);
+    else nav.focusComposer?.();
+  }
+
+  // The keys are shown as hints beside the actions, but only where there is a keyboard to use them.
+  const hint = (key: string) => (viewport.isPhone ? undefined : key);
+  const actions: MenuItem[] = $derived([
+    { label: 'Edit', icon: PenLine, shortcut: hint('↵'), onselect: openEditor },
     {
       label: 'Move to another date…',
       icon: CalendarDays,
+      shortcut: hint('M'),
       // After the menu has closed, so its dismissal cannot count as an outside click on the picker.
       onselect: () => {
         moveAnchor = menuAnchor instanceof HTMLElement ? menuAnchor : row;
         setTimeout(() => (moveOpen = true), 0);
       },
     },
-    { label: 'Copy text', icon: Copy, onselect: () => void copyEntryText(entry) },
+    { label: 'Copy text', icon: Copy, shortcut: hint('C'), onselect: () => void copyEntryText(entry) },
     {
       label: 'Delete',
       icon: Trash2,
+      shortcut: hint('⌫'),
       danger: true,
       separatorBefore: true,
-      onselect: () => void deleteEntryWithUndo(entry, editing),
+      onselect: () => void deleteFocused(),
     },
-  ];
+  ]);
 
   function openMenu(anchor: MenuAnchor) {
     if (open) return;
@@ -103,12 +129,41 @@
     }
     if (open || (e.target as Element).closest('a, button, [role="checkbox"]')) return;
     if (window.getSelection()?.toString()) return;
-    void editing.open(entry.id);
+    openEditor();
   }
+
+  /** Keys on the row itself (not on the editor, checkboxes or ⋯ inside it). No ⌘⌫: macOS owns it. */
   function onrowkeydown(e: KeyboardEvent) {
-    if (open || e.target !== e.currentTarget || e.key !== 'Enter') return;
+    if (open || e.target !== e.currentTarget || e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case 'Enter':
+        openEditor();
+        break;
+      case 'ArrowUp':
+      case 'ArrowDown':
+        void focus.move(e.key === 'ArrowUp' ? 'up' : 'down');
+        break;
+      case 'Backspace':
+      case 'Delete':
+        void deleteFocused();
+        break;
+      case 'm':
+      case 'M':
+        moveAnchor = row;
+        moveOpen = true;
+        break;
+      case 'c':
+      case 'C':
+        void copyEntryText(entry);
+        break;
+      case 'Escape':
+        if (viewport.isPhone) return;
+        nav.focusComposer?.();
+        break;
+      default:
+        return;
+    }
     e.preventDefault();
-    void editing.open(entry.id);
   }
 
   // The picker's coral dots: days that already have Entries.
@@ -121,12 +176,14 @@
   bind:this={row}
   tabindex="0"
   aria-label="Entry at {time}"
-  class="group relative -mx-2.5 grid gap-0.5 rounded-md px-2.5 py-2 transition-[opacity,background-color,box-shadow] duration-(--dur) ease-out min-[720px]:grid-cols-[4rem_1fr] min-[720px]:gap-x-3.5 [&+&]:before:absolute [&+&]:before:inset-x-2.5 [&+&]:before:top-0 [&+&]:before:h-px [&+&]:before:bg-line
-    {open ? 'bg-surface shadow-pop' : 'cursor-text hover:bg-hover'} {dimmed ? 'opacity-35' : ''}
+  aria-keyshortcuts={viewport.isPhone ? undefined : 'ArrowUp ArrowDown Enter Backspace Delete M C'}
+  class="group relative -mx-2.5 grid scroll-mt-20 scroll-mb-8 gap-0.5 rounded-md px-2.5 py-2 transition-[opacity,background-color,box-shadow] duration-(--dur) ease-out min-[720px]:grid-cols-[4rem_1fr] min-[720px]:gap-x-3.5 [&+&]:before:absolute [&+&]:before:inset-x-2.5 [&+&]:before:top-0 [&+&]:before:h-px [&+&]:before:bg-line
+    {open ? 'bg-surface shadow-pop' : 'cursor-text hover:bg-hover focus-visible:bg-hover'} {dimmed ? 'opacity-35' : ''}
     {editing.arrived === entry.id ? 'slide-in' : ''} {nav.flashEntry === entry.id ? 'flash' : ''}"
   data-entry-id={entry.id}
   onclick={onrowclick}
   onkeydown={onrowkeydown}
+  onfocus={() => focus.send({ type: 'focus', id: entry.id })}
   {oncontextmenu}
   onpointerdown={(e) => touchLike(e) && !open && press.start(e.clientX, e.clientY)}
   onpointermove={(e) => touchLike(e) && press.move(e.clientX, e.clientY)}
@@ -151,6 +208,7 @@
       <MarkdownView
         source={entry.body}
         class="break-words"
+        font={editing.font}
         ontoggle={(line) => void tickTask(entry, line)}
       />
       {#if edited}
@@ -185,4 +243,5 @@
   onmonthchange={(m) => (pickerMonth = m)}
   hue="--hue-journal"
   onpick={(date) => void moveEntryToDate(entry, date, editing, nav)}
+  restoreFocus={() => row?.focus()}
 />

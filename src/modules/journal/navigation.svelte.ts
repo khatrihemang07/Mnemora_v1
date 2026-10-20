@@ -22,6 +22,8 @@ export class JournalNav {
   scrollTo: ((date: string, entryId?: string) => Promise<void>) | null = null;
   /** Focuses the composer. */
   focusComposer: (() => void) | null = null;
+  /** ⌘N: focuses the composer, on Today unless text is already being written for another day. */
+  compose: (() => void) | null = null;
   #entryTimer: ReturnType<typeof setTimeout> | undefined;
   #pageTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -59,6 +61,7 @@ export class JournalNav {
     clearTimeout(this.#pageTimer);
     this.scrollTo = null;
     this.focusComposer = null;
+    this.compose = null;
   }
 }
 

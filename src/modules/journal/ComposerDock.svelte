@@ -3,7 +3,8 @@
   The first visible character creates the Entry; later typing autosaves after a pause. Finishing
   (⌘/Ctrl+Enter, Esc or the check) clears the box and the Entry slides into its Page. A failed save
   keeps the text and shows a banner; the next edit retries. The date chip ("Today ▾") puts the Entry
-  on any other Page, past or future; it resets to Today when the Entry is finished.
+  on any other Page, past or future; it resets to Today when the Entry is finished. ↑ in an empty
+  composer hands the keyboard focus to the newest Entry. The box is as wide as the Journal's text column.
 -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
@@ -20,6 +21,7 @@
   import { Composer } from './composer';
   import { chipLabel, localDateString } from './dates';
   import { journalLeaveGuard, useEditing } from './editing.svelte';
+  import { useFocus } from './focus.svelte';
   import { useNav } from './navigation.svelte';
   import { useMarkedDays } from './marked-days.svelte';
   import {
@@ -34,6 +36,7 @@
 
   const editing = useEditing();
   const nav = useNav();
+  const focus = useFocus();
   let text = $state('');
   let error = $state<unknown>(null);
   let focused = $state(false);
@@ -80,6 +83,11 @@
   onMount(() => {
     if (!viewport.isPhone) editor?.focus();
     nav.focusComposer = () => editor?.focus();
+    nav.compose = () => {
+      // Text already written keeps its date; an empty box starts on Today.
+      if (!text.trim()) nav.composerDate = null;
+      editor?.focus();
+    };
 
     const hidden = () => {
       if (document.visibilityState === 'hidden') void composer.saveNow();
@@ -90,6 +98,7 @@
     window.addEventListener('beforeunload', leaving);
     return () => {
       nav.focusComposer = null;
+      nav.compose = null;
       document.removeEventListener('visibilitychange', hidden);
       window.removeEventListener('pagehide', leaving);
       window.removeEventListener('beforeunload', leaving);
@@ -125,13 +134,22 @@
     if (!viewport.isPhone) editor?.focus();
   }
 
+  /** ↑ in an empty box (capture phase, before the editor treats it as a caret move) leaves for the feed. */
+  function onkeydowncapture(e: KeyboardEvent) {
+    if (e.key !== 'ArrowUp' || text !== '' || e.isComposing) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void focus.fromComposer();
+  }
+
   // The picker's coral dots: days that already have Entries.
   let pickerMonth = $state(nav.today.slice(0, 7));
   const pickerDays = useMarkedDays(() => ({ month: pickerMonth, open: dateOpen }));
 </script>
 
 <div class="shrink-0 px-(--pad) pb-(--pad) {cls}">
-  <div class="mx-auto max-w-[42.5rem]">
+  <div class="mx-auto max-w-(--journal-width)">
     {#if error !== null}
       <div class="mb-2">
         <ErrorBanner
@@ -144,6 +162,7 @@
     <div
       class="flex items-end gap-2 rounded-md border border-line bg-surface p-2 shadow-card
         transition-colors duration-(--dur) ease-out focus-within:border-accent"
+      {onkeydowncapture}
     >
       <Chip
         bind:ref={dateChip}
@@ -177,6 +196,7 @@
         }}
         label="Write a Journal Entry"
         placeholder="Write…"
+        font={editing.font}
         spellcheck={editing.spellcheck}
         slashValues={editing.slashValues}
         maxHeight="12rem"

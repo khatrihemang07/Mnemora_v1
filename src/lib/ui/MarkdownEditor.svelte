@@ -107,6 +107,11 @@
     ctrl?.setDoc(value);
   });
 
+  // Spellcheck follows the Device setting while the editor is open.
+  $effect(() => {
+    ctrl?.setSpellcheck(spellcheck);
+  });
+
   // Keep the active menu row visible and tell assistive tech about it.
   $effect(() => {
     const s = slash;

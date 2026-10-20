@@ -2,11 +2,12 @@
   EntryEditor: an Entry open for editing in place, inside its row. Autosaves 600ms after the last
   keystroke (and on blur, when the window is hidden or closed, and when leaving), silently. A failed
   save keeps the text and shows a banner; the next edit retries. Finishes on Esc, ⌘/Ctrl+Enter, a
-  click outside, Done, or Back on a phone. The bottom bar holds a date chip (the Entry's Page; it
+  click outside, Done, or Back on a phone; on desktop the keyboard ways (Esc, ⌘/Ctrl+Enter, Done)
+  leave the Entry focused so ↑ ↓ carry on from it. The bottom bar holds a date chip (the Entry's Page; it
   opens the DatePicker to move the Entry) and Done.
 -->
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import CalendarDays from '~icons/lucide/calendar-days';
   import type { Entry } from '../../lib/ipc/bindings';
   import { blockNavigation, interceptBack } from '../../lib/router';
@@ -20,6 +21,7 @@
   import { moveEntryToDate } from './entry-actions';
   import { EntryEditing } from './entry-editing';
   import { journalLeaveGuard, useEditing } from './editing.svelte';
+  import { useFocus } from './focus.svelte';
   import { useNav } from './navigation.svelte';
   import { useMarkedDays } from './marked-days.svelte';
   import { invalidateJournal, patchEntry, updateEntry } from './queries';
@@ -28,6 +30,7 @@
 
   const editing = useEditing();
   const nav = useNav();
+  const focus = useFocus();
   // The session starts from the Entry as it was opened; saves patch the feed copy underneath.
   const start = untrack(() => ({ id: entry.id, body: entry.body }));
   const session = new EntryEditing<Entry>(
@@ -71,6 +74,13 @@
       closing = null;
     });
     return closing;
+  }
+
+  /** Finishes from the keyboard or Done: the Entry's row takes the focus back (desktop). */
+  async function finishAndFocus() {
+    if (!(await finish()) || viewport.isPhone) return;
+    await tick();
+    await focus.reveal?.(entry.id);
   }
 
   onMount(() => {
@@ -130,7 +140,7 @@
       text = t;
       session.input(t);
     }}
-    onfinish={() => void finish()}
+    onfinish={() => void finishAndFocus()}
     onfocuschange={(focused) => {
       if (focused) editing.active = editor;
       else {
@@ -139,6 +149,7 @@
       }
     }}
     label="Edit this Entry"
+    font={editing.font}
     spellcheck={editing.spellcheck}
     slashValues={editing.slashValues}
     bare
@@ -166,7 +177,7 @@
     >
       {chipLabel(entry.page_date, nav.today)}
     </Chip>
-    <Button size="sm" variant="primary" onclick={() => void finish()}>Done</Button>
+    <Button size="sm" variant="primary" onclick={() => void finishAndFocus()}>Done</Button>
   </div>
 </div>
 <DatePicker
