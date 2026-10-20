@@ -1,14 +1,14 @@
 <!--
   EntryRow: one Entry on a Page. Desktop puts the time in a 64px left margin, phone puts it above the
   text. When it was written on another day than its Page, a short date comes with the time (stacked
-  above it on desktop). Hovering the time shows the full written timestamp and zone. Plain text for
-  now: blank lines separate paragraphs, single newlines stay line breaks.
+  above it on desktop). Hovering the time shows the full written timestamp and zone. The text is
+  rendered Markdown.
 -->
 <script lang="ts">
   import type { Entry } from '../../lib/ipc/bindings';
   import type { TimeFormat } from '../../lib/time/format';
+  import MarkdownView from '../../lib/ui/MarkdownView.svelte';
   import { editedLabel, fullWritten, writtenDateLabel, writtenTime } from './dates';
-  import { paragraphs } from './paragraphs';
 
   let { entry, timeFormat }: { entry: Entry; timeFormat: TimeFormat } = $props();
 
@@ -39,11 +39,7 @@
     {time}
   </time>
   <div class="min-w-0">
-    <div class="selectable font-display text-base leading-[1.65] break-words text-ink">
-      {#each paragraphs(entry.body) as p, i (i)}
-        <p class="whitespace-pre-wrap [&:not(:last-child)]:mb-[0.55em]">{p}</p>
-      {/each}
-    </div>
+    <MarkdownView source={entry.body} class="break-words" />
     {#if edited}
       <p class="mt-0.5 text-[0.72rem] text-faint" title={edited}>edited</p>
     {/if}

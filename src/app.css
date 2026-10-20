@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./lib/theme/fonts.css";
 @import "./lib/theme/tokens.css";
+@import "./lib/ui/markdown/markdown.css";
 
 /* Remove Tailwind's default palette and scales so only semantic tokens are usable. */
 @theme {
