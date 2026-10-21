@@ -140,14 +140,14 @@ pub fn open_in_lists(conn: &Connection) -> AppResult<Vec<Task>> {
         .map_err(corrupt_or_db)
 }
 
-/// Open, live Task counts per List; the `None` entry is the Inbox.
-pub fn open_counts(conn: &Connection) -> AppResult<Vec<(Option<String>, u32)>> {
+/// Live Task counts per List, `(list, open, all states)`; the `None` entry is the Inbox.
+pub fn task_counts(conn: &Connection) -> AppResult<Vec<(Option<String>, u32, u32)>> {
     let mut stmt = conn.prepare(
-        "SELECT list_id, COUNT(*) FROM todo_tasks
-         WHERE state = 'open' AND deleted_at IS NULL GROUP BY list_id",
+        "SELECT list_id, COUNT(*) FILTER (WHERE state = 'open'), COUNT(*) FROM todo_tasks
+         WHERE deleted_at IS NULL GROUP BY list_id",
     )?;
     Ok(stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<Result<_, _>>()?)
 }
 

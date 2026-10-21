@@ -49,16 +49,26 @@ const NAME_TAKEN: TodoError = TodoError::Validation("There’s already a List wi
 
 /// The sidebar's data: the Inbox count and every List with its open count.
 pub fn sidebar(conn: &Connection) -> AppResult<SidebarView> {
-    let counts: HashMap<Option<String>, u32> = repo::open_counts(conn)?.into_iter().collect();
+    let counts: HashMap<Option<String>, (u32, u32)> = repo::task_counts(conn)?
+        .into_iter()
+        .map(|(list, open, all)| (list, (open, all)))
+        .collect();
     let lists = list_repo::all(conn)?
         .into_iter()
-        .map(|list| ListEntry {
-            open_count: counts.get(&Some(list.id.clone())).copied().unwrap_or(0),
-            list,
+        .map(|list| {
+            let (open_count, task_count) = counts
+                .get(&Some(list.id.clone()))
+                .copied()
+                .unwrap_or_default();
+            ListEntry {
+                list,
+                open_count,
+                task_count,
+            }
         })
         .collect();
     Ok(SidebarView {
-        inbox_count: counts.get(&None).copied().unwrap_or(0),
+        inbox_count: counts.get(&None).map_or(0, |c| c.0),
         lists,
     })
 }

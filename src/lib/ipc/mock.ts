@@ -55,7 +55,7 @@ export async function installMock() {
     Object.entries(DEFS).map(([k, d]) => [k, d.default]),
   );
   const device: DeviceSettings = {
-    sidebar: { width: 248, rail: false },
+    sidebar: { width: 248, rail: false, todo_open: false },
     log_level: 'info',
     spellcheck: true,
   };
@@ -112,9 +112,13 @@ export async function installMock() {
           return JSON.parse(JSON.stringify(device));
         case 'device_set_sidebar':
           device.sidebar = {
+            ...device.sidebar,
             width: Math.min(360, Math.max(200, a.width as number)),
             rail: a.rail as boolean,
           };
+          return null;
+        case 'device_set_todo_open':
+          device.sidebar = { ...device.sidebar, todo_open: a.open === true };
           return null;
         case 'device_set_log_level': {
           const level = String(a.level).toLowerCase();

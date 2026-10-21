@@ -252,12 +252,14 @@ export type ListDeletion = {
 	moved_task_ids: string[],
 };
 
-/**  A List with its number of open Tasks. */
+/**  A List with its Task counts. */
 export type ListEntry = {
 	/**  The List. */
 	list: TodoList,
 	/**  Open Tasks in it. */
 	open_count: number,
+	/**  Every Task in it, done ones too: what deleting the List has to deal with. */
+	task_count: number,
 };
 
 /**  One List's page: the List and its open Tasks in manual order. */

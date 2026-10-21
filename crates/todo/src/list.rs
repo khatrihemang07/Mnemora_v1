@@ -32,13 +32,15 @@ pub struct TodoList {
     pub updated_at: i64,
 }
 
-/// A List with its number of open Tasks.
+/// A List with its Task counts.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct ListEntry {
     /// The List.
     pub list: TodoList,
     /// Open Tasks in it.
     pub open_count: u32,
+    /// Every Task in it, done ones too: what deleting the List has to deal with.
+    pub task_count: u32,
 }
 
 /// What the sidebar shows: the Inbox count and every List, first to last.
