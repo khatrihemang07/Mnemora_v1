@@ -2125,6 +2125,7 @@ dependencies = [
 name = "mnemora-app"
 version = "0.1.0"
 dependencies = [
+ "jni",
  "mnemora-core",
  "mnemora-journal",
  "mnemora-todo",
