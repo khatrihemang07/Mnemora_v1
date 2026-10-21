@@ -106,6 +106,25 @@ pub fn overdue_day_label(date: &str, today: &str) -> String {
     }
 }
 
+/// An Upcoming day's heading: `Tomorrow · Thu 22`, then `Fri 23`; a day in another month (or
+/// year) names it too: `Mon 2 Nov`.
+pub fn day_heading(date: &str, today: &str) -> String {
+    let (Some(weekday), Some((y, m, d)), Some(now)) = (weekday_short(date), ymd(date), ymd(today))
+    else {
+        return date.to_owned();
+    };
+    let day = if (y, m) == (now.0, now.1) {
+        format!("{weekday} {d}")
+    } else {
+        format!("{weekday} {}", short_date(date, today))
+    };
+    if days_between(today, date) == Some(1) {
+        format!("Tomorrow · {day}")
+    } else {
+        day
+    }
+}
+
 /// A title without its Markdown marks, for a sentence or a widget row that shows it as text.
 /// Bold, italic, code and links lose their marks; block syntax (`#`, `-`) and `~~`/`==` stay as
 /// the text they are, like the app's `plainTitle`.
@@ -271,6 +290,21 @@ mod tests {
         assert_eq!(overdue_day_label("2026-10-15", today), "Thu");
         assert_eq!(overdue_day_label("2026-10-14", today), "14 Oct");
         assert_eq!(overdue_day_label("2025-12-30", today), "30 Dec 2025");
+    }
+
+    #[test]
+    fn upcoming_days_have_a_heading() {
+        let today = "2026-10-21";
+        assert_eq!(day_heading("2026-10-22", today), "Tomorrow · Thu 22");
+        assert_eq!(day_heading("2026-10-23", today), "Fri 23");
+        assert_eq!(day_heading("2026-11-02", today), "Mon 2 Nov");
+        // Tomorrow in the next month still says so.
+        assert_eq!(
+            day_heading("2026-11-01", "2026-10-31"),
+            "Tomorrow · Sun 1 Nov"
+        );
+        assert_eq!(day_heading("2027-01-01", "2026-12-30"), "Fri 1 Jan 2027");
+        assert_eq!(day_heading("nope", today), "nope");
     }
 
     #[test]

@@ -71,7 +71,8 @@ pub use task_service::{
 };
 pub use when::{LocalNow, NewWhen};
 pub use widget::{
-    EmptyState, HeaderCount, Tone, WidgetGroup, WidgetRow, WidgetSnapshot, WidgetView, snapshot,
+    EmptyState, HeaderCount, Tone, WidgetGroup, WidgetList, WidgetLists, WidgetRow, WidgetSnapshot,
+    WidgetView, lists as widget_lists, snapshot,
 };
 
 /// The Todo Module.

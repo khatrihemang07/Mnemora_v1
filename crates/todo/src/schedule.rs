@@ -19,7 +19,9 @@ use crate::repeat::rule_of;
 use crate::repo;
 use crate::service::record_at;
 use crate::task::{Task, TaskState};
-use crate::when::{LocalNow, resolve_when, validate_date, validate_pickable, validate_time};
+use crate::when::{
+    LocalNow, add_days, resolve_when, validate_date, validate_pickable, validate_time,
+};
 
 /// Today: what is late, what is due, and what is already done.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
@@ -367,7 +369,7 @@ pub fn counts(conn: &Connection, local: &LocalNow) -> AppResult<TodoCounts> {
     })
 }
 
-fn by_date_then_day(a: &Task, b: &Task) -> Ordering {
+pub(crate) fn by_date_then_day(a: &Task, b: &Task) -> Ordering {
     a.due_date.cmp(&b.due_date).then_with(|| in_day(a, b))
 }
 
@@ -408,6 +410,35 @@ pub fn upcoming(conn: &Connection, local: &LocalNow) -> AppResult<UpcomingView> 
         group_by: prefs.group_upcoming,
         groups,
     })
+}
+
+/// Upcoming as the Todo widget draws it: the Overdue Tasks, then one group per day from tomorrow
+/// up to `days` ahead. Always by day and in the date order, whatever the Upcoming Preference says.
+pub(crate) fn week_ahead(
+    conn: &Connection,
+    local: &LocalNow,
+    days: i64,
+) -> AppResult<(Vec<Task>, Vec<TaskGroup>)> {
+    local.check()?;
+    let last = add_days(&local.today, days).ok_or(TodoError::Validation("Not a valid date"))?;
+    let (mut overdue, mut coming) = (Vec::new(), Vec::new());
+    for task in repo::open_dated(conn)? {
+        let Some(due) = task.due_date.as_deref() else {
+            continue;
+        };
+        if due < local.today.as_str() {
+            overdue.push(task);
+        } else if due > local.today.as_str() && due <= last.as_str() {
+            coming.push(task);
+        }
+    }
+    overdue.sort_by(by_date_then_day);
+    let ctx = GroupContext {
+        lists: &[],
+        today: &local.today,
+    };
+    let groups = group_tasks(coming, GroupBy::Day, &ctx, &by_date_then_day);
+    Ok((overdue, groups))
 }
 
 /// Open Tasks per date in `[from, to]` (only dates that have any), leaving out one Task: the When

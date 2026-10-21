@@ -458,6 +458,380 @@ fn the_day_rolls_over_with_the_clock_the_widget_sends() {
     assert_eq!(next_day["groups"][0]["rows"][0]["day"], "Yesterday");
 }
 
+// ------------------------------------------------------------------ every view
+
+fn view(source: &dyn Source, name: &str) -> Value {
+    let reply = call(
+        source,
+        &json!({ "method": "snapshot", "view": name, "local": at_json(TODAY) }),
+    );
+    assert!(reply["ok"].is_object(), "{reply}");
+    reply["ok"].clone()
+}
+
+fn set_pref(conn: &db::Connection, module: &str, key: &str, value: &str) {
+    conn.execute(
+        &format!(
+            "INSERT OR REPLACE INTO settings(module, key, value, updated_at)
+             VALUES ('{module}', '{key}', '\"{value}\"', 0)"
+        ),
+        [],
+    )
+    .unwrap();
+}
+
+fn titles(group: &Value) -> Vec<String> {
+    rows(group).into_iter().map(|r| r.0).collect()
+}
+
+fn all_headings(snap: &Value) -> Vec<Value> {
+    snap["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["heading"].clone())
+        .collect()
+}
+
+#[test]
+fn upcoming_is_overdue_then_each_day_of_the_next_seven() {
+    let (phone, mut conn) = Phone::migrated();
+    let work = mnemora_todo::create_list(&mut conn, "Work").unwrap();
+    add(&mut conn, "Late", Some("2026-10-19"), None, None, None);
+    add(&mut conn, "Today's", Some(TODAY), None, None, None);
+    add(
+        &mut conn,
+        "Dentist",
+        Some("2026-10-22"),
+        Some("11:00"),
+        None,
+        None,
+    );
+    add(
+        &mut conn,
+        "Send invoice",
+        Some("2026-10-22"),
+        None,
+        Some(2),
+        Some(&work.id),
+    );
+    add(&mut conn, "Expenses", Some("2026-10-23"), None, None, None);
+    add(&mut conn, "Last day", Some("2026-10-28"), None, None, None);
+    add(&mut conn, "Too far", Some("2026-10-29"), None, None, None);
+    add(&mut conn, "Undated", None, None, None, None);
+
+    let snap = view(&phone.bridge(), "upcoming");
+
+    assert_eq!(snap["view"], "upcoming");
+    assert_eq!(snap["title"], "Upcoming");
+    assert_eq!(
+        all_headings(&snap),
+        ["Overdue", "Tomorrow · Thu 22", "Fri 23", "Wed 28"]
+    );
+    assert_eq!(snap["groups"][0]["tone"], "overdue");
+    // Inside a day: timed Tasks first, then the rest; the List chip shows in this mixed view.
+    assert_eq!(titles(&snap["groups"][1]), ["Dentist", "Send invoice"]);
+    assert_eq!(snap["groups"][1]["rows"][1]["list"], "Work");
+    assert_eq!(titles(&snap["groups"][3]), ["Last day"]);
+    // The header counts the open Tasks shown.
+    assert_eq!(snap["count"], json!({ "text": "5", "tone": "normal" }));
+}
+
+#[test]
+fn upcoming_ignores_the_apps_grouping_and_names_a_day_in_the_next_month() {
+    let (phone, mut conn) = Phone::migrated();
+    set_pref(&conn, "todo", "group_upcoming", "priority");
+    add(&mut conn, "Soon", Some("2026-10-30"), None, Some(1), None);
+    add(
+        &mut conn,
+        "Next month",
+        Some("2026-11-02"),
+        None,
+        None,
+        None,
+    );
+    // Tuesday 27 October: the week ahead reaches into November.
+    let reply = call(
+        &phone.bridge(),
+        &json!({ "method": "snapshot", "view": "upcoming", "local": at_json("2026-10-27") }),
+    );
+    assert_eq!(all_headings(&reply["ok"]), ["Fri 30", "Mon 2 Nov"]);
+}
+
+#[test]
+fn an_empty_upcoming_says_so_and_overdue_alone_still_lists() {
+    let (phone, mut conn) = Phone::migrated();
+    add(&mut conn, "Far away", Some("2026-12-01"), None, None, None);
+    let snap = view(&phone.bridge(), "upcoming");
+    assert_eq!(snap["groups"], json!([]));
+    assert_eq!(snap["count"], Value::Null);
+    assert_eq!(
+        snap["empty"],
+        json!({ "title": "Nothing coming up", "line": "Nothing in the next 7 days" })
+    );
+
+    add(&mut conn, "Late", Some("2026-10-20"), None, None, None);
+    let snap = view(&phone.bridge(), "upcoming");
+    assert_eq!(all_headings(&snap), ["Overdue"]);
+    assert_eq!(snap["empty"], Value::Null);
+}
+
+#[test]
+fn inbox_has_a_second_group_of_undated_tasks_in_lists() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    mnemora_todo::set_list_emoji(&mut conn, &home.id, Some("🏠")).unwrap();
+    add(&mut conn, "Zebra idea", None, None, None, None);
+    add(&mut conn, "Apple idea", None, None, None, None);
+    add(
+        &mut conn,
+        "Dated inbox",
+        Some("2026-10-24"),
+        None,
+        None,
+        None,
+    );
+    add(
+        &mut conn,
+        "Sort the bulbs",
+        None,
+        None,
+        None,
+        Some(&home.id),
+    );
+    add(
+        &mut conn,
+        "Dated in a List",
+        Some("2026-10-24"),
+        None,
+        None,
+        Some(&home.id),
+    );
+
+    let snap = view(&phone.bridge(), "inbox");
+
+    assert_eq!(snap["title"], "Inbox");
+    assert_eq!(
+        all_headings(&snap),
+        [Value::Null, json!("No date, in a List")]
+    );
+    // The app's manual order, no List chips: they are all in the Inbox.
+    assert_eq!(
+        titles(&snap["groups"][0]),
+        ["Zebra idea", "Apple idea", "Dated inbox"]
+    );
+    assert_eq!(snap["groups"][0]["rows"][0]["list"], Value::Null);
+    assert_eq!(titles(&snap["groups"][1]), ["Sort the bulbs"]);
+    assert_eq!(snap["groups"][1]["rows"][0]["list"], "🏠 Home");
+    assert_eq!(snap["count"], json!({ "text": "4", "tone": "normal" }));
+
+    // The Inbox's own Sort applies to both groups.
+    set_pref(&conn, "todo", "inbox_sort", "title");
+    let snap = view(&phone.bridge(), "inbox");
+    assert_eq!(
+        titles(&snap["groups"][0]),
+        ["Apple idea", "Dated inbox", "Zebra idea"]
+    );
+}
+
+#[test]
+fn an_empty_inbox_is_zero() {
+    let (phone, mut conn) = Phone::migrated();
+    add(&mut conn, "Dated in a list", Some(TODAY), None, None, None);
+    let list = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    add(&mut conn, "Filed", Some(TODAY), None, None, Some(&list.id));
+    let snap = view(&phone.bridge(), "inbox");
+    // The dated Inbox Task is still in the Inbox.
+    assert_eq!(snap["empty"], Value::Null);
+
+    let (phone, _conn) = Phone::migrated();
+    let snap = view(&phone.bridge(), "inbox");
+    assert_eq!(
+        snap["empty"],
+        json!({ "title": "Inbox zero", "line": "Everything has a List" })
+    );
+    assert_eq!(snap["count"], Value::Null);
+}
+
+#[test]
+fn all_is_grouped_by_list_with_the_inbox_first() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    mnemora_todo::set_list_emoji(&mut conn, &home.id, Some("🏠")).unwrap();
+    let work = mnemora_todo::create_list(&mut conn, "Work").unwrap();
+    mnemora_todo::create_list(&mut conn, "Empty list").unwrap();
+    add(&mut conn, "Work first", None, None, None, Some(&work.id));
+    add(
+        &mut conn,
+        "Home one",
+        Some("2026-11-20"),
+        None,
+        None,
+        Some(&home.id),
+    );
+    add(&mut conn, "Inbox one", None, None, None, None);
+    add(&mut conn, "Home two", None, None, None, Some(&home.id));
+    let done = add(&mut conn, "Finished", None, None, None, Some(&home.id));
+    mnemora_todo::complete_task(&mut conn, &done.id, &at(TODAY)).unwrap();
+
+    let snap = view(&phone.bridge(), "all");
+
+    assert_eq!(snap["title"], "All");
+    // Lists in the sidebar's order (Home, Work); the empty one is left out; done is hidden.
+    assert_eq!(
+        all_headings(&snap),
+        [json!("Inbox"), json!("🏠 Home"), json!("Work")]
+    );
+    assert_eq!(titles(&snap["groups"][1]), ["Home one", "Home two"]);
+    // The group names the List, so rows carry no chip.
+    assert_eq!(snap["groups"][1]["rows"][0]["list"], Value::Null);
+    assert_eq!(snap["count"], json!({ "text": "4", "tone": "normal" }));
+
+    // Following the sidebar's Sort for Lists.
+    set_pref(&conn, "todo", "lists_sort", "name_desc");
+    let snap = view(&phone.bridge(), "all");
+    assert_eq!(
+        all_headings(&snap),
+        [json!("Inbox"), json!("Work"), json!("🏠 Home")]
+    );
+}
+
+#[test]
+fn an_empty_all_says_there_are_no_open_tasks() {
+    let (phone, _conn) = Phone::migrated();
+    let snap = view(&phone.bridge(), "all");
+    assert_eq!(
+        snap["empty"],
+        json!({ "title": "No open Tasks", "line": "Everything is done" })
+    );
+}
+
+#[test]
+fn a_list_follows_its_own_sort_and_grouping() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    mnemora_todo::set_list_emoji(&mut conn, &home.id, Some("🏠")).unwrap();
+    let other = mnemora_todo::create_list(&mut conn, "Other").unwrap();
+    add(&mut conn, "Water plants", None, None, None, Some(&home.id));
+    add(&mut conn, "Bulb", None, None, Some(1), Some(&home.id));
+    add(
+        &mut conn,
+        "Recycling",
+        Some("2026-10-19"),
+        None,
+        None,
+        Some(&home.id),
+    );
+    add(&mut conn, "Elsewhere", None, None, None, Some(&other.id));
+    let bridge = phone.bridge();
+    let name = format!("list:{}", home.id);
+
+    let snap = view(&bridge, &name);
+    assert_eq!(snap["view"], Value::String(name.clone()));
+    assert_eq!(snap["title"], "🏠 Home");
+    assert_eq!(all_headings(&snap), [Value::Null]);
+    assert_eq!(
+        titles(&snap["groups"][0]),
+        ["Water plants", "Bulb", "Recycling"]
+    );
+    // Nothing names the List again, and a late Task keeps its red day.
+    assert_eq!(snap["groups"][0]["rows"][0]["list"], Value::Null);
+    assert_eq!(snap["groups"][0]["rows"][2]["day"], "Mon");
+    assert_eq!(snap["groups"][0]["rows"][2]["overdue"], true);
+    assert_eq!(snap["count"], json!({ "text": "3", "tone": "normal" }));
+
+    mnemora_todo::set_list_sort(&mut conn, &home.id, mnemora_todo::TaskSort::Title).unwrap();
+    let snap = view(&bridge, &name);
+    assert_eq!(
+        titles(&snap["groups"][0]),
+        ["Bulb", "Recycling", "Water plants"]
+    );
+
+    mnemora_todo::set_list_sort(&mut conn, &home.id, mnemora_todo::TaskSort::Priority).unwrap();
+    mnemora_todo::set_list_group(&mut conn, &home.id, mnemora_todo::GroupBy::Priority).unwrap();
+    let snap = view(&bridge, &name);
+    assert_eq!(all_headings(&snap), [json!("P1"), json!("No priority")]);
+}
+
+#[test]
+fn an_empty_list_names_itself() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    mnemora_todo::set_list_emoji(&mut conn, &home.id, Some("🏠")).unwrap();
+    let snap = view(&phone.bridge(), &format!("list:{}", home.id));
+    assert_eq!(
+        snap["empty"],
+        json!({ "title": "No open Tasks", "line": "in 🏠 Home" })
+    );
+}
+
+#[test]
+fn a_missing_list_is_reported_as_not_found() {
+    let (phone, mut conn) = Phone::migrated();
+    let gone = mnemora_todo::create_list(&mut conn, "Gone").unwrap();
+    mnemora_todo::delete_list(
+        &mut conn,
+        &gone.id,
+        &mnemora_todo::DeleteChoice::MoveToInbox,
+    )
+    .unwrap();
+    for id in [gone.id.as_str(), "never-existed"] {
+        let reply = call(
+            &phone.bridge(),
+            &json!({ "method": "snapshot", "view": format!("list:{id}"), "local": at_json(TODAY) }),
+        );
+        assert_eq!(reply["err"]["code"], "not_found", "{reply}");
+        assert_eq!(reply["err"]["message"], "That List no longer exists");
+    }
+}
+
+#[test]
+fn every_snapshot_carries_the_apps_theme() {
+    let (phone, conn) = Phone::migrated();
+    assert_eq!(view(&phone.bridge(), "today")["app_theme"], "system");
+    set_pref(&conn, "core", "theme", "oled");
+    for name in ["today", "upcoming", "inbox", "all"] {
+        assert_eq!(view(&phone.bridge(), name)["app_theme"], "oled", "{name}");
+    }
+}
+
+#[test]
+fn lists_returns_the_lists_with_emoji_in_the_sidebars_order_and_the_theme() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    mnemora_todo::set_list_emoji(&mut conn, &home.id, Some("🏠")).unwrap();
+    let work = mnemora_todo::create_list(&mut conn, "Work").unwrap();
+    set_pref(&conn, "core", "theme", "dark");
+
+    let reply = call(&phone.bridge(), &json!({ "method": "lists" }));
+    assert_eq!(
+        reply["ok"],
+        json!({
+            "app_theme": "dark",
+            "lists": [
+                { "id": home.id, "name": "Home", "emoji": "🏠", "label": "🏠 Home" },
+                { "id": work.id, "name": "Work", "emoji": null, "label": "Work" },
+            ],
+        })
+    );
+
+    mnemora_todo::delete_list(
+        &mut conn,
+        &work.id,
+        &mnemora_todo::DeleteChoice::MoveToInbox,
+    )
+    .unwrap();
+    let reply = call(&phone.bridge(), &json!({ "method": "lists" }));
+    assert_eq!(reply["ok"]["lists"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn lists_before_the_app_ran_is_not_set_up() {
+    let phone = Phone::fresh();
+    let reply = call(&phone.bridge(), &json!({ "method": "lists" }));
+    assert_eq!(reply, json!({ "status": "not_set_up" }));
+}
+
 #[test]
 fn bad_requests_get_an_err_and_never_a_panic() {
     let (phone, _conn) = Phone::migrated();
@@ -469,6 +843,7 @@ fn bad_requests_get_an_err_and_never_a_panic() {
         "{}",
         r#"{"method":"fly"}"#,
         r#"{"method":"snapshot"}"#,
+        r#"{"method":"snapshot","view":"list:","local":{"today":"2026-10-21","now":"14:05","offset_min":0}}"#,
         r#"{"method":"snapshot","view":"narnia","local":{"today":"2026-10-21","now":"14:05","offset_min":0}}"#,
         r#"{"method":"snapshot","view":"today","local":{"today":"garbage","now":"14:05","offset_min":0}}"#,
     ] {

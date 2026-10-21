@@ -22,12 +22,14 @@ use serde_json::{Value, json};
 pub use android::register_app;
 pub use source::Source;
 
-/// What the widget can ask. Later widget features add their methods here.
+/// What the widget can ask.
 #[derive(Deserialize)]
 #[serde(tag = "method", rename_all = "snake_case")]
 enum Request {
     /// A view as the widget draws it, as of the device's clock.
     Snapshot { view: String, local: LocalNow },
+    /// The Lists the setup screen offers, with the app's theme.
+    Lists,
 }
 
 /// What a request came to.
@@ -59,6 +61,12 @@ fn reply(outcome: Outcome) -> String {
     value.to_string()
 }
 
+fn encode<T: serde::Serialize>(value: &T) -> Result<Value, AppError> {
+    serde_json::to_value(value).map_err(|e| {
+        AppError::new(ErrorCode::Internal, "Could not encode the reply").with_details(e)
+    })
+}
+
 /// Answers one request. Never panics; a malformed request is an `err` reply.
 pub fn handle(source: &dyn Source, request: &str) -> String {
     let request: Request = match serde_json::from_str(request) {
@@ -74,10 +82,9 @@ pub fn handle(source: &dyn Source, request: &str) -> String {
     match request {
         Request::Snapshot { view, local } => reply(source.run(&mut |conn| {
             let view = WidgetView::parse(&view)?;
-            let snapshot = mnemora_todo::snapshot(conn, view, &local)?;
-            serde_json::to_value(snapshot).map_err(|e| {
-                AppError::new(ErrorCode::Internal, "Could not encode the snapshot").with_details(e)
-            })
+            let snapshot = mnemora_todo::snapshot(conn, &view, &local)?;
+            encode(&snapshot)
         })),
+        Request::Lists => reply(source.run(&mut |conn| encode(&mnemora_todo::widget_lists(conn)?))),
     }
 }
