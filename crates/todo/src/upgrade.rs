@@ -14,9 +14,10 @@ const MAX_TABS: usize = 4;
 
 /// An install that never edited its phone tabs gets Todo appended, once. "Never edited" is a
 /// saved value without the `core.phone_tabs_edited` marker (which saving the tabs from Settings
-/// sets): either nothing is saved, so the new default already has Todo, or the Journal's upgrade
-/// pinned it (`["home"]`), which becomes Home, Todo. It never runs again, so removing the tab
-/// later sticks; it adds nothing to four tabs or past a switched-off Todo.
+/// sets) that is exactly what an upgrade pins: nothing saved, so the new default already has Todo,
+/// or `["home"]` (the Journal's upgrade) or `["home", "journal"]`, which gain Todo at the end. Any
+/// other saved list counts as edited, marker or not, and stays as it is. It never runs again, so
+/// removing the tab later sticks; it adds nothing to four tabs or past a switched-off Todo.
 pub fn append_todo_tab(conn: &Connection, report: &MigrationReport) -> AppResult<()> {
     let first_run_of = |id: &str| {
         report
@@ -36,7 +37,8 @@ pub fn append_todo_tab(conn: &Connection, report: &MigrationReport) -> AppResult
     let Some(Value::Array(mut tabs)) = stored(conn, "core", "phone_tabs")? else {
         return Ok(());
     };
-    if off || tabs.len() >= MAX_TABS || tabs.contains(&json!(MODULE_ID)) {
+    let pinned = tabs == [json!("home")] || tabs == [json!("home"), json!("journal")];
+    if off || !pinned || tabs.len() >= MAX_TABS {
         return Ok(());
     }
     tabs.push(json!(MODULE_ID));

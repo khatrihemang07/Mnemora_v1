@@ -351,6 +351,39 @@ mod tests {
     }
 
     #[test]
+    fn a_legacy_edited_list_without_the_marker_is_left_alone() {
+        // Saved tabs other than exactly Home or Home, Journal count as edited even when the
+        // `phone_tabs_edited` marker is missing (an install that predates it).
+        for legacy in [
+            json!(["home", "settings"]),
+            json!(["journal", "home"]),
+            json!(["home", "journal", "settings"]),
+            json!(["settings"]),
+        ] {
+            let (mut conn, dir) = before_todo(true);
+            conn.execute(
+                "UPDATE settings SET value = ?1 WHERE module = 'core' AND key = 'phone_tabs'",
+                [legacy.to_string()],
+            )
+            .unwrap();
+            with_todo(&mut conn, dir.path());
+            assert_eq!(tabs(&conn), legacy);
+        }
+    }
+
+    #[test]
+    fn the_unedited_home_journal_pair_gets_todo() {
+        let (mut conn, dir) = before_todo(true);
+        conn.execute(
+            "UPDATE settings SET value = '[\"home\",\"journal\"]' WHERE module = 'core' AND key = 'phone_tabs'",
+            [],
+        )
+        .unwrap();
+        with_todo(&mut conn, dir.path());
+        assert_eq!(tabs(&conn), json!(["home", "journal", "todo"]));
+    }
+
+    #[test]
     fn four_tabs_get_no_fifth() {
         let (mut conn, dir) = before_todo(true);
         let four = json!(["home", "journal", "settings", "a"]);
