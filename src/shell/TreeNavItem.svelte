@@ -13,7 +13,7 @@
   import { moduleContext } from './module-context';
   import { router } from './router';
   import { shell } from './shell-state.svelte';
-  import { onNavigate, rowClick, toggle } from './tree-fold';
+  import { initialOpen, onNavigate, rowClick, toggle } from './tree-fold';
 
   interface Props {
     entry: NavEntry;
@@ -32,8 +32,12 @@
   $effect(() => {
     const now = inside;
     untrack(() => {
-      if (wasInside !== null) {
+      if (wasInside === null) {
+        // Starting up: a saved choice stands; with none, being in Todo means unfolded.
+        if (shell.treeUnset) shell.treeOpen = initialOpen(null, now);
+      } else {
         shell.treeOpen = onNavigate({ open: shell.treeOpen, inside: wasInside }, now).open;
+        shell.treeUnset = false;
       }
       wasInside = now;
     });
@@ -41,6 +45,7 @@
 
   function flip() {
     shell.treeOpen = toggle({ open: shell.treeOpen, inside }).open;
+    shell.treeUnset = false;
   }
 
   function onRowClick(e: MouseEvent) {

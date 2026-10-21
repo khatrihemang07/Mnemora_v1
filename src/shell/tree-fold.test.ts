@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { onNavigate, rowClick, type TreeFold, toggle } from './tree-fold';
+import { initialOpen, onNavigate, rowClick, type TreeFold, toggle } from './tree-fold';
 
 const fold = (open: boolean, inside: boolean): TreeFold => ({ open, inside });
 
@@ -45,5 +45,17 @@ describe('rowClick', () => {
     expect(rowClick(fold(false, true))).toBe('toggle');
     expect(rowClick(fold(false, false))).toBe('enter');
     expect(rowClick(fold(true, false))).toBe('enter');
+  });
+});
+
+describe('initialOpen', () => {
+  it('opens inside the Module when nothing was saved, and folds outside it', () => {
+    expect(initialOpen(null, true)).toBe(true);
+    expect(initialOpen(null, false)).toBe(false);
+  });
+
+  it('lets a saved choice win either way', () => {
+    expect(initialOpen(false, true)).toBe(false);
+    expect(initialOpen(true, false)).toBe(true);
   });
 });

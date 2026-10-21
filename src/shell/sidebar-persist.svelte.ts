@@ -13,10 +13,11 @@ export function useSidebarPersistence() {
     const s = device.data?.sidebar;
     shell.layout = { width: s?.width ?? shell.layout.width, rail: s?.rail ?? false };
     shell.treeOpen = s?.todo_open ?? false;
+    shell.treeUnset = s?.todo_open == null;
     shell.layoutReady = true;
   });
   $effect(() => {
-    if (!shell.layoutReady) return;
+    if (!shell.layoutReady || shell.treeUnset) return;
     const open = shell.treeOpen;
     const t = setTimeout(() => void commands.deviceSetTodoOpen(open), PERSIST_DEBOUNCE_MS);
     return () => clearTimeout(t);

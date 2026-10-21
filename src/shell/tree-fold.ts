@@ -23,3 +23,6 @@ export const toggle = (fold: TreeFold): TreeFold => ({ ...fold, open: !fold.open
 
 /** What a click on the Module's row does: inside it flips the tree, outside it goes there. */
 export const rowClick = (fold: TreeFold): 'toggle' | 'enter' => (fold.inside ? 'toggle' : 'enter');
+
+/** The fold when the app starts: a saved choice wins; with none, the tree is open inside the Module. */
+export const initialOpen = (saved: boolean | null, inside: boolean): boolean => saved ?? inside;

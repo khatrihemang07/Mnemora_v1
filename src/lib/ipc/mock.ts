@@ -55,7 +55,7 @@ export async function installMock() {
     Object.entries(DEFS).map(([k, d]) => [k, d.default]),
   );
   const device: DeviceSettings = {
-    sidebar: { width: 248, rail: false, todo_open: false },
+    sidebar: { width: 248, rail: false, todo_open: null },
     log_level: 'info',
     spellcheck: true,
   };

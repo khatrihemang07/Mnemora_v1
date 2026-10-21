@@ -362,9 +362,10 @@ export type SidebarState = {
 	rail?: boolean,
 	/**
 	 *  The Todo views and Lists under "Todo" are unfolded. Entering and leaving Todo set it;
-	 *  clicking the Todo row or its chevron flips it; it is restored as left.
+	 *  clicking the Todo row or its chevron flips it; it is restored as left. None: never chosen,
+	 *  so the tree follows the page (unfolded when the app opens in Todo).
 	 */
-	todo_open?: boolean,
+	todo_open?: boolean | null,
 };
 
 /**  What the sidebar shows: the Inbox count and every List, first to last. */
