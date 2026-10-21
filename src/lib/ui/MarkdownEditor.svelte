@@ -93,11 +93,21 @@
         onchange: (text) => onchange(text),
         onfinish: () => onfinish?.(),
         onfocuschange: (f) => {
-          hasFocus = f;
-          onfocuschange?.(f);
+          if (f) {
+            hasFocus = true;
+            onfocuschange?.(true);
+            return;
+          }
+          // Removing a focused editor blurs it while Svelte is destroying the page around it,
+          // where writing state is an error (leaving the Journal from ⌘K with the composer
+          // focused). A blur is told one microtask later, which is after any teardown.
+          queueMicrotask(() => {
+            hasFocus = false;
+            onfocuschange?.(false);
+          });
         },
         onslash: (s) => {
-          slash = s;
+          if (!gone) slash = s;
         },
         slashValues: () => slashValues(),
         onopenlink: (href) => void openExternal(href),
