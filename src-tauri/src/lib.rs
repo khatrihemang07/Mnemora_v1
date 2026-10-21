@@ -75,7 +75,10 @@ macro_rules! specta_builder_for {
                 todo::todo_list_set_sort,
                 todo::todo_list_set_group,
             ])
-            .events(tauri_specta::collect_events![SettingsChangedEvent])
+            .events(tauri_specta::collect_events![
+                SettingsChangedEvent,
+                TodoChangedEvent
+            ])
     };
 }
 
@@ -135,6 +138,11 @@ const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/ipc
 /// Typed IPC event mirroring core's `SettingsChanged`, emitted to the webview.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SettingsChangedEvent(pub SettingsChanged);
+
+/// Todo data was changed by something other than the app's own screens (the Todo widget), so
+/// whatever Todo shows is stale.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct TodoChangedEvent;
 
 /// Every Module in the app, in migration order. The one place Modules are registered.
 fn modules() -> Vec<Box<dyn Module>> {

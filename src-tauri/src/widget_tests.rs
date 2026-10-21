@@ -1174,3 +1174,388 @@ fn a_refused_write_does_not_signal() {
     assert!(reply.is_err());
     assert_eq!(sent, 0);
 }
+
+// ------------------------------------------------------------------ ticking and Undo
+
+fn tick(source: &dyn Source, id: &str, tick_steps: Option<bool>) -> Value {
+    call(
+        source,
+        &json!({
+            "method": "complete", "id": id, "tick_steps": tick_steps, "local": at_json(TODAY),
+        }),
+    )
+}
+
+fn undo(source: &dyn Source, token: &Value) -> Value {
+    call(source, &json!({ "method": "undo", "token": token }))
+}
+
+fn titles_today(source: &dyn Source) -> Vec<String> {
+    snapshot(source, TODAY, "14:05")["groups"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|g| rows(g).into_iter().map(|(title, _)| title))
+        .collect()
+}
+
+fn with_notes(conn: &mut db::Connection, id: &str, notes: &str) {
+    mnemora_todo::update_task(conn, id, &stored_title(conn, id), notes, "s1").unwrap();
+}
+
+fn stored_title(conn: &db::Connection, id: &str) -> String {
+    mnemora_todo::task(conn, id).unwrap().title
+}
+
+fn repeat_daily(conn: &mut db::Connection, title: &str) -> mnemora_todo::Task {
+    let when = NewWhen {
+        date: Some(TODAY.into()),
+        time: None,
+        local: at(TODAY),
+    };
+    let details = NewTaskDetails {
+        repeat: Some(mnemora_todo::RepeatRule {
+            freq: "day".into(),
+            every: 1,
+            days: None,
+            mode: "fixed".into(),
+        }),
+        ..NewTaskDetails::default()
+    };
+    mnemora_todo::create_task(conn, title, None, Some(&when), Some(&details)).unwrap()
+}
+
+#[test]
+fn ticking_a_task_completes_it_and_undo_reopens_it() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = add(&mut conn, "Buy **oat** milk", Some(TODAY), None, None, None);
+    add(&mut conn, "Other", Some(TODAY), None, None, None);
+    let bridge = phone.bridge();
+
+    let reply = tick(&bridge, &task.id, None);
+    assert_eq!(reply["ok"]["kind"], "completed", "{reply}");
+    assert_eq!(reply["ok"]["message"], "Completed “Buy oat milk”");
+    assert_eq!(titles_today(&bridge), ["Other"]);
+    let done = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(done.state, mnemora_todo::TaskState::Done);
+
+    let undone = undo(&bridge, &reply["ok"]["token"]);
+    assert!(undone["ok"].is_object(), "{undone}");
+    assert_eq!(titles_today(&bridge), ["Buy oat milk", "Other"]);
+    let reopened = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(reopened.state, mnemora_todo::TaskState::Open);
+    assert_eq!(reopened.closed_at, None);
+}
+
+#[test]
+fn ticking_a_repeating_task_says_where_it_went_and_undo_rewinds_it() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = repeat_daily(&mut conn, "Call mum");
+    let bridge = phone.bridge();
+
+    let reply = tick(&bridge, &task.id, None);
+    assert_eq!(
+        reply["ok"]["message"],
+        "Completed “Call mum” · next Thu 22 Oct"
+    );
+    assert_eq!(reply["ok"]["kind"], "completed");
+    let moved = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(moved.due_date.as_deref(), Some("2026-10-22"));
+    assert_eq!(moved.state, mnemora_todo::TaskState::Open);
+    assert!(titles_today(&bridge).is_empty());
+
+    let undone = undo(&bridge, &reply["ok"]["token"]);
+    assert!(undone["ok"].is_object(), "{undone}");
+    let back = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(back.due_date.as_deref(), Some(TODAY));
+    assert_eq!(titles_today(&bridge), ["Call mum"]);
+    // The occurrence record is gone again: the Done view of the day is empty.
+    let done = mnemora_todo::done(&conn, None, 7, &at(TODAY)).unwrap();
+    assert!(done.days.iter().all(|d| d.tasks.is_empty()), "{done:?}");
+}
+
+#[test]
+fn open_steps_are_asked_about_and_nothing_changes_until_answered() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = add(&mut conn, "Pack", Some(TODAY), None, None, None);
+    with_notes(&mut conn, &task.id, "- [x] tent\n- [ ] stove\n- [ ] gas");
+    let bridge = phone.bridge();
+
+    let reply = tick(&bridge, &task.id, None);
+    assert_eq!(
+        reply["ok"],
+        json!({ "kind": "open_steps", "task_id": task.id, "title": "Pack", "count": 2 })
+    );
+    let still = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(still.state, mnemora_todo::TaskState::Open);
+    assert_eq!(still.notes, "- [x] tent\n- [ ] stove\n- [ ] gas");
+}
+
+#[test]
+fn complete_without_ticking_the_steps_leaves_the_notes() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = add(&mut conn, "Pack", Some(TODAY), None, None, None);
+    with_notes(&mut conn, &task.id, "- [ ] stove");
+    let bridge = phone.bridge();
+
+    let reply = tick(&bridge, &task.id, Some(false));
+    assert_eq!(reply["ok"]["kind"], "completed", "{reply}");
+    let done = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(done.state, mnemora_todo::TaskState::Done);
+    assert_eq!(done.notes, "- [ ] stove");
+}
+
+#[test]
+fn tick_all_and_complete_ticks_the_steps_and_undo_puts_the_notes_back() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = add(&mut conn, "Pack", Some(TODAY), None, None, None);
+    let notes = "Pack:\n- [x] tent\n- [ ] stove\n  * [ ] gas";
+    with_notes(&mut conn, &task.id, notes);
+    let bridge = phone.bridge();
+
+    let reply = tick(&bridge, &task.id, Some(true));
+    assert_eq!(reply["ok"]["kind"], "completed", "{reply}");
+    let done = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(done.state, mnemora_todo::TaskState::Done);
+    assert_eq!(done.notes, "Pack:\n- [x] tent\n- [x] stove\n  * [x] gas");
+
+    let undone = undo(&bridge, &reply["ok"]["token"]);
+    assert!(undone["ok"].is_object(), "{undone}");
+    let back = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(back.state, mnemora_todo::TaskState::Open);
+    assert_eq!(back.notes, notes);
+}
+
+#[test]
+fn tick_all_on_a_repeating_task_undoes_back_to_the_original_notes() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = repeat_daily(&mut conn, "Pack daily");
+    with_notes(&mut conn, &task.id, "- [ ] stove");
+    let bridge = phone.bridge();
+
+    let reply = tick(&bridge, &task.id, Some(true));
+    assert!(
+        reply["ok"]["message"].as_str().unwrap().contains("· next"),
+        "{reply}"
+    );
+    // The next occurrence starts with fresh steps.
+    assert_eq!(
+        mnemora_todo::task(&conn, &task.id).unwrap().notes,
+        "- [ ] stove"
+    );
+    undo(&bridge, &reply["ok"]["token"]);
+    let back = mnemora_todo::task(&conn, &task.id).unwrap();
+    assert_eq!(back.notes, "- [ ] stove");
+    assert_eq!(back.due_date.as_deref(), Some(TODAY));
+}
+
+#[test]
+fn bad_ticks_and_undos_are_errors_not_panics() {
+    let (phone, mut conn) = Phone::migrated();
+    let task = add(&mut conn, "Once", Some(TODAY), None, None, None);
+    let bridge = phone.bridge();
+    let first = tick(&bridge, &task.id, None);
+    assert_eq!(first["ok"]["kind"], "completed");
+
+    for reply in [
+        tick(&bridge, &task.id, None), // already closed
+        tick(&bridge, "no-such-task", None),
+        undo(&bridge, &json!("not a token")),
+        undo(&bridge, &json!("{}")),
+        undo(&bridge, &json!("{\"reopen\":\"no-such-task\"}")),
+        call(
+            &bridge,
+            &json!({ "method": "complete", "id": task.id, "local": { "today": "junk", "now": "x", "offset_min": 0 } }),
+        ),
+    ] {
+        assert!(reply["err"]["message"].is_string(), "{reply}");
+    }
+    // Reopening twice: the second Undo finds the Task already open.
+    assert!(undo(&bridge, &first["ok"]["token"])["ok"].is_object());
+    assert!(undo(&bridge, &first["ok"]["token"])["err"].is_object());
+}
+
+// -------------------------------------------- the same rules as the app's own command
+
+/// The change-log records of one Task (and, for a repeating one, of its occurrences), without
+/// what differs between two Tasks: ids and times.
+fn log_shape(app: &TestApp, id: &str) -> Vec<Value> {
+    app.with_db(|db| {
+        let mut stmt = db
+            .prepare("SELECT entity, entity_id, op, snapshot FROM change_log ORDER BY id")
+            .unwrap();
+        let rows: Vec<(String, String, String, String)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        let mut out = Vec::new();
+        for (entity, entity_id, op, snapshot) in rows {
+            let mut snap: Value = serde_json::from_str(&snapshot).unwrap();
+            if entity_id != id && snap["repeat_of"].as_str() != Some(id) {
+                continue;
+            }
+            let snap = snap.as_object_mut().unwrap();
+            for key in [
+                "id",
+                "created_at",
+                "updated_at",
+                "closed_at",
+                "sort_key",
+                "repeat_of",
+                "at",
+            ] {
+                snap.remove(key);
+            }
+            out.push(json!({ "entity": entity, "op": op, "snapshot": snap }));
+        }
+        out
+    })
+}
+
+fn history(app: &TestApp, id: &str) -> Vec<(String, String)> {
+    app.with_db(|db| {
+        mnemora_todo::task_history(db, id)
+            .unwrap()
+            .into_iter()
+            .map(|l| (l.kind, l.text))
+            .collect()
+    })
+}
+
+fn create_in_app(app: &TestApp, title: &str, repeat: bool) -> String {
+    let mut args = json!({
+        "title": title,
+        "when": { "date": TODAY, "time": "09:00", "local": at_json(TODAY) },
+    });
+    if repeat {
+        args["details"] = json!({ "repeat": { "freq": "day", "every": 1, "mode": "fixed" } });
+    }
+    let task: Value = app.invoke("todo_task_create", args).unwrap();
+    task["id"].as_str().unwrap().to_owned()
+}
+
+fn completed_rows(app: &TestApp, id: &str) -> (Value, Vec<Value>, Vec<(String, String)>) {
+    let task = app.with_db(|db| serde_json::to_value(mnemora_todo::task(db, id).unwrap()).unwrap());
+    let mut task = task;
+    let task_obj = task.as_object_mut().unwrap();
+    for key in [
+        "id",
+        "title",
+        "created_at",
+        "updated_at",
+        "closed_at",
+        "sort_key",
+    ] {
+        task_obj.remove(key);
+    }
+    (task, log_shape(app, id), history(app, id))
+}
+
+#[test]
+fn ticking_on_the_widget_is_the_same_as_the_apps_complete_command() {
+    for repeating in [false, true] {
+        let app = TestApp::new();
+        let via_app = create_in_app(&app, "Same rules", repeating);
+        let via_widget = create_in_app(&app, "Same rules", repeating);
+
+        let done: Value = app
+            .invoke(
+                "todo_task_complete",
+                json!({ "id": via_app, "local": at_json(TODAY) }),
+            )
+            .unwrap();
+        assert!(done["task"].is_object());
+        let live = Live::new(app.handle());
+        let reply = tick(&live, &via_widget, None);
+        assert_eq!(reply["ok"]["kind"], "completed", "{reply}");
+
+        let from_app = completed_rows(&app, &via_app);
+        let from_widget = completed_rows(&app, &via_widget);
+        assert_eq!(
+            from_app.0, from_widget.0,
+            "Task rows, repeating={repeating}"
+        );
+        assert_eq!(
+            from_app.1, from_widget.1,
+            "change log, repeating={repeating}"
+        );
+        assert!(!from_app.1.is_empty());
+        assert_eq!(from_app.2, from_widget.2, "History, repeating={repeating}");
+        assert!(!from_app.2.is_empty());
+    }
+}
+
+#[test]
+fn undoing_on_the_widget_is_the_same_as_reopening_in_the_app() {
+    let app = TestApp::new();
+    let via_app = create_in_app(&app, "Same undo", false);
+    let via_widget = create_in_app(&app, "Same undo", false);
+    app.invoke::<Value>(
+        "todo_task_complete",
+        json!({ "id": via_app, "local": at_json(TODAY) }),
+    )
+    .unwrap();
+    app.invoke::<Value>("todo_task_reopen", json!({ "id": via_app }))
+        .unwrap();
+    let live = Live::new(app.handle());
+    let reply = tick(&live, &via_widget, None);
+    assert!(undo(&live, &reply["ok"]["token"])["ok"].is_object());
+
+    assert_eq!(
+        completed_rows(&app, &via_app),
+        completed_rows(&app, &via_widget)
+    );
+}
+
+// ------------------------------------------------------------ telling a running app
+
+fn count_events(app: &TestApp) -> std::sync::Arc<std::sync::atomic::AtomicU32> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let seen = std::sync::Arc::new(AtomicU32::new(0));
+    let counter = seen.clone();
+    tauri_specta::Event::listen(
+        &app.handle(),
+        move |_: tauri_specta::TypedEvent<crate::TodoChangedEvent>| {
+            counter.fetch_add(1, Ordering::SeqCst);
+        },
+    );
+    seen
+}
+
+#[test]
+fn a_widget_write_while_the_app_is_alive_emits_todo_changed_once_per_write() {
+    use std::sync::atomic::Ordering;
+    let app = TestApp::new();
+    let seen = count_events(&app);
+    let id = create_in_app(&app, "Live tick", false);
+    let after_create = seen.load(Ordering::SeqCst);
+    let live = Live::new(app.handle());
+
+    snapshot(&live, TODAY, "14:05");
+    assert_eq!(seen.load(Ordering::SeqCst), after_create, "reads are quiet");
+
+    let asked = tick(&live, &id, None);
+    assert_eq!(asked["ok"]["kind"], "completed");
+    wait_for(&seen, after_create + 1);
+
+    let undone = undo(&live, &asked["ok"]["token"]);
+    assert!(undone["ok"].is_object());
+    wait_for(&seen, after_create + 2);
+
+    // A refused write changes nothing and says nothing.
+    tick(&live, "no-such-task", None);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(seen.load(Ordering::SeqCst), after_create + 2);
+}
+
+fn wait_for(seen: &std::sync::atomic::AtomicU32, want: u32) {
+    use std::sync::atomic::Ordering;
+    for _ in 0..100 {
+        if seen.load(Ordering::SeqCst) >= want {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(seen.load(Ordering::SeqCst), want, "event never arrived");
+}

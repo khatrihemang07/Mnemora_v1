@@ -280,6 +280,7 @@ export const commands = {
 /** Events */
 export const events = {
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
+	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
 };
 
 /* Types */
@@ -1050,6 +1051,12 @@ export type TodayView = {
 	/**  Overdue, due and done today together: the "of M" in "N of M done". */
 	total: number,
 };
+
+/**
+ *  Todo data was changed by something other than the app's own screens (the Todo widget), so
+ *  whatever Todo shows is stale.
+ */
+export type TodoChangedEvent = null;
 
 /**  What the badge and the Home card show, in one read. */
 export type TodoCounts = {

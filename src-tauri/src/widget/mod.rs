@@ -13,9 +13,11 @@ mod android;
 pub mod signal;
 pub mod source;
 
+use mnemora_core::db::Connection;
 use mnemora_core::error::{AppError, ErrorCode};
+use mnemora_core::util::new_id;
 use mnemora_todo::{LocalNow, WidgetView};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 #[cfg(target_os = "android")]
@@ -30,6 +32,24 @@ enum Request {
     Snapshot { view: String, local: LocalNow },
     /// The Lists the setup screen offers, with the app's theme.
     Lists,
+    /// A tick. A Task with open steps is answered with `open_steps` and left alone unless
+    /// `tick_steps` says what to do: `true` ticks every step first, `false` completes as it is.
+    Complete {
+        id: String,
+        tick_steps: Option<bool>,
+        local: LocalNow,
+    },
+    /// Undo for a tick: the `token` its reply gave.
+    Undo { token: String },
+}
+
+/// What Undo needs to put a tick back, handed to the widget and returned by it. Opaque to Kotlin.
+#[derive(Serialize, Deserialize)]
+struct UndoToken {
+    /// The Task, or for a repeating one the occurrence it recorded: what is reopened.
+    reopen: String,
+    /// The notes to put back, when "Tick all and complete" changed them.
+    notes: Option<String>,
 }
 
 /// What a request came to.
@@ -86,5 +106,85 @@ pub fn handle(source: &dyn Source, request: &str) -> String {
             encode(&snapshot)
         })),
         Request::Lists => reply(source.run(&mut |conn| encode(&mnemora_todo::widget_lists(conn)?))),
+        Request::Complete {
+            id,
+            tick_steps,
+            local,
+        } => complete(source, &id, tick_steps, &local),
+        Request::Undo { token } => reply(source.write(&mut |conn| undo(conn, &token))),
     }
+}
+
+/// Ticks a Task through the app's own rules (`complete_task`: History, change log, Repeats). One
+/// with open steps is asked about first, as in the app, unless `tick_steps` already answers.
+fn complete(source: &dyn Source, id: &str, tick_steps: Option<bool>, local: &LocalNow) -> String {
+    if tick_steps.is_none() {
+        let asked = source.run(&mut |conn| {
+            let task = mnemora_todo::task(conn, id)?;
+            let count = mnemora_todo::open_steps(&task.notes);
+            let open = task.state == mnemora_todo::TaskState::Open && count > 0;
+            Ok(json!({ "open": open, "count": count, "title": mnemora_todo::plain_title(&task.title) }))
+        });
+        match asked {
+            Outcome::Ok(v) if v["open"] == true => {
+                return reply(Outcome::Ok(json!({
+                    "kind": "open_steps", "task_id": id, "title": v["title"], "count": v["count"],
+                })));
+            }
+            Outcome::Ok(_) => {}
+            other => return reply(other),
+        }
+    }
+    reply(source.write(&mut |conn| tick(conn, id, tick_steps == Some(true), local)))
+}
+
+fn tick(
+    conn: &mut Connection,
+    id: &str,
+    tick_all: bool,
+    local: &LocalNow,
+) -> Result<Value, AppError> {
+    let task = mnemora_todo::task(conn, id)?;
+    // Like the app: the steps are ticked in their own save, then the Task is completed.
+    let ticked = tick_all && mnemora_todo::open_steps(&task.notes) > 0;
+    if ticked {
+        let notes = mnemora_todo::tick_all_steps(&task.notes);
+        mnemora_todo::update_task(conn, id, &task.title, &notes, &new_id())?;
+    }
+    let done = match mnemora_todo::complete_task(conn, id, local) {
+        Ok(done) => done,
+        Err(e) => {
+            if ticked {
+                let _ = mnemora_todo::update_task(conn, id, &task.title, &task.notes, &new_id());
+            }
+            return Err(e);
+        }
+    };
+    let message = match (&done.occurrence, &done.task.due_date) {
+        (Some(_), Some(next)) => {
+            mnemora_todo::completed_repeat_message(&task.title, next, &local.today)
+        }
+        _ => mnemora_todo::completed_message(&task.title),
+    };
+    let token = UndoToken {
+        reopen: done.occurrence.map_or_else(|| id.to_owned(), |o| o.id),
+        notes: ticked.then_some(task.notes),
+    };
+    Ok(json!({
+        "kind": "completed",
+        "message": message,
+        "token": encode(&token)?.to_string(),
+    }))
+}
+
+/// Reopens what a tick completed and puts back the notes "Tick all" changed.
+fn undo(conn: &mut Connection, token: &str) -> Result<Value, AppError> {
+    let token: UndoToken = serde_json::from_str(token).map_err(|e| {
+        AppError::new(ErrorCode::Validation, "That Undo is not valid").with_details(e)
+    })?;
+    let reopened = mnemora_todo::reopen_task(conn, &token.reopen)?;
+    if let Some(notes) = token.notes.filter(|notes| *notes != reopened.notes) {
+        mnemora_todo::update_task(conn, &reopened.id, &reopened.title, &notes, &new_id())?;
+    }
+    Ok(json!({ "undone": true }))
 }

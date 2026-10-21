@@ -13,8 +13,10 @@ use mnemora_core::module::Module;
 use mnemora_core::paths::AppPaths;
 use serde_json::Value;
 use tauri::{AppHandle, Manager, Runtime};
+use tauri_specta::Event;
 
 use super::{Outcome, Status};
+use crate::TodoChangedEvent;
 use crate::env_guard;
 use crate::state::{AppState, lock};
 
@@ -22,6 +24,12 @@ use crate::state::{AppState, lock};
 pub trait Source {
     /// Runs `job` with the connection, or says why there is none.
     fn run(&self, job: &mut dyn FnMut(&mut Connection) -> Result<Value, AppError>) -> Outcome;
+
+    /// Like [`run`](Source::run), for a job that changes Todo data. A running app is told, so its
+    /// screens update at once.
+    fn write(&self, job: &mut dyn FnMut(&mut Connection) -> Result<Value, AppError>) -> Outcome {
+        self.run(job)
+    }
 }
 
 /// The running app: its connection, shared with the commands.
@@ -46,6 +54,16 @@ impl<R: Runtime> Source for Live<R> {
         };
         let mut conn = lock(&state.db);
         into_outcome(job(&mut conn))
+    }
+
+    fn write(&self, job: &mut dyn FnMut(&mut Connection) -> Result<Value, AppError>) -> Outcome {
+        let outcome = self.run(job);
+        if matches!(outcome, Outcome::Ok(_))
+            && let Err(e) = TodoChangedEvent.emit(&self.0)
+        {
+            tracing::warn!(error = %e, "could not emit the Todo changed event");
+        }
+        outcome
     }
 }
 
