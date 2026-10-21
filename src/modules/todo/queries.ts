@@ -7,6 +7,8 @@ import {
   type DeleteChoice,
   type DoneView,
   type DueChange,
+  type GroupBy,
+  type GroupKey,
   type InboxView,
   type ListDeletion,
   type ListView,
@@ -15,6 +17,7 @@ import {
   type QuickEdit,
   type RepeatRule,
   type Task,
+  type TaskSort,
   type TextRange,
   type TodayView,
   type TodoList,
@@ -24,15 +27,18 @@ import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
 import { todoClock } from './clock.svelte';
 import { todoPrefs } from './prefs.svelte';
-import { withoutTask, withoutTaskInAll, withoutTaskInToday, withoutTaskInUpcoming } from './tasks';
+import { withoutTaskInGroups } from './tasks';
 
 export const todoKeys = {
   all: ['todo'] as const,
-  inbox: ['todo', 'inbox'] as const,
-  allView: ['todo', 'all'] as const,
+  /** Keyed by the day: the Inbox groups by Due date, and Done-today depends on it. */
+  inbox: (day: string) => ['todo', 'inbox', day] as const,
+  allView: (day: string) => ['todo', 'all', day] as const,
   /** Keyed by the day: Today's count in the sidebar rolls over at midnight. */
   lists: (day: string) => ['todo', 'lists', day] as const,
-  list: (id: string) => ['todo', 'list', id] as const,
+  list: (id: string, day: string) => ['todo', 'list', id, day] as const,
+  /** Every cached page of one List, whatever the day. */
+  listPages: (id: string) => ['todo', 'list', id] as const,
   /** Keyed by the day, so the view fetches afresh when midnight passes. */
   today: (day: string) => ['todo', 'today', day] as const,
   upcoming: (day: string) => ['todo', 'upcoming', day] as const,
@@ -45,11 +51,12 @@ export const todoKeys = {
   history: (id: string) => ['todo', 'history', id] as const,
 };
 
-/** The Inbox: open Tasks that belong to no List, in order. */
-export const inboxQuery = queryOptions({
-  queryKey: todoKeys.inbox,
-  queryFn: () => unwrap(commands.todoInbox()),
-});
+/** The Inbox: open Tasks with no List in groups, then undated Tasks in a List. */
+export const inboxQuery = (day: string) =>
+  queryOptions({
+    queryKey: todoKeys.inbox(day),
+    queryFn: () => unwrap(commands.todoInbox(todoClock.local())),
+  });
 
 /** The sidebar: the Inbox and Today counts and every List with its counts. */
 export const listsQuery = () =>
@@ -58,17 +65,18 @@ export const listsQuery = () =>
     queryFn: () => unwrap(commands.todoLists(todoClock.local())),
   });
 
-/** All open Tasks grouped by List, the Inbox first. */
-export const allQuery = queryOptions({
-  queryKey: todoKeys.allView,
-  queryFn: () => unwrap(commands.todoAll()),
-});
-
-/** One List and its open Tasks. */
-export const listQuery = (id: string) =>
+/** All open Tasks, grouped by List (the Inbox first) unless the Preference says otherwise. */
+export const allQuery = (day: string) =>
   queryOptions({
-    queryKey: todoKeys.list(id),
-    queryFn: () => unwrap(commands.todoList(id)),
+    queryKey: todoKeys.allView(day),
+    queryFn: () => unwrap(commands.todoAll(todoClock.local())),
+  });
+
+/** One List: its open Tasks in groups, and its Done Tasks. */
+export const listQuery = (id: string, day: string) =>
+  queryOptions({
+    queryKey: todoKeys.list(id, day),
+    queryFn: () => unwrap(commands.todoList(id, todoClock.local())),
   });
 
 /** Today: Overdue, the day's Tasks and what is done. `day` is today's date, for the key. */
@@ -313,18 +321,66 @@ export function restoreList(deletion: ListDeletion): Promise<TodoList> {
 
 /** Takes a Task off every cached page at once, before Rust has answered. */
 export function removeCachedTask(id: string) {
-  queryClient.setQueryData<InboxView>(todoKeys.inbox, (v) => v && withoutTask(v, id));
-  queryClient.setQueryData<AllView>(todoKeys.allView, (v) => v && withoutTaskInAll(v, id));
+  queryClient.setQueriesData<InboxView>(
+    { queryKey: ['todo', 'inbox'] },
+    (v) => v && withoutTaskInGroups(v, id),
+  );
+  queryClient.setQueriesData<AllView>(
+    { queryKey: ['todo', 'all'] },
+    (v) => v && withoutTaskInGroups(v, id),
+  );
   queryClient.setQueriesData<ListView>(
     { queryKey: ['todo', 'list'] },
-    (v) => v && withoutTask(v, id),
+    (v) => v && withoutTaskInGroups(v, id),
   );
   queryClient.setQueriesData<TodayView>(
     { queryKey: ['todo', 'today'] },
-    (v) => v && withoutTaskInToday(v, id),
+    (v) => v && withoutTaskInGroups(v, id),
   );
   queryClient.setQueriesData<UpcomingView>(
     { queryKey: ['todo', 'upcoming'] },
-    (v) => v && withoutTaskInUpcoming(v, id),
+    (v) => v && withoutTaskInGroups(v, id),
   );
+}
+
+/**
+ * Moves a Task between two neighbours of the shared manual order, into the group `target` says
+ * (what that group adopts: a day sets the date, a Priority the Priority, a List the List).
+ */
+export function reorderTask(
+  id: string,
+  before: string | null,
+  after: string | null,
+  target: GroupKey[],
+): Promise<Task> {
+  return unwrap(commands.todoTaskReorder(id, before, after, target, todoClock.local()));
+}
+
+/** Moves a List between two neighbours of the manual List order. */
+export function reorderList(
+  id: string,
+  before: string | null,
+  after: string | null,
+): Promise<TodoList> {
+  return unwrap(commands.todoListReorder(id, before, after));
+}
+
+/** How a List's page sorts the Tasks inside each group. */
+export function setListSort(id: string, sort: TaskSort): Promise<TodoList> {
+  return unwrap(commands.todoListSetSort(id, sort));
+}
+
+/** How a List's page groups its Tasks: none, priority or due. */
+export function setListGroup(id: string, groupBy: GroupBy): Promise<TodoList> {
+  return unwrap(commands.todoListSetGroup(id, groupBy));
+}
+
+/**
+ * Saves one Preference (`todo.group_today`, `todo.inbox_sort`, `todo.lists_sort`, …) and refreshes
+ * the views, which come back grouped and sorted by it.
+ */
+export async function savePreference(key: string, value: string): Promise<void> {
+  await unwrap(commands.settingsSave([{ key, value }]));
+  await queryClient.invalidateQueries({ queryKey: ['settings'] });
+  await invalidateTodo();
 }

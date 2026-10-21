@@ -1,4 +1,4 @@
-import type { Completion, DueChange, Task, TodoList } from '../../lib/ipc/bindings';
+import type { Completion, DueChange, GroupKey, Task, TodoList } from '../../lib/ipc/bindings';
 import { IpcError } from '../../lib/ipc/unwrap';
 import { notifyError, notifyUndo } from '../../lib/ui/toast';
 import type { RepeatRule } from '../../lib/ui/when-repeat';
@@ -10,6 +10,7 @@ import {
   taskRepeat,
   whenMessage,
 } from './dates';
+import type { Neighbours } from './drag-math';
 import { movedMessage } from './lists';
 import { openSteps, tickAllSteps } from './notes';
 import { todoPrefs } from './prefs.svelte';
@@ -21,6 +22,7 @@ import {
   moveTask,
   removeCachedTask,
   reopenTask,
+  reorderTask,
   restoreTask,
   restoreWhen,
   setPriority,
@@ -30,7 +32,13 @@ import {
   wontDo,
 } from './queries';
 import { stepsPrompt } from './steps-prompt.svelte';
-import { completedMessage, deletedMessage, priorityMessage, wontMessage } from './tasks';
+import {
+  completedMessage,
+  deletedMessage,
+  priorityMessage,
+  quotedTitle,
+  wontMessage,
+} from './tasks';
 
 /**
  * Ticks a Task. One with unticked Checklist items asks first, every time (the Dialog offers
@@ -286,4 +294,76 @@ export async function deleteTaskWithUndo(task: Task): Promise<boolean> {
       .finally(() => void invalidateTodo());
   });
   return true;
+}
+
+/** Where a dragged Task lands: between two neighbours, in the group that adopts `adopt`. */
+export interface Placement extends Neighbours {
+  /** What the group adopts (see `TaskGroup.adopt`): a day, a Priority or a List. */
+  adopt: GroupKey[];
+}
+
+/**
+ * Puts a Task in a place of the shared manual order, and in the group it was dropped into: that
+ * group's day, Priority or List becomes the Task's. When a property changed, "“Pay rent” → Sat"
+ * (`summary` names it) offers Undo, which puts the properties and the old place back (even a past
+ * date). Moving within a group changes only the order and says nothing. `from` is where it was.
+ */
+export async function placeTask(
+  task: Task,
+  to: Placement,
+  from: Neighbours,
+  summary: string | null,
+): Promise<void> {
+  let after: Task;
+  try {
+    after = await reorderTask(task.id, to.before, to.after, to.adopt);
+  } catch (e) {
+    notifyError(e instanceof IpcError ? e.message : "Couldn't move the Task");
+    return;
+  } finally {
+    void invalidateTodo();
+  }
+  const changed =
+    after.due_date !== task.due_date ||
+    after.due_time !== task.due_time ||
+    after.priority !== task.priority ||
+    after.list_id !== task.list_id;
+  if (!changed || summary === null) return;
+  notifyUndo(
+    `${quotedTitle(task.title)} → ${summary}`,
+    () => {
+      void undoPlacement(task, from);
+    },
+    `drop-${task.id}`,
+  );
+}
+
+/** Undo for `placeTask`: the old date, Priority and List, then the old place. */
+async function undoPlacement(before: Task, from: Neighbours): Promise<void> {
+  try {
+    await restoreWhen([
+      {
+        id: before.id,
+        due_date: before.due_date,
+        due_time: before.due_time,
+        repeat: taskRepeat(before),
+      },
+    ]);
+    await setPriority(before.id, before.priority);
+    await moveTask(before.id, before.list_id);
+    await reorderTask(before.id, from.before, from.after, []);
+  } catch {
+    notifyError("Couldn't undo the move");
+  } finally {
+    void invalidateTodo();
+  }
+}
+
+/** Dropping a Task on the sidebar: a List (or the Inbox) moves it there, Today dates it today. All with Undo. */
+export async function dropTaskOnSidebar(
+  task: Task,
+  target: { kind: 'inbox' } | { kind: 'today' } | { kind: 'list'; list: TodoList },
+): Promise<void> {
+  if (target.kind === 'today') await dateTaskToday(task);
+  else await moveTaskTo(task, target.kind === 'inbox' ? null : target.list);
 }

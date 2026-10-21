@@ -1,26 +1,41 @@
 <!--
   ListPage: one List: its emoji (click to change it), its title (click to rename it in place) and its
-  open Tasks, with "+ New task" adding into this List. If the List is gone (deleted elsewhere), Todo
-  falls back to the Inbox.
+  open Tasks, with "+ New task" adding into this List. "Group:" (None, Priority, Due date) and
+  "Sort:" (Manual, Due date, Priority, Title, Recently added) belong to this List: grouping happens
+  first and the sort orders each group, and dragging is off while sorted. Done Tasks follow the
+  Done-in-Lists Setting. If the List is gone (deleted elsewhere), Todo falls back to the Inbox.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import EmojiPicker from '../../lib/ui/EmojiPicker.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import { canDrag, GROUP_OPTIONS } from './arrange';
+  import { todoClock } from './clock.svelte';
+  import ListDoneSection from './ListDoneSection.svelte';
   import NewTaskButton from './NewTaskButton.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import ListGlyph from './ListGlyph.svelte';
   import ListNameField from './ListNameField.svelte';
   import { todoNav } from './nav.svelte';
-  import { invalidateTodo, listQuery, renameList, setListEmoji } from './queries';
-  import TaskRows from './TaskRows.svelte';
+  import {
+    invalidateTodo,
+    listQuery,
+    renameList,
+    setListEmoji,
+    setListGroup,
+    setListSort,
+  } from './queries';
+  import { useSidebar } from './sidebar.svelte';
+  import TaskGroups from './TaskGroups.svelte';
+  import ViewOptions from './ViewOptions.svelte';
   import { smartView } from './views';
 
   let { id }: { id: string } = $props();
 
-  const page = createQuery(() => listQuery(id));
+  const page = createQuery(() => listQuery(id, todoClock.today));
+  const sidebar = useSidebar();
   const list = $derived(page.data?.list ?? null);
 
   $effect(() => {
@@ -38,6 +53,16 @@
     await renameList(id, name);
     await invalidateTodo();
     renaming = false;
+  }
+
+  /** Saves one of this List's own choices; the page comes back arranged by it. */
+  async function arrange(save: Promise<unknown>) {
+    try {
+      await save;
+    } catch {
+      notifyError("Couldn't change the List");
+    }
+    void invalidateTodo();
   }
 
   async function pickEmoji(emoji: string | null) {
@@ -105,6 +130,23 @@
   {:else if page.isError}
     <ErrorBanner message="The List couldn't load." error={page.error} onretry={() => page.refetch()} />
   {:else}
-    <TaskRows tasks={page.data.tasks} listId={id} empty="No Tasks in this List yet." />
+    <ViewOptions
+      class="mb-1 justify-end"
+      groupBy={page.data.list.group_by}
+      groupOptions={GROUP_OPTIONS.list}
+      ongroup={(next) => void arrange(setListGroup(id, next))}
+      sort={page.data.list.task_sort}
+      onsort={(next) => void arrange(setListSort(id, next))}
+    />
+    <TaskGroups
+      groups={page.data.groups}
+      today={todoClock.today}
+      lists={sidebar.lists}
+      arrangeable={canDrag(page.data.list.task_sort)}
+    />
+    {#if page.data.groups.every((g) => g.tasks.length === 0)}
+      <p class="px-2 pt-1 text-sm text-faint">No Tasks in this List yet.</p>
+    {/if}
+    <ListDoneSection done={page.data.done} />
   {/if}
 </div>

@@ -1,36 +1,40 @@
 <!--
   UpcomingPage: dated Tasks from tomorrow on, only days that have Tasks, each under a serif day
-  header with a small date, Overdue on top (with Move all, like Today). A sticky week strip above
-  shows a dot on days with Tasks; clicking a day scrolls to it, and an empty day appears with an add
-  row while it is selected (picking it again lets it go). "Add to this day" creates a Task due that
-  day. Midnight rolls the page over by itself.
+  header with a small date, Overdue on top (with Move all, like Today). "Group:" at the right
+  regroups them by Priority or List instead (remembered); the week strip shows only grouped by Day.
+  A sticky week strip above shows a dot on days with Tasks; clicking a day scrolls to it, and an
+  empty day appears with an add row while it is selected (picking it again lets it go). "Add to this
+  day" creates a Task due that day, and dragging a Task onto a day sets its date. Midnight rolls the
+  page over by itself.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { tick } from 'svelte';
+  import type { TaskGroup } from '../../lib/ipc/bindings';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import NewTaskButton from './NewTaskButton.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
+  import { GROUP_OPTIONS, GROUP_PREF_KEYS } from './arrange';
   import { todoClock } from './clock.svelte';
-  import { dayHeading } from './dates';
-  import GroupHeader from './GroupHeader.svelte';
-  import NewTaskRow from './NewTaskRow.svelte';
   import { todoPrefs } from './prefs.svelte';
-  import { listsQuery, upcomingQuery } from './queries';
-  import { moveAllOverdue, tickTask } from './task-actions';
-  import TaskRow from './TaskRow.svelte';
+  import { savePreference, upcomingQuery } from './queries';
+  import { useSidebar } from './sidebar.svelte';
+  import { moveAllOverdue } from './task-actions';
+  import TaskGroups from './TaskGroups.svelte';
+  import ViewOptions from './ViewOptions.svelte';
   import { VIEW_ICONS } from './view-icons';
   import WeekStrip from './WeekStrip.svelte';
   import WhenHost from './WhenHost.svelte';
 
   const upcoming = createQuery(() => upcomingQuery(todoClock.today));
-  const sidebar = createQuery(() => listsQuery());
-  const lists = $derived(new Map((sidebar.data?.lists ?? []).map((e) => [e.list.id, e.list])));
-  const listOf = (id: string | null) => (id ? (lists.get(id) ?? null) : null);
+  const sidebar = useSidebar();
 
   const view = $derived(upcoming.data);
-  const busy = $derived(new Set(view?.days.map((d) => d.date)));
+  const byDay = $derived(view?.group_by === 'day');
+  const busy = $derived(
+    new Set(view?.groups.flatMap((g) => (g.key.kind === 'day' ? [g.key.date] : []))),
+  );
 
   /** The day picked in the strip: shown (empty or not) and scrolled to. */
   let selected = $state<string | null>(null);
@@ -39,12 +43,14 @@
     if (selected !== null && selected <= todoClock.today) selected = null;
   });
 
-  /** Days to show: those with Tasks, plus the picked day when it has none. */
-  const days = $derived.by(() => {
-    const shown = (view?.days ?? []).map((d) => ({ date: d.date, tasks: d.tasks }));
-    if (selected !== null && !shown.some((d) => d.date === selected)) {
-      shown.push({ date: selected, tasks: [] });
-      shown.sort((a, b) => (a.date < b.date ? -1 : 1));
+  /** The groups to show: Rust's, plus the picked day when it has no Tasks. */
+  const groups = $derived.by((): TaskGroup[] => {
+    const shown = [...(view?.groups ?? [])];
+    if (byDay && selected !== null && !busy.has(selected)) {
+      const key = { kind: 'day', date: selected } as const;
+      const empty: TaskGroup = { key, adopt: [key], tasks: [] };
+      const at = shown.findIndex((g) => g.key.kind === 'day' && g.key.date > selected!);
+      shown.splice(at === -1 ? shown.length : at, 0, empty);
     }
     return shown;
   });
@@ -73,13 +79,23 @@
 </PageHeader>
 <div class="mx-auto max-w-3xl">
   <div class="sticky -top-(--pad) z-10 -mt-(--pad) mb-2 bg-bg pt-(--pad)">
-    <WeekStrip
-      today={todoClock.today}
-      weekStart={todoPrefs.weekStart}
-      {busy}
-      {selected}
-      onpick={(date) => void pick(date)}
-    />
+    {#if byDay || view === undefined}
+      <WeekStrip
+        today={todoClock.today}
+        weekStart={todoPrefs.weekStart}
+        {busy}
+        {selected}
+        onpick={(date) => void pick(date)}
+      />
+    {/if}
+    {#if view}
+      <ViewOptions
+        class="justify-end {byDay ? 'mt-1' : ''}"
+        groupBy={view.group_by}
+        groupOptions={GROUP_OPTIONS.upcoming}
+        ongroup={(next) => void savePreference(GROUP_PREF_KEYS.upcoming, next)}
+      />
+    {/if}
   </div>
 
   {#if upcoming.isPending}
@@ -90,43 +106,29 @@
   {:else if upcoming.isError}
     <ErrorBanner message="Upcoming couldn't load." error={upcoming.error} onretry={() => upcoming.refetch()} />
   {:else if view}
-    {#if view.overdue.length > 0}
-      <section aria-label="Overdue">
-        <GroupHeader label="Overdue" count={view.overdue.length} tone="danger">
-          {#snippet actions()}
-            <button type="button" bind:this={moveButton} class={link} onclick={() => (moveOpen = true)}>
-              Move all to…
-            </button>
-            <button type="button" class={link} onclick={() => void moveAllOverdue(todoClock.today)}>
-              Move all to Today
-            </button>
-          {/snippet}
-        </GroupHeader>
-        {#each view.overdue as task (task.id)}
-          <TaskRow {task} ontick={tickTask} list={listOf(task.list_id)} />
-        {/each}
-      </section>
-    {/if}
-
-    {#if days.length === 0 && view.overdue.length === 0}
+    {#if groups.length === 0}
       <p class="px-2 pt-1 text-sm text-faint">
-        Nothing coming up. Tasks with a date after today appear here; pick a day above to plan into it.
+        Nothing coming up. Tasks with a date after today appear here{byDay ? '; pick a day above to plan into it' : ''}.
       </p>
     {/if}
 
-    {#each days as day (day.date)}
-      {@const heading = dayHeading(day.date, todoClock.today)}
-      <section id="upcoming-{day.date}" aria-label={heading.name} class="scroll-mt-20">
-        <div class="mt-5.5 mb-1 flex items-baseline gap-2 border-b border-line px-2 pb-1.5">
-          <h2 class="font-display text-lg" style="font-weight: var(--display-weight)">{heading.name}</h2>
-          <small class="text-xs text-faint">{heading.small}</small>
-        </div>
-        {#each day.tasks as task (task.id)}
-          <TaskRow {task} ontick={tickTask} hideDate list={listOf(task.list_id)} />
-        {/each}
-        <NewTaskRow date={day.date} label="Add to this day" />
-      </section>
-    {/each}
+    <TaskGroups
+      {groups}
+      today={todoClock.today}
+      lists={sidebar.lists}
+      showList
+      hideDate={(g) => g.key.kind === 'day'}
+      addLabel={(g) => (g.key.kind === 'day' ? 'Add to this day' : 'New task')}
+    >
+      {#snippet overdueActions()}
+        <button type="button" bind:this={moveButton} class={link} onclick={() => (moveOpen = true)}>
+          Move all to…
+        </button>
+        <button type="button" class={link} onclick={() => void moveAllOverdue(todoClock.today)}>
+          Move all to Today
+        </button>
+      {/snippet}
+    </TaskGroups>
   {/if}
 </div>
 

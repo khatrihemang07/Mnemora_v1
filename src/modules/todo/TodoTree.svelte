@@ -2,11 +2,16 @@
   TodoTree: Todo's navigation nested under "Todo" in the sidebar: Inbox, Today, Upcoming, All, Done,
   then a "Lists" header with a + and the Lists. The + turns into an inline name field (Enter
   creates the List and opens it). Right-click (long-press on a phone) a List for Rename, Emoji… and
-  Delete list…; a List with Tasks asks what becomes of them first. Counts are open Tasks.
+  Delete list…; a List with Tasks asks what becomes of them first. Counts are open Tasks. ⋯ on the
+  Lists header sorts the Lists (Manual, Name A–Z or Z–A, Most open, Recently created); with Manual
+  a List can be dragged to a new place, and a dragged Task dropped on a List, Today or the Inbox
+  moves there.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { tick } from 'svelte';
+  import ArrowDownWideNarrow from '~icons/lucide/arrow-down-wide-narrow';
+  import Ellipsis from '~icons/lucide/ellipsis';
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import Smile from '~icons/lucide/smile';
@@ -16,12 +21,14 @@
   import EmojiPicker from '../../lib/ui/EmojiPicker.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
+  import { LIST_SORT_OPTIONS, LISTS_SORT_PREF, sortMenuLabel } from './arrange';
   import DeleteListDialog from './DeleteListDialog.svelte';
+  import DragLayer from './DragLayer.svelte';
   import ListGlyph from './ListGlyph.svelte';
   import { createListAndOpen, deleteListWithUndo } from './list-actions';
   import ListNameField from './ListNameField.svelte';
   import { todoNav } from './nav.svelte';
-  import { invalidateTodo, listsQuery, renameList, setListEmoji } from './queries';
+  import { invalidateTodo, listsQuery, renameList, savePreference, setListEmoji } from './queries';
   import TreeRow from './TreeRow.svelte';
   import { VIEW_ICONS } from './view-icons';
   import { listView, SMART_VIEWS, sameView, smartView, type TodoView, viewCount } from './views';
@@ -32,6 +39,7 @@
   const sidebar = createQuery(() => listsQuery());
   const lists = $derived(sidebar.data?.lists ?? []);
   const inside = $derived(ctx.isActive('/todo'));
+  const sortedBy = $derived(sidebar.data?.lists_sort ?? 'manual');
 
   const isOpen = (view: TodoView) => inside && sameView(todoNav.view, view);
 
@@ -39,6 +47,19 @@
     todoNav.go(view);
     ctx.navigate('/todo');
   }
+
+  // The Lists sort: a choice menu on the header's ⋯, kept as a Preference.
+  let sortOpen = $state(false);
+  let sortButton = $state<HTMLButtonElement | null>(null);
+  const sortItems = $derived<MenuItem[]>(
+    LIST_SORT_OPTIONS.map((o) => ({
+      label: sortMenuLabel(o),
+      checked: sortedBy === o.value,
+      onselect: () => {
+        void savePreference(LISTS_SORT_PREF, o.value).catch(() => notifyError("Couldn't sort the Lists"));
+      },
+    })),
+  );
 
   // Creating: the + turns into a field under the header.
   let creating = $state(false);
@@ -123,6 +144,7 @@
       active={isOpen(smartView(v.id))}
       count={viewCount(sidebar.data, v.id).count}
       alert={viewCount(sidebar.data, v.id).alert}
+      dropNav={v.id === 'inbox' || v.id === 'today' ? v.id : undefined}
       onclick={() => go(smartView(v.id))}
     >
       {#snippet glyph()}
@@ -133,15 +155,26 @@
 
   <div class="flex items-center justify-between pr-1 pl-7.5 pt-2.5 pb-0.5">
     <span class="text-xs font-medium text-faint">Lists</span>
-    <IconButton
-      bind:ref={plus}
-      icon={Plus}
-      label="New list"
-      size="sm"
-      onclick={() => (creating = true)}
-    />
+    <div class="flex items-center">
+      <IconButton
+        bind:ref={sortButton}
+        icon={sortedBy === 'manual' ? Ellipsis : ArrowDownWideNarrow}
+        label="Sort Lists"
+        size="sm"
+        onclick={() => (sortOpen = true)}
+        class={sortedBy === 'manual' ? '' : 'text-hue-todo'}
+      />
+      <IconButton
+        bind:ref={plus}
+        icon={Plus}
+        label="New list"
+        size="sm"
+        onclick={() => (creating = true)}
+      />
+    </div>
   </div>
 
+  <div data-list-tree class="flex flex-col gap-0.5">
   {#each lists as entry (entry.list.id)}
     {#if renaming === entry.list.id}
       <div class="flex min-h-8 items-center gap-2.5 rounded-sm bg-surface pr-2.5 pl-7.5">
@@ -160,6 +193,9 @@
         label={entry.list.name}
         active={isOpen(listView(entry.list.id))}
         count={entry.open_count}
+        dropNav="list:{entry.list.id}"
+        list={entry.list}
+        reorderable={sortedBy === 'manual'}
         onclick={() => go(listView(entry.list.id))}
         onmenu={(x, y) => openMenu(entry, x, y)}
       >
@@ -167,6 +203,7 @@
       </TreeRow>
     {/if}
   {/each}
+  </div>
 
   {#if creating}
     <div class="flex min-h-8 items-start gap-2.5 rounded-sm bg-surface py-1.5 pr-2.5 pl-7.5">
@@ -186,6 +223,8 @@
 </div>
 
 <Menu bind:open={menuOpen} anchor={menu?.anchor ?? null} {items} label="List actions" />
+<Menu bind:open={sortOpen} anchor={sortButton} items={sortItems} label="Sort Lists" heading="Sort Lists by" />
+<DragLayer kind="list" />
 
 <EmojiPicker
   bind:open={emojiOpen}
