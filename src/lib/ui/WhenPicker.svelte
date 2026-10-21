@@ -4,13 +4,15 @@
   default is small, a fuller reader plugs in), quick days on the left with their weekday, and on the
   right a rolling five-week calendar that starts at this week (‹ › move five weeks, a tiny month
   label sits on the 1st, past days are disabled, today is ringed, days with Tasks carry a dot that
-  turns amber at three or more). A slim bar below holds the Time chip, whose panel floats over the
-  calendar, anything the caller adds with `bar` (Repeat joins here), and a summary at the right.
-  Picking a day sets it and closes; a time stays open. Controlled: `value` is what is set now,
-  `onchange` gets the next value, and a time with no date is left for the caller's rules to date.
+  turns amber at three or more; days a Repeat lands on carry a fainter ring). A slim bar below holds
+  the Time chip and the Repeat chip, whose panels float over the calendar, anything the caller adds
+  with `bar`, and a summary at the right. Picking a day sets it and closes (keeping the Repeat);
+  a time or a Repeat stays open. Controlled: `value` is what is set now, `onchange` gets the next
+  value, and a time with no date is left for the caller's rules to date (a Repeat with no date too:
+  the caller dates it to the first matching day).
   `counts` holds open Tasks per day for the visible weeks, which `onrange` asks for. Dates are
-  `YYYY-MM-DD`, times `HH:MM`. `showTime={false}` and `allowClear={false}` serve moving many
-  Tasks to one date. `hue` is a Module hue token name.
+  `YYYY-MM-DD`, times `HH:MM`. `showTime={false}`, `showRepeat={false}` and `allowClear={false}` serve
+  moving many Tasks to one date. `hue` is a Module hue token name.
 -->
 <script lang="ts">
   import { type Snippet, tick, untrack } from 'svelte';
@@ -20,6 +22,7 @@
   import ChevronRight from '~icons/lucide/chevron-right';
   import CircleSlash from '~icons/lucide/circle-slash';
   import Clock from '~icons/lucide/clock';
+  import Repeat from '~icons/lucide/repeat';
   import Sofa from '~icons/lucide/sofa';
   import Sun from '~icons/lucide/sun';
   import X from '~icons/lucide/x';
@@ -32,12 +35,16 @@
   import { type ParsedWhen, simpleWhenParser, type WhenParser } from './when-parse';
   import { buildGrid, dayText, pageForDate, quickDays } from './when-grid';
   import { formatHm, timeSuggestions } from './when-time';
+  import { datesBetween, type RepeatRule, repeatLabel } from './when-repeat';
+  import WhenRepeatPanel from './WhenRepeatPanel.svelte';
 
   export interface WhenValue {
     /** `YYYY-MM-DD`, or null for no date. */
     date: string | null;
     /** `HH:MM`, or null for no time. */
     time: string | null;
+    /** The Repeat, or null for none. Left out where Repeat is not offered. */
+    repeat?: RepeatRule | null;
   }
 
   interface Props {
@@ -59,6 +66,7 @@
     title?: string;
     parse?: WhenParser;
     showTime?: boolean;
+    showRepeat?: boolean;
     allowClear?: boolean;
     hue?: string;
     restoreFocus?: () => void;
@@ -79,6 +87,7 @@
     title = 'When',
     parse = simpleWhenParser,
     showTime = true,
+    showRepeat = true,
     allowClear = true,
     hue = '--hue-todo',
     restoreFocus,
@@ -87,7 +96,7 @@
 
   let page = $state(0);
   let typed = $state('');
-  let panel = $state<'time' | null>(null);
+  let panel = $state<'time' | 'repeat' | null>(null);
   let timeText = $state('');
   let timeBad = $state(false);
   let root = $state<HTMLElement | null>(null);
@@ -96,6 +105,11 @@
   const quick = $derived(quickDays(today, weekStart));
   const reading = $derived(typed.trim() ? parse(typed, { today, now, weekStart }) : null);
   const suggestions = $derived(timeSuggestions(timeText));
+  const repeat = $derived(value.repeat ?? null);
+  // The days a Repeat lands on in the grid get a ring of their own.
+  const rings = $derived(
+    new Set(repeat && value.date ? datesBetween(repeat, value.date, grid.start, grid.end) : []),
+  );
 
   // Each opening starts on the page that holds the set date, with nothing typed.
   $effect(() => {
@@ -131,14 +145,22 @@
   function pickDay(date: string | null) {
     if (date !== null && date < today) return;
     // A date keeps the time already set; no date takes the time with it.
-    onchange(date === null ? { date: null, time: null } : { date, time: value.time });
+    onchange(
+      date === null
+        ? { date: null, time: null, repeat: null }
+        : { date, time: value.time, repeat },
+    );
     open = false;
   }
 
   function applyTyped() {
     const read: ParsedWhen | null = reading;
     if (!read) return;
-    onchange({ date: read.date ?? value.date, time: read.time ?? (read.date ? value.time : null) });
+    onchange({
+      date: read.date ?? value.date,
+      time: read.time ?? (read.date ? value.time : null),
+      repeat,
+    });
     open = false;
   }
 
@@ -156,15 +178,29 @@
     root?.querySelector<HTMLInputElement>('[data-when-time]')?.focus();
   }
 
-  async function closeTime() {
+  async function closePanel(chip: string) {
     panel = null;
     await tick();
-    root?.querySelector<HTMLElement>('[data-when-time-chip]')?.focus();
+    root?.querySelector<HTMLElement>(chip)?.focus();
   }
 
+  const closeTime = () => closePanel('[data-when-time-chip]');
+
   function setTime(time: string | null) {
-    onchange({ date: value.date, time });
-    void closeTime();
+    onchange({ date: value.date, time, repeat });
+    void closePanel('[data-when-time-chip]');
+  }
+
+  async function openRepeat() {
+    panel = 'repeat';
+    await tick();
+    root
+      ?.querySelector<HTMLElement>('[data-when-repeat] [aria-pressed="true"], [data-when-repeat] button')
+      ?.focus();
+  }
+
+  function setRepeat(next: RepeatRule | null) {
+    onchange({ date: value.date, time: value.time, repeat: next });
   }
 
   function onTimeKey(e: KeyboardEvent) {
@@ -188,10 +224,10 @@
     root?.querySelector<HTMLElement>(`[data-date="${to}"]`)?.focus();
   }
 
-  /** Esc closes the Time panel first; only a second Esc leaves the picker. */
+  /** Esc closes a panel first; only a second Esc leaves the picker. */
   function guardEscape(): boolean {
     if (panel === null) return false;
-    void closeTime();
+    void closePanel(panel === 'time' ? '[data-when-time-chip]' : '[data-when-repeat-chip]');
     return true;
   }
 
@@ -292,12 +328,13 @@
               aria-pressed={chosen}
               aria-disabled={cell.past || undefined}
               aria-current={cell.today ? 'date' : undefined}
-              aria-label="{dayText(cell.date, today)}{n ? `, ${dotLabel(n)}` : ''}"
+              aria-label="{dayText(cell.date, today)}{n ? `, ${dotLabel(n)}` : ''}{rings.has(cell.date) ? ', repeats' : ''}"
               title="{dayText(cell.date, today)}{n ? ` · ${dotLabel(n)}` : ''}"
               onclick={() => pickDay(cell.date)}
               class="relative grid size-7 cursor-pointer place-items-center justify-self-center rounded-full text-xs tabular-nums transition-colors duration-(--dur) ease-out phone:size-7.5
                 {cell.past ? 'cursor-default text-faint opacity-35' : 'hover:bg-hover'}
                 {cell.today && !chosen ? 'font-bold text-(--wp-hue) shadow-[inset_0_0_0_1.2px_var(--wp-hue)]' : ''}
+                {rings.has(cell.date) && !chosen && !cell.today ? 'shadow-[inset_0_0_0_1.2px_color-mix(in_oklch,var(--wp-hue)_50%,transparent)]' : ''}
                 {chosen ? 'bg-(--wp-hue) font-semibold text-on-accent hover:bg-(--wp-hue)' : ''}"
             >
               {#if cell.monthLabel}
@@ -366,6 +403,14 @@
             {/if}
           </div>
         </div>
+      {:else if panel === 'repeat'}
+        <WhenRepeatPanel
+          rule={repeat}
+          date={value.date ?? today}
+          {today}
+          onchange={setRepeat}
+          onclose={() => void closePanel('[data-when-repeat-chip]')}
+        />
       {/if}
     </div>
 
@@ -384,6 +429,23 @@
         >
           <Clock class="size-3.5" />
           {value.time ? formatHm(value.time, timeFormat) : 'Time'}
+        </button>
+      {/if}
+      {#if showRepeat}
+        <button
+          type="button"
+          data-when-repeat-chip
+          onclick={() => (panel === 'repeat' ? void closePanel('[data-when-repeat-chip]') : void openRepeat())}
+          aria-expanded={panel === 'repeat'}
+          title={repeat ? repeatLabel(repeat) : 'Repeat'}
+          class="inline-flex h-6.5 max-w-44 cursor-pointer items-center gap-1.25 rounded-full border px-2.25 text-xs font-medium whitespace-nowrap transition-colors duration-(--dur) ease-out
+            {repeat
+            ? 'border-transparent bg-[color-mix(in_oklch,var(--wp-hue)_14%,transparent)] text-(--wp-hue)'
+            : 'border-line text-muted hover:border-faint'}
+            {panel === 'repeat' ? 'shadow-[0_0_0_2px_var(--ring)]' : ''}"
+        >
+          <Repeat class="size-3.5 shrink-0" />
+          <span class="truncate">{repeat ? repeatLabel(repeat) : 'Repeat'}</span>
         </button>
       {/if}
       {@render bar?.()}

@@ -2,17 +2,28 @@
  * In-memory Todo for the browser-only IPC mock. Mirrors the rules in crates/todo (titles are
  * non-blank, one line and at most 500 characters; new Tasks go last; complete and reopen; Lists
  * with folded-unique names, delete choices with restore, and moving Tasks; Due dates with the
- * past-date and time-only rules, Today and Upcoming groups, Move all overdue). Every
+ * past-date and time-only rules, Today and Upcoming groups, Move all overdue; Repeats that record
+ * done copies, rewind, skip and the paged Done view). Every
  * result is a JSON copy, like real IPC: handing out live objects would let the UI mutate the
  * "database". The shared rule fixtures (fixtures/todo-rules.json) keep it in step with Rust.
  */
 
 import { addDays } from '../ui/calendar';
+import {
+  anchoredOn,
+  firstMatch,
+  nextDue,
+  type RepeatRule,
+  ruleProblem,
+  settleRule,
+} from '../ui/when-repeat';
 import type {
   AllView,
   AppError,
+  Completion,
   DayCount,
   DeleteChoice,
+  DoneView,
   DueChange,
   InboxView,
   ListDeletion,
@@ -142,6 +153,31 @@ export function resolveWhen(
   return [time >= local.now ? local.today : addDays(local.today, 1), time];
 }
 
+/** Mirrors `reset_checklist`: every ticked Checklist item unticked. */
+export const resetChecklist = (notes: string): string =>
+  notes.replace(/^([^\S\n]*[-*+] )\[[xX]\]/gm, '$1[ ]');
+
+/** Mirrors `RepeatRule::check`: the rule settled for storage, or a validation error. */
+function checkRule(rule: RepeatRule): RepeatRule {
+  const problem = ruleProblem(rule);
+  if (problem) throw fail('validation', problem);
+  return settleRule(rule);
+}
+
+/** A month or year rule that already keeps to a day of the month. */
+const hasDay = (r: RepeatRule) => (r.freq === 'month' || r.freq === 'year') && (r.days ?? 0) !== 0;
+
+/** The Task's Repeat, or none. */
+function ruleOf(t: Task): RepeatRule | null {
+  if (t.repeat_freq === null || t.repeat_every === null || t.repeat_mode === null) return null;
+  return {
+    freq: t.repeat_freq,
+    every: t.repeat_every,
+    days: t.repeat_days,
+    mode: t.repeat_mode,
+  };
+}
+
 /** Mirrors `in_day`: timed Tasks first by time; ties keep the manual order. */
 function inDay(a: Task, b: Task): number {
   if (a.due_time !== null && b.due_time !== null && a.due_time !== b.due_time) {
@@ -180,14 +216,34 @@ export function createTodoMock() {
       .filter((t) => t.list_id === listId && t.state === 'open')
       .sort(byKey);
   const openDated = () => live().filter((t) => t.state === 'open' && t.due_date !== null);
-  /** Mirrors `apply`: writes a When; no date means no time and no Repeat. */
-  const applyWhen = (task: Stored, date: string | null, time: string | null) => {
-    if (task.due_date === date && task.due_time === time) return;
+  /**
+   * Mirrors `apply`: writes a When and Repeat. No date means no time and no Repeat; a new date is
+   * the new anchor of a month or year Repeat unless `keepDay` and the rule has a day already.
+   */
+  const applyWhen = (
+    task: Stored,
+    date: string | null,
+    time: string | null,
+    rule: RepeatRule | null,
+    keepDay: boolean,
+  ) => {
+    let next = rule;
+    if (date === null) next = null;
+    else if (next && !(keepDay && hasDay(next))) next = anchoredOn(next, date);
+    const before = ruleOf(task);
+    if (
+      task.due_date === date &&
+      task.due_time === time &&
+      JSON.stringify(before) === JSON.stringify(next)
+    ) {
+      return;
+    }
     task.due_date = date;
     task.due_time = time;
-    if (date === null) {
-      task.repeat_freq = task.repeat_every = task.repeat_days = task.repeat_mode = null;
-    }
+    task.repeat_freq = next?.freq ?? null;
+    task.repeat_every = next?.every ?? null;
+    task.repeat_days = next?.days ?? null;
+    task.repeat_mode = next?.mode ?? null;
     task.updated_at = Date.now();
   };
   /** A Task without the mock's own flag, like the wire shape. */
@@ -246,17 +302,124 @@ export function createTodoMock() {
           return copy(wire(task));
         }
         case 'todo_task_complete': {
+          const local = a.local as LocalNow;
+          checkClock(local);
           const task = find(a.id);
           if (!task) throw missing();
           if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+          const rule = ruleOf(task);
+          if (rule) {
+            const due = task.due_date ?? local.today;
+            const next = nextDue(rule, due, local.today);
+            if (next === null) throw fail('validation', 'That repeat runs past the year 9999');
+            const now = Date.now();
+            const occurrence: Stored = {
+              ...task,
+              id: crypto.randomUUID(),
+              repeat_freq: null,
+              repeat_every: null,
+              repeat_days: null,
+              repeat_mode: null,
+              state: 'done',
+              closed_at: now,
+              repeat_of: task.id,
+              understood: null,
+              created_at: now,
+              updated_at: now,
+            };
+            all.push(occurrence);
+            task.notes = resetChecklist(task.notes);
+            task.due_date = next;
+            task.updated_at = now;
+            const done: Completion = { task: wire(task), occurrence: wire(occurrence) };
+            return copy(done);
+          }
           task.state = 'done';
           task.closed_at = task.updated_at = Date.now();
+          const done: Completion = { task: wire(task), occurrence: null };
+          return copy(done);
+        }
+        case 'todo_task_skip': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const task = find(a.id);
+          if (!task) throw missing();
+          if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+          const rule = ruleOf(task);
+          if (!rule) throw fail('validation', 'Only a repeating Task can be skipped');
+          const next = nextDue(rule, task.due_date ?? local.today, local.today);
+          if (next === null) throw fail('validation', 'That repeat runs past the year 9999');
+          task.due_date = next;
+          task.updated_at = Date.now();
           return copy(wire(task));
+        }
+        case 'todo_done': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const before = (a.before as string | null | undefined) ?? null;
+          if (before !== null && epochDay(before) === null) {
+            throw fail('validation', 'Not a valid date');
+          }
+          const size = Math.min(Math.max(Number(a.days) || 1, 1), 60);
+          const dayOf = (ms: number) =>
+            new Date(ms + local.offset_min * 60_000).toISOString().slice(0, 10);
+          const doneTasks = live().filter((t) => t.state === 'done' && t.closed_at !== null);
+          const found = [...new Set(doneTasks.map((t) => dayOf(t.closed_at as number)))]
+            .filter((d) => before === null || d < before)
+            .sort()
+            .reverse();
+          const kept = found.slice(0, size);
+          const newestFirst = (x: Task, y: Task) =>
+            (y.closed_at as number) - (x.closed_at as number) || (x.sort_key < y.sort_key ? 1 : -1);
+          const view: DoneView = {
+            days: kept.map((date) => ({
+              date,
+              tasks: doneTasks
+                .filter((t) => dayOf(t.closed_at as number) === date)
+                .sort(newestFirst)
+                .map(wire),
+            })),
+            next_cursor: found.length > size ? (kept[kept.length - 1] ?? null) : null,
+          };
+          return copy(view);
         }
         case 'todo_task_reopen': {
           const task = find(a.id);
           if (!task) throw missing();
           if (task.state === 'open') throw fail('validation', 'That Task is already open');
+          if (task.repeat_of !== null && task.state === 'done') {
+            // Mirrors `rewind`: only the latest occurrence, and only while its Task is open.
+            const parent = find(task.repeat_of);
+            if (!parent) {
+              throw fail(
+                'validation',
+                "This Task was deleted, so its past occurrences can't be reopened",
+              );
+            }
+            // The newest by closing time; copies made in the same millisecond go by creation.
+            const latest = live()
+              .filter((t) => t.repeat_of === parent.id && t.state === 'done')
+              .reduce<Stored | null>(
+                (best, t) =>
+                  !best || (t.closed_at as number) >= (best.closed_at as number) ? t : best,
+                null,
+              );
+            if (latest?.id !== task.id) {
+              throw fail('validation', 'Only the latest occurrence can be reopened');
+            }
+            if (parent.state !== 'open') {
+              throw fail(
+                'validation',
+                "This Task has changed since, so the occurrence can't be reopened",
+              );
+            }
+            if (parent.notes === resetChecklist(task.notes)) parent.notes = task.notes;
+            parent.due_date = task.due_date;
+            parent.due_time = task.due_time;
+            parent.updated_at = Date.now();
+            task.deleted = true;
+            return copy(wire(parent));
+          }
           task.state = 'open';
           task.closed_at = null;
           task.updated_at = Date.now();
@@ -274,15 +437,25 @@ export function createTodoMock() {
           return copy(wire(task));
         }
         case 'todo_task_set_when': {
-          const [date, time] = resolveWhen(
-            (a.date as string | null) ?? null,
-            (a.time as string | null) ?? null,
-            a.local as LocalNow,
-          );
+          const local = a.local as LocalNow;
+          const given = (a.repeat as RepeatRule | null | undefined) ?? null;
+          const rule = given ? checkRule(given) : null;
+          const inDate = (a.date as string | null) ?? null;
+          const inTime = (a.time as string | null) ?? null;
+          let date: string | null;
+          let time: string | null;
+          if (inDate === null && rule) {
+            checkClock(local);
+            if (inTime !== null && !isTime(inTime)) throw fail('validation', 'Not a valid time');
+            date = firstMatch(rule, local.today);
+            time = inTime;
+          } else {
+            [date, time] = resolveWhen(inDate, inTime, local);
+          }
           const task = find(a.id);
           if (!task) throw missing();
           if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
-          applyWhen(task, date, time);
+          applyWhen(task, date, time, rule, task.due_date === date);
           return copy(wire(task));
         }
         case 'todo_tasks_restore_when': {
@@ -298,13 +471,14 @@ export function createTodoMock() {
               throw fail('validation', 'A time needs a date');
             }
           }
+          const rules = changes.map((c) => (c.repeat ? checkRule(c.repeat) : null));
           const restored: Task[] = [];
-          for (const c of changes) {
+          changes.forEach((c, i) => {
             const task = find(c.id);
-            if (!task) continue;
-            applyWhen(task, c.due_date, c.due_time);
+            if (!task) return;
+            applyWhen(task, c.due_date, c.due_time, rules[i] ?? null, true);
             restored.push(wire(task));
-          }
+          });
           return copy(restored);
         }
         case 'todo_tasks_move_overdue': {
@@ -315,8 +489,14 @@ export function createTodoMock() {
           if (date < local.today) throw fail('validation', 'That date is in the past');
           const previous: DueChange[] = [];
           for (const task of openDated().filter((t) => (t.due_date as string) < local.today)) {
-            previous.push({ id: task.id, due_date: task.due_date, due_time: task.due_time });
-            applyWhen(task, date, task.due_time);
+            const rule = ruleOf(task);
+            previous.push({
+              id: task.id,
+              due_date: task.due_date,
+              due_time: task.due_time,
+              repeat: rule && settleRule(rule),
+            });
+            applyWhen(task, date, task.due_time, rule, false);
           }
           const moved: OverdueMove = { to_date: date, previous };
           return copy(moved);

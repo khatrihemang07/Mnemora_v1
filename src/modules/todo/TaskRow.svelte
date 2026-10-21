@@ -2,7 +2,9 @@
   TaskRow: one Task in a list: the diamond to tick it, then its title (wrapping, never cut) and,
   under it, its date and time (Today teal, Overdue red; a time already behind us red). On hover (not
   on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click, long-press on a phone)
-  holds "When…", which opens the When picker, and "Move to list…". `hideDate` leaves the date out
+  holds "When…", which opens the When picker, "Skip to ‹date›" on a repeating Task (it moves on and
+  records nothing) and "Move to list…". A repeating Task shows its rule ("↻ Every 3 days after
+  done") under the title; a done occurrence shows "↻ occurrence". `hideDate` leaves the date out
   where the group already says it (Today, an Upcoming day). `list` shows the Task's List at the
   right, for views that mix Lists. A done Task (Completed today) is struck through, shows when it
   was done, and its diamond brings it back.
@@ -13,6 +15,8 @@
   import Clock from '~icons/lucide/clock';
   import Ellipsis from '~icons/lucide/ellipsis';
   import FolderInput from '~icons/lucide/folder-input';
+  import Repeat from '~icons/lucide/repeat';
+  import SkipForward from '~icons/lucide/skip-forward';
   import Sun from '~icons/lucide/sun';
   import type { Task, TodoList } from '../../lib/ipc/bindings';
   import { LongPress } from '../../lib/long-press';
@@ -20,12 +24,13 @@
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
   import { formatHm } from '../../lib/ui/when-time';
+  import { nextDue, repeatLabel } from '../../lib/ui/when-repeat';
   import { todoClock } from './clock.svelte';
-  import { closedTime, isOverdue, rowDateLabel, timePassed } from './dates';
+  import { closedTime, isOverdue, nextText, rowDateLabel, taskRepeat, timePassed } from './dates';
   import ListGlyph from './ListGlyph.svelte';
   import ListPicker from './ListPicker.svelte';
   import { todoPrefs } from './prefs.svelte';
-  import { dateTaskToday, moveTaskTo, setTaskWhen } from './task-actions';
+  import { dateTaskToday, moveTaskTo, setTaskWhen, skipRepeating } from './task-actions';
   import WhenHost from './WhenHost.svelte';
 
   interface Props {
@@ -51,6 +56,12 @@
   const late = $derived(timePassed(task, todoClock.today, todoClock.hm));
   const showDate = $derived(isOpen && task.due_date !== null && !hideDate);
   const showTime = $derived(isOpen && task.due_time !== null);
+  const repeat = $derived(isOpen ? taskRepeat(task) : null);
+  const occurrence = $derived(task.state === 'done' && task.repeat_of !== null);
+  /** Where "Skip" would send the Task. */
+  const skipTo = $derived(
+    repeat && task.due_date ? nextDue(repeat, task.due_date, todoClock.today) : null,
+  );
   const closed = $derived(
     task.state === 'done' && task.closed_at !== null
       ? closedTime(task.closed_at, todoPrefs.timeFormat)
@@ -67,6 +78,15 @@
             label: 'When…',
             icon: Calendar,
             onselect: afterMenu(() => (whenOpen = true)),
+          },
+        ]
+      : []),
+    ...(skipTo
+      ? [
+          {
+            label: `Skip to ${nextText(skipTo, todoClock.today)}`,
+            icon: SkipForward,
+            onselect: () => void skipRepeating(task),
           },
         ]
       : []),
@@ -117,7 +137,7 @@
     <span class="leading-[1.45] [overflow-wrap:anywhere] {isOpen ? '' : 'text-muted line-through'}">
       {task.title}
     </span>
-    {#if showDate || showTime || closed}
+    {#if showDate || showTime || closed || repeat || occurrence}
       <div class="mt-px flex flex-wrap items-center gap-x-2.5 text-xs text-faint">
         {#if showDate && task.due_date}
           <span
@@ -135,8 +155,14 @@
             <Clock class="size-3" />{formatHm(task.due_time, todoPrefs.timeFormat)}
           </span>
         {/if}
+        {#if repeat}
+          <span class="inline-flex items-center gap-1"><Repeat class="size-3" />{repeatLabel(repeat)}</span>
+        {/if}
         {#if closed}
           <span class="inline-flex items-center gap-1"><Check class="size-3" />{closed}</span>
+        {/if}
+        {#if occurrence}
+          <span class="inline-flex items-center gap-1"><Repeat class="size-3" />occurrence</span>
         {/if}
       </div>
     {/if}
@@ -189,8 +215,8 @@
   <WhenHost
     bind:open={whenOpen}
     anchor={whenButton ?? row}
-    value={{ date: task.due_date, time: task.due_time }}
+    value={{ date: task.due_date, time: task.due_time, repeat: taskRepeat(task) }}
     exclude={task.id}
-    onchange={(next) => void setTaskWhen(task, next.date, next.time)}
+    onchange={(next) => void setTaskWhen(task, next.date, next.time, next.repeat ?? null)}
   />
 {/if}

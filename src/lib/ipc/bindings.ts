@@ -78,21 +78,55 @@ export const commands = {
 	/**  The device's clock. */
 	local: LocalNow,
 } | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title, listId, when })),
-	/**  Marks an open Task done, now. */
-	todoTaskComplete: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_complete", { id })),
-	/**  Brings a done Task back to open, in its old place. */
+	/**
+	 *  Marks an open Task done, now. A repeating Task stays open: that occurrence is recorded as a
+	 *  done copy (taking the Task's Comments), the Checklist is reset and the Due date moves on, with
+	 *  its time. Records a `tick` change for the Task and a `create` for the copy. `local` is the
+	 *  device's today.
+	 */
+	todoTaskComplete: (id: string, local: LocalNow) => typedError<Completion, AppError>(__TAURI_INVOKE("todo_task_complete", { id, local })),
+	/**
+	 *  Brings a done Task back to open, in its old place. The latest occurrence of a repeating Task
+	 *  rewinds that Task to its date and returns it; older ones are refused.
+	 */
 	todoTaskReopen: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_reopen", { id })),
+	/**
+	 *  Moves a repeating Task to its next date without recording anything done. Undo is
+	 *  `todo_tasks_restore_when`. Records an `update` change.
+	 */
+	todoTaskSkip: (id: string, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_skip", { id, local })),
+	/**
+	 *  What has been done, a page of days at a time, newest day first. Pass the `next_cursor` of the
+	 *  last page as `before` to continue.
+	 */
+	todoDone: (before: string | null, days: number, local: LocalNow) => typedError<DoneView, AppError>(__TAURI_INVOKE("todo_done", { before, days, local })),
 	/**
 	 *  Puts a Task in a List, or in the Inbox when `list_id` is none. Undo moves it back. Records
 	 *  a `move` change.
 	 */
 	todoTaskMove: (id: string, listId: string | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_move", { id, listId })),
 	/**
-	 *  Sets an open Task's Due date and time, or clears them when both are none. A time without a
-	 *  date means today if it is still ahead and tomorrow otherwise. Past dates are refused. `local`
-	 *  is the device's today and now. Records an `update` change.
+	 *  Sets an open Task's Due date, time and Repeat, or clears them when all are none. A time
+	 *  without a date means today if it is still ahead and tomorrow otherwise; a Repeat without a date
+	 *  gives the first day it lands on. Past dates are refused. `repeat` is the Repeat after the
+	 *  change (none removes it), so callers that keep it pass it back. A date changed by hand is the
+	 *  new anchor of the Repeat; no date means no Repeat. `local` is the device's today and now. Records
+	 *  an `update` change.
 	 */
-	todoTaskSetWhen: (id: string, date: string | null, time: string | null, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_set_when", { id, date, time, local })),
+	todoTaskSetWhen: (id: string, date: string | null, time: string | null, repeat: {
+	/**  `day`, `week`, `month` or `year`. */
+	freq: string,
+	/**  The interval, 1 to 99. */
+	every: number,
+	/**
+	 *  Weeks: a bitmask of the weekdays (Sunday is bit 0), none meaning the Due date's own
+	 *  weekday. Months and years: the day of the month the Repeat keeps to (31 clamps to the
+	 *  last day of a short month and comes back), set from the Due date.
+	 */
+	days: number | null,
+	/**  `fixed` (from the Due date) or `after` (from the day it was done). */
+	mode: string,
+} | null, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_set_when", { id, date, time, repeat, local })),
 	/**
 	 *  Puts Due dates and times back as they were: Undo for a When change, past dates included.
 	 *  Tasks that no longer exist are skipped. Records an `update` change for each Task changed.
@@ -182,6 +216,17 @@ export type AppInfo = {
 	os_first_name: string,
 };
 
+/**  What ticking a Task did. */
+export type Completion = {
+	/**  The Task: done, or for a repeating one still open on its next date. */
+	task: Task,
+	/**
+	 *  For a repeating Task, the done copy that records this occurrence. Reopening it (the
+	 *  latest occurrence) is the Undo.
+	 */
+	occurrence: Task | null,
+};
+
 /**  The number of open Tasks due on one date. */
 export type DayCount = {
 	/**  `YYYY-MM-DD`. */
@@ -215,7 +260,26 @@ export type DeviceSettings = {
 	spellcheck?: boolean,
 };
 
-/**  A Task's Due date and time as they were, for Undo. A past date can only come back this way. */
+/**  The Tasks done on one day of Done. */
+export type DoneDay = {
+	/**  The device's day, `YYYY-MM-DD`. */
+	date: string,
+	/**  Newest first. */
+	tasks: Task[],
+};
+
+/**  One page of Done: whole days, newest first. */
+export type DoneView = {
+	/**  The days of this page. */
+	days: DoneDay[],
+	/**  Hand it back as the cursor for the next page; none when this was the last. */
+	next_cursor: string | null,
+};
+
+/**
+ *  A Task's Due date, time and Repeat as they were, for Undo. A past date can only come back this
+ *  way.
+ */
 export type DueChange = {
 	/**  The Task. */
 	id: string,
@@ -223,6 +287,8 @@ export type DueChange = {
 	due_date: string | null,
 	/**  Due time, `HH:MM`. */
 	due_time: string | null,
+	/**  The Repeat, which goes with the date. */
+	repeat: RepeatRule | null,
 };
 
 /**  One untitled piece of writing on a Page. */
@@ -392,6 +458,22 @@ export type PageDirection =
 "from" | 
 /**  The Pages just after the cursor (newer), nearest first picked; needs a cursor. */
 "newer";
+
+/**  A Repeat as it crosses IPC and is stored in the Task's columns. */
+export type RepeatRule = {
+	/**  `day`, `week`, `month` or `year`. */
+	freq: string,
+	/**  The interval, 1 to 99. */
+	every: number,
+	/**
+	 *  Weeks: a bitmask of the weekdays (Sunday is bit 0), none meaning the Due date's own
+	 *  weekday. Months and years: the day of the month the Repeat keeps to (31 clamps to the
+	 *  last day of a short month and comes back), set from the Due date.
+	 */
+	days: number | null,
+	/**  `fixed` (from the Due date) or `after` (from the day it was done). */
+	mode: string,
+};
 
 /**  The outcome of a search. */
 export type SearchResults = {

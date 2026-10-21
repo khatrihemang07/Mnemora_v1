@@ -6,11 +6,11 @@
   import { onDestroy } from 'svelte';
   import { clock } from '../../lib/time/clock.svelte';
   import AllPage from './AllPage.svelte';
+  import DonePage from './DonePage.svelte';
   import InboxPage from './InboxPage.svelte';
   import ListPage from './ListPage.svelte';
   import { todoNav } from './nav.svelte';
   import { followCoreSettings } from './prefs.svelte';
-  import SoonPage from './SoonPage.svelte';
   import TodayPage from './TodayPage.svelte';
   import UpcomingPage from './UpcomingPage.svelte';
 
@@ -34,6 +34,6 @@
   {:else if view.id === 'upcoming'}
     <UpcomingPage />
   {:else}
-    <SoonPage id={view.id} />
+    <DonePage />
   {/if}
 </div>

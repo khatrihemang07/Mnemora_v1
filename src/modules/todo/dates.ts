@@ -1,6 +1,7 @@
 import type { LocalNow, Task } from '../../lib/ipc/bindings';
 import type { TimeFormat } from '../../lib/time/format';
 import { daysBetween, dayText, monthShort, weekdayShort } from '../../lib/ui/when-grid';
+import { type RepeatRule, repeatLabel } from '../../lib/ui/when-repeat';
 import { formatHm } from '../../lib/ui/when-time';
 import { quoted } from './tasks';
 
@@ -89,18 +90,57 @@ export function closedTime(closedAt: number, format: TimeFormat): string {
   return formatHm(localTime(new Date(closedAt)), format);
 }
 
-/** The Undo toast after a date change, e.g. `“Pay rent” → Tomorrow · 09:00` or `→ No date`. */
+/** A Task's Repeat, or none. */
+export function taskRepeat(task: Task): RepeatRule | null {
+  if (task.repeat_freq === null || task.repeat_every === null || task.repeat_mode === null) {
+    return null;
+  }
+  return {
+    freq: task.repeat_freq,
+    every: task.repeat_every,
+    days: task.repeat_days,
+    mode: task.repeat_mode,
+  };
+}
+
+/**
+ * The Undo toast after a date change, e.g. `“Pay rent” → Tomorrow · 09:00 · Every month` or
+ * `→ No date`. A Repeat that was there and is gone says `No repeat`.
+ */
 export function whenMessage(
   title: string,
   date: string | null,
   time: string | null,
   today: string,
   format: TimeFormat,
+  repeat: RepeatRule | null = null,
+  hadRepeat = false,
 ): string {
   const day = date === null ? null : rowDateLabel(date, today);
   const at = time === null ? null : formatHm(time, format);
-  const when = [day, at].filter((p) => p !== null).join(' · ');
+  const rule = repeat ? repeatLabel(repeat) : date !== null && hadRepeat ? 'No repeat' : null;
+  const when = [day, at, rule].filter((p) => p !== null).join(' · ');
   return `${quoted(title)} → ${when || 'No date'}`;
+}
+
+/** "Sat 24 Oct": a date named in a toast or menu, with the year when it is not this year's. */
+export const nextText = (date: string, today: string): string => dayText(date, today);
+
+/** The toast after ticking a repeating Task: `Completed “Water the plants” · next Sat 24 Oct`. */
+export const completedRepeatMessage = (title: string, next: string, today: string): string =>
+  `Completed ${quoted(title)} · next ${nextText(next, today)}`;
+
+/** The toast after skipping: `Skipped “Water the plants” · next Sat 24 Oct`. */
+export const skippedMessage = (title: string, next: string, today: string): string =>
+  `Skipped ${quoted(title)} · next ${nextText(next, today)}`;
+
+/** A heading of Done: `Today`, `Yesterday`, then the weekday, with the small date beside it. */
+export function doneHeading(date: string, today: string): DayHeading {
+  const n = daysBetween(date, today);
+  const small = dayText(date, today).split(' ').slice(1).join(' ');
+  if (n === 0) return { name: 'Today', small };
+  if (n === 1) return { name: 'Yesterday', small };
+  return { name: WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '', small };
 }
 
 /** The toast after Move all: `Moved 3 Tasks to Today`. */

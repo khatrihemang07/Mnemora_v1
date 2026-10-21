@@ -98,9 +98,17 @@ An open Task whose Due date is before today. A Task due today is never Overdue, 
 _Avoid_: Late, missed
 
 **When picker**:
-The compact picker that sets a Task's Due date and time (and, later, its Repeat): a typed field, quick days, a rolling five-week calendar from this week, and a Time chip. Past days cannot be picked.
+The compact picker that sets a Task's Due date, time and Repeat: a typed field, quick days, a rolling five-week calendar from this week (days a Repeat lands on are ringed), and a Time and a Repeat chip whose panels float over the calendar. Past days cannot be picked.
 _Avoid_: Date picker (that is the Journal's), scheduler
 
 **Repeat**:
-A rule that brings a Task back after it is done: every N days, weeks (on chosen weekdays), months or years, counted either from the Due date or from the day it was done. Doing a repeating Task records that occurrence and moves the same Task to its next Due date. A repeating Task always has a Due date; if none was set, it takes the first day the rule matches.
+A rule that brings a Task back after it is done: every N days, weeks (on chosen weekdays), months or years, counted either from the Due date or from the day it was done. Doing a repeating Task records that occurrence and moves the same Task to its next Due date. A repeating Task always has a Due date; if none was set, it takes the first day the rule matches; removing the date removes the Repeat. "After done" is only offered for an interval, never with chosen weekdays.
 _Avoid_: Recurrence, rrule, habit
+
+**Occurrence**:
+One time a repeating Task was done, kept as a done copy of the Task linked to it and shown in Done. Only the latest occurrence can be reopened, which rewinds the Task to that date.
+_Avoid_: Instance, run, completion
+
+**Skip**:
+Moving a repeating Task to its next Due date without recording an occurrence. It is what Won't do means on a repeating Task.
+_Avoid_: Snooze, postpone

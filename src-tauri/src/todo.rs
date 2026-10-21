@@ -2,8 +2,9 @@
 
 use mnemora_core::error::AppError;
 use mnemora_todo::{
-    AllView, DayCount, DeleteChoice, DueChange, InboxView, ListDeletion, ListView, LocalNow,
-    NewWhen, OverdueMove, SidebarView, Task, TodayView, TodoList, UpcomingView,
+    AllView, Completion, DayCount, DeleteChoice, DoneView, DueChange, InboxView, ListDeletion,
+    ListView, LocalNow, NewWhen, OverdueMove, RepeatRule, SidebarView, Task, TodayView, TodoList,
+    UpcomingView,
 };
 use tauri::State;
 
@@ -35,9 +36,12 @@ pub fn todo_task_create(
     )
 }
 
-/// Sets an open Task's Due date and time, or clears them when both are none. A time without a
-/// date means today if it is still ahead and tomorrow otherwise. Past dates are refused. `local`
-/// is the device's today and now. Records an `update` change.
+/// Sets an open Task's Due date, time and Repeat, or clears them when all are none. A time
+/// without a date means today if it is still ahead and tomorrow otherwise; a Repeat without a date
+/// gives the first day it lands on. Past dates are refused. `repeat` is the Repeat after the
+/// change (none removes it), so callers that keep it pass it back. A date changed by hand is the
+/// new anchor of the Repeat; no date means no Repeat. `local` is the device's today and now. Records
+/// an `update` change.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_set_when(
@@ -45,6 +49,7 @@ pub fn todo_task_set_when(
     id: String,
     date: Option<String>,
     time: Option<String>,
+    repeat: Option<RepeatRule>,
     local: LocalNow,
 ) -> Result<Task, AppError> {
     mnemora_todo::set_when(
@@ -52,6 +57,7 @@ pub fn todo_task_set_when(
         &id,
         date.as_deref(),
         time.as_deref(),
+        repeat.as_ref(),
         &local,
     )
 }
@@ -110,14 +116,47 @@ pub fn todo_day_counts(
     mnemora_todo::day_counts(&lock(&state.db), &from, &to, exclude.as_deref())
 }
 
-/// Marks an open Task done, now.
+/// Marks an open Task done, now. A repeating Task stays open: that occurrence is recorded as a
+/// done copy (taking the Task's Comments), the Checklist is reset and the Due date moves on, with
+/// its time. Records a `tick` change for the Task and a `create` for the copy. `local` is the
+/// device's today.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_task_complete(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
-    mnemora_todo::complete_task(&mut lock(&state.db), &id)
+pub fn todo_task_complete(
+    state: State<'_, AppState>,
+    id: String,
+    local: LocalNow,
+) -> Result<Completion, AppError> {
+    mnemora_todo::complete_task(&mut lock(&state.db), &id, &local)
 }
 
-/// Brings a done Task back to open, in its old place.
+/// Moves a repeating Task to its next date without recording anything done. Undo is
+/// `todo_tasks_restore_when`. Records an `update` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_skip(
+    state: State<'_, AppState>,
+    id: String,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::skip_task(&mut lock(&state.db), &id, &local)
+}
+
+/// What has been done, a page of days at a time, newest day first. Pass the `next_cursor` of the
+/// last page as `before` to continue.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_done(
+    state: State<'_, AppState>,
+    before: Option<String>,
+    days: u32,
+    local: LocalNow,
+) -> Result<DoneView, AppError> {
+    mnemora_todo::done(&lock(&state.db), before.as_deref(), days, &local)
+}
+
+/// Brings a done Task back to open, in its old place. The latest occurrence of a repeating Task
+/// rewinds that Task to its date and returns it; older ones are refused.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_reopen(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
@@ -243,7 +282,7 @@ mod tests {
         app.with_db(|c| {
             let mut stmt = c
                 .prepare(
-                    "SELECT op, entity, json_extract(snapshot, '$.state') FROM change_log
+                    "SELECT op, entity, COALESCE(json_extract(snapshot, '$.state'), '') FROM change_log
                      WHERE module = 'todo' ORDER BY at, rowid",
                 )
                 .unwrap();
@@ -313,10 +352,14 @@ mod tests {
         let a = create(&app, "a").unwrap();
         create(&app, "b").unwrap();
         let done: Value = app
-            .invoke("todo_task_complete", json!({ "id": id_of(&a) }))
+            .invoke(
+                "todo_task_complete",
+                json!({ "id": id_of(&a), "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
             .unwrap();
-        assert_eq!(done["state"], "done");
-        assert!(done["closed_at"].as_i64().unwrap() >= a["created_at"].as_i64().unwrap());
+        assert_eq!(done["task"]["state"], "done");
+        assert_eq!(done["occurrence"], Value::Null);
+        assert!(done["task"]["closed_at"].as_i64().unwrap() >= a["created_at"].as_i64().unwrap());
         assert_eq!(inbox_titles(&app), ["b"]);
     }
 
@@ -325,8 +368,11 @@ mod tests {
         let app = TestApp::new();
         let a = create(&app, "a").unwrap();
         create(&app, "b").unwrap();
-        app.invoke::<Value>("todo_task_complete", json!({ "id": id_of(&a) }))
-            .unwrap();
+        app.invoke::<Value>(
+            "todo_task_complete",
+            json!({ "id": id_of(&a), "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+        )
+        .unwrap();
         let back: Value = app
             .invoke("todo_task_reopen", json!({ "id": id_of(&a) }))
             .unwrap();
@@ -344,15 +390,24 @@ mod tests {
             .invoke::<Value>("todo_task_reopen", json!({ "id": id }))
             .unwrap_err();
         assert_eq!(err["code"], "validation");
-        app.invoke::<Value>("todo_task_complete", json!({ "id": id }))
-            .unwrap();
+        app.invoke::<Value>(
+            "todo_task_complete",
+            json!({ "id": id, "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+        )
+        .unwrap();
         let err = app
-            .invoke::<Value>("todo_task_complete", json!({ "id": id }))
+            .invoke::<Value>(
+                "todo_task_complete",
+                json!({ "id": id, "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
             .unwrap_err();
         assert_eq!(err["code"], "validation");
         for cmd in ["todo_task_complete", "todo_task_reopen"] {
             let err = app
-                .invoke::<Value>(cmd, json!({ "id": "nope" }))
+                .invoke::<Value>(
+                    cmd,
+                    json!({ "id": "nope", "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+                )
                 .unwrap_err();
             assert_eq!(err["code"], "not_found", "{cmd}");
         }
@@ -363,8 +418,11 @@ mod tests {
         let app = TestApp::new();
         let a = create(&app, "a").unwrap();
         let id = id_of(&a);
-        app.invoke::<Value>("todo_task_complete", json!({ "id": id }))
-            .unwrap();
+        app.invoke::<Value>(
+            "todo_task_complete",
+            json!({ "id": id, "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+        )
+        .unwrap();
         app.invoke::<Value>("todo_task_reopen", json!({ "id": id }))
             .unwrap();
         let entity = "todo_task".to_owned();
@@ -384,7 +442,10 @@ mod tests {
         let a = create(&app, "a").unwrap();
         let _ = create(&app, " ");
         let _ = app.invoke::<Value>("todo_task_reopen", json!({ "id": id_of(&a) }));
-        let _ = app.invoke::<Value>("todo_task_complete", json!({ "id": "nope" }));
+        let _ = app.invoke::<Value>(
+            "todo_task_complete",
+            json!({ "id": "nope", "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+        );
         assert_eq!(log(&app).len(), 1);
     }
 
@@ -814,8 +875,11 @@ mod tests {
             set_when(&app, t, json!("2026-10-21"), Value::Null, "2026-10-21");
         }
         for t in [&a, &b] {
-            app.invoke::<Value>("todo_task_complete", json!({ "id": id_of(t) }))
-                .unwrap();
+            app.invoke::<Value>(
+                "todo_task_complete",
+                json!({ "id": id_of(t), "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap();
         }
         // 2026-10-21 in Kolkata (+05:30) starts at 2026-10-20 18:30 UTC.
         let day_start_utc: i64 = 1_792_521_000_000;
@@ -1019,8 +1083,11 @@ mod tests {
             (&s["today_count"], &s["overdue_count"]),
             (&json!(3), &json!(2))
         );
-        app.invoke::<Value>("todo_task_complete", json!({ "id": id_of(&due) }))
-            .unwrap();
+        app.invoke::<Value>(
+            "todo_task_complete",
+            json!({ "id": id_of(&due), "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+        )
+        .unwrap();
         assert_eq!(sidebar("2026-10-21")["today_count"], 1);
     }
 
@@ -1040,10 +1107,752 @@ mod tests {
                 "todo_task_set_when",
                 json!({ "id": id_of(&a), "date": null, "time": null, "local": bad }),
             ),
+            (
+                "todo_task_complete",
+                json!({ "id": id_of(&a), "local": bad }),
+            ),
+            ("todo_task_skip", json!({ "id": id_of(&a), "local": bad })),
+            (
+                "todo_done",
+                json!({ "before": null, "days": 3, "local": bad }),
+            ),
         ] {
             let err = app.invoke::<Value>(cmd, args).unwrap_err();
             assert_eq!(err["code"], "validation", "{cmd}");
         }
+    }
+
+    // Repeating Tasks. 2026-10-21 is a Wednesday.
+
+    fn rule(freq: &str, every: u32, days: Value, mode: &str) -> Value {
+        json!({ "freq": freq, "every": every, "days": days, "mode": mode })
+    }
+
+    fn repeat_when(app: &TestApp, task: &Value, date: Value, time: Value, repeat: Value) -> Value {
+        app.invoke(
+            "todo_task_set_when",
+            json!({ "id": id_of(task), "date": date, "time": time, "repeat": repeat,
+                    "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+        )
+        .unwrap()
+    }
+
+    fn complete_on(app: &TestApp, task: &Value, today: &str) -> Value {
+        app.invoke(
+            "todo_task_complete",
+            json!({ "id": id_of(task), "local": local(today, DEFAULT_NOW) }),
+        )
+        .unwrap()
+    }
+
+    fn open_task(app: &TestApp, task: &Value) -> Value {
+        let id = task["id"].as_str().unwrap();
+        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        view["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|g| g["tasks"].as_array().unwrap().clone())
+            .find(|t| t["id"] == id)
+            .unwrap_or(Value::Null)
+    }
+
+    /// A Task due `date` that repeats by `rule`, with a time, notes and a List.
+    fn repeating(app: &TestApp, title: &str, date: &str, rule: Value) -> Value {
+        let list = new_list(app, &format!("Home {title}"));
+        let task = create(app, title).unwrap();
+        app.invoke::<Value>(
+            "todo_task_move",
+            json!({ "id": id_of(&task), "listId": id_of(&list) }),
+        )
+        .unwrap();
+        set_when(app, &task, json!(date), json!("09:00"), DEFAULT_TODAY);
+        app.with_db(|c| {
+            c.execute(
+                "UPDATE todo_tasks SET notes = 'Water:\n- [x] ferns\n- [ ] cactus' WHERE id = ?1",
+                [task["id"].as_str().unwrap()],
+            )
+            .unwrap();
+        });
+        repeat_when(app, &task, json!(date), json!("09:00"), rule)
+    }
+
+    fn occurrences_of(app: &TestApp, task: &Value) -> Vec<Value> {
+        app.with_db(|c| {
+            let mut stmt = c
+                .prepare(
+                    "SELECT id, title, list_id, notes, due_date, due_time, state, repeat_freq,
+                            deleted_at IS NOT NULL
+                     FROM todo_tasks WHERE repeat_of = ?1 ORDER BY closed_at, id",
+                )
+                .unwrap();
+            stmt.query_map([task["id"].as_str().unwrap()], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?,
+                    "list_id": r.get::<_, Option<String>>(2)?, "notes": r.get::<_, String>(3)?,
+                    "due_date": r.get::<_, Option<String>>(4)?,
+                    "due_time": r.get::<_, Option<String>>(5)?,
+                    "state": r.get::<_, String>(6)?, "repeat": r.get::<_, Option<String>>(7)?,
+                    "deleted": r.get::<_, bool>(8)?,
+                }))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+        })
+    }
+
+    fn add_comment(app: &TestApp, task_id: &str, body: &str) -> String {
+        app.with_db(|c| {
+            let id = format!("c-{body}");
+            c.execute(
+                &format!(
+                    "INSERT INTO todo_comments(id, task_id, body, created_at, updated_at)
+                     VALUES ('{id}', '{task_id}', '{body}', 1, 1)"
+                ),
+                [],
+            )
+            .unwrap();
+            id
+        })
+    }
+
+    fn comment_owner(app: &TestApp, id: &str) -> String {
+        app.with_db(|c| {
+            c.query_row(
+                "SELECT task_id FROM todo_comments WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        })
+    }
+
+    #[test]
+    fn a_repeat_on_an_undated_task_dates_it_to_the_first_matching_day() {
+        let app = TestApp::new();
+        let a = create(&app, "Gym").unwrap();
+        let before = ops_since(&app, 0).len();
+        // Set on Wednesday 21 October, every Monday and Thursday: Thursday the 22nd.
+        let got = repeat_when(
+            &app,
+            &a,
+            Value::Null,
+            Value::Null,
+            rule("week", 1, json!(0b001_0010), "fixed"),
+        );
+        assert_eq!(got["due_date"], "2026-10-22");
+        assert_eq!(
+            (
+                got["repeat_freq"].clone(),
+                got["repeat_every"].clone(),
+                got["repeat_days"].clone()
+            ),
+            (json!("week"), json!(1), json!(18))
+        );
+        assert_eq!(got["repeat_mode"], "fixed");
+        assert_eq!(ops_since(&app, before), [pair("update", "todo_task")]);
+        // The same Repeat again changes and logs nothing.
+        repeat_when(
+            &app,
+            &a,
+            json!("2026-10-22"),
+            Value::Null,
+            rule("week", 1, json!(18), "fixed"),
+        );
+        assert_eq!(ops_since(&app, before).len(), 1);
+    }
+
+    #[test]
+    fn a_repeat_on_a_dated_task_keeps_its_date_and_a_new_date_is_the_new_anchor() {
+        let app = TestApp::new();
+        let a = create(&app, "Rent").unwrap();
+        let got = repeat_when(
+            &app,
+            &a,
+            json!("2026-10-31"),
+            json!("08:30"),
+            rule("month", 1, Value::Null, "fixed"),
+        );
+        assert_eq!(got["due_date"], "2026-10-31");
+        assert_eq!(
+            got["repeat_days"], 31,
+            "months keep to the day of the Due date"
+        );
+        // The date changed by hand moves the anchor, and the Repeat survives.
+        let moved = repeat_when(
+            &app,
+            &a,
+            json!("2026-11-05"),
+            json!("08:30"),
+            rule("month", 1, json!(31), "fixed"),
+        );
+        assert_eq!(moved["repeat_days"], 5);
+        assert_eq!(moved["repeat_freq"], "month");
+        // Only the time changes: the anchor stays (a clamped 31st would otherwise drift).
+        app.with_db(|c| {
+            c.execute(
+                "UPDATE todo_tasks SET due_date = '2026-11-30', repeat_days = 31",
+                [],
+            )
+            .unwrap();
+        });
+        let same = repeat_when(
+            &app,
+            &a,
+            json!("2026-11-30"),
+            json!("09:00"),
+            rule("month", 1, json!(31), "fixed"),
+        );
+        assert_eq!(same["repeat_days"], 31);
+    }
+
+    #[test]
+    fn bad_repeats_are_refused_and_change_nothing() {
+        let app = TestApp::new();
+        let a = create(&app, "a").unwrap();
+        for bad in [
+            rule("day", 0, Value::Null, "fixed"),
+            rule("day", 100, Value::Null, "fixed"),
+            rule("decade", 1, Value::Null, "fixed"),
+            rule("day", 1, Value::Null, "sometimes"),
+            rule("week", 1, json!(18), "after"),
+            rule("week", 1, json!(200), "fixed"),
+        ] {
+            let err = app
+                .invoke::<Value>(
+                    "todo_task_set_when",
+                    json!({ "id": id_of(&a), "date": "2026-10-23", "time": null, "repeat": bad,
+                            "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+                )
+                .unwrap_err();
+            assert_eq!(err["code"], "validation", "{bad}");
+        }
+        assert_eq!(open_task(&app, &a)["due_date"], Value::Null);
+        assert_eq!(ops_since(&app, 0).len(), 1);
+    }
+
+    #[test]
+    fn removing_the_date_of_a_repeating_task_removes_the_repeat_and_undo_brings_both_back() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-23",
+            rule("day", 3, Value::Null, "after"),
+        );
+        let cleared = set_when(&app, &a, Value::Null, Value::Null, DEFAULT_TODAY);
+        for field in [
+            "due_date",
+            "due_time",
+            "repeat_freq",
+            "repeat_every",
+            "repeat_days",
+            "repeat_mode",
+        ] {
+            assert_eq!(cleared[field], Value::Null, "{field}");
+        }
+        // Undo is what the UI captured before: date, time and Repeat together.
+        let restored: Value = app
+            .invoke(
+                "todo_tasks_restore_when",
+                json!({ "changes": [{ "id": id_of(&a), "due_date": "2026-10-23", "due_time": "09:00",
+                                      "repeat": rule("day", 3, Value::Null, "after") }] }),
+            )
+            .unwrap();
+        assert_eq!(restored[0]["due_date"], "2026-10-23");
+        assert_eq!(restored[0]["repeat_every"], 3);
+        assert_eq!(restored[0]["repeat_mode"], "after");
+    }
+
+    #[test]
+    fn move_all_overdue_keeps_the_repeat_and_undo_restores_the_old_date_and_anchor() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Rent",
+            "2026-10-31",
+            rule("month", 1, Value::Null, "fixed"),
+        );
+        backdate(&app, &a, "2026-10-10");
+        let moved: Value = app
+            .invoke(
+                "todo_tasks_move_overdue",
+                json!({ "date": "2026-10-21", "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap();
+        let now = open_task(&app, &a);
+        assert_eq!(
+            (now["due_date"].clone(), now["repeat_days"].clone()),
+            (json!("2026-10-21"), json!(21))
+        );
+        assert_eq!(moved["previous"][0]["repeat"]["days"], 31);
+        app.invoke::<Value>(
+            "todo_tasks_restore_when",
+            json!({ "changes": moved["previous"] }),
+        )
+        .unwrap();
+        let back = open_task(&app, &a);
+        assert_eq!(
+            (back["due_date"].clone(), back["repeat_days"].clone()),
+            (json!("2026-10-10"), json!(31))
+        );
+    }
+
+    #[test]
+    fn completing_a_repeating_task_records_one_copy_resets_the_checklist_and_moves_the_date() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 3, Value::Null, "fixed"),
+        );
+        let before = log(&app).len();
+        let done = complete_on(&app, &a, DEFAULT_TODAY);
+        assert_eq!(done["task"]["state"], "open");
+        assert_eq!(done["task"]["due_date"], "2026-10-24");
+        assert_eq!(done["task"]["due_time"], "09:00", "the time is kept");
+        assert_eq!(done["task"]["notes"], "Water:\n- [ ] ferns\n- [ ] cactus");
+        assert_eq!(done["occurrence"]["state"], "done");
+        assert_eq!(done["occurrence"]["repeat_of"], a["id"]);
+
+        let copies = occurrences_of(&app, &a);
+        assert_eq!(copies.len(), 1, "exactly one occurrence copy");
+        let copy = &copies[0];
+        assert_eq!(copy["title"], "Water the plants");
+        assert_eq!(copy["list_id"], a["list_id"].clone());
+        assert_eq!(
+            copy["notes"], "Water:\n- [x] ferns\n- [ ] cactus",
+            "the notes as they were"
+        );
+        assert_eq!(
+            (copy["due_date"].clone(), copy["due_time"].clone()),
+            (json!("2026-10-21"), json!("09:00"))
+        );
+        assert_eq!(
+            (copy["state"].clone(), copy["repeat"].clone()),
+            (json!("done"), Value::Null)
+        );
+
+        let tail: Vec<_> = log(&app).into_iter().skip(before).collect();
+        let tick = ("tick".to_owned(), "todo_task".to_owned(), "open".to_owned());
+        let create = (
+            "create".to_owned(),
+            "todo_task".to_owned(),
+            "done".to_owned(),
+        );
+        assert_eq!(
+            tail,
+            [create, tick],
+            "the copy is created, the Task is ticked"
+        );
+    }
+
+    #[test]
+    fn a_completed_occurrence_shows_in_done_and_the_task_leaves_today() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 3, Value::Null, "fixed"),
+        );
+        let day = local(DEFAULT_TODAY, DEFAULT_NOW);
+        let today: Value = app.invoke("todo_today", json!({ "local": day })).unwrap();
+        assert_eq!(titles(&today["tasks"]), json!(["Water the plants"]));
+        complete_on(&app, &a, DEFAULT_TODAY);
+        let today: Value = app.invoke("todo_today", json!({ "local": day })).unwrap();
+        assert_eq!(titles(&today["tasks"]), json!([]));
+        assert_eq!(titles(&today["done"]), json!(["Water the plants"]));
+        assert_eq!(today["total"], 1);
+        let done: Value = app
+            .invoke(
+                "todo_done",
+                json!({ "before": null, "days": 7, "local": day }),
+            )
+            .unwrap();
+        assert_eq!(done["days"].as_array().unwrap().len(), 1);
+        assert_eq!(done["days"][0]["tasks"][0]["repeat_of"], a["id"]);
+    }
+
+    #[test]
+    fn the_comments_of_the_occurrence_go_with_its_copy_and_come_back_on_a_rewind() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 1, Value::Null, "fixed"),
+        );
+        let id = a["id"].as_str().unwrap();
+        let (c1, c2) = (add_comment(&app, id, "one"), add_comment(&app, id, "two"));
+        let done = complete_on(&app, &a, DEFAULT_TODAY);
+        let copy = done["occurrence"]["id"].as_str().unwrap();
+        assert_eq!(
+            (comment_owner(&app, &c1), comment_owner(&app, &c2)),
+            (copy.to_owned(), copy.to_owned())
+        );
+        let late = add_comment(&app, id, "new");
+        app.invoke::<Value>("todo_task_reopen", json!({ "id": copy }))
+            .unwrap();
+        assert_eq!(comment_owner(&app, &c1), id);
+        assert_eq!(comment_owner(&app, &late), id);
+        // The moves are logged by id, never by text.
+        let moves: i64 = app.with_db(|c| {
+            c.query_row(
+                "SELECT COUNT(*) FROM change_log WHERE entity = 'todo_comment' AND op = 'move'
+                 AND snapshot NOT LIKE '%body%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        });
+        assert_eq!(moves, 4);
+    }
+
+    #[test]
+    fn a_late_fixed_task_goes_to_the_first_date_after_today_an_early_one_a_step_on_its_due_date() {
+        let app = TestApp::new();
+        let mondays = repeating(
+            &app,
+            "Bins",
+            "2026-10-21",
+            rule("week", 1, json!(0b000_0010), "fixed"),
+        );
+        backdate(&app, &mondays, "2026-09-28");
+        let got = complete_on(&app, &mondays, DEFAULT_TODAY);
+        assert_eq!(
+            got["task"]["due_date"], "2026-10-26",
+            "three weeks late: next Monday"
+        );
+
+        let fridays = repeating(
+            &app,
+            "Report",
+            "2026-10-23",
+            rule("week", 1, json!(0b010_0000), "fixed"),
+        );
+        let got = complete_on(&app, &fridays, DEFAULT_TODAY);
+        assert_eq!(
+            got["task"]["due_date"], "2026-10-30",
+            "done early: one step after Friday"
+        );
+    }
+
+    #[test]
+    fn an_after_done_task_counts_from_the_day_it_is_done() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 3, Value::Null, "after"),
+        );
+        backdate(&app, &a, "2026-10-18");
+        let got = complete_on(&app, &a, DEFAULT_TODAY);
+        assert_eq!(got["task"]["due_date"], "2026-10-24");
+        let later = complete_on(&app, &a, "2026-10-30");
+        assert_eq!(later["task"]["due_date"], "2026-11-02");
+    }
+
+    #[test]
+    fn undoing_a_completion_deletes_the_copy_and_rewinds_the_task() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 3, Value::Null, "fixed"),
+        );
+        let done = complete_on(&app, &a, DEFAULT_TODAY);
+        let before = log(&app).len();
+        let back: Value = app
+            .invoke(
+                "todo_task_reopen",
+                json!({ "id": done["occurrence"]["id"] }),
+            )
+            .unwrap();
+        assert_eq!(
+            back["id"], a["id"],
+            "reopening the occurrence returns the Task"
+        );
+        assert_eq!(back["due_date"], "2026-10-21");
+        assert_eq!(back["due_time"], "09:00");
+        assert_eq!(
+            back["notes"], "Water:\n- [x] ferns\n- [ ] cactus",
+            "the ticks come back"
+        );
+        assert_eq!(back["repeat_every"], 3);
+        let copies = occurrences_of(&app, &a);
+        assert_eq!(copies.len(), 1);
+        assert_eq!(copies[0]["deleted"], true, "the copy is deleted (soft)");
+        let ops: Vec<String> = log(&app).into_iter().skip(before).map(|l| l.0).collect();
+        assert_eq!(ops, ["tick", "delete"]);
+        // Nothing is left in Done.
+        let day = local(DEFAULT_TODAY, DEFAULT_NOW);
+        let list: Value = app
+            .invoke(
+                "todo_done",
+                json!({ "before": null, "days": 7, "local": day }),
+            )
+            .unwrap();
+        assert_eq!(list["days"], json!([]));
+    }
+
+    #[test]
+    fn a_rewind_keeps_notes_that_were_edited_since() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 3, Value::Null, "fixed"),
+        );
+        let done = complete_on(&app, &a, DEFAULT_TODAY);
+        app.with_db(|c| {
+            c.execute(
+                "UPDATE todo_tasks SET notes = 'New plan' WHERE id = ?1",
+                [a["id"].as_str().unwrap()],
+            )
+            .unwrap();
+        });
+        let back: Value = app
+            .invoke(
+                "todo_task_reopen",
+                json!({ "id": done["occurrence"]["id"] }),
+            )
+            .unwrap();
+        assert_eq!(back["notes"], "New plan");
+        assert_eq!(back["due_date"], "2026-10-21");
+    }
+
+    #[test]
+    fn only_the_latest_occurrence_can_be_reopened() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 1, Value::Null, "fixed"),
+        );
+        let first = complete_on(&app, &a, DEFAULT_TODAY);
+        let second = complete_on(&app, &a, "2026-10-22");
+        assert_eq!(second["task"]["due_date"], "2026-10-23");
+        let before = (log(&app).len(), open_task(&app, &a)["due_date"].clone());
+        let err = app
+            .invoke::<Value>(
+                "todo_task_reopen",
+                json!({ "id": first["occurrence"]["id"] }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], "validation");
+        assert!(err["message"].as_str().unwrap().contains("latest"), "{err}");
+        assert_eq!(
+            (log(&app).len(), open_task(&app, &a)["due_date"].clone()),
+            before
+        );
+        // The newest one still rewinds, and then the older one becomes the latest.
+        let back: Value = app
+            .invoke(
+                "todo_task_reopen",
+                json!({ "id": second["occurrence"]["id"] }),
+            )
+            .unwrap();
+        assert_eq!(back["due_date"], "2026-10-22");
+        let back: Value = app
+            .invoke(
+                "todo_task_reopen",
+                json!({ "id": first["occurrence"]["id"] }),
+            )
+            .unwrap();
+        assert_eq!(back["due_date"], "2026-10-21");
+    }
+
+    #[test]
+    fn skipping_moves_the_date_on_and_records_nothing() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 3, Value::Null, "fixed"),
+        );
+        let before = ops_since(&app, 0).len();
+        let skipped: Value = app
+            .invoke(
+                "todo_task_skip",
+                json!({ "id": id_of(&a), "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap();
+        assert_eq!(skipped["due_date"], "2026-10-24");
+        assert_eq!(skipped["due_time"], "09:00");
+        assert_eq!(skipped["notes"], a["notes"], "the Checklist is not reset");
+        assert!(
+            occurrences_of(&app, &a).is_empty(),
+            "no occurrence is recorded"
+        );
+        assert_eq!(ops_since(&app, before), [pair("update", "todo_task")]);
+        let plain = create(&app, "plain").unwrap();
+        let err = app
+            .invoke::<Value>(
+                "todo_task_skip",
+                json!({ "id": id_of(&plain), "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], "validation");
+    }
+
+    #[test]
+    fn deleting_a_repeating_task_keeps_its_occurrences_in_done() {
+        let app = TestApp::new();
+        let a = repeating(
+            &app,
+            "Water the plants",
+            "2026-10-21",
+            rule("day", 1, Value::Null, "fixed"),
+        );
+        let first = complete_on(&app, &a, DEFAULT_TODAY);
+        complete_on(&app, &a, "2026-10-22");
+        // There is no delete command for one Task yet: soft-delete it as that command will.
+        app.with_db(|c| {
+            c.execute(
+                "UPDATE todo_tasks SET deleted_at = 1 WHERE id = ?1",
+                [a["id"].as_str().unwrap()],
+            )
+            .unwrap();
+        });
+        let day = local("2026-10-22", DEFAULT_NOW);
+        let done: Value = app
+            .invoke(
+                "todo_done",
+                json!({ "before": null, "days": 7, "local": day }),
+            )
+            .unwrap();
+        let shown: usize = done["days"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["tasks"].as_array().unwrap().len())
+            .sum();
+        assert_eq!(shown, 2, "both occurrences stay");
+        let err = app
+            .invoke::<Value>(
+                "todo_task_reopen",
+                json!({ "id": first["occurrence"]["id"] }),
+            )
+            .unwrap_err();
+        assert_eq!(
+            err["code"], "validation",
+            "an occurrence of a deleted Task explains instead of failing"
+        );
+        let err = app
+            .invoke::<Value>(
+                "todo_task_complete",
+                json!({ "id": id_of(&a), "local": day }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], "not_found");
+    }
+
+    #[test]
+    fn done_pages_by_day_newest_first_with_a_cursor() {
+        let app = TestApp::new();
+        // Five Tasks done on four days; closing times are UTC and the device is at +05:30.
+        let stamps = [
+            ("a", "2026-10-21 10:00:00"),
+            ("b", "2026-10-21 12:00:00"),
+            ("c", "2026-10-20 08:00:00"),
+            ("d", "2026-10-18 20:00:00"),
+            ("e", "2026-10-15 04:00:00"),
+        ];
+        for (title, at) in stamps {
+            let t = create(&app, title).unwrap();
+            complete_on(&app, &t, DEFAULT_TODAY);
+            let id = t["id"].as_str().unwrap();
+            app.with_db(|c| {
+                c.execute(
+                    &format!(
+                        "UPDATE todo_tasks SET closed_at = CAST(strftime('%s', '{at}') AS INTEGER) * 1000 WHERE id = '{id}'"
+                    ),
+                    [],
+                )
+                .unwrap();
+            });
+        }
+        let kolkata = json!({ "today": "2026-10-21", "now": "14:05", "offset_min": 330 });
+        let page = |before: Value, days: u32| -> Value {
+            app.invoke(
+                "todo_done",
+                json!({ "before": before, "days": days, "local": kolkata }),
+            )
+            .unwrap()
+        };
+        let shape = |v: &Value| -> Value {
+            Value::Array(
+                v["days"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|d| json!([d["date"], titles(&d["tasks"])]))
+                    .collect(),
+            )
+        };
+        // d (18th 20:00 UTC) is the 19th at 01:30 for the device.
+        let first = page(Value::Null, 2);
+        assert_eq!(
+            shape(&first),
+            json!([["2026-10-21", ["b", "a"]], ["2026-10-20", ["c"]]])
+        );
+        assert_eq!(first["next_cursor"], "2026-10-20");
+        let second = page(first["next_cursor"].clone(), 2);
+        assert_eq!(
+            shape(&second),
+            json!([["2026-10-19", ["d"]], ["2026-10-15", ["e"]]])
+        );
+        assert_eq!(
+            second["next_cursor"],
+            Value::Null,
+            "the last page has no cursor"
+        );
+        let all = page(Value::Null, 60);
+        assert_eq!(all["days"].as_array().unwrap().len(), 4);
+        assert_eq!(all["next_cursor"], Value::Null);
+        let none = page(json!("2026-10-15"), 2);
+        assert_eq!(none["days"], json!([]));
+        assert_eq!(none["next_cursor"], Value::Null);
+        assert_eq!(
+            app.invoke::<Value>(
+                "todo_done",
+                json!({ "before": "nope", "days": 2, "local": kolkata })
+            )
+            .unwrap_err()["code"],
+            "validation"
+        );
+    }
+
+    #[test]
+    fn a_task_done_after_midnight_on_the_device_belongs_to_the_next_day() {
+        let app = TestApp::new();
+        let t = create(&app, "late").unwrap();
+        complete_on(&app, &t, DEFAULT_TODAY);
+        app.with_db(|c| {
+            c.execute("UPDATE todo_tasks SET closed_at = CAST(strftime('%s', '2026-10-20 19:00:00') AS INTEGER) * 1000", [])
+                .unwrap();
+        });
+        let day = |offset: i32| -> Value {
+            let local = json!({ "today": "2026-10-21", "now": "14:05", "offset_min": offset });
+            let v: Value = app
+                .invoke(
+                    "todo_done",
+                    json!({ "before": null, "days": 3, "local": local }),
+                )
+                .unwrap();
+            v["days"][0]["date"].clone()
+        };
+        assert_eq!(day(0), "2026-10-20");
+        assert_eq!(day(330), "2026-10-21");
+        assert_eq!(day(-480), "2026-10-20");
     }
 
     // Shared rule fixtures: the same file runs against the browser mock in
@@ -1064,6 +1873,48 @@ mod tests {
             json!([name, titles])
         });
         Value::Array(groups.collect())
+    }
+
+    /// Every open repeating Task as `[title, freq, every, days, mode]`, in the All view's order.
+    fn repeats(app: &TestApp) -> Value {
+        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let rows = view["groups"].as_array().unwrap().iter().flat_map(|g| {
+            let open = g["tasks"].as_array().unwrap().iter();
+            open.filter(|t| !t["repeat_freq"].is_null()).map(|t| {
+                json!([
+                    t["title"],
+                    t["repeat_freq"],
+                    t["repeat_every"],
+                    t["repeat_days"],
+                    t["repeat_mode"]
+                ])
+            })
+        });
+        Value::Array(rows.collect())
+    }
+
+    /// The titles in Done, newest first.
+    fn done_titles(app: &TestApp, local: &Value) -> Value {
+        let view: Value = app
+            .invoke(
+                "todo_done",
+                json!({ "before": null, "days": 60, "local": local }),
+            )
+            .unwrap();
+        Value::Array(
+            view["days"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|d| {
+                    d["tasks"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|t| t["title"].clone())
+                })
+                .collect(),
+        )
     }
 
     const DEFAULT_TODAY: &str = "2026-10-21";
@@ -1129,12 +1980,30 @@ mod tests {
         )
     }
 
+    /// A fixture's Repeat (`weekdays` or `anchor` instead of the wire's `days`) as the wire shape.
+    fn wire_repeat(v: &Value) -> Value {
+        if v.is_null() {
+            return Value::Null;
+        }
+        let days = if v["freq"] == "week" {
+            v["weekdays"].as_array().map_or(0, |ds| {
+                ds.iter().fold(0, |m, d| m | (1u64 << d.as_u64().unwrap()))
+            })
+        } else {
+            v["anchor"].as_u64().unwrap_or(0)
+        };
+        json!({ "freq": v["freq"], "every": v["every"], "days": days, "mode": v["mode"] })
+    }
+
+    // One match arm per fixture op: it reads best as a single table.
+    #[allow(clippy::too_many_lines)]
     fn run_rule_case(c: &Value) -> Value {
         let app = TestApp::new();
         let mut tasks: Vec<Value> = Vec::new();
         let mut lists: Vec<Value> = Vec::new();
         let mut deletions: Vec<Value> = Vec::new();
         let mut moves: Vec<Value> = Vec::new();
+        let mut occurrences: Vec<Value> = Vec::new();
         // The clock steps run against: the case's, unless a step pins its own.
         let clock = |step: &Value| {
             json!({
@@ -1170,8 +2039,12 @@ mod tests {
                     "todo_task_set_when",
                     json!({
                         "id": task, "date": step["date"], "time": step["time"],
-                        "local": clock(step)
+                        "repeat": wire_repeat(&step["repeat"]), "local": clock(step)
                     }),
+                ),
+                "reopen_occurrence" => app.invoke(
+                    "todo_task_reopen",
+                    json!({ "id": pick(&step["occurrence"], &occurrences) }),
                 ),
                 "move_overdue" => app.invoke(
                     "todo_tasks_move_overdue",
@@ -1205,7 +2078,10 @@ mod tests {
                     "todo_list_restore",
                     json!({ "deletion": pick(&step["deletion"], &deletions) }),
                 ),
-                _ => app.invoke(&format!("todo_task_{op}"), json!({ "id": task })),
+                _ => app.invoke(
+                    &format!("todo_task_{op}"),
+                    json!({ "id": task, "local": clock(step) }),
+                ),
             };
             match outcome {
                 Ok(out) => {
@@ -1214,6 +2090,9 @@ mod tests {
                         "list_create" => lists.push(out["id"].clone()),
                         "list_delete" => deletions.push(out),
                         "move_overdue" => moves.push(out),
+                        "complete" if !out["occurrence"].is_null() => {
+                            occurrences.push(out["occurrence"]["id"].clone());
+                        }
                         _ => {}
                     }
                     results.push(json!("ok"));
@@ -1244,6 +2123,8 @@ mod tests {
             "counts": counts,
             "sidebar_today": [sidebar["today_count"], sidebar["overdue_count"]],
             "all": all_groups(app),
+            "repeats": repeats(app),
+            "done": done_titles(app, view_clock),
         })
     }
 
