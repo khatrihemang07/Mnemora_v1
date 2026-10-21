@@ -107,11 +107,10 @@ fn stored_rule(task: &Task) -> AppResult<Option<Rule>> {
     rule_of(task)
 }
 
-/// Writes a new When and Repeat onto an open Task; logs it unless nothing changes. Returns
-/// whether it did. Without a date there is no Repeat. A month or year Repeat keeps to the day of
-/// the month of its date, so a new date is the new anchor; `keep_day` leaves the day it has.
-fn apply(
-    conn: &Connection,
+/// Puts a new When and Repeat on a Task in memory and says whether anything changed. Without a
+/// date there is no Repeat. A month or year Repeat keeps to the day of the month of its date, so
+/// a new date is the new anchor; `keep_day` leaves the day it has.
+pub(crate) fn assign_when(
     task: &mut Task,
     date: Option<String>,
     time: Option<String>,
@@ -134,10 +133,50 @@ fn apply(
     task.repeat_every = wire.as_ref().map(|r| r.every);
     task.repeat_days = wire.as_ref().and_then(|r| r.days);
     task.repeat_mode = wire.map(|r| r.mode);
+    Ok(true)
+}
+
+/// Writes a new When and Repeat onto an open Task; logs it unless nothing changes. Returns
+/// whether it did.
+fn apply(
+    conn: &Connection,
+    task: &mut Task,
+    date: Option<String>,
+    time: Option<String>,
+    rule: Option<Rule>,
+    keep_day: bool,
+) -> AppResult<bool> {
+    if !assign_when(task, date, time, rule, keep_day)? {
+        return Ok(false);
+    }
     task.updated_at = now_ms();
     repo::update_when(conn, task)?;
     record_at(conn, task, ChangeOp::Update, None)?;
     Ok(true)
+}
+
+/// Turns a pick into what a Task stores: a time without a date means today if still ahead,
+/// otherwise tomorrow; a Repeat without a date gives the first day it lands on; past dates are
+/// refused.
+pub(crate) fn settle_when(
+    date: Option<&str>,
+    time: Option<&str>,
+    repeat: Option<&RepeatRule>,
+    local: &LocalNow,
+) -> AppResult<(Option<String>, Option<String>, Option<Rule>)> {
+    let rule = repeat.map(RepeatRule::check).transpose()?;
+    let (date, time) = match (date, rule) {
+        (None, Some(rule)) => {
+            local.check()?;
+            let time = time.map(validate_time).transpose()?.map(str::to_owned);
+            let first = rule
+                .first_match(&local.today)
+                .ok_or(TodoError::Validation("Not a valid date"))?;
+            (Some(first), time)
+        }
+        _ => resolve_when(date, time, local)?,
+    };
+    Ok((date, time, rule))
 }
 
 /// Sets a Task's Due date, time and Repeat, or clears them (no date, no time, no Repeat). A time
@@ -153,18 +192,7 @@ pub fn set_when(
     repeat: Option<&RepeatRule>,
     local: &LocalNow,
 ) -> AppResult<Task> {
-    let rule = repeat.map(RepeatRule::check).transpose()?;
-    let (date, time) = match (date, rule) {
-        (None, Some(rule)) => {
-            local.check()?;
-            let time = time.map(validate_time).transpose()?.map(str::to_owned);
-            let first = rule
-                .first_match(&local.today)
-                .ok_or(TodoError::Validation("Not a valid date"))?;
-            (Some(first), time)
-        }
-        _ => resolve_when(date, time, local)?,
-    };
+    let (date, time, rule) = settle_when(date, time, repeat, local)?;
     let tx = conn.transaction()?;
     let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
     if task.state != TaskState::Open {

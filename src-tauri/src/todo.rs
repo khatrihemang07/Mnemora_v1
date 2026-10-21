@@ -3,8 +3,9 @@
 use mnemora_core::error::AppError;
 use mnemora_todo::{
     AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, HistoryLine,
-    InboxView, ListDeletion, ListView, LocalNow, NewWhen, OverdueMove, RepeatRule, SidebarView,
-    Task, TodayView, TodoList, UpcomingView,
+    InboxView, ListDeletion, ListView, LocalNow, NewTaskDetails, NewWhen, OverdueMove,
+    ParseRequest, Parsed, QuickEdit, RepeatRule, SidebarView, Task, TodayView, TodoList,
+    UpcomingView,
 };
 use tauri::State;
 
@@ -19,7 +20,9 @@ pub fn todo_inbox(state: State<'_, AppState>) -> Result<InboxView, AppError> {
 
 /// Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
 /// title, one over 500 characters and one with a line break. `when` gives it a Due date and time
-/// under the rules of `todo_task_set_when`.
+/// under the rules of `todo_task_set_when`. `details` adds what capture reads out of the text:
+/// notes, a Priority, a Repeat (which needs `when`, for the clock) and the record of understood
+/// words.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_create(
@@ -27,13 +30,50 @@ pub fn todo_task_create(
     title: String,
     list_id: Option<String>,
     when: Option<NewWhen>,
+    details: Option<NewTaskDetails>,
 ) -> Result<Task, AppError> {
     mnemora_todo::create_task(
         &mut lock(&state.db),
         &title,
         list_id.as_deref(),
         when.as_ref(),
+        details.as_ref(),
     )
+}
+
+/// Reads typed text as the capture box does: dates, times, Repeats, `#List` and `p1`-`p4`, with
+/// what was recognised, what lost to a later word of the same kind, and what the user keeps as
+/// text. Writes nothing.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_parse(state: State<'_, AppState>, request: ParseRequest) -> Result<Parsed, AppError> {
+    mnemora_todo::parse_text(&lock(&state.db), &request)
+}
+
+/// Saves a Quick edit in one write: the title, the record of understood words, the When, Repeat,
+/// Priority and List as they should be afterwards. A When that differs goes through the rules of
+/// `todo_task_set_when` (past dates refused). Records an `update` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_quick_edit(
+    state: State<'_, AppState>,
+    id: String,
+    edit: QuickEdit,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::quick_edit(&mut lock(&state.db), &id, &edit, &local, false)
+}
+
+/// Undo for a Quick edit: puts the old values back, a past date included.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_quick_edit_undo(
+    state: State<'_, AppState>,
+    id: String,
+    edit: QuickEdit,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::quick_edit(&mut lock(&state.db), &id, &edit, &local, true)
 }
 
 /// Sets an open Task's Due date, time and Repeat, or clears them when all are none. A time
@@ -621,7 +661,7 @@ mod tests {
                 .unwrap();
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].entries[0].body, "Written before Todo existed");
-        mnemora_todo::create_task(&mut conn, "Works after the upgrade", None, None).unwrap();
+        mnemora_todo::create_task(&mut conn, "Works after the upgrade", None, None, None).unwrap();
         assert_eq!(mnemora_todo::inbox(&conn).unwrap().tasks.len(), 1);
 
         let again = db::migrate::run(&mut conn, &after, &backups).unwrap();

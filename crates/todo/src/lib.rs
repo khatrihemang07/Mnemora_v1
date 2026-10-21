@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod capture;
 mod comment;
 mod comment_repo;
 mod comment_service;
@@ -12,6 +13,7 @@ mod list;
 mod list_repo;
 mod list_service;
 mod migrations;
+mod parse;
 mod recurrence;
 mod repeat;
 mod repo;
@@ -24,10 +26,12 @@ mod when;
 use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
-use mnemora_core::settings::SettingsRegistry;
+use mnemora_core::settings::{SettingsRegistry, validate};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
+use serde_json::json;
 
+pub use capture::{QuickEdit, parse_text, quick_edit};
 pub use comment::{Comment, MAX_COMMENT_CHARS};
 pub use comment_service::{add_comment, comments, delete_comment, edit_comment, restore_comment};
 pub use error::TodoError;
@@ -39,6 +43,7 @@ pub use list::{
 pub use list_service::{
     all, create_list, delete_list, list_view, rename_list, restore_list, set_list_emoji, sidebar,
 };
+pub use parse::{ParseAlternative, ParseRequest, ParseSpan, Parsed, TextRange};
 pub use recurrence::{MAX_EVERY, RepeatRule};
 pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};
 pub use schedule::{
@@ -46,7 +51,7 @@ pub use schedule::{
     move_overdue, restore_when, set_when, today, upcoming,
 };
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
-pub use task::{InboxView, MAX_TITLE_CHARS, Task, TaskState};
+pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
 pub use task_service::{
     Purged, delete_task, purge_deleted, restore_task, set_priority, task, update_task, wont_do,
 };
@@ -67,8 +72,10 @@ impl Module for TodoModule {
         migrations::all()
     }
 
-    // Todo's Preferences arrive with the slices that use them.
-    fn register_settings(&self, _reg: &mut SettingsRegistry) {}
+    fn register_settings(&self, reg: &mut SettingsRegistry) {
+        // "Recognise dates in titles": turns the capture box's reading of typed text off.
+        reg.register(MODULE_ID, "parse_dates", json!(true), validate::boolean());
+    }
 
     fn on_startup(&self, conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {
         let purged = purge_deleted(conn)?;

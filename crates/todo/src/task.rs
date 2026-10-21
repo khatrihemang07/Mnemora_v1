@@ -89,6 +89,38 @@ pub struct Task {
     pub comment_count: u32,
 }
 
+/// What a captured Task carries besides its title, List and When.
+#[derive(Debug, Clone, Default, Deserialize, Type)]
+pub struct NewTaskDetails {
+    /// Markdown notes.
+    #[serde(default)]
+    pub notes: String,
+    /// 1 to 4; none means 4.
+    pub priority: Option<u32>,
+    /// A Repeat; it needs the clock of `when` to find its first day.
+    pub repeat: Option<crate::recurrence::RepeatRule>,
+    /// What the parser recognised, as JSON `[{word, kind, value}]`.
+    pub understood: Option<String>,
+}
+
+/// The most the record of understood words may hold, in characters.
+const MAX_UNDERSTOOD_CHARS: usize = 4000;
+
+/// The record of understood words: a JSON array, or nothing.
+pub fn validate_understood(understood: Option<&str>) -> Result<Option<&str>, TodoError> {
+    let Some(text) = understood else {
+        return Ok(None);
+    };
+    let ok = text.chars().count() <= MAX_UNDERSTOOD_CHARS
+        && serde_json::from_str::<Vec<serde_json::Value>>(text).is_ok();
+    if !ok {
+        return Err(TodoError::Validation(
+            "That record of understood words is not valid",
+        ));
+    }
+    Ok(Some(text))
+}
+
 /// The Inbox: open Tasks that belong to no List, in manual order.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct InboxView {

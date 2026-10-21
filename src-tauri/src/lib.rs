@@ -34,6 +34,9 @@ macro_rules! specta_builder_for {
                 journal::journal_today,
                 todo::todo_inbox,
                 todo::todo_task_create,
+                todo::todo_parse,
+                todo::todo_task_quick_edit,
+                todo::todo_task_quick_edit_undo,
                 todo::todo_task_complete,
                 todo::todo_task_reopen,
                 todo::todo_task_skip,
@@ -78,6 +81,8 @@ mod state;
 mod test_support;
 mod theme_inject;
 mod todo;
+#[cfg(test)]
+mod todo_capture_tests;
 #[cfg(test)]
 mod todo_sheet_tests;
 #[cfg(desktop)]
@@ -300,6 +305,9 @@ mod tests {
             "journalToday",
             "todoInbox",
             "todoTaskCreate",
+            "todoParse",
+            "todoTaskQuickEdit",
+            "todoTaskQuickEditUndo",
             "todoTaskComplete",
             "todoTaskReopen",
             "todoTaskSkip",

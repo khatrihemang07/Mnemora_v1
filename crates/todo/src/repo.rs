@@ -384,6 +384,32 @@ pub fn update_priority(conn: &Connection, t: &Task) -> AppResult<()> {
     Ok(())
 }
 
+/// Writes everything Quick edit can change at once: title, List, When, Repeat, Priority and the
+/// record of what was understood, and stamps `updated_at`.
+pub fn update_quick(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET title = ?2, list_id = ?3, due_date = ?4, due_time = ?5,
+             repeat_freq = ?6, repeat_every = ?7, repeat_days = ?8, repeat_mode = ?9,
+             priority = ?10, understood = ?11, updated_at = ?12
+         WHERE id = ?1",
+        params![
+            t.id,
+            t.title,
+            t.list_id,
+            t.due_date,
+            t.due_time,
+            t.repeat_freq,
+            t.repeat_every,
+            t.repeat_days,
+            t.repeat_mode,
+            t.priority,
+            t.understood,
+            t.updated_at
+        ],
+    )?;
+    Ok(())
+}
+
 /// Ids of Tasks deleted before `cutoff` (UTC milliseconds).
 pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
     let mut stmt = conn.prepare("SELECT id FROM todo_tasks WHERE deleted_at < ?1 ORDER BY id")?;
