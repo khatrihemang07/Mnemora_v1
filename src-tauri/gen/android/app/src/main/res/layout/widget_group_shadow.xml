@@ -14,6 +14,6 @@
     android:shadowColor="#E6000000"
     android:shadowDx="0"
     android:shadowDy="1"
-    android:shadowRadius="4"
+    android:shadowRadius="5"
     android:textSize="11sp"
     android:textStyle="bold" />

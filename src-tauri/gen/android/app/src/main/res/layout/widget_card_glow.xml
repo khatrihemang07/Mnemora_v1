@@ -51,7 +51,7 @@
                 android:shadowColor="#F2FFFFFF"
                 android:shadowDx="0"
                 android:shadowDy="1"
-                android:shadowRadius="4"
+                android:shadowRadius="5"
                 android:textSize="15sp"
                 android:textStyle="bold" />
 
@@ -64,8 +64,22 @@
                 android:shadowColor="#F2FFFFFF"
                 android:shadowDx="0"
                 android:shadowDy="1"
-                android:shadowRadius="4"
+                android:shadowRadius="5"
                 android:textSize="12sp" />
+
+            <!-- Pushes the gear (and, later, the + of the Quick add) to the end of the header. -->
+            <FrameLayout
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageView
+                android:id="@+id/gear"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:contentDescription="@string/widget_settings"
+                android:padding="6dp"
+                android:src="@drawable/widget_gear" />
         </LinearLayout>
 
         <ListView
@@ -103,7 +117,7 @@
                 android:shadowColor="#F2FFFFFF"
                 android:shadowDx="0"
                 android:shadowDy="1"
-                android:shadowRadius="4"
+                android:shadowRadius="5"
                 android:textSize="18sp"
                 android:textStyle="bold" />
 
@@ -118,10 +132,21 @@
                 android:shadowColor="#F2FFFFFF"
                 android:shadowDx="0"
                 android:shadowDy="1"
-                android:shadowRadius="4"
+                android:shadowRadius="5"
                 android:textSize="13sp" />
         </LinearLayout>
     </LinearLayout>
+
+    <!-- The gear on cards that have no header (a deleted List): opens this widget's setup. -->
+    <ImageView
+        android:id="@+id/gear_corner"
+        android:layout_width="38dp"
+        android:layout_height="38dp"
+        android:layout_gravity="top|end"
+        android:contentDescription="@string/widget_settings"
+        android:padding="9dp"
+        android:src="@drawable/widget_gear"
+        android:visibility="gone" />
 
     <!-- The Sandbox build's amber tab at the top centre of the card. -->
     <TextView

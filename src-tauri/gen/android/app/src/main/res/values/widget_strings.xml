@@ -10,6 +10,7 @@
     <string name="widget_list_deleted_title">This List was deleted</string>
     <string name="widget_list_deleted_line">Tap to choose another view</string>
     <string name="widget_sandbox_tag">SANDBOX</string>
+    <string name="widget_settings">Widget settings</string>
     <string name="widget_setup_title">Todo widget</string>
     <string name="widget_setup_show">Show</string>
     <string name="widget_setup_theme">Theme</string>
@@ -21,7 +22,7 @@
     <string name="widget_view_upcoming">Upcoming</string>
     <string name="widget_view_upcoming_hint">Overdue, then each day of the next 7</string>
     <string name="widget_view_inbox">Inbox</string>
-    <string name="widget_view_inbox_hint">Tasks with no List</string>
+    <string name="widget_view_inbox_hint">No List, plus undated Tasks in Lists</string>
     <string name="widget_view_all">All</string>
     <string name="widget_view_all_hint">Every open Task, by List</string>
     <string name="widget_view_list_hint">List</string>

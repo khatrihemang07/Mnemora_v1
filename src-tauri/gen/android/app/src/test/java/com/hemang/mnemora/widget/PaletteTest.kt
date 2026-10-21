@@ -1,6 +1,7 @@
 package com.hemang.mnemora.widget
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PaletteTest {
@@ -36,6 +37,30 @@ class PaletteTest {
         assertEquals(0, palette.ringFill("none"))
         assertEquals(0x1E, palette.ringFill("p1") ushr 24)
         assertEquals(palette.danger and 0xFFFFFF, palette.ringFill("p1") and 0xFFFFFF)
+    }
+
+    @Test
+    fun theWashBehindNoBackgroundMatchesTheLook() {
+        val dark = Palette.scrim(Look.DARK)
+        val light = Palette.scrim(Look.LIGHT)
+        assertEquals(0x000000, dark and 0xFFFFFF)
+        assertEquals(0xFFFFFF, light and 0xFFFFFF)
+        // Faint, never a card: well under half opaque.
+        assertTrue((dark ushr 24) in 40..150)
+        assertTrue((light ushr 24) in 40..150)
+        assertEquals(dark, Palette.scrim(Look.TRUE_BLACK))
+        assertEquals(light, Palette.scrim(Look.MATERIAL_YOU))
+    }
+
+    @Test
+    fun noBackgroundStepsTheSecondaryTextUp() {
+        val bare = palette.forWallpaper()
+        assertEquals(0, bare.background)
+        assertEquals(palette.muted, bare.faint)
+        assertEquals(Palette.blend(palette.ink, palette.muted, 0.5f), bare.muted)
+        // Priority colours and the teal are untouched.
+        assertEquals(palette.danger, bare.danger)
+        assertEquals(palette.todo, bare.todo)
     }
 
     @Test

@@ -28,6 +28,9 @@ android {
         applicationId = "com.hemang.mnemora"
         // The Todo widget's picker label and its SANDBOX tag (Sandbox is a separate app).
         resValue("string", "todo_widget_label", if (isSandbox) "Todo (Sandbox)" else "Todo")
+        // The picker's static preview cannot branch at run time, so it takes the Sandbox tag from here.
+        resValue("string", "todo_widget_tag_text", if (isSandbox) "SANDBOX" else "")
+        resValue("color", "todo_widget_tag_fill", if (isSandbox) "#FFE48E26" else "#00000000")
         buildConfigField("boolean", "SANDBOX", isSandbox.toString())
         if (isSandbox) applicationIdSuffix = ".sandbox"
         minSdk = 26

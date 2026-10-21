@@ -34,4 +34,17 @@ class RowItemsTest {
         assertEquals(RowItems.MAX_ITEMS, items.size)
         assertTrue(items.first() is Item.Heading)
     }
+
+    @Test
+    fun aPreviewNeverEndsOnAHeading() {
+        val groups = listOf(
+            Group("Overdue", Tone.OVERDUE, listOf(row("a"), row("b"))),
+            Group("Today", Tone.NORMAL, listOf(row("c"))),
+        )
+        // Cut after "Overdue, a, b": the next line would be the Today heading, which is dropped.
+        assertEquals(3, RowItems.preview(groups, 3).size)
+        assertEquals(3, RowItems.preview(groups, 4).size)
+        assertEquals(5, RowItems.preview(groups, 5).size)
+        assertTrue(RowItems.preview(groups, 5).last() is Item.Task)
+    }
 }

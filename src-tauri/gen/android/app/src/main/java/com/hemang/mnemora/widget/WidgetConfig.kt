@@ -69,6 +69,17 @@ object WidgetConfigStore {
         edit.apply()
     }
 
+    /** Drops the settings of every widget not in [liveIds]: a safety net if a removal broadcast was missed. */
+    fun retainOnly(context: Context, liveIds: IntArray) {
+        val prefs = prefs(context)
+        val live = liveIds.map { key(it) }.toSet()
+        val stale = prefs.all.keys.filter { it.startsWith("config_") && it !in live }
+        if (stale.isEmpty()) return
+        val edit = prefs.edit()
+        stale.forEach { edit.remove(it) }
+        edit.apply()
+    }
+
     /** The app's Settings ▸ Theme as last seen in a reply, so error states can still wear it. */
     fun appTheme(context: Context): String? = prefs(context).getString("app_theme", null)
 

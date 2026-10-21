@@ -33,6 +33,7 @@ object WidgetRenderer {
         reply: Reply,
         config: WidgetConfig,
         appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID,
+        previewLines: Int? = null,
     ): RemoteViews {
         // The app's theme is known from a reply; failures use the last one seen.
         val appTheme = (reply as? Reply.Ok)?.snapshot?.appTheme ?: WidgetConfigStore.appTheme(context)
@@ -40,13 +41,14 @@ object WidgetRenderer {
         val palette = Palette.from(context, look, config.background)
         val edge = TextEdge.of(config.background, look)
         val views = RemoteViews(context.packageName, edge.card)
-        val surface = if (config.background == Background.NONE) 0 else Palette.withAlpha(palette.background, config.background.alpha)
+        // With no background a faint wash still sits behind the text, so it reads on any wallpaper.
+        val surface = if (config.background == Background.NONE) Palette.scrim(look) else Palette.withAlpha(palette.background, config.background.alpha)
         views.setColorStateList(R.id.root, "setBackgroundTintList", ColorStateList.valueOf(surface))
         val open = openApp(context)
         views.setOnClickPendingIntent(R.id.root, open)
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
         when (reply) {
-            is Reply.Ok -> ok(context, views, palette, edge, reply.snapshot, open)
+            is Reply.Ok -> ok(context, views, palette, edge, reply.snapshot, open, previewLines, appWidgetId)
             Reply.NotSetUp -> message(
                 views, palette,
                 context.getString(R.string.widget_not_set_up_title),
@@ -67,6 +69,10 @@ object WidgetRenderer {
                 if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
                     views.setOnClickPendingIntent(R.id.root, setupIntent(context, appWidgetId))
                 }
+                // No header here, so the gear sits in the corner.
+                views.setViewVisibility(R.id.gear_corner, View.VISIBLE)
+                views.setColorStateList(R.id.gear_corner, "setImageTintList", ColorStateList.valueOf(palette.faint))
+                gearClick(context, views, R.id.gear_corner, appWidgetId)
             }
             Reply.Failed -> message(
                 views, palette,
@@ -77,7 +83,14 @@ object WidgetRenderer {
         return views
     }
 
-    /** Opens the setup screen for one widget (reconfigure). */
+    /** Makes a gear open this widget's setup; without a real widget (the setup preview) it does nothing. */
+    private fun gearClick(context: Context, views: RemoteViews, id: Int, appWidgetId: Int) {
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            views.setOnClickPendingIntent(id, setupIntent(context, appWidgetId))
+        }
+    }
+
+    /** Opens the setup screen for one widget (the gear, and a deleted List's card). */
     fun setupIntent(context: Context, appWidgetId: Int): PendingIntent {
         val intent = Intent(context, WidgetSetupActivity::class.java)
             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -109,8 +122,12 @@ object WidgetRenderer {
         edge: TextEdge,
         snapshot: Snapshot,
         open: PendingIntent,
+        previewLines: Int?,
+        appWidgetId: Int,
     ) {
         views.setViewVisibility(R.id.header, View.VISIBLE)
+        views.setColorStateList(R.id.gear, "setImageTintList", ColorStateList.valueOf(palette.faint))
+        gearClick(context, views, R.id.gear, appWidgetId)
         views.setOnClickPendingIntent(R.id.header, open)
         views.setColorStateList(R.id.chip, "setBackgroundTintList", ColorStateList.valueOf(Palette.withAlpha(palette.todo, 0.16f)))
         views.setColorStateList(R.id.chip_icon, "setImageTintList", ColorStateList.valueOf(palette.todo))
@@ -135,7 +152,7 @@ object WidgetRenderer {
         // New contents start at the top, not where the last draw was scrolled to.
         views.setScrollPosition(R.id.list, 0)
         views.setPendingIntentTemplate(R.id.list, open)
-        views.setRemoteAdapter(R.id.list, items(context, palette, edge, RowItems.flatten(snapshot.groups)))
+        views.setRemoteAdapter(R.id.list, items(context, palette, edge, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
     }
 
     private fun items(

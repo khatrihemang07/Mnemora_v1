@@ -62,6 +62,7 @@ object WidgetUpdater {
     private fun redraw(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, TodoWidgetProvider::class.java))
+        WidgetConfigStore.retainOnly(context, ids)
         if (ids.isEmpty()) {
             cancelMidnight(context)
             return

@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.content.res.Configuration
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -56,13 +57,20 @@ class WidgetSetupActivity : Activity() {
             finish()
             return
         }
-        config = WidgetConfigStore.get(this, appWidgetId)
+        // Rotating recreates the screen: keep what was picked meanwhile.
+        config = savedInstanceState?.getString(STATE_CONFIG)?.let { WidgetConfig.fromJson(it) }
+            ?: WidgetConfigStore.get(this, appWidgetId)
         val phoneLook = WidgetTheme.resolve(ThemeChoice.APP, WidgetConfigStore.appTheme(this), WidgetRenderer.phoneNight(this))
         window.decorView.setBackgroundColor(Palette.from(this, phoneLook).background)
         io.execute {
             val loaded = ReplyParser.parseLists(WidgetBridge.call(this, WidgetRequests.lists()))
             runOnUiThread { if (!isDestroyed) show(loaded) }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_CONFIG, config.toJson())
     }
 
     override fun onDestroy() {
@@ -83,6 +91,11 @@ class WidgetSetupActivity : Activity() {
 
     private fun show(loaded: ListChoices?) {
         choices = loaded
+        // A widget whose List was deleted starts on Today instead of nothing, so Done always means something.
+        val listId = config.view.removePrefix("list:").takeIf { config.view.startsWith("list:") }
+        if (loaded != null && listId != null && loaded.lists.none { it.id == listId }) {
+            config = config.copy(view = WidgetConfig.DEFAULT_VIEW)
+        }
         WidgetConfigStore.rememberAppTheme(this, loaded?.appTheme)
         // The setup screen itself wears the app's theme.
         val look = WidgetTheme.resolve(ThemeChoice.APP, loaded?.appTheme ?: WidgetConfigStore.appTheme(this), WidgetRenderer.phoneNight(this))
@@ -94,6 +107,11 @@ class WidgetSetupActivity : Activity() {
             isAppearanceLightStatusBars = !WidgetTheme.isDark(look)
             isAppearanceLightNavigationBars = !WidgetTheme.isDark(look)
         }
+        // Some launchers/ROMs pick the bar icon colour from the bar's own colour, so set it as well.
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = palette.background
+        @Suppress("DEPRECATION")
+        window.statusBarColor = palette.background
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
@@ -115,17 +133,25 @@ class WidgetSetupActivity : Activity() {
             clipToOutline = true
             setPadding(dp(10), dp(10), dp(10), dp(10))
         }
-        root.addView(
-            previewHost,
-            LinearLayout.LayoutParams(MATCH_PARENT, dp(190)).apply { setMargins(dp(18), dp(4), dp(18), dp(10)) },
-        )
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val previewParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(if (landscape) 170 else 190))
+            .apply { setMargins(dp(18), dp(4), dp(18), dp(10)) }
 
         val options = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), 0, dp(18), dp(8))
         }
         buildOptions(options)
-        root.addView(ScrollView(this).apply { addView(options) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        if (landscape) {
+            // A sticky preview would take most of a short screen: the whole page scrolls instead.
+            val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            page.addView(previewHost, previewParams)
+            page.addView(options)
+            root.addView(ScrollView(this).apply { addView(page) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        } else {
+            root.addView(previewHost, previewParams)
+            root.addView(ScrollView(this).apply { addView(options) }, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        }
         root.addView(footer())
         setContentView(root, ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         refreshRadios()
@@ -205,7 +231,14 @@ class WidgetSetupActivity : Activity() {
     private fun drawPreview(reply: Reply) {
         previewHost.removeAllViews()
         // Collection items (the list) only inflate inside an AppWidgetHostView, as on the home screen.
-        val host = AppWidgetHostView(this).apply { updateAppWidget(WidgetRenderer.render(this@WidgetSetupActivity, reply, config)) }
+        val id = appWidgetId // (inside apply, a bare appWidgetId would be the host view's own, 0)
+        val info = AppWidgetManager.getInstance(this).getAppWidgetInfo(id)
+        val host = AppWidgetHostView(this).apply {
+            // The host needs the provider's info to build its remote context (else it logs an NPE).
+            if (info != null) setAppWidget(id, info)
+            setPadding(0, 0, 0, 0)
+            updateAppWidget(WidgetRenderer.render(this@WidgetSetupActivity, reply, config, previewLines = PREVIEW_LINES))
+        }
         previewHost.addView(host, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         // A preview is not interactive: a transparent layer swallows touches.
         previewHost.addView(View(this).apply { isClickable = true }, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
@@ -285,5 +318,12 @@ class WidgetSetupActivity : Activity() {
         stateListAnimator = null
         minWidth = dp(72)
         setOnClickListener { onClick() }
+    }
+
+    private companion object {
+        const val STATE_CONFIG = "config"
+
+        /** Lines the preview shows, so it never crops mid-row. */
+        const val PREVIEW_LINES = 4
     }
 }

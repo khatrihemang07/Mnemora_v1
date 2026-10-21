@@ -36,6 +36,13 @@ data class Palette(
         else -> 0
     }
 
+    /** With no card the secondary text has no surface to contrast with, so it steps up one level. */
+    fun forWallpaper(): Palette = copy(
+        background = 0,
+        muted = blend(ink, muted, 0.5f),
+        faint = muted,
+    )
+
     companion object {
         /** The palette for [look], drawn on [background]. */
         fun from(context: Context, look: Look, background: Background = Background.SOLID): Palette {
@@ -74,8 +81,13 @@ data class Palette(
             }
             // No background: the same text colours straight on the wallpaper (a soft shadow or glow
             // in the layout keeps them readable), so the theme still means light or dark text.
-            return if (background == Background.NONE) palette.copy(background = 0) else palette
+            return if (background == Background.NONE) palette.forWallpaper() else palette
         }
+
+        /** The faint wash behind a widget with no background: black on dark looks, white on light ones. */
+        @ColorInt
+        fun scrim(look: Look): Int =
+            if (WidgetTheme.isDark(look)) withAlpha(0xFF000000.toInt(), 0.5f) else withAlpha(0xFFFFFFFF.toInt(), 0.55f)
 
         @ColorInt
         fun withAlpha(@ColorInt color: Int, alpha: Float): Int =
