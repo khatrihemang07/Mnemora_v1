@@ -26,6 +26,7 @@ mod search_repo;
 mod service;
 mod task;
 mod task_service;
+mod upgrade;
 mod when;
 
 use mnemora_core::db::migrate::MigrationReport;
@@ -101,7 +102,8 @@ impl Module for TodoModule {
         }
     }
 
-    fn on_startup(&self, conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {
+    fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
+        upgrade::append_todo_tab(conn, report)?;
         let purged = purge_deleted(conn)?;
         if purged.tasks + purged.lists + purged.comments > 0 {
             tracing::info!(

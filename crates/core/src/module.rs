@@ -117,6 +117,9 @@ impl Module for CoreModule {
             json!(["home", "journal", "todo"]),
             validate::string_list(4),
         );
+        // Set when the tabs are saved from Settings: a saved value without it was only ever
+        // pinned by an upgrade, so a Module arriving later may still add its tab.
+        reg.register(m, "phone_tabs_edited", json!(false), validate::boolean());
         // Ids of Modules switched off. A list of the exceptions, so a new Module is on by default.
         reg.register(m, "disabled_modules", json!([]), validate::string_list(64));
     }
