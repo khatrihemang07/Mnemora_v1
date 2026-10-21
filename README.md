@@ -27,6 +27,8 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make sandbox` | Hot-reload app on separate **Sandbox** data, with an orange SANDBOX badge |
 | `make build` | Release build for this machine (`.app` / `.dmg`) |
 | `make android-dev` | Hot reload on a USB-connected phone (Sandbox data) |
+| `make android-sandbox` | Debug Sandbox APK (no hot reload) installed on the phone |
+| `make android-test` | Kotlin unit tests for the Todo widget |
 | `make android` | Signed arm64 release APK, installed on the connected phone |
 | `make test` | Rust tests plus Vitest |
 | `make lint` | clippy (`-D warnings`), rustfmt check, Biome, svelte-check |
