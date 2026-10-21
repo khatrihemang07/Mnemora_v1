@@ -21,7 +21,7 @@ const MAX_SIMILAR: usize = 100;
 /// tolerance, so far-off lengths are never fetched.
 const MAX_TOLERANCE: usize = 2;
 
-/// Where a Hit's snippet line comes from.
+/// Where a TaskHit's snippet line comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum SnippetSource {
@@ -33,7 +33,7 @@ pub enum SnippetSource {
 
 /// One Task found by a search.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
-pub struct Hit {
+pub struct TaskHit {
     /// The Task, as every list shows it.
     pub task: Task,
     /// Its title cut into plain and matched runs, for highlighting.
@@ -48,18 +48,18 @@ pub struct Hit {
 /// The outcome of a search. Within each group open Tasks come first (manual order), then Done and
 /// Won't do ones (latest closed first); the UI splits on `task.state`.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
-pub struct SearchResults {
+pub struct TaskSearchResults {
     /// Tasks that match every word and phrase.
-    pub exact: Vec<Hit>,
+    pub exact: Vec<TaskHit>,
     /// Tasks that match only when a word is allowed a typo; never also in `exact`.
-    pub similar: Vec<Hit>,
+    pub similar: Vec<TaskHit>,
     /// Whether `exact` was cut short at the limit.
     pub truncated: bool,
     /// Whether `similar` was cut short at the limit.
     pub similar_truncated: bool,
 }
 
-fn hit(conn: &Connection, task: Task, matcher: &Matcher) -> AppResult<Hit> {
+fn hit(conn: &Connection, task: Task, matcher: &Matcher) -> AppResult<TaskHit> {
     let title = highlight(&task.title, matcher);
     let from_notes = task
         .notes
@@ -80,7 +80,7 @@ fn hit(conn: &Connection, task: Task, matcher: &Matcher) -> AppResult<Hit> {
         Some(line) => (window(&line, matcher), snippet_source),
         None => (Vec::new(), None),
     };
-    Ok(Hit {
+    Ok(TaskHit {
         task,
         title,
         snippet,
@@ -88,15 +88,15 @@ fn hit(conn: &Connection, task: Task, matcher: &Matcher) -> AppResult<Hit> {
     })
 }
 
-fn hits(conn: &Connection, tasks: Vec<Task>, matcher: &Matcher) -> AppResult<Vec<Hit>> {
+fn hits(conn: &Connection, tasks: Vec<Task>, matcher: &Matcher) -> AppResult<Vec<TaskHit>> {
     tasks.into_iter().map(|t| hit(conn, t, matcher)).collect()
 }
 
 /// Searches live Tasks. Every word is required and matches by prefix; quoted text is an exact
 /// phrase. Nothing to search for returns nothing; deleted Tasks and Comments are never found.
-pub fn search(conn: &Connection, query: &str) -> AppResult<SearchResults> {
+pub fn search(conn: &Connection, query: &str) -> AppResult<TaskSearchResults> {
     let terms = query::parse(query);
-    let mut results = SearchResults {
+    let mut results = TaskSearchResults {
         exact: Vec::new(),
         similar: Vec::new(),
         truncated: false,

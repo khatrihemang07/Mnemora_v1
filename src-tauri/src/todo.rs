@@ -4,7 +4,7 @@ use mnemora_core::error::AppError;
 use mnemora_todo::{
     AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, GroupBy, GroupKey,
     HistoryLine, InboxView, ListDeletion, ListView, LocalNow, NewTaskDetails, NewWhen, OverdueMove,
-    ParseRequest, Parsed, QuickEdit, RepeatRule, SearchResults, SidebarView, Task, TaskSort,
+    ParseRequest, Parsed, QuickEdit, RepeatRule, SidebarView, Task, TaskSearchResults, TaskSort,
     TodayView, TodoList, UpcomingView,
 };
 use tauri::State;
@@ -230,7 +230,10 @@ pub fn todo_task(state: State<'_, AppState>, id: String) -> Result<Task, AppErro
 /// repeating `exact`. Deleted Tasks and Comments are never found.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_search(state: State<'_, AppState>, query: String) -> Result<SearchResults, AppError> {
+pub fn todo_search(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<TaskSearchResults, AppError> {
     mnemora_todo::search(&lock(&state.db), &query)
 }
 
