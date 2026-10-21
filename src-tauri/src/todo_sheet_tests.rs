@@ -1,7 +1,9 @@
 //! Command-layer tests for the Task sheet's rules: Priority, Won't do, open steps, delete and
 //! purge, Comments and History. They drive the real commands through the mock runtime (ADR 0009).
 
-use mnemora_todo::purge_deleted;
+use mnemora_core::db::migrate::MigrationReport;
+use mnemora_core::module::Module;
+use mnemora_todo::{TodoModule, purge_deleted};
 use serde_json::{Value, json};
 
 use crate::test_support::TestApp;
@@ -558,6 +560,24 @@ fn purge_erases_what_was_deleted_over_thirty_days_ago_with_its_change_log() {
     // Nothing is left to erase the next time.
     let again = app.with_db_mut(|c| purge_deleted(c).unwrap());
     assert_eq!((again.tasks, again.lists, again.comments), (0, 0, 0));
+}
+
+#[test]
+fn the_modules_startup_hook_purges() {
+    let app = TestApp::new();
+    let old = create(&app, "old");
+    let kept = create(&app, "kept");
+    app.invoke::<()>("todo_task_delete", json!({ "id": old["id"] }))
+        .unwrap();
+    age(&app, "todo_tasks", &old["id"], 31);
+    app.with_db_mut(|c| {
+        TodoModule
+            .on_startup(c, &MigrationReport::default())
+            .unwrap();
+    });
+    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_tasks"), 1);
+    assert_eq!(inbox(&app), ["kept"]);
+    let _ = kept;
 }
 
 #[test]

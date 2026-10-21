@@ -837,7 +837,8 @@ export function createTodoMock() {
           if (!find(a.taskId)) throw missing();
           const own = comments
             .filter((c) => c.task_id === a.taskId && !c.deleted)
-            .sort((x, y) => x.created_at - y.created_at || (x.id < y.id ? -1 : 1));
+            // Ties keep the order they were added in, like Rust's time-ordered ids.
+            .sort((x, y) => x.created_at - y.created_at);
           return copy(own.map(wireComment));
         }
         case 'todo_comment_add': {
