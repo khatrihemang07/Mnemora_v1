@@ -14,6 +14,9 @@ pub enum TodoError {
     /// The List does not exist (or is deleted).
     #[error("That List no longer exists")]
     ListNotFound,
+    /// The Comment does not exist (or is deleted).
+    #[error("That comment no longer exists")]
+    CommentNotFound,
     /// The change-log snapshot could not be built.
     #[error("Could not record the change")]
     Snapshot(#[source] serde_json::Error),
@@ -23,7 +26,9 @@ impl From<TodoError> for AppError {
     fn from(e: TodoError) -> Self {
         let code = match &e {
             TodoError::Validation(_) => ErrorCode::Validation,
-            TodoError::TaskNotFound | TodoError::ListNotFound => ErrorCode::NotFound,
+            TodoError::TaskNotFound | TodoError::ListNotFound | TodoError::CommentNotFound => {
+                ErrorCode::NotFound
+            }
             TodoError::Snapshot(_) => ErrorCode::Internal,
         };
         let error = Self::new(code, e.to_string());

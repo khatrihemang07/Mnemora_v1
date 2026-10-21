@@ -2,8 +2,9 @@
   DonePage: what has been done, under a serif heading per day (Today, Yesterday, then the weekday
   with a small date), newest day first and newest first within a day. Rows show the time it was
   done and its List; the diamond reopens it (an old occurrence of a repeating Task explains why it
-  cannot). Days load a page at a time as you scroll: a sentinel under the list asks for the next
-  page just before it comes into view. Won't do joins this view later.
+  cannot). Tasks marked Won't do are listed with the done ones, with a ⊗ and "Won't do" and the time.
+  Days load a page at a time as you scroll: a sentinel under the list asks for the next page just
+  before it comes into view.
 -->
 <script lang="ts">
   import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query';

@@ -84,6 +84,9 @@ pub struct Task {
     /// Row update time: UTC milliseconds.
     #[specta(type = u32)]
     pub updated_at: i64,
+    /// How many live Comments it has: counted when read, never stored (and left out of the
+    /// change-log snapshot).
+    pub comment_count: u32,
 }
 
 /// The Inbox: open Tasks that belong to no List, in manual order.
@@ -109,6 +112,31 @@ pub fn validate_title(title: &str) -> Result<&str, TodoError> {
         ));
     }
     Ok(title)
+}
+
+/// Lowest and highest Priority: 1 is the most urgent, 4 means none.
+pub const PRIORITIES: std::ops::RangeInclusive<u32> = 1..=4;
+
+/// A Priority from 1 to 4.
+pub fn validate_priority(priority: u32) -> Result<u32, TodoError> {
+    if PRIORITIES.contains(&priority) {
+        Ok(priority)
+    } else {
+        Err(TodoError::Validation("Priority is 1 to 4"))
+    }
+}
+
+/// Longest notes, in characters.
+pub const MAX_NOTES_CHARS: usize = 100_000;
+
+/// Notes that are allowed: any text, empty included, up to 100,000 characters.
+pub fn validate_notes(notes: &str) -> Result<&str, TodoError> {
+    if notes.chars().count() > MAX_NOTES_CHARS {
+        return Err(TodoError::Validation(
+            "Notes can be at most 100,000 characters",
+        ));
+    }
+    Ok(notes)
 }
 
 /// Base-62 digits in byte order, so keys built from them sort the same as text and as numbers.

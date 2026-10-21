@@ -3,7 +3,7 @@
   main bundle. Symbols stay visible but faded; the text is typeset like MarkdownView. Includes
   shortcuts, list keys, auto-pairs, the slash menu, rich-text paste and ⌘/Ctrl-click links.
   `value` is the text and `onchange` reports every edit; saving is the caller's job. `onfinish` fires
-  on Esc and ⌘/Ctrl+Enter. `bare` drops the editor's focus ring for use inside a frame that shows
+  on Esc and ⌘/Ctrl+Enter. `checklist` draws `- [ ]` items as clickable square boxes (Todo's notes); the Journal keeps faded text. `bare` drops the editor's focus ring for use inside a frame that shows
   focus itself. Call `focus()` and `run()` (the phone KeyboardBar) through `bind:this`.
 -->
 <script lang="ts">
@@ -27,6 +27,8 @@
     font?: 'serif' | 'sans';
     spellcheck?: boolean;
     bare?: boolean;
+    /** Checklist items are clickable square boxes instead of faded `- [ ]` text. */
+    checklist?: boolean;
     /** Date and time the slash menu inserts, in the app's formats. */
     slashValues?: () => SlashValues;
     /** A CSS length: the editor scrolls inside it instead of growing without end. */
@@ -43,6 +45,7 @@
     font = 'serif',
     spellcheck = true,
     bare = false,
+    checklist = false,
     slashValues = defaultSlashValues,
     maxHeight,
     class: cls = '',
@@ -86,6 +89,7 @@
         placeholder,
         spellcheck,
         bare,
+        checklist,
         onchange: (text) => onchange(text),
         onfinish: () => onfinish?.(),
         onfocuschange: (f) => {

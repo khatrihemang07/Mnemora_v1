@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { AllView, InboxView, Task, TodayView, UpcomingView } from '../../lib/ipc/bindings';
 import {
   completedMessage,
+  deletedMessage,
+  priorityMessage,
+  priorityTone,
   quoted,
   withoutTask,
   withoutTaskInAll,
   withoutTaskInToday,
   withoutTaskInUpcoming,
+  wontMessage,
 } from './tasks';
 
 const task = (id: string): Task => ({ id, title: id }) as Task;
@@ -88,5 +92,24 @@ describe('withoutTaskInUpcoming', () => {
     expect(withoutTaskInUpcoming(view, 'c').days[1]?.tasks.map((t) => t.id)).toEqual(['d']);
     expect(withoutTaskInUpcoming(view, 'a').overdue).toEqual([]);
     expect(view.days).toHaveLength(2);
+  });
+});
+
+describe('toast wording', () => {
+  it('shows a title without its Markdown marks', () => {
+    expect(completedMessage('Pay **rent** at [the bank](https://x.y)')).toBe(
+      'Completed “Pay rent at the bank”',
+    );
+  });
+
+  it('names the Task for Won’t do, delete and Priority', () => {
+    expect(wontMessage('Renew gym card')).toBe('Won’t do “Renew gym card”');
+    expect(deletedMessage('Renew gym card')).toBe('Deleted “Renew gym card”');
+    expect(priorityMessage('Pay rent', 1)).toBe('“Pay rent” → P1');
+    expect(priorityMessage('Pay rent', 4)).toBe('“Pay rent” → No priority');
+  });
+
+  it('colours the ring for P1 to P3 only', () => {
+    expect([1, 2, 3, 4].map(priorityTone)).toEqual(['p1', 'p2', 'p3', 'plain']);
   });
 });

@@ -17,6 +17,7 @@ import {
 } from '@codemirror/state';
 import { EditorView, keymap, placeholder, type ViewUpdate } from '@codemirror/view';
 import { autoPair, pairBackspace } from './auto-pair';
+import { checklistBoxes } from './checklist';
 import { markdownDecorations } from './decorations';
 import type { Edit } from './edit';
 import { linkTemplate, makeLink, toggleBlock, toggleInline } from './format';
@@ -53,6 +54,8 @@ export interface EditorOptions {
   spellcheck: boolean;
   /** The container shows focus itself, so the editor draws no ring. */
   bare: boolean;
+  /** Draw Checklist items as clickable square boxes instead of faded `- [ ]` text. */
+  checklist?: boolean;
   onchange: (text: string) => void;
   /** Esc (with no slash menu open) or ⌘/Ctrl+Enter. */
   onfinish: () => void;
@@ -337,6 +340,7 @@ export function createEditor(opts: EditorOptions): EditorController {
     history(),
     markdown({ extensions: markdownExtensions, addKeymap: false, completeHTMLTags: false }),
     markdownDecorations,
+    ...(opts.checklist ? [checklistBoxes] : []),
     EditorView.lineWrapping,
     EditorView.contentAttributes.of({
       'aria-label': opts.label,

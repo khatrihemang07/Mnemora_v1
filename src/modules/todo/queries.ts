@@ -1,6 +1,7 @@
 import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
 import {
   type AllView,
+  type Comment,
   type Completion,
   commands,
   type DeleteChoice,
@@ -35,6 +36,9 @@ export const todoKeys = {
   done: (day: string) => ['todo', 'done', day] as const,
   dayCounts: (from: string, to: string, exclude: string | null) =>
     ['todo', 'day-counts', from, to, exclude] as const,
+  task: (id: string) => ['todo', 'task', id] as const,
+  comments: (id: string) => ['todo', 'comments', id] as const,
+  history: (id: string) => ['todo', 'history', id] as const,
 };
 
 /** The Inbox: open Tasks that belong to no List, in order. */
@@ -97,6 +101,28 @@ export const dayCountsQuery = (from: string, to: string, exclude: string | null)
     queryFn: () => unwrap(commands.todoDayCounts(from, to, exclude)),
   });
 
+/** One Task in any state, for the Task sheet. */
+export const taskQuery = (id: string) =>
+  queryOptions({
+    queryKey: todoKeys.task(id),
+    queryFn: () => unwrap(commands.todoTask(id)),
+    retry: false,
+  });
+
+/** A Task's Comments, oldest first. */
+export const commentsQuery = (taskId: string) =>
+  queryOptions({
+    queryKey: todoKeys.comments(taskId),
+    queryFn: () => unwrap(commands.todoComments(taskId)),
+  });
+
+/** A Task's History, newest line first. */
+export const historyQuery = (taskId: string) =>
+  queryOptions({
+    queryKey: todoKeys.history(taskId),
+    queryFn: () => unwrap(commands.todoTaskHistory(taskId)),
+  });
+
 export function invalidateTodo(): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: todoKeys.all });
 }
@@ -154,6 +180,51 @@ export function reopenTask(id: string): Promise<Task> {
 /** Puts a Task in a List, or in the Inbox when `listId` is null. */
 export function moveTask(id: string, listId: string | null): Promise<Task> {
   return unwrap(commands.todoTaskMove(id, listId));
+}
+
+/** Sets a Task's Priority, 1 (highest) to 4 (none). */
+export function setPriority(id: string, priority: number): Promise<Task> {
+  return unwrap(commands.todoTaskSetPriority(id, priority));
+}
+
+/** Marks an open, non-repeating Task Won't do. */
+export function wontDo(id: string): Promise<Task> {
+  return unwrap(commands.todoTaskWontDo(id));
+}
+
+/** Deletes a Task; `restoreTask` is Undo. */
+export function deleteTask(id: string): Promise<null> {
+  return unwrap(commands.todoTaskDelete(id));
+}
+
+export function restoreTask(id: string): Promise<Task> {
+  return unwrap(commands.todoTaskRestore(id));
+}
+
+/** Saves a Task's title and notes; saves of one `sessionId` are one History line. */
+export function updateTask(
+  id: string,
+  title: string,
+  notes: string,
+  sessionId: string,
+): Promise<Task> {
+  return unwrap(commands.todoTaskUpdate(id, title, notes, sessionId));
+}
+
+export function addComment(taskId: string, body: string): Promise<Comment> {
+  return unwrap(commands.todoCommentAdd(taskId, body));
+}
+
+export function editComment(id: string, body: string): Promise<Comment> {
+  return unwrap(commands.todoCommentEdit(id, body));
+}
+
+export function deleteComment(id: string): Promise<null> {
+  return unwrap(commands.todoCommentDelete(id));
+}
+
+export function restoreComment(id: string): Promise<Comment> {
+  return unwrap(commands.todoCommentRestore(id));
 }
 
 export function createList(name: string): Promise<TodoList> {

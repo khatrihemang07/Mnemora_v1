@@ -11,27 +11,58 @@ import {
   whenMessage,
 } from './dates';
 import { movedMessage } from './lists';
+import { openSteps, tickAllSteps } from './notes';
 import { todoPrefs } from './prefs.svelte';
 import {
   completeTask,
+  deleteTask,
   invalidateTodo,
   moveOverdue,
   moveTask,
   removeCachedTask,
   reopenTask,
+  restoreTask,
   restoreWhen,
+  setPriority,
   setWhen,
   skipTask,
+  updateTask,
+  wontDo,
 } from './queries';
-import { completedMessage } from './tasks';
+import { stepsPrompt } from './steps-prompt.svelte';
+import { completedMessage, deletedMessage, priorityMessage, wontMessage } from './tasks';
 
 /**
- * Ticks a Task: it leaves the page at once, then "Completed “…”" offers Undo, which reopens it in
- * its old place. A repeating Task stays: the toast says where it went ("· next Sat 24 Oct") and
- * Undo reopens that occurrence, which rewinds the Task. A failed write brings the Task back from
- * Rust's truth.
+ * Ticks a Task. One with unticked Checklist items asks first, every time (the Dialog offers
+ * Cancel, "Tick all and complete" and Complete); any other completes at once, see `completeNow`.
  */
 export async function tickTask(task: Task): Promise<void> {
+  if (task.state === 'open' && openSteps(task.notes) > 0) {
+    stepsPrompt.ask(task);
+    return;
+  }
+  await completeNow(task);
+}
+
+/** "Tick all and complete": the notes get every step ticked, then the Task is completed. */
+export async function tickAllAndComplete(task: Task): Promise<void> {
+  const notes = tickAllSteps(task.notes);
+  try {
+    await updateTask(task.id, task.title, notes, crypto.randomUUID());
+  } catch (e) {
+    notifyError(e instanceof IpcError ? e.message : "Couldn't tick the steps");
+    return;
+  }
+  await completeNow({ ...task, notes });
+}
+
+/**
+ * Completes a Task without asking: it leaves the page at once, then "Completed “…”" offers Undo,
+ * which reopens it in its old place. A repeating Task stays: the toast says where it went
+ * ("· next Sat 24 Oct") and Undo reopens that occurrence, which rewinds the Task. A failed write
+ * brings the Task back from Rust's truth. Returns the Task as it is now, or none on failure.
+ */
+export async function completeNow(task: Task): Promise<Task | null> {
   const repeating = task.repeat_freq !== null;
   if (!repeating) removeCachedTask(task.id);
   let done: Completion;
@@ -40,7 +71,7 @@ export async function tickTask(task: Task): Promise<void> {
   } catch {
     void invalidateTodo();
     notifyError("Couldn't complete the Task");
-    return;
+    return null;
   }
   void invalidateTodo();
   const next = done.occurrence && done.task.due_date;
@@ -52,6 +83,7 @@ export async function tickTask(task: Task): Promise<void> {
       .catch(() => notifyError("Couldn't reopen the Task"))
       .finally(() => void invalidateTodo());
   });
+  return done.task;
 }
 
 /** Moves a Task to a List (null is the Inbox); Undo puts it back where it was. */
@@ -183,4 +215,75 @@ export async function moveAllOverdue(date: string): Promise<void> {
   notifyUndo(movedAllMessage(moved.previous.length, date, todoClock.today), () =>
     undoWhen(moved.previous, "Couldn't undo the move"),
   );
+}
+
+/**
+ * Sets a Task's Priority (1 to 4). "“Pay rent” → P1" offers Undo; changing it again replaces the
+ * toast instead of stacking them.
+ */
+export async function setTaskPriority(task: Task, priority: number): Promise<void> {
+  if (task.priority === priority) return;
+  const before = task.priority;
+  try {
+    await setPriority(task.id, priority);
+  } catch (e) {
+    notifyError(e instanceof IpcError ? e.message : "Couldn't change the Priority");
+    return;
+  } finally {
+    void invalidateTodo();
+  }
+  notifyUndo(
+    priorityMessage(task.title, priority),
+    () => {
+      setPriority(task.id, before)
+        .catch(() => notifyError("Couldn't undo the Priority change"))
+        .finally(() => void invalidateTodo());
+    },
+    `priority-${task.id}`,
+  );
+}
+
+/**
+ * Won't do: the Task joins Done with a ⊗ and Undo reopens it. On a repeating Task it is Skip
+ * (the next date, nothing recorded).
+ */
+export async function wontDoTask(task: Task): Promise<void> {
+  if (task.state !== 'open') return;
+  if (task.repeat_freq !== null) {
+    await skipRepeating(task);
+    return;
+  }
+  removeCachedTask(task.id);
+  try {
+    await wontDo(task.id);
+  } catch (e) {
+    void invalidateTodo();
+    notifyError(e instanceof IpcError ? e.message : "Couldn't mark the Task Won't do");
+    return;
+  }
+  void invalidateTodo();
+  notifyUndo(wontMessage(task.title), () => {
+    reopenTask(task.id)
+      .catch(() => notifyError("Couldn't reopen the Task"))
+      .finally(() => void invalidateTodo());
+  });
+}
+
+/** Deletes a Task at once; the toast names it and Undo brings it back. Resolves true on success. */
+export async function deleteTaskWithUndo(task: Task): Promise<boolean> {
+  removeCachedTask(task.id);
+  try {
+    await deleteTask(task.id);
+  } catch {
+    void invalidateTodo();
+    notifyError("Couldn't delete the Task");
+    return false;
+  }
+  void invalidateTodo();
+  notifyUndo(deletedMessage(task.title), () => {
+    restoreTask(task.id)
+      .catch((e) => notifyError(e instanceof IpcError ? e.message : "Couldn't restore the Task"))
+      .finally(() => void invalidateTodo());
+  });
+  return true;
 }

@@ -20,6 +20,7 @@ import {
 import type {
   AllView,
   AppError,
+  Comment,
   Completion,
   DayCount,
   DeleteChoice,
@@ -37,10 +38,12 @@ import type {
   TodoList,
   UpcomingView,
 } from './bindings';
+import { historyOf, type LogRecord } from './mock-todo-history';
 
 const MAX_TITLE_CHARS = 500;
 const MAX_LIST_NAME_CHARS = 60;
 const MAX_EMOJI_CHARS = 16;
+const MAX_COMMENT_CHARS = 5000;
 
 const fail = (code: AppError['code'], message: string): AppError => ({
   code,
@@ -80,6 +83,16 @@ export function validateTitle(title: string): string {
     throw fail('validation', 'A title can be at most 500 characters');
   }
   return t;
+}
+
+/** Mirrors `validate_body`: the trimmed Comment or a validation error. */
+export function validateBody(body: string): string {
+  const b = body.trim();
+  if (!b) throw fail('validation', "A comment can't be blank");
+  if ([...b].length > MAX_COMMENT_CHARS) {
+    throw fail('validation', 'A comment can be at most 5000 characters');
+  }
+  return b;
 }
 
 /** Mirrors `validate_list_name`: returns the trimmed name or throws a validation error. */
@@ -178,12 +191,16 @@ function ruleOf(t: Task): RepeatRule | null {
   };
 }
 
-/** Mirrors `in_day`: timed Tasks first by time; ties keep the manual order. */
+/**
+ * Mirrors `in_day`: timed Tasks first by time; inside one time block the more urgent Priority
+ * goes first; ties keep the manual order.
+ */
 function inDay(a: Task, b: Task): number {
   if (a.due_time !== null && b.due_time !== null && a.due_time !== b.due_time) {
     return a.due_time < b.due_time ? -1 : 1;
   }
   if ((a.due_time === null) !== (b.due_time === null)) return a.due_time === null ? 1 : -1;
+  if (a.priority !== b.priority) return a.priority - b.priority;
   return byKey(a, b);
 }
 const byDateThenDay = (a: Task, b: Task) =>
@@ -198,10 +215,49 @@ const byListKey = (a: TodoList, b: TodoList) =>
 /** A Task as the mock stores it: `deleted` marks a soft delete, which Undo clears. */
 type Stored = Task & { deleted?: boolean };
 type StoredList = TodoList & { deleted?: boolean };
+type StoredComment = Comment & { deleted?: boolean };
 
 export function createTodoMock() {
   const all: Stored[] = [];
   const lists: StoredList[] = [];
+  const comments: StoredComment[] = [];
+  /** The change log, per Task: what History reads (the mock keeps it apart from the Tasks). */
+  const logs = new Map<string, LogRecord[]>();
+  let seq = 0;
+  /** Mirrors `record_in`: a session keeps one record, and a `create` stays a `create`. */
+  const record = (
+    t: Stored,
+    op: LogRecord['op'],
+    opts: { session?: string; deletedAt?: number } = {},
+  ) => {
+    const { deleted: _d, comment_count: _c, ...rest } = t;
+    const snapshot = { ...copy(rest), deleted_at: opts.deletedAt ?? null };
+    const at = Date.now();
+    const session = opts.session ?? null;
+    const records = logs.get(t.id) ?? [];
+    logs.set(t.id, records);
+    const same = session === null ? undefined : records.find((r) => r.session === session);
+    if (same) {
+      same.snapshot = snapshot;
+      same.at = at;
+      if (same.op !== 'create') same.op = op;
+      return;
+    }
+    records.push({ op, session, snapshot, at, seq: ++seq });
+  };
+  const listLabel = (id: string | null) => {
+    if (id === null) return '📥 Inbox';
+    const list = lists.find((l) => l.id === id);
+    return list ? `${list.emoji ?? '≡'} ${list.name}` : 'a deleted List';
+  };
+  const findComment = (id: unknown) => comments.find((c) => c.id === id && !c.deleted);
+  const commentMissing = () => fail('not_found', 'That comment no longer exists');
+  const wireComment = (c: StoredComment): Comment => {
+    const { deleted: _deleted, ...comment } = c;
+    return comment;
+  };
+  const countComments = (taskId: string) =>
+    comments.filter((c) => c.task_id === taskId && !c.deleted).length;
   const live = () => all.filter((t) => !t.deleted);
   const find = (id: unknown) => live().find((t) => t.id === id);
   const missing = () => fail('not_found', 'That Task no longer exists');
@@ -245,11 +301,12 @@ export function createTodoMock() {
     task.repeat_days = next?.days ?? null;
     task.repeat_mode = next?.mode ?? null;
     task.updated_at = Date.now();
+    record(task, 'update');
   };
   /** A Task without the mock's own flag, like the wire shape. */
   const wire = (t: Stored): Task => {
     const { deleted: _deleted, ...task } = t;
-    return task;
+    return { ...task, comment_count: countComments(t.id) };
   };
   const wireList = (l: StoredList): TodoList => {
     const { deleted: _deleted, ...list } = l;
@@ -297,8 +354,10 @@ export function createTodoMock() {
             sort_key: keyAfter(last),
             created_at: now,
             updated_at: now,
+            comment_count: 0,
           };
           all.push(task);
+          record(task, 'create');
           return copy(wire(task));
         }
         case 'todo_task_complete': {
@@ -328,14 +387,19 @@ export function createTodoMock() {
               updated_at: now,
             };
             all.push(occurrence);
+            record(occurrence, 'create');
+            for (const c of comments.filter((c) => c.task_id === task.id))
+              c.task_id = occurrence.id;
             task.notes = resetChecklist(task.notes);
             task.due_date = next;
             task.updated_at = now;
+            record(task, 'tick');
             const done: Completion = { task: wire(task), occurrence: wire(occurrence) };
             return copy(done);
           }
           task.state = 'done';
           task.closed_at = task.updated_at = Date.now();
+          record(task, 'tick');
           const done: Completion = { task: wire(task), occurrence: null };
           return copy(done);
         }
@@ -351,6 +415,7 @@ export function createTodoMock() {
           if (next === null) throw fail('validation', 'That repeat runs past the year 9999');
           task.due_date = next;
           task.updated_at = Date.now();
+          record(task, 'update');
           return copy(wire(task));
         }
         case 'todo_done': {
@@ -363,7 +428,9 @@ export function createTodoMock() {
           const size = Math.min(Math.max(Number(a.days) || 1, 1), 60);
           const dayOf = (ms: number) =>
             new Date(ms + local.offset_min * 60_000).toISOString().slice(0, 10);
-          const doneTasks = live().filter((t) => t.state === 'done' && t.closed_at !== null);
+          const doneTasks = live().filter(
+            (t) => (t.state === 'done' || t.state === 'wont') && t.closed_at !== null,
+          );
           const found = [...new Set(doneTasks.map((t) => dayOf(t.closed_at as number)))]
             .filter((d) => before === null || d < before)
             .sort()
@@ -413,16 +480,20 @@ export function createTodoMock() {
                 "This Task has changed since, so the occurrence can't be reopened",
               );
             }
+            for (const c of comments.filter((c) => c.task_id === task.id)) c.task_id = parent.id;
             if (parent.notes === resetChecklist(task.notes)) parent.notes = task.notes;
             parent.due_date = task.due_date;
             parent.due_time = task.due_time;
             parent.updated_at = Date.now();
+            record(parent, 'tick');
             task.deleted = true;
+            record(task, 'delete', { deletedAt: Date.now() });
             return copy(wire(parent));
           }
           task.state = 'open';
           task.closed_at = null;
           task.updated_at = Date.now();
+          record(task, 'tick');
           return copy(wire(task));
         }
         case 'todo_task_move': {
@@ -433,6 +504,7 @@ export function createTodoMock() {
           if (task.list_id !== listId) {
             task.list_id = listId;
             task.updated_at = Date.now();
+            record(task, 'move');
           }
           return copy(wire(task));
         }
@@ -651,11 +723,13 @@ export function createTodoMock() {
           };
           for (const task of live().filter((t) => t.list_id === list.id)) {
             if (choice.kind === 'delete_tasks') {
+              record(task, 'delete', { deletedAt: now });
               task.deleted = true;
               deletion.deleted_task_ids.push(task.id);
             } else {
               task.list_id = target;
               task.updated_at = now;
+              record(task, 'move');
               deletion.moved_task_ids.push(task.id);
             }
           }
@@ -674,16 +748,139 @@ export function createTodoMock() {
           list.updated_at = now;
           for (const id of deletion.deleted_task_ids) {
             const task = all.find((t) => t.id === id);
-            if (task) task.deleted = false;
+            if (task) {
+              task.deleted = false;
+              record(task, 'restore');
+            }
           }
           for (const id of deletion.moved_task_ids) {
             const task = find(id);
             if (task) {
               task.list_id = list.id;
               task.updated_at = now;
+              record(task, 'move');
             }
           }
           return copy(wireList(list));
+        }
+        case 'todo_task': {
+          const task = find(a.id);
+          if (!task) throw missing();
+          return copy(wire(task));
+        }
+        case 'todo_task_update': {
+          const title = validateTitle(a.title as string);
+          if ([...(a.notes as string)].length > 100_000) {
+            throw fail('validation', 'Notes can be at most 100,000 characters');
+          }
+          const session = a.sessionId as string;
+          if (!session.trim()) throw fail('validation', 'An editing session needs an id');
+          const task = find(a.id);
+          if (!task) throw missing();
+          const notes = a.notes as string;
+          if (task.title !== title || task.notes !== notes) {
+            task.title = title;
+            task.notes = notes;
+            task.updated_at = Date.now();
+            record(task, 'update', { session });
+          }
+          return copy(wire(task));
+        }
+        case 'todo_task_set_priority': {
+          const priority = a.priority as number;
+          if (!Number.isInteger(priority) || priority < 1 || priority > 4) {
+            throw fail('validation', 'Priority is 1 to 4');
+          }
+          const task = find(a.id);
+          if (!task) throw missing();
+          if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+          if (task.priority !== priority) {
+            task.priority = priority;
+            task.updated_at = Date.now();
+            record(task, 'update');
+          }
+          return copy(wire(task));
+        }
+        case 'todo_task_wont_do': {
+          const task = find(a.id);
+          if (!task) throw missing();
+          if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+          if (ruleOf(task)) throw fail('validation', 'A repeating Task is skipped instead');
+          task.state = 'wont';
+          task.closed_at = task.updated_at = Date.now();
+          record(task, 'tick');
+          return copy(wire(task));
+        }
+        case 'todo_task_delete': {
+          const task = find(a.id);
+          if (!task) throw missing();
+          const now = Date.now();
+          task.deleted = true;
+          task.updated_at = now;
+          record(task, 'delete', { deletedAt: now });
+          return null;
+        }
+        case 'todo_task_restore': {
+          const task = all.find((t) => t.id === a.id);
+          if (!task) throw missing();
+          if (!task.deleted) throw fail('validation', "That Task isn't deleted");
+          task.deleted = false;
+          task.updated_at = Date.now();
+          if (task.list_id !== null && !findList(task.list_id)) task.list_id = null;
+          record(task, 'restore');
+          return copy(wire(task));
+        }
+        case 'todo_task_history': {
+          const task = find(a.id);
+          if (!task) throw missing();
+          return copy(historyOf(logs.get(task.id) ?? [], listLabel));
+        }
+        case 'todo_comments': {
+          if (!find(a.taskId)) throw missing();
+          const own = comments
+            .filter((c) => c.task_id === a.taskId && !c.deleted)
+            // Ties keep the order they were added in, like Rust's time-ordered ids.
+            .sort((x, y) => x.created_at - y.created_at);
+          return copy(own.map(wireComment));
+        }
+        case 'todo_comment_add': {
+          const body = validateBody(a.body as string);
+          if (!find(a.taskId)) throw missing();
+          const now = Date.now();
+          const comment: StoredComment = {
+            id: crypto.randomUUID(),
+            task_id: a.taskId as string,
+            body,
+            edited: false,
+            created_at: now,
+            updated_at: now,
+          };
+          comments.push(comment);
+          return copy(wireComment(comment));
+        }
+        case 'todo_comment_edit': {
+          const body = validateBody(a.body as string);
+          const comment = findComment(a.id);
+          if (!comment) throw commentMissing();
+          if (comment.body !== body) {
+            comment.body = body;
+            comment.updated_at = Math.max(Date.now(), comment.created_at + 1);
+            comment.edited = true;
+          }
+          return copy(wireComment(comment));
+        }
+        case 'todo_comment_delete': {
+          const comment = findComment(a.id);
+          if (!comment) throw commentMissing();
+          comment.deleted = true;
+          return null;
+        }
+        case 'todo_comment_restore': {
+          const comment = comments.find((c) => c.id === a.id);
+          if (!comment) throw commentMissing();
+          if (!comment.deleted) throw fail('validation', "That comment isn't deleted");
+          comment.deleted = false;
+          return copy(wireComment(comment));
         }
         default:
           return undefined;

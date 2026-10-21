@@ -1,4 +1,5 @@
 import type { AllView, Task, TodayView, UpcomingView } from '../../lib/ipc/bindings';
+import { plainTitle } from './notes';
 
 /** Longest title shown in a toast before it is cut with an ellipsis. */
 const TOAST_TITLE_CHARS = 34;
@@ -10,8 +11,11 @@ export function quoted(text: string): string {
   return `“${shown}${chars.length > TOAST_TITLE_CHARS ? '…' : ''}”`;
 }
 
+/** A Task's title for a toast: its Markdown marks removed, in curly quotes, cut at 34 characters. */
+export const quotedTitle = (title: string): string => quoted(plainTitle(title));
+
 /** The Undo toast after a tick: names the Task, e.g. `Completed “Buy oat milk”`. */
-export const completedMessage = (title: string): string => `Completed ${quoted(title)}`;
+export const completedMessage = (title: string): string => `Completed ${quotedTitle(title)}`;
 
 /** A page of Tasks (the Inbox, a List) without one Task: what it shows the instant it is ticked. */
 export function withoutTask<V extends { tasks: Task[] }>(view: V, id: string): V {
@@ -43,3 +47,25 @@ export function withoutTaskInUpcoming(view: UpcomingView, id: string): UpcomingV
       .filter((d) => d.tasks.length > 0),
   };
 }
+
+/** The Undo toast after Won't do: names the Task. */
+export const wontMessage = (title: string): string => `Won’t do ${quotedTitle(title)}`;
+
+/** The Undo toast after deleting a Task. */
+export const deletedMessage = (title: string): string => `Deleted ${quotedTitle(title)}`;
+
+/** The Undo toast after a Priority change, e.g. `“Pay rent” → P1`. */
+export const priorityMessage = (title: string, priority: number): string =>
+  `${quotedTitle(title)} → ${priority < 4 ? `P${priority}` : 'No priority'}`;
+
+/** What the checkbox's ring shows for a Priority: 1 red, 2 amber, 3 violet, 4 nothing. */
+export const priorityTone = (priority: number): 'p1' | 'p2' | 'p3' | 'plain' =>
+  priority === 1 ? 'p1' : priority === 2 ? 'p2' : priority === 3 ? 'p3' : 'plain';
+
+/** The menu and chip name of each Priority. */
+export const PRIORITY_NAMES: Record<number, string> = {
+  1: 'Priority 1',
+  2: 'Priority 2',
+  3: 'Priority 3',
+  4: 'No priority',
+};

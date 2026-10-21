@@ -2,9 +2,9 @@
 
 use mnemora_core::error::AppError;
 use mnemora_todo::{
-    AllView, Completion, DayCount, DeleteChoice, DoneView, DueChange, InboxView, ListDeletion,
-    ListView, LocalNow, NewWhen, OverdueMove, RepeatRule, SidebarView, Task, TodayView, TodoList,
-    UpcomingView,
+    AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, HistoryLine,
+    InboxView, ListDeletion, ListView, LocalNow, NewWhen, OverdueMove, RepeatRule, SidebarView,
+    Task, TodayView, TodoList, UpcomingView,
 };
 use tauri::State;
 
@@ -173,6 +173,119 @@ pub fn todo_task_move(
     list_id: Option<String>,
 ) -> Result<Task, AppError> {
     mnemora_todo::move_task(&mut lock(&state.db), &id, list_id.as_deref())
+}
+
+/// One Task in any state, with its Comment count: what the Task sheet opens.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
+    mnemora_todo::task(&lock(&state.db), &id)
+}
+
+/// Replaces a Task's title and notes: the Task sheet's autosave. All the saves of one opening of
+/// the sheet carry the same `session_id`, so the change log keeps one `update` record for them.
+/// A blank, multi-line or over-long title is refused; the same text changes nothing.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_update(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+    notes: String,
+    session_id: String,
+) -> Result<Task, AppError> {
+    mnemora_todo::update_task(&mut lock(&state.db), &id, &title, &notes, &session_id)
+}
+
+/// Sets an open Task's Priority: 1 (highest) to 4 (none, the default). Records an `update` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_set_priority(
+    state: State<'_, AppState>,
+    id: String,
+    priority: u32,
+) -> Result<Task, AppError> {
+    mnemora_todo::set_priority(&mut lock(&state.db), &id, priority)
+}
+
+/// Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. A repeating Task
+/// is refused (it is skipped instead). Undo is `todo_task_reopen`. Records a `tick` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_wont_do(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
+    mnemora_todo::wont_do(&mut lock(&state.db), &id)
+}
+
+/// Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
+/// stay in Done. Records a `delete` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    mnemora_todo::delete_task(&mut lock(&state.db), &id)
+}
+
+/// Undoes `todo_task_delete`. A Task whose List was deleted meanwhile returns to the Inbox.
+/// Records a `restore` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_restore(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
+    mnemora_todo::restore_task(&mut lock(&state.db), &id)
+}
+
+/// A Task's Comments, oldest first.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_comments(
+    state: State<'_, AppState>,
+    task_id: String,
+) -> Result<Vec<Comment>, AppError> {
+    mnemora_todo::comments(&lock(&state.db), &task_id)
+}
+
+/// Adds a Comment (line breaks allowed, up to 5000 characters) to a Task.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_comment_add(
+    state: State<'_, AppState>,
+    task_id: String,
+    body: String,
+) -> Result<Comment, AppError> {
+    mnemora_todo::add_comment(&mut lock(&state.db), &task_id, &body)
+}
+
+/// Replaces a Comment's text; it then shows "edited".
+#[tauri::command]
+#[specta::specta]
+pub fn todo_comment_edit(
+    state: State<'_, AppState>,
+    id: String,
+    body: String,
+) -> Result<Comment, AppError> {
+    mnemora_todo::edit_comment(&mut lock(&state.db), &id, &body)
+}
+
+/// Deletes a Comment (erased after 30 days); `todo_comment_restore` is Undo.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_comment_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    mnemora_todo::delete_comment(&mut lock(&state.db), &id)
+}
+
+/// Undoes `todo_comment_delete`.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_comment_restore(state: State<'_, AppState>, id: String) -> Result<Comment, AppError> {
+    mnemora_todo::restore_comment(&mut lock(&state.db), &id)
+}
+
+/// A Task's History: readable lines built from the change log, newest first.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_history(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<HistoryLine>, AppError> {
+    mnemora_todo::task_history(&lock(&state.db), &id)
 }
 
 /// The sidebar's data: the Inbox's open count, Today's count (due today plus Overdue, with the
@@ -1714,14 +1827,8 @@ mod tests {
         );
         let first = complete_on(&app, &a, DEFAULT_TODAY);
         complete_on(&app, &a, "2026-10-22");
-        // There is no delete command for one Task yet: soft-delete it as that command will.
-        app.with_db(|c| {
-            c.execute(
-                "UPDATE todo_tasks SET deleted_at = 1 WHERE id = ?1",
-                [a["id"].as_str().unwrap()],
-            )
+        app.invoke::<()>("todo_task_delete", json!({ "id": a["id"] }))
             .unwrap();
-        });
         let day = local("2026-10-22", DEFAULT_NOW);
         let done: Value = app
             .invoke(
@@ -1917,6 +2024,80 @@ mod tests {
         )
     }
 
+    /// The titles of Won't do Tasks in Done, newest first.
+    fn wont_titles(app: &TestApp, local: &Value) -> Value {
+        let view: Value = app
+            .invoke(
+                "todo_done",
+                json!({ "before": null, "days": 60, "local": local }),
+            )
+            .unwrap();
+        Value::Array(
+            view["days"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|d| d["tasks"].as_array().unwrap().iter())
+                .filter(|t| t["state"] == "wont")
+                .map(|t| t["title"].clone())
+                .collect(),
+        )
+    }
+
+    /// Every open Task as `[title, priority]`, in the All view's order.
+    fn priorities(app: &TestApp) -> Value {
+        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let rows = view["groups"].as_array().unwrap().iter().flat_map(|g| {
+            g["tasks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| json!([t["title"], t["priority"]]))
+        });
+        Value::Array(rows.collect())
+    }
+
+    /// `[[owner, [bodies]]]` for every live created Task, then every live occurrence copy
+    /// (`title (occurrence)`); an edited comment has a `*` after it.
+    fn comment_rows(app: &TestApp, tasks: &[Value], occurrences: &[Value]) -> Value {
+        let rows = tasks
+            .iter()
+            .map(|id| (id, ""))
+            .chain(occurrences.iter().map(|id| (id, " (occurrence)")))
+            .filter_map(|(id, suffix)| {
+                let task: Value = app.invoke("todo_task", json!({ "id": id })).ok()?;
+                let list: Value = app.invoke("todo_comments", json!({ "taskId": id })).ok()?;
+                let bodies: Vec<String> = list
+                    .as_array()?
+                    .iter()
+                    .map(|c| {
+                        let mark = if c["edited"] == true { "*" } else { "" };
+                        format!("{}{mark}", c["body"].as_str().unwrap_or_default())
+                    })
+                    .collect();
+                Some(json!([
+                    format!("{}{suffix}", task["title"].as_str()?),
+                    bodies
+                ]))
+            });
+        Value::Array(rows.collect())
+    }
+
+    /// The lines of one Task's History, newest first; none for a Task that is gone.
+    fn history_lines(app: &TestApp, id: Option<&Value>) -> Value {
+        let lines: Value = id
+            .and_then(|id| app.invoke("todo_task_history", json!({ "id": id })).ok())
+            .unwrap_or(json!([]));
+        Value::Array(
+            lines
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|l| l["text"].clone())
+                .collect(),
+        )
+    }
+
     const DEFAULT_TODAY: &str = "2026-10-21";
     const DEFAULT_NOW: &str = "14:05";
 
@@ -2004,6 +2185,7 @@ mod tests {
         let mut deletions: Vec<Value> = Vec::new();
         let mut moves: Vec<Value> = Vec::new();
         let mut occurrences: Vec<Value> = Vec::new();
+        let mut comments: Vec<Value> = Vec::new();
         // The clock steps run against: the case's, unless a step pins its own.
         let clock = |step: &Value| {
             json!({
@@ -2055,6 +2237,29 @@ mod tests {
                     json!({ "changes": moves[usize::try_from(step["move"].as_u64().unwrap()).unwrap()]["previous"] }),
                 ),
                 "move" => app.invoke("todo_task_move", json!({ "id": task, "listId": list })),
+                "priority" => app.invoke(
+                    "todo_task_set_priority",
+                    json!({ "id": task, "priority": step["priority"] }),
+                ),
+                "update" => app.invoke(
+                    "todo_task_update",
+                    json!({
+                        "id": task, "title": step["title"], "notes": step["notes"],
+                        "sessionId": step["session"]
+                    }),
+                ),
+                "comment_add" => app.invoke(
+                    "todo_comment_add",
+                    json!({ "taskId": task, "body": step["body"] }),
+                ),
+                "comment_edit" => app.invoke(
+                    "todo_comment_edit",
+                    json!({ "id": pick(&step["comment"], &comments), "body": step["body"] }),
+                ),
+                "comment_delete" | "comment_restore" => app.invoke(
+                    &format!("todo_{op}"),
+                    json!({ "id": pick(&step["comment"], &comments) }),
+                ),
                 "list_create" => app.invoke("todo_list_create", json!({ "name": step["name"] })),
                 "list_rename" => app.invoke(
                     "todo_list_rename",
@@ -2089,6 +2294,7 @@ mod tests {
                         "create" => tasks.push(out["id"].clone()),
                         "list_create" => lists.push(out["id"].clone()),
                         "list_delete" => deletions.push(out),
+                        "comment_add" => comments.push(out["id"].clone()),
                         "move_overdue" => moves.push(out),
                         "complete" if !out["occurrence"].is_null() => {
                             occurrences.push(out["occurrence"]["id"].clone());
@@ -2100,7 +2306,11 @@ mod tests {
                 Err(e) => results.push(e["code"].clone()),
             }
         }
-        rule_outputs(&app, results, &clock(&Value::Null))
+        let history_of = usize::try_from(c["history_of"].as_u64().unwrap_or(0)).unwrap();
+        let mut out = rule_outputs(&app, results, &clock(&Value::Null));
+        out["comments"] = comment_rows(&app, &tasks, &occurrences);
+        out["history"] = history_lines(&app, tasks.get(history_of));
+        out
     }
 
     /// Everything a fixture case can expect, read from the app after its steps ran.
@@ -2125,6 +2335,8 @@ mod tests {
             "all": all_groups(app),
             "repeats": repeats(app),
             "done": done_titles(app, view_clock),
+            "wont": wont_titles(app, view_clock),
+            "priorities": priorities(app),
         })
     }
 

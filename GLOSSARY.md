@@ -70,11 +70,11 @@ Where Tasks with no List wait to be sorted. It also shows undated Tasks from Lis
 _Avoid_: Unsorted, default list
 
 **Priority**:
-How urgent a Task is, from P1 (most urgent) to P4. P4 means no priority and is the default.
+How urgent a Task is, from P1 (most urgent) to P4. P4 means no priority and is the default. P1 to P3 show as a red, amber or violet ring on the checkbox, and inside a time block Today and Upcoming list the more urgent first.
 _Avoid_: Importance, flag, level
 
 **Won't do**:
-A Task closed without being done. It is kept with the done Tasks but never counts as done. On a repeating Task it skips to the next Due date and keeps no record.
+A Task closed without being done. It is kept with the done Tasks, shown with a ⊗, but never counts as done. On a repeating Task it skips to the next Due date and keeps no record.
 _Avoid_: Cancelled, dismissed, archived
 
 **Comment**:
@@ -84,6 +84,14 @@ _Avoid_: Note, reply, message
 **History**:
 The list of every change made to a Task, oldest to newest, read from the app's record of changes. It cannot be edited.
 _Avoid_: Log, audit trail, activity
+
+**Task sheet**:
+The centred sheet (a bottom sheet on a phone) that shows one Task: title, List, When and Priority chips, notes, Comments, History and when it was created and done. It has its own address, `/todo?task=‹id›`, and saves every change as you make it.
+_Avoid_: Detail view, editor, modal
+
+**Open steps**:
+The unticked Checklist items in a Task's notes. Completing such a Task asks "Cancel · Tick all and complete · Complete" every time.
+_Avoid_: Subtasks, pending items
 
 **Checklist item**:
 A `- [ ]` line inside Markdown text (an Entry, or a Task's notes) that can be ticked in place. It is not a Task and has no date.

@@ -122,10 +122,14 @@ pub(crate) fn complete(
         sort_key: task.sort_key.clone(),
         created_at: now,
         updated_at: now,
+        comment_count: 0,
     };
     repo::insert(conn, &occurrence)?;
     record(conn, &occurrence, ChangeOp::Create)?;
     move_comments(conn, &task.id, &occurrence.id, now)?;
+    let mut occurrence = occurrence;
+    occurrence.comment_count = repo::count_comments(conn, &occurrence.id)?;
+    task.comment_count = 0;
     task.notes = reset_checklist(&task.notes);
     task.due_date = Some(next);
     task.updated_at = now;
@@ -159,6 +163,7 @@ pub(crate) fn rewind(conn: &Connection, occurrence: Task, parent_id: &str) -> Ap
     }
     let now = now_ms();
     move_comments(conn, &occurrence.id, &task.id, now)?;
+    task.comment_count = repo::count_comments(conn, &task.id)?;
     if task.notes == reset_checklist(&occurrence.notes) {
         task.notes.clone_from(&occurrence.notes);
     }

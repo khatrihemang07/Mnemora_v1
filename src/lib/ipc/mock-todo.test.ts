@@ -7,9 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   AllView,
   AppError,
+  Comment,
   Completion,
   DayCount,
   DoneView,
+  HistoryLine,
   ListDeletion,
   LocalNow,
   OverdueMove,
@@ -45,7 +47,21 @@ interface Step {
     | 'move_overdue'
     | 'undo_move'
     | 'skip'
-    | 'reopen_occurrence';
+    | 'reopen_occurrence'
+    | 'wont_do'
+    | 'delete'
+    | 'restore'
+    | 'priority'
+    | 'update'
+    | 'comment_add'
+    | 'comment_edit'
+    | 'comment_delete'
+    | 'comment_restore';
+  priority?: number;
+  notes?: string;
+  session?: string;
+  body?: string;
+  comment?: number | string;
   title?: string;
   date?: string | null;
   time?: string | null;
@@ -69,6 +85,8 @@ interface FixtureRepeat {
   anchor?: number;
 }
 interface Case {
+  /** Which created Task's History the case reads (default the first). */
+  history_of?: number;
   today?: string;
   now?: string;
   rule: string;
@@ -106,6 +124,7 @@ function run(c: Case) {
   const deletions: ListDeletion[] = [];
   const moves: OverdueMove[] = [];
   const occurrences: string[] = [];
+  const comments: string[] = [];
   // The clock steps run against: the case's, unless a step pins its own.
   const clock = (step?: Step): LocalNow => ({
     today: step?.today ?? c.today ?? DEFAULT_TODAY,
@@ -162,6 +181,29 @@ function run(c: Case) {
         case 'move':
           mock.handle('todo_task_move', { id, listId: list });
           break;
+        case 'priority':
+          mock.handle('todo_task_set_priority', { id, priority: step.priority });
+          break;
+        case 'update':
+          mock.handle('todo_task_update', {
+            id,
+            title: step.title,
+            notes: step.notes,
+            sessionId: step.session,
+          });
+          break;
+        case 'comment_add':
+          comments.push(
+            (mock.handle('todo_comment_add', { taskId: id, body: step.body }) as Comment).id,
+          );
+          break;
+        case 'comment_edit':
+          mock.handle('todo_comment_edit', { id: pick(step.comment, comments), body: step.body });
+          break;
+        case 'comment_delete':
+        case 'comment_restore':
+          mock.handle(`todo_${step.op}`, { id: pick(step.comment, comments) });
+          break;
         case 'list_create':
           lists.push((mock.handle('todo_list_create', { name: step.name }) as TodoList).id);
           break;
@@ -206,8 +248,35 @@ function run(c: Case) {
     to: '2027-12-31',
     exclude: null,
   }) as DayCount[];
+  const commentRows = [
+    ...tasks.map((taskId) => [taskId, ''] as const),
+    ...occurrences.map((taskId) => [taskId, ' (occurrence)'] as const),
+  ].flatMap(([taskId, suffix]) => {
+    try {
+      const task = mock.handle('todo_task', { id: taskId }) as Task;
+      const list = mock.handle('todo_comments', { taskId }) as Comment[];
+      return [[`${task.title}${suffix}`, list.map((c) => `${c.body}${c.edited ? '*' : ''}`)]];
+    } catch {
+      return [];
+    }
+  });
+  let history: string[] = [];
+  try {
+    const lines = mock.handle('todo_task_history', {
+      id: tasks[c.history_of ?? 0],
+    }) as HistoryLine[];
+    history = lines.map((l) => l.text);
+  } catch {
+    // A Task that is gone has no History.
+  }
   return {
     results,
+    comments: commentRows,
+    history,
+    wont: doneView.days.flatMap((d) =>
+      d.tasks.filter((t) => t.state === 'wont').map((t) => t.title),
+    ),
+    priorities: all.groups.flatMap((g) => g.tasks.map((t) => [t.title, t.priority])),
     dues: all.groups.flatMap((g) => g.tasks.map((t) => [t.title, t.due_date, t.due_time])),
     today: { overdue: titles(todayView.overdue), tasks: titles(todayView.tasks) },
     upcoming: {

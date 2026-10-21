@@ -83,7 +83,8 @@ pub struct OverdueMove {
     pub previous: Vec<DueChange>,
 }
 
-/// Timed Tasks first, by time; then the rest; ties keep the manual order.
+/// Timed Tasks first, by time; then the rest. Within one time block (the same time, or no time)
+/// the more urgent Priority goes first; ties keep the manual order.
 fn in_day(a: &Task, b: &Task) -> Ordering {
     let by_time = match (&a.due_time, &b.due_time) {
         (Some(x), Some(y)) => x.cmp(y),
@@ -92,6 +93,7 @@ fn in_day(a: &Task, b: &Task) -> Ordering {
         (None, None) => Ordering::Equal,
     };
     by_time
+        .then_with(|| a.priority.cmp(&b.priority))
         .then_with(|| a.sort_key.cmp(&b.sort_key))
         .then_with(|| a.id.cmp(&b.id))
 }

@@ -20,7 +20,7 @@ use crate::when::LocalNow;
 use crate::{list_repo, repo};
 
 /// Change-log entity name for Lists.
-const ENTITY: &str = "todo_list";
+pub(crate) const ENTITY: &str = "todo_list";
 
 /// Writes a change-log record for a List; the snapshot carries `deleted_at` like Task ones do.
 fn record(

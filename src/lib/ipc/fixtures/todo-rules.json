@@ -1,5 +1,5 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027. sidebar_today: [Today's count (open Tasks due today plus Overdue), the Overdue part]. Repeat: set_when{task,date?,time?,repeat?: {freq,every,weekdays?,anchor?,mode}}; complete and skip take the step's clock (today); reopen_occurrence{occurrence: n} reopens the n-th occurrence copy recorded by a complete. repeats: every open repeating Task as [title, freq, every, days (weekday bitmask or day of month), mode]. done: titles in Done, newest first.",
+  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027. sidebar_today: [Today's count (open Tasks due today plus Overdue), the Overdue part]. Repeat: set_when{task,date?,time?,repeat?: {freq,every,weekdays?,anchor?,mode}}; complete and skip take the step's clock (today); reopen_occurrence{occurrence: n} reopens the n-th occurrence copy recorded by a complete. repeats: every open repeating Task as [title, freq, every, days (weekday bitmask or day of month), mode]. done: titles in Done, newest first. Sheet: priority{task,priority}, wont_do{task}, delete{task}, restore{task}, update{task,title,notes,session} (autosave of the sheet), comment_add{task,body}, comment_edit{comment,body}, comment_delete{comment}, comment_restore{comment} (comments are referenced by the index of the n-th added). priorities: every open Task as [title, priority] in the All view's order. wont: titles of Won't do Tasks in Done. comments: [[owner, [bodies, a * after edited ones]]] for every live created Task (an occurrence copy is 'title (occurrence)'). history: the lines of the case's `history_of` Task (default the first), newest first. Keep fixtures free of a session edit interleaved with other writes to the same Task: ties in the change log's millisecond clock would order them differently in Rust and the mock.",
   "cases": [
     {
       "rule": "title.blank",
@@ -2771,6 +2771,984 @@
         "dues": [],
         "done": ["Plain"],
         "repeats": []
+      }
+    },
+    {
+      "rule": "priority.set",
+      "name": "a Task starts at 4 and takes 1 to 4",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 1
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 0
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 5
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 4
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation", "validation", "ok"],
+        "priorities": [["a", 4]]
+      }
+    },
+    {
+      "rule": "priority.set",
+      "name": "a Priority change shows on the Task",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "priorities": [["a", 2]]
+      }
+    },
+    {
+      "rule": "priority.closed",
+      "name": "a closed Task has no Priority to change",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation"]
+      }
+    },
+    {
+      "rule": "priority.order",
+      "name": "Today orders by Priority inside a time block, never across times",
+      "steps": [
+        {
+          "op": "create",
+          "title": "plain",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "urgent",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "low 9",
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "high 9",
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "p1 at 10",
+          "date": "2026-10-21",
+          "time": "10:00"
+        },
+        {
+          "op": "priority",
+          "task": 1,
+          "priority": 1
+        },
+        {
+          "op": "priority",
+          "task": 3,
+          "priority": 2
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "today": {
+          "overdue": [],
+          "tasks": ["high 9", "low 9", "p1 at 10", "urgent", "plain"]
+        }
+      }
+    },
+    {
+      "rule": "priority.order",
+      "name": "Upcoming orders by Priority inside a day too",
+      "steps": [
+        {
+          "op": "create",
+          "title": "first",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "create",
+          "title": "second",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "create",
+          "title": "third",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "priority",
+          "task": 1,
+          "priority": 3
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "upcoming": {
+          "overdue": [],
+          "days": [["2026-10-23", ["third", "second", "first"]]]
+        }
+      }
+    },
+    {
+      "rule": "wont.state",
+      "name": "Won't do closes a Task into Done and takes it out of the open lists",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "wont_do",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "inbox": ["b"],
+        "done": ["a"],
+        "wont": ["a"],
+        "counts": [1]
+      }
+    },
+    {
+      "rule": "wont.reopen",
+      "name": "reopening brings a Won't do Task back in its old place",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "wont_do",
+          "task": 0
+        },
+        {
+          "op": "reopen",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["a", "b"],
+        "done": [],
+        "wont": []
+      }
+    },
+    {
+      "rule": "wont.refused",
+      "name": "Won't do needs an open, non-repeating Task",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "wont_do",
+          "task": 0
+        },
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 1,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "wont_do",
+          "task": 1
+        },
+        {
+          "op": "wont_do",
+          "task": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation", "ok", "ok", "validation", "not_found"],
+        "wont": []
+      }
+    },
+    {
+      "rule": "wont.counts",
+      "name": "a Won't do Task does not count towards Today or the sidebar",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "b",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "wont_do",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "today": {
+          "overdue": [],
+          "tasks": ["b"]
+        },
+        "sidebar_today": [1, 0],
+        "counts": [1]
+      }
+    },
+    {
+      "rule": "delete.task",
+      "name": "deleting takes a Task out of every list and restore puts it back in place",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "create",
+          "title": "c"
+        },
+        {
+          "op": "delete",
+          "task": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["a", "c"],
+        "counts": [2]
+      }
+    },
+    {
+      "rule": "delete.task",
+      "name": "restore returns the Task where it was",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "create",
+          "title": "c"
+        },
+        {
+          "op": "delete",
+          "task": 1
+        },
+        {
+          "op": "restore",
+          "task": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "inbox": ["a", "b", "c"]
+      }
+    },
+    {
+      "rule": "delete.refused",
+      "name": "deleting twice, restoring a live Task and unknown ids are refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "restore",
+          "task": 0
+        },
+        {
+          "op": "delete",
+          "task": 0
+        },
+        {
+          "op": "delete",
+          "task": 0
+        },
+        {
+          "op": "restore",
+          "task": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "ok", "not_found", "not_found"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "delete.task",
+      "name": "a deleted dated Task leaves Today and the counts",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "b",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "delete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "today": {
+          "overdue": [],
+          "tasks": ["b"]
+        },
+        "sidebar_today": [1, 0]
+      }
+    },
+    {
+      "rule": "delete.list",
+      "name": "restoring a Task whose List was deleted meanwhile puts it in the Inbox",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "delete",
+          "task": 0
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "restore",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "inbox": ["a"],
+        "lists": []
+      }
+    },
+    {
+      "rule": "update.title",
+      "name": "a sheet save replaces the title and notes and refuses a bad title",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "a2",
+          "notes": "n",
+          "session": "s1"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "",
+          "notes": "n",
+          "session": "s1"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "two\nlines",
+          "notes": "n",
+          "session": "s1"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "a3",
+          "notes": "n",
+          "session": " "
+        },
+        {
+          "op": "update",
+          "task": "nope",
+          "title": "a",
+          "notes": "",
+          "session": "s"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation", "validation", "validation", "not_found"],
+        "inbox": ["a2"]
+      }
+    },
+    {
+      "rule": "comment.crud",
+      "name": "comments are added oldest first, edited with a mark, deleted and restored",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "  one  "
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "two"
+        },
+        {
+          "op": "comment_edit",
+          "comment": 0,
+          "body": "one!"
+        },
+        {
+          "op": "comment_delete",
+          "comment": 1
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "three"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok"],
+        "comments": [["a", ["one!*", "three"]]]
+      }
+    },
+    {
+      "rule": "comment.crud",
+      "name": "a deleted comment comes back with Undo",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "keep"
+        },
+        {
+          "op": "comment_delete",
+          "comment": 0
+        },
+        {
+          "op": "comment_restore",
+          "comment": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "comments": [["a", ["keep"]]]
+      }
+    },
+    {
+      "rule": "comment.refused",
+      "name": "blank and too long comments are refused; so are unknown ones",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": " "
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        },
+        {
+          "op": "comment_add",
+          "task": "nope",
+          "body": "hi"
+        },
+        {
+          "op": "comment_edit",
+          "comment": "nope",
+          "body": "hi"
+        },
+        {
+          "op": "comment_restore",
+          "comment": "nope",
+          "body": "hi"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "validation", "not_found", "not_found", "not_found"],
+        "comments": [["a", []]]
+      }
+    },
+    {
+      "rule": "comment.occurrence",
+      "name": "comments move to the copy when a repeating Task is completed",
+      "steps": [
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "one"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "two"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "comments": [["r", ["two"]], ["r (occurrence)", ["one"]]]
+      }
+    },
+    {
+      "rule": "comment.occurrence",
+      "name": "reopening the latest occurrence hands the comments back",
+      "steps": [
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "one"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "two"
+        },
+        {
+          "op": "reopen_occurrence",
+          "occurrence": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok"],
+        "comments": [["r", ["one", "two"]]]
+      }
+    },
+    {
+      "rule": "history.lines",
+      "name": "changes read as lines, newest first",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_emoji",
+          "list": 0,
+          "emoji": "💼"
+        },
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": "09:30"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 1
+        },
+        {
+          "op": "move",
+          "task": 0,
+          "list": 0
+        },
+        {
+          "op": "wont_do",
+          "task": 0
+        },
+        {
+          "op": "reopen",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "history": [
+          "Reopened",
+          "Won’t do",
+          "Moved 📥 Inbox → 💼 Work",
+          "Priority P4 → P1",
+          "Due date Thu 22 Oct → Fri 23 Oct",
+          "Time set to 09:30",
+          "Due date no date → Thu 22 Oct",
+          "Created"
+        ]
+      }
+    },
+    {
+      "rule": "history.session",
+      "name": "title and notes edits of one sheet opening are one line",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "a",
+          "notes": "h",
+          "session": "s1"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "a",
+          "notes": "hi",
+          "session": "s1"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "b",
+          "notes": "hi",
+          "session": "s2"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "history": ["Title edited", "Notes edited", "Created"]
+      }
+    },
+    {
+      "rule": "history.session",
+      "name": "title and notes edits of one opening are one line each",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "b",
+          "notes": "",
+          "session": "s1"
+        },
+        {
+          "op": "update",
+          "task": 0,
+          "title": "b",
+          "notes": "hi",
+          "session": "s1"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "history": ["Title edited", "Notes edited", "Created"]
+      }
+    },
+    {
+      "rule": "history.repeat",
+      "name": "repeats and removals read naturally",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a",
+          "date": "2026-10-21",
+          "time": "08:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "time": "08:00",
+          "repeat": {
+            "freq": "week",
+            "every": 2,
+            "weekdays": [1, 6],
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "time": "08:00",
+          "repeat": {
+            "freq": "day",
+            "every": 3,
+            "mode": "after"
+          }
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "history": [
+          "Due date Wed 21 Oct → no date",
+          "Time removed",
+          "Time 08:00 → 09:00",
+          "Repeat removed",
+          "Repeat Every 2 weeks on Mon, Sat → Every 3 days after done",
+          "Repeat set: Every 2 weeks on Mon, Sat",
+          "Created"
+        ]
+      }
+    },
+    {
+      "rule": "history.occurrence",
+      "name": "completing a repeating Task is an occurrence, and so is its copy",
+      "steps": [
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "history": ["Done (occurrence of 21 Oct)", "Repeat set: Every day", "Created"]
+      }
+    },
+    {
+      "rule": "history.occurrence",
+      "name": "reopening it reads as reopening that occurrence",
+      "steps": [
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "reopen_occurrence",
+          "occurrence": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "history": [
+          "Reopened (occurrence of 21 Oct)",
+          "Done (occurrence of 21 Oct)",
+          "Repeat set: Every day",
+          "Created"
+        ]
+      }
+    },
+    {
+      "rule": "history.delete",
+      "name": "deleting and restoring show, and a deleted List is named",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "inbox"
+        },
+        {
+          "op": "delete",
+          "task": 0
+        },
+        {
+          "op": "restore",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "history": ["Restored", "Deleted", "Moved ≡ Home → 📥 Inbox", "Created"]
+      }
+    },
+    {
+      "rule": "comment.multiline",
+      "name": "a comment may hold line breaks",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "comment_add",
+          "task": 0,
+          "body": "one\ntwo"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "comments": [["a", ["one\ntwo"]]]
       }
     }
   ]
