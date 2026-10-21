@@ -3,6 +3,14 @@
 
 use rusqlite_migration::{M, Migrations};
 
+/// Fractional-index keys (ADR 0012) never end in `0`: trailing zeros add nothing to a key but
+/// leave no room after it. The first slices counted up from `V0000000`; dropping the zeros keeps
+/// the order (equal-length digit strings compare the same either way).
+const TRIM_KEY_ZEROS: &str = "UPDATE todo_tasks SET sort_key = rtrim(sort_key, '0')
+         WHERE sort_key LIKE '%0' AND rtrim(sort_key, '0') <> '';
+     UPDATE todo_lists SET sort_key = rtrim(sort_key, '0')
+         WHERE sort_key LIKE '%0' AND rtrim(sort_key, '0') <> '';";
+
 pub fn all() -> Migrations<'static> {
     Migrations::new(vec![
         // Dates are `YYYY-MM-DD` and times `HH:MM`, both floating local. `sort_key` is text that
@@ -109,5 +117,6 @@ pub fn all() -> Migrations<'static> {
                  INSERT INTO todo_comments_fts(rowid, body) VALUES (new.rowid, new.body);
              END;",
         ),
+        M::up(TRIM_KEY_ZEROS),
     ])
 }

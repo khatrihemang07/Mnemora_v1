@@ -2,20 +2,21 @@
 
 use mnemora_core::error::AppError;
 use mnemora_todo::{
-    AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, HistoryLine,
-    InboxView, ListDeletion, ListView, LocalNow, NewTaskDetails, NewWhen, OverdueMove,
-    ParseRequest, Parsed, QuickEdit, RepeatRule, SidebarView, Task, TodayView, TodoList,
+    AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, GroupBy, GroupKey,
+    HistoryLine, InboxView, ListDeletion, ListView, LocalNow, NewTaskDetails, NewWhen, OverdueMove,
+    ParseRequest, Parsed, QuickEdit, RepeatRule, SidebarView, Task, TaskSort, TodayView, TodoList,
     UpcomingView,
 };
 use tauri::State;
 
 use crate::state::{AppState, lock};
 
-/// The Inbox: open Tasks that belong to no List, in manual order (new Tasks last).
+/// The Inbox: open Tasks that belong to no List, grouped and sorted as the Preferences say, then
+/// "No date, in a List" for the undated Tasks that sit in a List (not counted in the badge).
 #[tauri::command]
 #[specta::specta]
-pub fn todo_inbox(state: State<'_, AppState>) -> Result<InboxView, AppError> {
-    mnemora_todo::inbox(&lock(&state.db))
+pub fn todo_inbox(state: State<'_, AppState>, local: LocalNow) -> Result<InboxView, AppError> {
+    mnemora_todo::inbox(&lock(&state.db), &local)
 }
 
 /// Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
@@ -336,18 +337,89 @@ pub fn todo_lists(state: State<'_, AppState>, local: LocalNow) -> Result<Sidebar
     mnemora_todo::sidebar(&lock(&state.db), &local)
 }
 
-/// One List and its open Tasks in manual order.
+/// One List: its open Tasks grouped and sorted as the List says, and its Done Tasks as the
+/// Done-in-Lists Preference says.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_list(state: State<'_, AppState>, id: String) -> Result<ListView, AppError> {
-    mnemora_todo::list_view(&lock(&state.db), &id)
+pub fn todo_list(
+    state: State<'_, AppState>,
+    id: String,
+    local: LocalNow,
+) -> Result<ListView, AppError> {
+    mnemora_todo::list_view(&lock(&state.db), &id, &local)
 }
 
-/// Open Tasks grouped by List, the Inbox first. Empty groups are left out.
+/// Open Tasks grouped as the Preference says (by List, the Inbox first, unless changed). Empty
+/// groups are left out.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_all(state: State<'_, AppState>) -> Result<AllView, AppError> {
-    mnemora_todo::all(&lock(&state.db))
+pub fn todo_all(state: State<'_, AppState>, local: LocalNow) -> Result<AllView, AppError> {
+    mnemora_todo::all(&lock(&state.db), &local)
+}
+
+/// Moves an open Task between two neighbours of the shared manual order: `before` is the Task
+/// directly above its new place and `after` the one directly below (either may be none). `target`
+/// is what the group it lands in adopts, as `TaskGroup.adopt` says: a day sets the Due date (a
+/// past day is refused, and dragging among Overdue Tasks adopts nothing), a Priority sets the
+/// Priority, a List moves it there. Records one change: `move` when the List changed, `update`
+/// otherwise, none when nothing changed.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_reorder(
+    state: State<'_, AppState>,
+    id: String,
+    before: Option<String>,
+    after: Option<String>,
+    target: Vec<GroupKey>,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::reorder_task(
+        &mut lock(&state.db),
+        &id,
+        before.as_deref(),
+        after.as_deref(),
+        &target,
+        &local,
+    )
+}
+
+/// Moves a List between two neighbours of the manual List order (`before` above, `after` below).
+#[tauri::command]
+#[specta::specta]
+pub fn todo_list_reorder(
+    state: State<'_, AppState>,
+    id: String,
+    before: Option<String>,
+    after: Option<String>,
+) -> Result<TodoList, AppError> {
+    mnemora_todo::reorder_list(
+        &mut lock(&state.db),
+        &id,
+        before.as_deref(),
+        after.as_deref(),
+    )
+}
+
+/// Sets how a List's page sorts the Tasks inside each group.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_list_set_sort(
+    state: State<'_, AppState>,
+    id: String,
+    sort: TaskSort,
+) -> Result<TodoList, AppError> {
+    mnemora_todo::set_list_sort(&mut lock(&state.db), &id, sort)
+}
+
+/// Sets how a List's page groups its Tasks: none, priority or due.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_list_set_group(
+    state: State<'_, AppState>,
+    id: String,
+    group_by: GroupBy,
+) -> Result<TodoList, AppError> {
+    mnemora_todo::set_list_group(&mut lock(&state.db), &id, group_by)
 }
 
 /// Adds a List at the bottom. Names are unique ignoring case and accents, and at most 60
@@ -410,15 +482,22 @@ mod tests {
     use mnemora_todo::TodoModule;
     use serde_json::{Value, json};
 
-    use crate::test_support::TestApp;
+    use crate::test_support::{TestApp, inbox_tasks_of, overdue_of, tasks_of};
+
+    /// The clock the view commands that need one run against.
+    fn clock() -> Value {
+        json!({ "today": "2026-10-21", "now": "14:05", "offset_min": 0 })
+    }
 
     fn create(app: &TestApp, title: &str) -> Result<Value, Value> {
         app.invoke("todo_task_create", json!({ "title": title }))
     }
 
     fn inbox_titles(app: &TestApp) -> Vec<String> {
-        let view: Value = app.invoke("todo_inbox", json!({})).unwrap();
-        view["tasks"]
+        let view: Value = app
+            .invoke("todo_inbox", json!({ "local": clock() }))
+            .unwrap();
+        inbox_tasks_of(&view)
             .as_array()
             .unwrap()
             .iter()
@@ -662,7 +741,17 @@ mod tests {
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].entries[0].body, "Written before Todo existed");
         mnemora_todo::create_task(&mut conn, "Works after the upgrade", None, None, None).unwrap();
-        assert_eq!(mnemora_todo::inbox(&conn).unwrap().tasks.len(), 1);
+        let local = mnemora_todo::LocalNow {
+            today: "2026-10-21".into(),
+            now: "14:05".into(),
+            offset_min: 0,
+        };
+        assert_eq!(
+            mnemora_todo::inbox(&conn, &local).unwrap().groups[0]
+                .tasks
+                .len(),
+            1
+        );
 
         let again = db::migrate::run(&mut conn, &after, &backups).unwrap();
         assert!(again.applied.is_empty(), "a second run changes nothing");
@@ -769,10 +858,10 @@ mod tests {
         );
 
         let view: Value = app
-            .invoke("todo_list", json!({ "id": id_of(&home) }))
+            .invoke("todo_list", json!({ "id": id_of(&home), "local": clock() }))
             .unwrap();
         assert_eq!(view["list"]["name"], "Home");
-        let titles: Vec<_> = view["tasks"]
+        let titles: Vec<_> = tasks_of(&view)
             .as_array()
             .unwrap()
             .iter()
@@ -780,7 +869,7 @@ mod tests {
             .collect();
         assert_eq!(titles, [json!("a"), json!("b")]);
         let err = app
-            .invoke::<Value>("todo_list", json!({ "id": "nope" }))
+            .invoke::<Value>("todo_list", json!({ "id": "nope", "local": clock() }))
             .unwrap_err();
         assert_eq!(err["code"], "not_found");
     }
@@ -847,9 +936,9 @@ mod tests {
         app.invoke::<Value>("todo_list_restore", json!({ "deletion": deletion }))
             .unwrap();
         let view: Value = app
-            .invoke("todo_list", json!({ "id": id_of(&home) }))
+            .invoke("todo_list", json!({ "id": id_of(&home), "local": clock() }))
             .unwrap();
-        assert_eq!(view["tasks"].as_array().unwrap().len(), 2);
+        assert_eq!(tasks_of(&view).as_array().unwrap().len(), 2);
         assert_eq!(
             ops_since(&app, before),
             [
@@ -1054,7 +1143,7 @@ mod tests {
             .invoke("todo_today", json!({ "local": kolkata }))
             .unwrap();
         assert_eq!(titles(&view["done"]), json!(["a"]));
-        assert_eq!(titles(&view["tasks"]), json!(["c"]));
+        assert_eq!(titles(&tasks_of(&view)), json!(["c"]));
         assert_eq!(
             view["total"], 2,
             "one open and one done today; b was done yesterday"
@@ -1300,7 +1389,7 @@ mod tests {
 
     fn open_task(app: &TestApp, task: &Value) -> Value {
         let id = task["id"].as_str().unwrap();
-        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let view: Value = app.invoke("todo_all", json!({ "local": clock() })).unwrap();
         view["groups"]
             .as_array()
             .unwrap()
@@ -1613,10 +1702,10 @@ mod tests {
         );
         let day = local(DEFAULT_TODAY, DEFAULT_NOW);
         let today: Value = app.invoke("todo_today", json!({ "local": day })).unwrap();
-        assert_eq!(titles(&today["tasks"]), json!(["Water the plants"]));
+        assert_eq!(titles(&tasks_of(&today)), json!(["Water the plants"]));
         complete_on(&app, &a, DEFAULT_TODAY);
         let today: Value = app.invoke("todo_today", json!({ "local": day })).unwrap();
-        assert_eq!(titles(&today["tasks"]), json!([]));
+        assert_eq!(titles(&tasks_of(&today)), json!([]));
         assert_eq!(titles(&today["done"]), json!(["Water the plants"]));
         assert_eq!(today["total"], 1);
         let done: Value = app
@@ -2005,12 +2094,21 @@ mod tests {
     // Shared rule fixtures: the same file runs against the browser mock in
     // src/lib/ipc/mock-todo.test.ts (ADR 0009). Keep `run_rule_case` in step with `run` there.
     const RULES: &str = include_str!("../../src/lib/ipc/fixtures/todo-rules.json");
+    const ORDER_RULES: &str = include_str!("../../src/lib/ipc/fixtures/todo-order-rules.json");
 
     /// The All view as `[[group name, [titles]]]`, the shape the fixtures expect.
     fn all_groups(app: &TestApp) -> Value {
-        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let view: Value = app.invoke("todo_all", json!({ "local": clock() })).unwrap();
+        let sidebar: Value = app
+            .invoke("todo_lists", json!({ "local": clock() }))
+            .unwrap();
         let groups = view["groups"].as_array().unwrap().iter().map(|g| {
-            let name = g["list"]["name"].as_str().unwrap_or("Inbox");
+            let name = sidebar["lists"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["list"]["id"] == g["key"]["list_id"])
+                .map_or("Inbox", |e| e["list"]["name"].as_str().unwrap());
             let titles: Vec<&str> = g["tasks"]
                 .as_array()
                 .unwrap()
@@ -2024,7 +2122,7 @@ mod tests {
 
     /// Every open repeating Task as `[title, freq, every, days, mode]`, in the All view's order.
     fn repeats(app: &TestApp) -> Value {
-        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let view: Value = app.invoke("todo_all", json!({ "local": clock() })).unwrap();
         let rows = view["groups"].as_array().unwrap().iter().flat_map(|g| {
             let open = g["tasks"].as_array().unwrap().iter();
             open.filter(|t| !t["repeat_freq"].is_null()).map(|t| {
@@ -2086,7 +2184,7 @@ mod tests {
 
     /// Every open Task as `[title, priority]`, in the All view's order.
     fn priorities(app: &TestApp) -> Value {
-        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let view: Value = app.invoke("todo_all", json!({ "local": clock() })).unwrap();
         let rows = view["groups"].as_array().unwrap().iter().flat_map(|g| {
             g["tasks"]
                 .as_array()
@@ -2154,7 +2252,7 @@ mod tests {
 
     /// Every open Task as `[title, due date, due time]`, in the All view's order.
     fn dues(app: &TestApp) -> Value {
-        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let view: Value = app.invoke("todo_all", json!({ "local": clock() })).unwrap();
         let rows = view["groups"].as_array().unwrap().iter().flat_map(|g| {
             g["tasks"]
                 .as_array()
@@ -2168,7 +2266,7 @@ mod tests {
     /// Today as `{ overdue, tasks }` titles; what was done today depends on the real clock.
     fn today_groups(app: &TestApp, local: &Value) -> Value {
         let view: Value = app.invoke("todo_today", json!({ "local": local })).unwrap();
-        json!({ "overdue": titles(&view["overdue"]), "tasks": titles(&view["tasks"]) })
+        json!({ "overdue": titles(&overdue_of(&view)), "tasks": titles(&tasks_of(&view)) })
     }
 
     /// Upcoming as `{ overdue, days: [[date, titles]] }`.
@@ -2176,10 +2274,16 @@ mod tests {
         let view: Value = app
             .invoke("todo_upcoming", json!({ "local": local }))
             .unwrap();
-        let days = view["days"].as_array().unwrap().iter();
+        let days = view["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|g| g["key"]["kind"] == "day");
         json!({
-            "overdue": titles(&view["overdue"]),
-            "days": days.map(|d| json!([d["date"], titles(&d["tasks"])])).collect::<Vec<_>>(),
+            "overdue": titles(&overdue_of(&view)),
+            "days": days
+                .map(|d| json!([d["key"]["date"], titles(&d["tasks"])]))
+                .collect::<Vec<_>>(),
         })
     }
 
@@ -2220,12 +2324,16 @@ mod tests {
     #[allow(clippy::too_many_lines)]
     fn run_rule_case(c: &Value) -> Value {
         let app = TestApp::new();
+        // The cases predate grouping: they read Today flat unless they choose otherwise.
+        app.set_pref("todo.group_today", json!("none"));
         let mut tasks: Vec<Value> = Vec::new();
         let mut lists: Vec<Value> = Vec::new();
         let mut deletions: Vec<Value> = Vec::new();
         let mut moves: Vec<Value> = Vec::new();
         let mut occurrences: Vec<Value> = Vec::new();
         let mut comments: Vec<Value> = Vec::new();
+        // The change-log ops each `reorder` step recorded.
+        let mut reorder_ops: Vec<Value> = Vec::new();
         // The clock steps run against: the case's, unless a step pins its own.
         let clock = |step: &Value| {
             json!({
@@ -2323,6 +2431,59 @@ mod tests {
                     "todo_list_restore",
                     json!({ "deletion": pick(&step["deletion"], &deletions) }),
                 ),
+                "pref" => {
+                    app.set_pref(
+                        &format!("todo.{}", step["key"].as_str().unwrap()),
+                        step["value"].clone(),
+                    );
+                    Ok(Value::Null)
+                }
+                "reorder" => {
+                    let logged = ops_since(&app, 0).len();
+                    // A fixture's `{kind: list, list: n}` names the n-th created List.
+                    let target: Vec<Value> = step["target"]
+                        .as_array()
+                        .map(|keys| {
+                            keys.iter()
+                                .map(|k| {
+                                    if k["kind"] == "list" {
+                                        json!({ "kind": "list", "list_id": pick(&k["list"], &lists) })
+                                    } else {
+                                        k.clone()
+                                    }
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    let out = app.invoke(
+                        "todo_task_reorder",
+                        json!({
+                            "id": task,
+                            "before": pick(&step["before"], &tasks),
+                            "after": pick(&step["after"], &tasks),
+                            "target": target,
+                            "local": clock(step)
+                        }),
+                    );
+                    reorder_ops.push(op_names(&app, logged));
+                    out
+                }
+                "list_reorder" => app.invoke(
+                    "todo_list_reorder",
+                    json!({
+                        "id": list,
+                        "before": pick(&step["before"], &lists),
+                        "after": pick(&step["after"], &lists)
+                    }),
+                ),
+                "list_sort" => app.invoke(
+                    "todo_list_set_sort",
+                    json!({ "id": list, "sort": step["sort"] }),
+                ),
+                "list_group" => app.invoke(
+                    "todo_list_set_group",
+                    json!({ "id": list, "groupBy": step["group_by"] }),
+                ),
                 _ => app.invoke(
                     &format!("todo_task_{op}"),
                     json!({ "id": task, "local": clock(step) }),
@@ -2348,9 +2509,88 @@ mod tests {
         }
         let history_of = usize::try_from(c["history_of"].as_u64().unwrap_or(0)).unwrap();
         let mut out = rule_outputs(&app, results, &clock(&Value::Null));
+        out["views"] = view_groups(&app, &clock(&Value::Null), &lists);
+        out["reorder_ops"] = Value::Array(reorder_ops);
         out["comments"] = comment_rows(&app, &tasks, &occurrences);
         out["history"] = history_lines(&app, tasks.get(history_of));
         out
+    }
+
+    /// The ops of the Todo changes from the n-th on, oldest first.
+    fn op_names(app: &TestApp, logged: usize) -> Value {
+        Value::Array(
+            ops_since(app, logged)
+                .into_iter()
+                .map(|(op, _)| json!(op))
+                .collect(),
+        )
+    }
+
+    /// A group's name in the fixtures: `plain`, `overdue`, `p1`, `list:Home` (`list:Inbox`),
+    /// `day:2026-10-22`, `due:today`, `no_date_in_list`.
+    fn group_label(key: &Value, list_names: &Value) -> String {
+        let kind = key["kind"].as_str().unwrap();
+        match kind {
+            "priority" => format!("p{}", key["priority"]),
+            "list" => format!(
+                "list:{}",
+                key["list_id"]
+                    .as_str()
+                    .map_or("Inbox", |id| list_names[id].as_str().unwrap_or("?"))
+            ),
+            "day" => format!("day:{}", key["date"].as_str().unwrap()),
+            "due" => format!("due:{}", key["bucket"].as_str().unwrap()),
+            other => other.to_owned(),
+        }
+    }
+
+    /// Every view's groups as `{view: [[group name, [titles]]]}`: today, upcoming, inbox, all, and
+    /// `list0`, `list1`, … for the created Lists that still exist.
+    fn view_groups(app: &TestApp, view_clock: &Value, lists: &[Value]) -> Value {
+        let sidebar: Value = app
+            .invoke("todo_lists", json!({ "local": view_clock }))
+            .unwrap();
+        let names: serde_json::Map<String, Value> = sidebar["lists"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                (
+                    e["list"]["id"].as_str().unwrap().to_owned(),
+                    e["list"]["name"].clone(),
+                )
+            })
+            .collect();
+        let names = Value::Object(names);
+        let shape = |view: &Value| {
+            Value::Array(
+                view["groups"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|g| json!([group_label(&g["key"], &names), titles(&g["tasks"])]))
+                    .collect(),
+            )
+        };
+        let local = json!({ "local": view_clock });
+        let mut out = serde_json::Map::new();
+        for (name, command) in [
+            ("today", "todo_today"),
+            ("upcoming", "todo_upcoming"),
+            ("inbox", "todo_inbox"),
+            ("all", "todo_all"),
+        ] {
+            let view: Value = app.invoke(command, local.clone()).unwrap();
+            out.insert(name.to_owned(), shape(&view));
+        }
+        for (i, id) in lists.iter().enumerate() {
+            if let Ok(view) =
+                app.invoke::<Value>("todo_list", json!({ "id": id, "local": view_clock }))
+            {
+                out.insert(format!("list{i}"), shape(&view));
+            }
+        }
+        Value::Object(out)
     }
 
     /// Everything a fixture case can expect, read from the app after its steps ran.
@@ -2382,21 +2622,40 @@ mod tests {
 
     #[test]
     fn the_shared_rule_fixtures_hold() {
-        let rules: Value = serde_json::from_str(RULES).unwrap();
-        let cases = rules["cases"].as_array().unwrap();
+        let mut cases = Vec::new();
+        for file in [RULES, ORDER_RULES] {
+            let rules: Value = serde_json::from_str(file).unwrap();
+            cases.extend(rules["cases"].as_array().unwrap().clone());
+        }
         assert!(!cases.is_empty());
-        for c in cases {
+        // Every miss is reported, not just the first.
+        let mut misses = Vec::new();
+        for c in &cases {
             let actual = run_rule_case(c);
-            let expected = c["expect"].as_object().unwrap();
-            for (key, want) in expected {
-                assert_eq!(
-                    &actual[key],
-                    want,
-                    "{}: {} ({key})",
-                    c["rule"].as_str().unwrap(),
-                    c["name"].as_str().unwrap()
-                );
+            let who = format!(
+                "{}: {}",
+                c["rule"].as_str().unwrap(),
+                c["name"].as_str().unwrap()
+            );
+            for (key, want) in c["expect"].as_object().unwrap() {
+                // `views` holds one entry per view: a case names only the ones it checks.
+                if key == "views" {
+                    for (view, groups) in want.as_object().unwrap() {
+                        if &actual["views"][view] != groups {
+                            misses.push(format!(
+                                "{who} (views.{view})\n  want {groups}\n  got  {}",
+                                actual["views"][view]
+                            ));
+                        }
+                    }
+                } else if &actual[key] != want {
+                    misses.push(format!(
+                        "{who} ({key})\n  want {want}\n  got  {}",
+                        actual[key]
+                    ));
+                }
             }
         }
+        assert!(misses.is_empty(), "{}", misses.join("\n"));
     }
 }

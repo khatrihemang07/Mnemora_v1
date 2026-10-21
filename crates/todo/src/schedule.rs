@@ -11,7 +11,9 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::arrange::{GroupBy, GroupContext, GroupKey, TaskGroup, ViewPrefs, group_tasks};
 use crate::error::TodoError;
+use crate::list_service::ordered_lists;
 use crate::recurrence::{RepeatRule, Rule};
 use crate::repeat::rule_of;
 use crate::repo;
@@ -22,33 +24,27 @@ use crate::when::{LocalNow, resolve_when, validate_date, validate_pickable, vali
 /// Today: what is late, what is due, and what is already done.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct TodayView {
-    /// Open Tasks due before today, oldest date first.
-    pub overdue: Vec<Task>,
-    /// Open Tasks due today: timed ones by time, then the rest in manual order. A timed Task whose
-    /// time has passed stays here.
-    pub tasks: Vec<Task>,
+    /// How today's Tasks are grouped (a Preference).
+    pub group_by: GroupBy,
+    /// Overdue on top (open Tasks due before today, oldest date first), then today's Tasks in
+    /// groups: timed ones by time, then the rest in manual order, a more urgent Priority first
+    /// inside one time block. A timed Task whose time has passed stays here. Priority groups
+    /// appear only when some Task due today has a Priority.
+    pub groups: Vec<TaskGroup>,
     /// Tasks done today, earliest first. Won't do is not counted.
     pub done: Vec<Task>,
     /// Overdue, due and done today together: the "of M" in "N of M done".
     pub total: u32,
 }
 
-/// The Tasks due on one day of Upcoming.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
-pub struct UpcomingDay {
-    /// `YYYY-MM-DD`.
-    pub date: String,
-    /// Timed Tasks by time, then the rest in manual order.
-    pub tasks: Vec<Task>,
-}
-
-/// Upcoming: Overdue on top, then only the days from tomorrow on that have Tasks.
+/// Upcoming: Overdue on top, then the Tasks from tomorrow on in groups.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct UpcomingView {
-    /// Open Tasks due before today, oldest date first.
-    pub overdue: Vec<Task>,
-    /// Days with Tasks, earliest first.
-    pub days: Vec<UpcomingDay>,
+    /// How the coming Tasks are grouped (a Preference): by day unless changed.
+    pub group_by: GroupBy,
+    /// Overdue first, then the groups. By day, only days that have Tasks, earliest first; inside
+    /// any group Tasks run by date, timed ones by time, then the manual order.
+    pub groups: Vec<TaskGroup>,
 }
 
 /// The number of open Tasks due on one date.
@@ -261,10 +257,20 @@ pub fn move_overdue(conn: &mut Connection, date: &str, local: &LocalNow) -> AppR
     })
 }
 
+/// The group of Tasks that are late, which only reorders: Overdue never takes a past date.
+fn overdue_group(tasks: Vec<Task>) -> Option<TaskGroup> {
+    (!tasks.is_empty()).then(|| TaskGroup {
+        key: GroupKey::Overdue,
+        adopt: Vec::new(),
+        tasks,
+    })
+}
+
 /// Today's groups. Overdue is only ever by date: a Task due today stays in Today when its time
 /// has passed.
 pub fn today(conn: &Connection, local: &LocalNow) -> AppResult<TodayView> {
     local.check()?;
+    let prefs = ViewPrefs::read(conn)?;
     let (start, end) = local.today_range_ms()?;
     let (mut overdue, mut tasks) = (Vec::new(), Vec::new());
     for task in repo::open_dated(conn)? {
@@ -279,13 +285,36 @@ pub fn today(conn: &Connection, local: &LocalNow) -> AppResult<TodayView> {
         }
     }
     overdue.sort_by(by_date_then_day);
-    tasks.sort_by(in_day);
     let done = repo::done_between(conn, start, end)?;
+    let total = count(overdue.len() + tasks.len() + done.len());
+    // Priority groups only mean something when a Task has a Priority.
+    let by = match prefs.group_today {
+        GroupBy::Priority if tasks.iter().all(|t| t.priority == 4) => GroupBy::None,
+        by => by,
+    };
+    let lists = ordered_lists(conn, prefs.lists_sort)?;
+    let lists: Vec<_> = lists.into_iter().map(|e| e.list).collect();
+    let ctx = GroupContext {
+        lists: &lists,
+        today: &local.today,
+    };
+    let day = GroupKey::Day {
+        date: local.today.clone(),
+    };
+    let mut groups: Vec<TaskGroup> = overdue_group(overdue).into_iter().collect();
+    for mut group in group_tasks(tasks, by, &ctx, &in_day) {
+        // Everything here is due today; the plain group is that day.
+        if group.key == GroupKey::Plain {
+            group.key = day.clone();
+        }
+        group.adopt.insert(0, day.clone());
+        groups.push(group);
+    }
     Ok(TodayView {
-        total: count(overdue.len() + tasks.len() + done.len()),
-        overdue,
-        tasks,
+        group_by: prefs.group_today,
+        groups,
         done,
+        total,
     })
 }
 
@@ -293,9 +322,10 @@ fn by_date_then_day(a: &Task, b: &Task) -> Ordering {
     a.due_date.cmp(&b.due_date).then_with(|| in_day(a, b))
 }
 
-/// Upcoming's groups: Overdue, then each day after today that has Tasks.
+/// Upcoming's groups: Overdue, then the Tasks after today.
 pub fn upcoming(conn: &Connection, local: &LocalNow) -> AppResult<UpcomingView> {
     local.check()?;
+    let prefs = ViewPrefs::read(conn)?;
     let mut overdue = Vec::new();
     let mut future = Vec::new();
     for task in repo::open_dated(conn)? {
@@ -310,19 +340,25 @@ pub fn upcoming(conn: &Connection, local: &LocalNow) -> AppResult<UpcomingView> 
         }
     }
     overdue.sort_by(by_date_then_day);
-    future.sort_by(by_date_then_day);
-    let mut days: Vec<UpcomingDay> = Vec::new();
-    for task in future {
-        let date = task.due_date.clone().unwrap_or_default();
-        match days.last_mut() {
-            Some(day) if day.date == date => day.tasks.push(task),
-            _ => days.push(UpcomingDay {
-                date,
-                tasks: vec![task],
-            }),
-        }
-    }
-    Ok(UpcomingView { overdue, days })
+    let lists: Vec<_> = ordered_lists(conn, prefs.lists_sort)?
+        .into_iter()
+        .map(|e| e.list)
+        .collect();
+    let ctx = GroupContext {
+        lists: &lists,
+        today: &local.today,
+    };
+    let mut groups: Vec<TaskGroup> = overdue_group(overdue).into_iter().collect();
+    groups.extend(group_tasks(
+        future,
+        prefs.group_upcoming,
+        &ctx,
+        &by_date_then_day,
+    ));
+    Ok(UpcomingView {
+        group_by: prefs.group_upcoming,
+        groups,
+    })
 }
 
 /// Open Tasks per date in `[from, to]` (only dates that have any), leaving out one Task: the When

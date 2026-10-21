@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod arrange;
 mod capture;
 mod comment;
 mod comment_repo;
@@ -13,8 +14,10 @@ mod list;
 mod list_repo;
 mod list_service;
 mod migrations;
+mod order;
 mod parse;
 mod recurrence;
+mod reorder;
 mod repeat;
 mod repo;
 mod schedule;
@@ -31,24 +34,29 @@ use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
 
+pub use arrange::{
+    DoneInLists, DueBucket, GroupBy, GroupKey, ListSort, TaskGroup, TaskSort, ViewPrefs,
+};
 pub use capture::{QuickEdit, parse_text, quick_edit};
 pub use comment::{Comment, MAX_COMMENT_CHARS};
 pub use comment_service::{add_comment, comments, delete_comment, edit_comment, restore_comment};
 pub use error::TodoError;
 pub use history::{HistoryLine, task_history};
 pub use list::{
-    AllGroup, AllView, DeleteChoice, ListDeletion, ListEntry, ListView, MAX_LIST_NAME_CHARS,
+    AllView, DeleteChoice, ListDeletion, ListDone, ListEntry, ListView, MAX_LIST_NAME_CHARS,
     SidebarView, TodoList,
 };
 pub use list_service::{
-    all, create_list, delete_list, list_view, rename_list, restore_list, set_list_emoji, sidebar,
+    all, create_list, delete_list, list_view, rename_list, restore_list, set_list_emoji,
+    set_list_group, set_list_sort, sidebar,
 };
 pub use parse::{ParseAlternative, ParseRequest, ParseSpan, Parsed, TextRange};
 pub use recurrence::{MAX_EVERY, RepeatRule};
+pub use reorder::{reorder_list, reorder_task};
 pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};
 pub use schedule::{
-    DayCount, DueChange, OverdueMove, TodayView, UpcomingDay, UpcomingView, day_counts,
-    move_overdue, restore_when, set_when, today, upcoming,
+    DayCount, DueChange, OverdueMove, TodayView, UpcomingView, day_counts, move_overdue,
+    restore_when, set_when, today, upcoming,
 };
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
@@ -75,6 +83,19 @@ impl Module for TodoModule {
     fn register_settings(&self, reg: &mut SettingsRegistry) {
         // "Recognise dates in titles": turns the capture box's reading of typed text off.
         reg.register(MODULE_ID, "parse_dates", json!(true), validate::boolean());
+        // How each view groups and sorts, and what Done Tasks do in a List. The first value of
+        // each is the default.
+        for (key, allowed) in [
+            arrange::GROUP_TODAY,
+            arrange::GROUP_UPCOMING,
+            arrange::GROUP_INBOX,
+            arrange::GROUP_ALL,
+            arrange::INBOX_SORT,
+            arrange::LISTS_SORT,
+            arrange::DONE_IN_LISTS,
+        ] {
+            reg.register(MODULE_ID, key, json!(allowed[0]), validate::one_of(allowed));
+        }
     }
 
     fn on_startup(&self, conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {

@@ -1,5 +1,6 @@
 //! The Task types and the rules that decide whether input is acceptable.
 
+use crate::arrange::{GroupBy, TaskGroup, TaskSort};
 use crate::error::TodoError;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -121,11 +122,16 @@ pub fn validate_understood(understood: Option<&str>) -> Result<Option<&str>, Tod
     Ok(Some(text))
 }
 
-/// The Inbox: open Tasks that belong to no List, in manual order.
+/// The Inbox: open Tasks that belong to no List, in groups, then the undated Tasks that sit in a
+/// List. Only the first part counts toward the badge.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct InboxView {
-    /// Open Tasks, first to last.
-    pub tasks: Vec<Task>,
+    /// How the Tasks with no List are grouped (a Preference).
+    pub group_by: GroupBy,
+    /// How they sort inside each group (a Preference).
+    pub sort: TaskSort,
+    /// Groups of Tasks with no List, then "No date, in a List" when there are such Tasks.
+    pub groups: Vec<TaskGroup>,
 }
 
 /// A title that is allowed: something visible, one line, at most 500 characters. Returns it
@@ -171,34 +177,6 @@ pub fn validate_notes(notes: &str) -> Result<&str, TodoError> {
     Ok(notes)
 }
 
-/// Base-62 digits in byte order, so keys built from them sort the same as text and as numbers.
-const DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-/// Width of the keys made here.
-const KEY_WIDTH: usize = 8;
-
-/// The key for a Task that goes after every other: the first one sits mid-range so there is room
-/// before it. Keys are text that sorts bytewise, like fractional-index keys, so the ordering
-/// slice can insert between any two of these. A last key in some other shape gets a suffix,
-/// which always sorts after it.
-pub fn key_after(last: Option<&str>) -> String {
-    let Some(last) = last else {
-        return format!("{}{}", DIGITS[31] as char, "0".repeat(KEY_WIDTH - 1));
-    };
-    let mut bytes = last.as_bytes().to_vec();
-    let counter = bytes.len() == KEY_WIDTH && bytes.iter().all(|b| DIGITS.contains(b));
-    if counter {
-        for b in bytes.iter_mut().rev() {
-            let at = DIGITS.iter().position(|d| d == b).unwrap_or(0);
-            if at + 1 < DIGITS.len() {
-                *b = DIGITS[at + 1];
-                return String::from_utf8_lossy(&bytes).into_owned();
-            }
-            *b = DIGITS[0];
-        }
-    }
-    format!("{last}{}", DIGITS[31] as char)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,19 +189,5 @@ mod tests {
         }
         assert!(validate_title(&"é".repeat(500)).is_ok());
         assert!(validate_title(&"é".repeat(501)).is_err());
-    }
-
-    #[test]
-    fn keys_after_always_sort_later() {
-        assert_eq!(key_after(None), "V0000000");
-        let mut key = key_after(None);
-        for _ in 0..200 {
-            let next = key_after(Some(&key));
-            assert!(next > key, "{next} should follow {key}");
-            key = next;
-        }
-        assert_eq!(key_after(Some("0000000z")), "00000010");
-        assert!(key_after(Some("zzzzzzzz")).as_str() > "zzzzzzzz");
-        assert!(key_after(Some("a0V")).as_str() > "a0V");
     }
 }

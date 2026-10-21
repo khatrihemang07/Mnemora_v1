@@ -6,7 +6,7 @@ use mnemora_core::module::Module;
 use mnemora_todo::{TodoModule, purge_deleted};
 use serde_json::{Value, json};
 
-use crate::test_support::TestApp;
+use crate::test_support::{TestApp, inbox_tasks_of, tasks_of};
 
 const TODAY: &str = "2026-10-21";
 
@@ -50,8 +50,10 @@ fn titles(tasks: &Value) -> Vec<String> {
 }
 
 fn inbox(app: &TestApp) -> Vec<String> {
-    let view: Value = app.invoke("todo_inbox", json!({})).unwrap();
-    titles(&view["tasks"])
+    let view: Value = app
+        .invoke("todo_inbox", json!({ "local": local(TODAY) }))
+        .unwrap();
+    titles(&inbox_tasks_of(&view))
 }
 
 fn complete(app: &TestApp, task: &Value) -> Result<Value, Value> {
@@ -144,6 +146,7 @@ fn priority_needs_an_open_task_and_a_known_one() {
 #[test]
 fn within_a_time_block_today_orders_by_priority_then_manual_order() {
     let app = TestApp::new();
+    app.set_pref("todo.group_today", json!("none"));
     let plain = dated(&app, "plain", TODAY, None);
     let urgent = dated(&app, "urgent", TODAY, None);
     let timed_low = dated(&app, "timed low", TODAY, Some("09:00"));
@@ -158,7 +161,7 @@ fn within_a_time_block_today_orders_by_priority_then_manual_order() {
         .invoke("todo_today", json!({ "local": local(TODAY) }))
         .unwrap();
     assert_eq!(
-        titles(&view["tasks"]),
+        titles(&tasks_of(&view)),
         [
             "timed high",
             "timed low",
@@ -181,7 +184,7 @@ fn upcoming_days_order_by_priority_inside_each_block_too() {
     let view: Value = app
         .invoke("todo_upcoming", json!({ "local": local(TODAY) }))
         .unwrap();
-    assert_eq!(titles(&view["days"][0]["tasks"]), ["second", "first"]);
+    assert_eq!(titles(&view["groups"][0]["tasks"]), ["second", "first"]);
 }
 
 // ---------------------------------------------------------------- Won't do
@@ -201,7 +204,7 @@ fn wont_do_closes_the_task_into_done_without_counting_as_done() {
     let today: Value = app
         .invoke("todo_today", json!({ "local": local(TODAY) }))
         .unwrap();
-    assert_eq!(titles(&today["tasks"]), Vec::<String>::new());
+    assert_eq!(titles(&tasks_of(&today)), Vec::<String>::new());
     assert_eq!(titles(&today["done"]), ["b"], "Won't do is not done");
     assert_eq!(today["total"], 1, "and not part of the progress");
 
@@ -638,7 +641,8 @@ fn comments_are_added_oldest_first_trimmed_and_counted_on_the_task() {
     assert_eq!(bodies(&app, &a), ["first **mark**", "second"]);
     assert_eq!(get(&app, &a)["comment_count"], 2);
     assert_eq!(
-        app.invoke::<Value>("todo_inbox", json!({})).unwrap()["tasks"][0]["comment_count"],
+        app.invoke::<Value>("todo_inbox", json!({ "local": local(TODAY) }))
+            .unwrap()["groups"][0]["tasks"][0]["comment_count"],
         2
     );
 }

@@ -48,6 +48,20 @@ pub fn save_if_unset(conn: &Connection, module: &str, key: &str, value: &Value) 
     Ok(written > 0)
 }
 
+/// The value saved for `module.key`, if any: raw, so the caller validates it. For a Module that
+/// reads its own Preferences inside a view, where it needs no registry or event bus.
+pub fn stored(conn: &Connection, module: &str, key: &str) -> AppResult<Option<Value>> {
+    use rusqlite::OptionalExtension;
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE module = ?1 AND key = ?2",
+            rusqlite::params![module, key],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(raw.and_then(|raw| serde_json::from_str(&raw).ok()))
+}
+
 /// Reads and writes Settings against a registry, announcing changes on the event bus.
 pub struct SettingsStore {
     registry: Arc<SettingsRegistry>,

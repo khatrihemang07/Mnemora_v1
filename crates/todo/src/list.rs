@@ -4,6 +4,7 @@ use mnemora_core::text::fold;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::arrange::{DoneInLists, GroupBy, ListSort, TaskGroup, TaskSort};
 use crate::error::TodoError;
 use crate::task::Task;
 
@@ -24,6 +25,10 @@ pub struct TodoList {
     pub emoji: Option<String>,
     /// Text that sorts bytewise into the List order.
     pub sort_key: String,
+    /// How its page sorts the Tasks inside each group.
+    pub task_sort: TaskSort,
+    /// How its page groups its Tasks: None, Priority or Due date.
+    pub group_by: GroupBy,
     /// Row creation time: UTC milliseconds.
     #[specta(type = u32)]
     pub created_at: i64,
@@ -52,33 +57,42 @@ pub struct SidebarView {
     pub today_count: u32,
     /// Open Tasks due before today: the Today count turns red while this is above zero.
     pub overdue_count: u32,
-    /// Lists in their order.
+    /// Lists in the order the sort says; dragging them is off unless this is Manual.
     pub lists: Vec<ListEntry>,
+    /// How the Lists are sorted (a Preference).
+    pub lists_sort: ListSort,
 }
 
-/// One List's page: the List and its open Tasks in manual order.
+/// A List page's Done Tasks, as the Done-in-Lists Preference says to show them.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct ListDone {
+    /// The Preference in force.
+    pub mode: DoneInLists,
+    /// Struck through at the bottom: done today, or everything with "All shown". Newest first.
+    pub shown: Vec<Task>,
+    /// Behind a fold: "Done earlier · N", or "Done · N" with "All folded". Newest first.
+    pub folded: Vec<Task>,
+}
+
+/// One List's page: the List, its open Tasks in groups, and its Done Tasks.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct ListView {
-    /// The List.
+    /// The List, whose `group_by` and `task_sort` the groups follow.
     pub list: TodoList,
-    /// Its open Tasks.
-    pub tasks: Vec<Task>,
+    /// Open Tasks: grouped first, sorted inside each group.
+    pub groups: Vec<TaskGroup>,
+    /// Done and Won't do Tasks.
+    pub done: ListDone,
 }
 
-/// Open Tasks of one List (or the Inbox) inside the All view.
-#[derive(Debug, Clone, PartialEq, Serialize, Type)]
-pub struct AllGroup {
-    /// The List; none is the Inbox.
-    pub list: Option<TodoList>,
-    /// Its open Tasks in manual order.
-    pub tasks: Vec<Task>,
-}
-
-/// The All view: open Tasks grouped by List, the Inbox first. Empty groups are left out.
+/// The All view: open Tasks grouped (by List unless changed), the Inbox first. Empty groups are
+/// left out.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct AllView {
-    /// Groups, Inbox first, then Lists in order.
-    pub groups: Vec<AllGroup>,
+    /// How it is grouped (a Preference).
+    pub group_by: GroupBy,
+    /// Groups in order.
+    pub groups: Vec<TaskGroup>,
 }
 
 /// What happens to a deleted List's Tasks.

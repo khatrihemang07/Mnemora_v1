@@ -9,6 +9,7 @@ import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bind
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
 import { createTodoMock } from './mock-todo';
+import { PREF_VALUES } from './mock-todo-arrange';
 
 type Validator = (v: JsonValue) => string | null;
 
@@ -43,6 +44,14 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'journal.width': { default: 'default', validate: oneOf('narrow', 'default', 'wide') },
   'journal.page_summary': { default: true, validate: bool },
   'todo.parse_dates': { default: true, validate: bool },
+  // How the views group and sort, and what Done Tasks do in a List (crates/todo/src/arrange.rs).
+  'todo.group_today': { default: 'priority', validate: oneOf(...PREF_VALUES.group_today) },
+  'todo.group_upcoming': { default: 'day', validate: oneOf(...PREF_VALUES.group_upcoming) },
+  'todo.group_inbox': { default: 'none', validate: oneOf(...PREF_VALUES.group_inbox) },
+  'todo.group_all': { default: 'list', validate: oneOf(...PREF_VALUES.group_all) },
+  'todo.inbox_sort': { default: 'manual', validate: oneOf(...PREF_VALUES.inbox_sort) },
+  'todo.lists_sort': { default: 'manual', validate: oneOf(...PREF_VALUES.lists_sort) },
+  'todo.done_in_lists': { default: 'today_shown', validate: oneOf(...PREF_VALUES.done_in_lists) },
 };
 
 const err = (code: AppError['code'], message: string): AppError => ({
@@ -70,7 +79,7 @@ export async function installMock() {
   (window as unknown as { __journalMock: typeof journalFlags }).__journalMock = journalFlags;
   const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
 
-  const todo = createTodoMock();
+  const todo = createTodoMock((key) => values[key]);
 
   applyPrePaintAttributes(values);
 

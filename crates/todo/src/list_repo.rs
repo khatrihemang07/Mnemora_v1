@@ -3,11 +3,23 @@
 use mnemora_core::error::AppResult;
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
+use crate::arrange::{GroupBy, TaskSort};
 use crate::list::TodoList;
 
-const COLUMNS: &str = "id, name, emoji, sort_key, created_at, updated_at";
+const COLUMNS: &str = "id, name, emoji, sort_key, created_at, updated_at, task_sort, group_by";
+
+/// An unreadable stored value is the app's fault; the row's column tells which.
+fn unreadable(column: usize, what: &str) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        column,
+        rusqlite::types::Type::Text,
+        format!("unknown List {what}").into(),
+    )
+}
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<TodoList> {
+    let sort: String = r.get(6)?;
+    let group: Option<String> = r.get(7)?;
     Ok(TodoList {
         id: r.get(0)?,
         name: r.get(1)?,
@@ -15,13 +27,24 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<TodoList> {
         sort_key: r.get(3)?,
         created_at: r.get(4)?,
         updated_at: r.get(5)?,
+        task_sort: TaskSort::parse(&sort).ok_or_else(|| unreadable(6, "sort"))?,
+        group_by: group
+            .as_deref()
+            .map_or(Some(GroupBy::None), GroupBy::parse)
+            .ok_or_else(|| unreadable(7, "grouping"))?,
     })
+}
+
+/// The `group_by` column: none is NULL.
+fn stored_group(group_by: GroupBy) -> Option<&'static str> {
+    (group_by != GroupBy::None).then(|| group_by.as_str())
 }
 
 pub fn insert(conn: &Connection, l: &TodoList, name_key: &str) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO todo_lists(id, name, name_key, emoji, sort_key, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO todo_lists(id, name, name_key, emoji, sort_key, created_at, updated_at,
+             task_sort, group_by)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             l.id,
             l.name,
@@ -29,7 +52,9 @@ pub fn insert(conn: &Connection, l: &TodoList, name_key: &str) -> AppResult<()> 
             l.emoji,
             l.sort_key,
             l.created_at,
-            l.updated_at
+            l.updated_at,
+            l.task_sort.as_str(),
+            stored_group(l.group_by)
         ],
     )?;
     Ok(())
@@ -52,7 +77,7 @@ pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(TodoList, Optio
         .query_row(
             &format!("SELECT {COLUMNS}, deleted_at FROM todo_lists WHERE id = ?1"),
             [id],
-            |r| Ok((from_row(r)?, r.get(6)?)),
+            |r| Ok((from_row(r)?, r.get(8)?)),
         )
         .optional()?)
 }
@@ -68,6 +93,47 @@ pub fn all(conn: &Connection) -> AppResult<Vec<TodoList>> {
 /// The greatest sort key of any List, deleted ones included: keys are never reused.
 pub fn last_sort_key(conn: &Connection) -> AppResult<Option<String>> {
     Ok(conn.query_row("SELECT MAX(sort_key) FROM todo_lists", [], |r| r.get(0))?)
+}
+
+/// The greatest sort key below `key`, deleted Lists included: the neighbour a move goes after.
+pub fn key_before(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn.query_row(
+        "SELECT MAX(sort_key) FROM todo_lists WHERE sort_key < ?1",
+        [key],
+        |r| r.get(0),
+    )?)
+}
+
+/// The least sort key above `key`, deleted Lists included: the neighbour a move goes before.
+pub fn key_following(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn.query_row(
+        "SELECT MIN(sort_key) FROM todo_lists WHERE sort_key > ?1",
+        [key],
+        |r| r.get(0),
+    )?)
+}
+
+/// Writes the sort key, and stamps `updated_at`.
+pub fn update_sort_key(conn: &Connection, l: &TodoList) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_lists SET sort_key = ?2, updated_at = ?3 WHERE id = ?1",
+        params![l.id, l.sort_key, l.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Writes how the List's page sorts and groups, and stamps `updated_at`.
+pub fn update_arrangement(conn: &Connection, l: &TodoList) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_lists SET task_sort = ?2, group_by = ?3, updated_at = ?4 WHERE id = ?1",
+        params![
+            l.id,
+            l.task_sort.as_str(),
+            stored_group(l.group_by),
+            l.updated_at
+        ],
+    )?;
+    Ok(())
 }
 
 /// Whether another live List (not `except`) already has this folded name.

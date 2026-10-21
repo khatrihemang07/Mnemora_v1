@@ -101,6 +101,16 @@ impl TestApp {
         get_ipc_response(&self.window, request).map(|body| body.deserialize().unwrap())
     }
 
+    /// Saves one Setting, as the Settings screen would: `key` is the full `module.key`.
+    #[allow(clippy::unwrap_used)]
+    pub fn set_pref(&self, key: &str, value: Value) {
+        self.invoke::<()>(
+            "settings_save",
+            serde_json::json!({ "changes": [{ "key": key, "value": value }] }),
+        )
+        .unwrap();
+    }
+
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).
     pub fn with_db<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
         f(&lock(&self.app.state::<AppState>().db))
@@ -110,4 +120,37 @@ impl TestApp {
     pub fn with_db_mut<R>(&self, f: impl FnOnce(&mut Connection) -> R) -> R {
         f(&mut lock(&self.app.state::<AppState>().db))
     }
+}
+
+/// The Tasks of a grouped view's `groups`, flattened in order. Overdue is left out (see
+/// `overdue_of`), so for Today this is what is due today.
+pub fn tasks_of(view: &Value) -> Value {
+    flatten(view, false)
+}
+
+/// The Tasks in a grouped view's Overdue group.
+pub fn overdue_of(view: &Value) -> Value {
+    flatten(view, true)
+}
+
+/// The Tasks of an Inbox view that count toward the Inbox: groups that are not "No date, in a
+/// List".
+pub fn inbox_tasks_of(view: &Value) -> Value {
+    let tasks = view["groups"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|g| g["key"]["kind"] != "no_date_in_list")
+        .flat_map(|g| g["tasks"].as_array().cloned().unwrap_or_default());
+    Value::Array(tasks.collect())
+}
+
+fn flatten(view: &Value, overdue: bool) -> Value {
+    let tasks = view["groups"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|g| (g["key"]["kind"] == "overdue") == overdue)
+        .flat_map(|g| g["tasks"].as_array().cloned().unwrap_or_default());
+    Value::Array(tasks.collect())
 }

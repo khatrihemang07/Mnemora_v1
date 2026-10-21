@@ -24,10 +24,14 @@ import type {
   Completion,
   DayCount,
   DeleteChoice,
+  DoneInLists,
   DoneView,
   DueChange,
+  GroupBy,
+  GroupKey,
   InboxView,
   ListDeletion,
+  ListDone,
   ListView,
   LocalNow,
   NewTaskDetails,
@@ -37,11 +41,21 @@ import type {
   QuickEdit,
   SidebarView,
   Task,
+  TaskGroup,
+  TaskSort,
   TodayView,
   TodoList,
   UpcomingView,
 } from './bindings';
+import {
+  compareTasks,
+  groupTasks,
+  readPrefs,
+  sortLists,
+  type ViewPrefs,
+} from './mock-todo-arrange';
 import { historyOf, type LogRecord } from './mock-todo-history';
+import { keyAfter, placeKey } from './mock-todo-order';
 import { parseText } from './mock-todo-parse';
 
 const MAX_TITLE_CHARS = 500;
@@ -55,28 +69,6 @@ const fail = (code: AppError['code'], message: string): AppError => ({
   details: null,
 });
 const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v));
-
-/** Base-62 digits in byte order, so keys built from them sort the same as text and as numbers. */
-const DIGITS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-const KEY_WIDTH = 8;
-
-/** Mirrors `key_after` in crates/todo/src/task.rs: the key for a Task that goes after all others. */
-export function keyAfter(last: string | null): string {
-  if (last === null) return `${DIGITS[31]}${'0'.repeat(KEY_WIDTH - 1)}`;
-  const counter = last.length === KEY_WIDTH && [...last].every((c) => DIGITS.includes(c));
-  if (counter) {
-    const out = [...last];
-    for (let i = out.length - 1; i >= 0; i--) {
-      const at = DIGITS.indexOf(out[i] as string);
-      if (at + 1 < DIGITS.length) {
-        out[i] = DIGITS[at + 1] as string;
-        return out.join('');
-      }
-      out[i] = DIGITS[0] as string;
-    }
-  }
-  return `${last}${DIGITS[31]}`;
-}
 
 /** Mirrors `validate_title`: returns the trimmed title or throws a validation error. */
 export function validateTitle(title: string): string {
@@ -291,13 +283,19 @@ type Stored = Task & { deleted?: boolean };
 type StoredList = TodoList & { deleted?: boolean };
 type StoredComment = Comment & { deleted?: boolean };
 
-export function createTodoMock() {
+/**
+ * `prefs` reads a saved Setting by its full key (`todo.group_today`), the way Rust reads the
+ * `settings` table; the views follow the Preferences it returns.
+ */
+export function createTodoMock(prefs: (key: string) => unknown = () => undefined) {
   const all: Stored[] = [];
   const lists: StoredList[] = [];
   const comments: StoredComment[] = [];
   /** The change log, per Task: what History reads (the mock keeps it apart from the Tasks). */
   const logs = new Map<string, LogRecord[]>();
   let seq = 0;
+  /** Every op recorded, in order: what a test reads to see what a command logged. */
+  const ops: string[] = [];
   /** Mirrors `record_in`: a session keeps one record, and a `create` stays a `create`. */
   const record = (
     t: Stored,
@@ -318,6 +316,7 @@ export function createTodoMock() {
       return;
     }
     records.push({ op, session, snapshot, at, seq: ++seq });
+    ops.push(op);
   };
   const listLabel = (id: string | null) => {
     if (id === null) return '📥 Inbox';
@@ -346,6 +345,37 @@ export function createTodoMock() {
       .filter((t) => t.list_id === listId && t.state === 'open')
       .sort(byKey);
   const openDated = () => live().filter((t) => t.state === 'open' && t.due_date !== null);
+  const view = (): ViewPrefs => readPrefs(prefs);
+  /** Mirrors `ordered_lists`: live Lists with their counts, in the order the sort says. */
+  const orderedLists = (sort: ViewPrefs['lists_sort']) =>
+    sortLists(
+      liveLists().map((l) => ({
+        list: wireList(l),
+        open_count: openIn(l.id).length,
+        task_count: live().filter((t) => t.list_id === l.id).length,
+      })),
+      sort,
+    );
+  const neighbourKey = (id: unknown, self: unknown, kind: 'task' | 'list'): string | null => {
+    if (id === null || id === undefined || id === self) return null;
+    const found =
+      kind === 'task' ? all.find((t) => t.id === id) : lists.find((l) => l.id === id && !l.deleted);
+    if (!found) throw kind === 'task' ? missing() : listMissing();
+    return found.sort_key;
+  };
+  /** The greatest key below / least key above `key` among every row, deleted ones too. */
+  const keysAround = (rows: { sort_key: string }[]) => ({
+    before: (key: string) =>
+      rows.reduce<string | null>(
+        (best, r) => (r.sort_key < key && (best === null || r.sort_key > best) ? r.sort_key : best),
+        null,
+      ),
+    following: (key: string) =>
+      rows.reduce<string | null>(
+        (best, r) => (r.sort_key > key && (best === null || r.sort_key < best) ? r.sort_key : best),
+        null,
+      ),
+  });
   /** Mirrors `apply`: `assignWhen`, then the stamp and the change-log record. */
   const applyWhen = (
     task: Stored,
@@ -370,12 +400,31 @@ export function createTodoMock() {
 
   return {
     handles: (cmd: string) => cmd.startsWith('todo_'),
+    /** The change-log ops recorded so far, oldest first: a test seam, not a command. */
+    ops: (): readonly string[] => ops,
 
     handle(cmd: string, a: Record<string, unknown>): unknown {
       switch (cmd) {
         case 'todo_inbox': {
-          const view: InboxView = { tasks: openIn(null).map(wire) };
-          return copy(view);
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const p = view();
+          const cmp = compareTasks(p.inbox_sort);
+          const groups = groupTasks(
+            openIn(null).map(wire),
+            p.group_inbox,
+            { lists: liveLists().map(wireList), today: local.today },
+            cmp,
+          );
+          const inLists = live()
+            .filter((t) => t.state === 'open' && t.list_id !== null && t.due_date === null)
+            .map(wire)
+            .sort(cmp);
+          if (inLists.length > 0) {
+            groups.push({ key: { kind: 'no_date_in_list' }, adopt: [], tasks: inLists });
+          }
+          const inbox: InboxView = { group_by: p.group_inbox, sort: p.inbox_sort, groups };
+          return copy(inbox);
         }
         case 'todo_task_create': {
           const title = validateTitle(a.title as string);
@@ -699,8 +748,11 @@ export function createTodoMock() {
         case 'todo_today': {
           const local = a.local as LocalNow;
           checkClock(local);
+          const p = view();
           const dated = openDated();
-          const overdue = dated.filter((t) => (t.due_date as string) < local.today);
+          const overdue = dated
+            .filter((t) => (t.due_date as string) < local.today)
+            .sort(byDateThenDay);
           const tasks = dated.filter((t) => t.due_date === local.today);
           const start = (epochDay(local.today) as number) * DAY_MS - local.offset_min * 60_000;
           const done = live()
@@ -712,29 +764,60 @@ export function createTodoMock() {
                 t.closed_at < start + DAY_MS,
             )
             .sort((x, y) => (x.closed_at as number) - (y.closed_at as number) || byKey(x, y));
-          const view: TodayView = {
-            overdue: overdue.sort(byDateThenDay).map(wire),
-            tasks: tasks.sort(inDay).map(wire),
+          // Priority groups only mean something when a Task has a Priority.
+          const by: GroupBy =
+            p.group_today === 'priority' && tasks.every((t) => t.priority === 4)
+              ? 'none'
+              : p.group_today;
+          const today: GroupKey = { kind: 'day', date: local.today };
+          const groups: TaskGroup[] =
+            overdue.length > 0
+              ? [{ key: { kind: 'overdue' }, adopt: [], tasks: overdue.map(wire) }]
+              : [];
+          const ctx = {
+            lists: orderedLists(p.lists_sort).map((e) => e.list),
+            today: local.today,
+          };
+          for (const group of groupTasks(tasks.map(wire), by, ctx, inDay)) {
+            // Everything here is due today; the plain group is that day.
+            groups.push({
+              ...group,
+              key: group.key.kind === 'plain' ? today : group.key,
+              adopt: [today, ...group.adopt],
+            });
+          }
+          const result: TodayView = {
+            group_by: p.group_today,
+            groups,
             done: done.map(wire),
             total: overdue.length + tasks.length + done.length,
           };
-          return copy(view);
+          return copy(result);
         }
         case 'todo_upcoming': {
           const local = a.local as LocalNow;
           checkClock(local);
+          const p = view();
           const dated = openDated().sort(byDateThenDay);
-          const days: UpcomingView['days'] = [];
-          for (const task of dated.filter((t) => (t.due_date as string) > local.today)) {
-            const last = days[days.length - 1];
-            if (last && last.date === task.due_date) last.tasks.push(wire(task));
-            else days.push({ date: task.due_date as string, tasks: [wire(task)] });
-          }
-          const view: UpcomingView = {
-            overdue: dated.filter((t) => (t.due_date as string) < local.today).map(wire),
-            days,
+          const overdue = dated.filter((t) => (t.due_date as string) < local.today);
+          const ctx = {
+            lists: orderedLists(p.lists_sort).map((e) => e.list),
+            today: local.today,
           };
-          return copy(view);
+          const groups: TaskGroup[] =
+            overdue.length > 0
+              ? [{ key: { kind: 'overdue' }, adopt: [], tasks: overdue.map(wire) }]
+              : [];
+          groups.push(
+            ...groupTasks(
+              dated.filter((t) => (t.due_date as string) > local.today).map(wire),
+              p.group_upcoming,
+              ctx,
+              byDateThenDay,
+            ),
+          );
+          const result: UpcomingView = { group_by: p.group_upcoming, groups };
+          return copy(result);
         }
         case 'todo_day_counts': {
           const from = a.from as string;
@@ -757,34 +840,176 @@ export function createTodoMock() {
         case 'todo_lists': {
           const local = a.local as LocalNow;
           checkClock(local);
+          const p = view();
           const dated = openDated();
           const overdue = dated.filter((t) => (t.due_date as string) < local.today).length;
           const dueToday = dated.filter((t) => t.due_date === local.today).length;
-          const count = (id: string | null) => openIn(id).length;
-          const view: SidebarView = {
-            inbox_count: count(null),
+          const sidebar: SidebarView = {
+            inbox_count: openIn(null).length,
             today_count: overdue + dueToday,
             overdue_count: overdue,
-            lists: liveLists().map((l) => ({
-              list: wireList(l),
-              open_count: count(l.id),
-              task_count: live().filter((t) => t.list_id === l.id).length,
-            })),
+            lists: orderedLists(p.lists_sort),
+            lists_sort: p.lists_sort,
           };
-          return copy(view);
+          return copy(sidebar);
         }
         case 'todo_list': {
+          const local = a.local as LocalNow;
+          checkClock(local);
           const list = findList(a.id);
           if (!list) throw listMissing();
-          const view: ListView = { list: wireList(list), tasks: openIn(list.id).map(wire) };
-          return copy(view);
+          const p = view();
+          const groups = groupTasks(
+            openIn(list.id).map(wire),
+            list.group_by,
+            { lists: [], today: local.today },
+            compareTasks(list.task_sort),
+          ).map((g) => ({
+            ...g,
+            // Adding inside a List group keeps the Task in this List.
+            adopt: [{ kind: 'list', list_id: list.id } as GroupKey, ...g.adopt],
+          }));
+          const closed = live()
+            .filter(
+              (t) =>
+                t.list_id === list.id &&
+                (t.state === 'done' || t.state === 'wont') &&
+                t.closed_at !== null,
+            )
+            .sort(
+              (x, y) =>
+                (y.closed_at as number) - (x.closed_at as number) ||
+                (y.sort_key < x.sort_key ? -1 : y.sort_key > x.sort_key ? 1 : 0),
+            )
+            .map(wire);
+          const mode: DoneInLists = p.done_in_lists;
+          const start = (epochDay(local.today) as number) * DAY_MS - local.offset_min * 60_000;
+          const doneToday = (t: Task) =>
+            (t.closed_at as number) >= start && (t.closed_at as number) < start + DAY_MS;
+          const done: ListDone =
+            mode === 'hidden'
+              ? { mode, shown: [], folded: [] }
+              : mode === 'shown'
+                ? { mode, shown: closed, folded: [] }
+                : mode === 'folded'
+                  ? { mode, shown: [], folded: closed }
+                  : {
+                      mode,
+                      shown: closed.filter(doneToday),
+                      folded: closed.filter((t) => !doneToday(t)),
+                    };
+          const result: ListView = { list: wireList(list), groups, done };
+          return copy(result);
         }
         case 'todo_all': {
-          const groups: AllView['groups'] = [
-            { list: null, tasks: openIn(null).map(wire) },
-            ...liveLists().map((l) => ({ list: wireList(l), tasks: openIn(l.id).map(wire) })),
-          ].filter((g) => g.tasks.length > 0);
-          return copy({ groups });
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const p = view();
+          const ordered = orderedLists(p.lists_sort).map((e) => e.list);
+          const tasks = [
+            ...openIn(null),
+            ...live().filter((t) => t.state === 'open' && t.list_id !== null),
+          ];
+          const result: AllView = {
+            group_by: p.group_all,
+            groups: groupTasks(
+              tasks.map(wire),
+              p.group_all,
+              { lists: ordered, today: local.today },
+              compareTasks('manual'),
+            ).filter((g) => g.tasks.length > 0),
+          };
+          return copy(result);
+        }
+        case 'todo_task_reorder': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const target = (a.target as GroupKey[] | undefined) ?? [];
+          for (const key of target) {
+            if (key.kind === 'day') {
+              if (epochDay(key.date) === null) throw fail('validation', 'Not a valid date');
+              if (key.date < local.today) throw fail('validation', 'That date is in the past');
+            }
+            if (key.kind === 'priority' && (key.priority < 1 || key.priority > 4)) {
+              throw fail('validation', 'Priority is 1 to 4');
+            }
+          }
+          const task = find(a.id);
+          if (!task) throw missing();
+          if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+          const around = keysAround(all);
+          const key = placeKey(
+            neighbourKey(a.before, task.id, 'task'),
+            neighbourKey(a.after, task.id, 'task'),
+            around.before,
+            around.following,
+          );
+          let keyChanged = false;
+          let whenChanged = false;
+          let priorityChanged = false;
+          let listChanged = false;
+          const missingList = (id: string | null) => id !== null && !findList(id);
+          for (const k of target) {
+            if (k.kind === 'day' && task.due_date !== k.date) {
+              whenChanged =
+                assignWhen(task, k.date, task.due_time, ruleOf(task), false) || whenChanged;
+            } else if (k.kind === 'priority' && task.priority !== k.priority) {
+              task.priority = k.priority;
+              priorityChanged = true;
+            } else if (k.kind === 'list' && task.list_id !== k.list_id) {
+              if (missingList(k.list_id)) throw listMissing();
+              task.list_id = k.list_id;
+              listChanged = true;
+            }
+          }
+          if (key !== null && key !== task.sort_key) {
+            task.sort_key = key;
+            keyChanged = true;
+          }
+          if (keyChanged || whenChanged || priorityChanged || listChanged) {
+            task.updated_at = Date.now();
+            record(task, listChanged ? 'move' : 'update');
+          }
+          return copy(wire(task));
+        }
+        case 'todo_list_reorder': {
+          const list = findList(a.id);
+          if (!list) throw listMissing();
+          const around = keysAround(lists);
+          const key = placeKey(
+            neighbourKey(a.before, list.id, 'list'),
+            neighbourKey(a.after, list.id, 'list'),
+            around.before,
+            around.following,
+          );
+          if (key !== null && key !== list.sort_key) {
+            list.sort_key = key;
+            list.updated_at = Date.now();
+          }
+          return copy(wireList(list));
+        }
+        case 'todo_list_set_sort': {
+          const list = findList(a.id);
+          if (!list) throw listMissing();
+          const sort = a.sort as TaskSort;
+          if (list.task_sort !== sort) {
+            list.task_sort = sort;
+            list.updated_at = Date.now();
+          }
+          return copy(wireList(list));
+        }
+        case 'todo_list_set_group': {
+          const groupBy = a.groupBy as GroupBy;
+          if (!['none', 'priority', 'due'].includes(groupBy)) {
+            throw fail('validation', 'A List groups by Priority or Due date');
+          }
+          const list = findList(a.id);
+          if (!list) throw listMissing();
+          if (list.group_by !== groupBy) {
+            list.group_by = groupBy;
+            list.updated_at = Date.now();
+          }
+          return copy(wireList(list));
         }
         case 'todo_list_create': {
           const name = validateListName(a.name as string);
@@ -799,6 +1024,8 @@ export function createTodoMock() {
             name,
             emoji: null,
             sort_key: keyAfter(last),
+            task_sort: 'manual',
+            group_by: 'none',
             created_at: now,
             updated_at: now,
           };

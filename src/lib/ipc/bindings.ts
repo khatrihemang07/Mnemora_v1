@@ -63,8 +63,11 @@ export const commands = {
 	 *  last, as a plain-text snippet. For the Home card.
 	 */
 	journalToday: (today: string) => typedError<TodaySummary, AppError>(__TAURI_INVOKE("journal_today", { today })),
-	/**  The Inbox: open Tasks that belong to no List, in manual order (new Tasks last). */
-	todoInbox: () => typedError<InboxView, AppError>(__TAURI_INVOKE("todo_inbox")),
+	/**
+	 *  The Inbox: open Tasks that belong to no List, grouped and sorted as the Preferences say, then
+	 *  "No date, in a List" for the undated Tasks that sit in a List (not counted in the badge).
+	 */
+	todoInbox: (local: LocalNow) => typedError<InboxView, AppError>(__TAURI_INVOKE("todo_inbox", { local })),
 	/**
 	 *  Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
 	 *  title, one over 500 characters and one with a line break. `when` gives it a Due date and time
@@ -216,10 +219,16 @@ export const commands = {
 	 *  Overdue part apart) and every List, in order, with its open count.
 	 */
 	todoLists: (local: LocalNow) => typedError<SidebarView, AppError>(__TAURI_INVOKE("todo_lists", { local })),
-	/**  One List and its open Tasks in manual order. */
-	todoList: (id: string) => typedError<ListView, AppError>(__TAURI_INVOKE("todo_list", { id })),
-	/**  Open Tasks grouped by List, the Inbox first. Empty groups are left out. */
-	todoAll: () => typedError<AllView, AppError>(__TAURI_INVOKE("todo_all")),
+	/**
+	 *  One List: its open Tasks grouped and sorted as the List says, and its Done Tasks as the
+	 *  Done-in-Lists Preference says.
+	 */
+	todoList: (id: string, local: LocalNow) => typedError<ListView, AppError>(__TAURI_INVOKE("todo_list", { id, local })),
+	/**
+	 *  Open Tasks grouped as the Preference says (by List, the Inbox first, unless changed). Empty
+	 *  groups are left out.
+	 */
+	todoAll: (local: LocalNow) => typedError<AllView, AppError>(__TAURI_INVOKE("todo_all", { local })),
 	/**
 	 *  Adds a List at the bottom. Names are unique ignoring case and accents, and at most 60
 	 *  characters.
@@ -236,6 +245,21 @@ export const commands = {
 	todoListDelete: (id: string, choice: DeleteChoice) => typedError<ListDeletion, AppError>(__TAURI_INVOKE("todo_list_delete", { id, choice })),
 	/**  Undoes `todo_list_delete`: the List, its deleted Tasks and its moved Tasks all return. */
 	todoListRestore: (deletion: ListDeletion) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_restore", { deletion })),
+	/**
+	 *  Moves an open Task between two neighbours of the shared manual order: `before` is the Task
+	 *  directly above its new place and `after` the one directly below (either may be none). `target`
+	 *  is what the group it lands in adopts, as `TaskGroup.adopt` says: a day sets the Due date (a
+	 *  past day is refused, and dragging among Overdue Tasks adopts nothing), a Priority sets the
+	 *  Priority, a List moves it there. Records one change: `move` when the List changed, `update`
+	 *  otherwise, none when nothing changed.
+	 */
+	todoTaskReorder: (id: string, before: string | null, after: string | null, target: GroupKey[], local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_reorder", { id, before, after, target, local })),
+	/**  Moves a List between two neighbours of the manual List order (`before` above, `after` below). */
+	todoListReorder: (id: string, before: string | null, after: string | null) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_reorder", { id, before, after })),
+	/**  Sets how a List's page sorts the Tasks inside each group. */
+	todoListSetSort: (id: string, sort: TaskSort) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_sort", { id, sort })),
+	/**  Sets how a List's page groups its Tasks: none, priority or due. */
+	todoListSetGroup: (id: string, groupBy: GroupBy) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_group", { id, groupBy })),
 };
 
 /** Events */
@@ -244,18 +268,15 @@ export const events = {
 };
 
 /* Types */
-/**  Open Tasks of one List (or the Inbox) inside the All view. */
-export type AllGroup = {
-	/**  The List; none is the Inbox. */
-	list: TodoList | null,
-	/**  Its open Tasks in manual order. */
-	tasks: Task[],
-};
-
-/**  The All view: open Tasks grouped by List, the Inbox first. Empty groups are left out. */
+/**
+ *  The All view: open Tasks grouped (by List unless changed), the Inbox first. Empty groups are
+ *  left out.
+ */
 export type AllView = {
-	/**  Groups, Inbox first, then Lists in order. */
-	groups: AllGroup[],
+	/**  How it is grouped (a Preference). */
+	group_by: GroupBy,
+	/**  Groups in order. */
+	groups: TaskGroup[],
 };
 
 /**  Error returned from commands: `{code, message, details}`. */
@@ -349,6 +370,17 @@ export type DoneDay = {
 	tasks: Task[],
 };
 
+/**  What a List page does with its Done Tasks. */
+export type DoneInLists = 
+/**  Done today struck through at the bottom, older ones behind "Done earlier". */
+"today_shown" | 
+/**  All behind one fold. */
+"folded" | 
+/**  All shown, struck through. */
+"shown" | 
+/**  None. */
+"hidden";
+
 /**  One page of Done: whole days, newest first. */
 export type DoneView = {
 	/**  The days of this page. */
@@ -356,6 +388,21 @@ export type DoneView = {
 	/**  Hand it back as the cursor for the next page; none when this was the last. */
 	next_cursor: string | null,
 };
+
+/**  A slice of time by Due date, for grouping by Due date. */
+export type DueBucket = 
+/**  Before today. */
+"overdue" | 
+/**  Today. */
+"today" | 
+/**  Tomorrow. */
+"tomorrow" | 
+/**  The six days after tomorrow. */
+"week" | 
+/**  Further away. */
+"later" | 
+/**  No Due date. */
+"no_date";
 
 /**
  *  A Task's Due date, time and Repeat as they were, for Undo. A past date can only come back this
@@ -418,6 +465,44 @@ export type ErrorCode =
 /**  Anything else; a bug or an unexpected state. */
 "internal";
 
+/**  What a view groups its Tasks by. */
+export type GroupBy = 
+/**  One plain group. */
+"none" | 
+/**  One group per Priority. */
+"priority" | 
+/**  One group per List, the Inbox first. */
+"list" | 
+/**  One group per Due date (Upcoming). */
+"day" | 
+/**  Overdue, Today, Tomorrow, the next days, later, and no date. */
+"due";
+
+/**  Which group of a view a Task is in: what a heading says and what a drop adopts. */
+export type GroupKey = 
+/**  The one group of an ungrouped view. */
+{ kind: "plain" } | 
+/**  Due before today, on top in Today and Upcoming. */
+{ kind: "overdue" } | 
+/**  One Priority, 1 to 4 (4 is "No priority"). */
+{ kind: "priority"; 
+/**  1 to 4. */
+priority: number } | 
+/**  One List; none is the Inbox. */
+{ kind: "list"; 
+/**  The List. */
+list_id: string | null } | 
+/**  One day. */
+{ kind: "day"; 
+/**  `YYYY-MM-DD`. */
+date: string } | 
+/**  A slice of time by Due date. */
+{ kind: "due"; 
+/**  Which. */
+bucket: DueBucket } | 
+/**  The Inbox's "No date, in a List". */
+{ kind: "no_date_in_list" };
+
 /**  One line of a Task's History. */
 export type HistoryLine = {
 	/**  When it happened: UTC milliseconds. */
@@ -447,10 +532,17 @@ export type Hit = {
 	snippet: Span[],
 };
 
-/**  The Inbox: open Tasks that belong to no List, in manual order. */
+/**
+ *  The Inbox: open Tasks that belong to no List, in groups, then the undated Tasks that sit in a
+ *  List. Only the first part counts toward the badge.
+ */
 export type InboxView = {
-	/**  Open Tasks, first to last. */
-	tasks: Task[],
+	/**  How the Tasks with no List are grouped (a Preference). */
+	group_by: GroupBy,
+	/**  How they sort inside each group (a Preference). */
+	sort: TaskSort,
+	/**  Groups of Tasks with no List, then "No date, in a List" when there are such Tasks. */
+	groups: TaskGroup[],
 };
 
 /**
@@ -469,6 +561,16 @@ export type ListDeletion = {
 	moved_task_ids: string[],
 };
 
+/**  A List page's Done Tasks, as the Done-in-Lists Preference says to show them. */
+export type ListDone = {
+	/**  The Preference in force. */
+	mode: DoneInLists,
+	/**  Struck through at the bottom: done today, or everything with "All shown". Newest first. */
+	shown: Task[],
+	/**  Behind a fold: "Done earlier · N", or "Done · N" with "All folded". Newest first. */
+	folded: Task[],
+};
+
 /**  A List with its Task counts. */
 export type ListEntry = {
 	/**  The List. */
@@ -479,12 +581,27 @@ export type ListEntry = {
 	task_count: number,
 };
 
-/**  One List's page: the List and its open Tasks in manual order. */
+/**  How the Lists in the sidebar are ordered. */
+export type ListSort = 
+/**  The drag order. */
+"manual" | 
+/**  Name, A to Z. */
+"name_asc" | 
+/**  Name, Z to A. */
+"name_desc" | 
+/**  Most open Tasks first. */
+"most_open" | 
+/**  Oldest first. */
+"created";
+
+/**  One List's page: the List, its open Tasks in groups, and its Done Tasks. */
 export type ListView = {
-	/**  The List. */
+	/**  The List, whose `group_by` and `task_sort` the groups follow. */
 	list: TodoList,
-	/**  Its open Tasks. */
-	tasks: Task[],
+	/**  Open Tasks: grouped first, sorted inside each group. */
+	groups: TaskGroup[],
+	/**  Done and Won't do Tasks. */
+	done: ListDone,
 };
 
 /**  What the UI says "now" is on the device: every date-dependent command takes one. */
@@ -740,8 +857,10 @@ export type SidebarView = {
 	today_count: number,
 	/**  Open Tasks due before today: the Today count turns red while this is above zero. */
 	overdue_count: number,
-	/**  Lists in their order. */
+	/**  Lists in the order the sort says; dragging them is off unless this is Manual. */
 	lists: ListEntry[],
+	/**  How the Lists are sorted (a Preference). */
+	lists_sort: ListSort,
 };
 
 /**  A run of snippet text, either plain or a match. */
@@ -797,6 +916,33 @@ export type Task = {
 	comment_count: number,
 };
 
+/**  Open Tasks of one group, with what a Task dropped (or added) there takes on. */
+export type TaskGroup = {
+	/**  Which group. */
+	key: GroupKey,
+	/**
+	 *  The properties a Task dropped here adopts, in `todo_task_reorder`'s terms: a day sets the
+	 *  date, a Priority sets the Priority, a List moves it. Overdue adopts nothing: dragging
+	 *  among Overdue Tasks only reorders.
+	 */
+	adopt: GroupKey[],
+	/**  Its Tasks, sorted. */
+	tasks: Task[],
+};
+
+/**  How the Tasks inside one group are ordered. */
+export type TaskSort = 
+/**  The drag order. */
+"manual" | 
+/**  Earliest Due date and time first; undated last. */
+"due" | 
+/**  Most urgent Priority first. */
+"priority" | 
+/**  Title, A to Z, ignoring case and accents. */
+"title" | 
+/**  Newest first. */
+"added";
+
 /**  Where a Task stands. A Task is open until it is done or marked Won't do. */
 export type TaskState = 
 /**  Still to do. */
@@ -838,13 +984,15 @@ export type TodaySummary = {
 
 /**  Today: what is late, what is due, and what is already done. */
 export type TodayView = {
-	/**  Open Tasks due before today, oldest date first. */
-	overdue: Task[],
+	/**  How today's Tasks are grouped (a Preference). */
+	group_by: GroupBy,
 	/**
-	 *  Open Tasks due today: timed ones by time, then the rest in manual order. A timed Task whose
-	 *  time has passed stays here.
+	 *  Overdue on top (open Tasks due before today, oldest date first), then today's Tasks in
+	 *  groups: timed ones by time, then the rest in manual order, a more urgent Priority first
+	 *  inside one time block. A timed Task whose time has passed stays here. Priority groups
+	 *  appear only when some Task due today has a Priority.
 	 */
-	tasks: Task[],
+	groups: TaskGroup[],
 	/**  Tasks done today, earliest first. Won't do is not counted. */
 	done: Task[],
 	/**  Overdue, due and done today together: the "of M" in "N of M done". */
@@ -861,26 +1009,25 @@ export type TodoList = {
 	emoji: string | null,
 	/**  Text that sorts bytewise into the List order. */
 	sort_key: string,
+	/**  How its page sorts the Tasks inside each group. */
+	task_sort: TaskSort,
+	/**  How its page groups its Tasks: None, Priority or Due date. */
+	group_by: GroupBy,
 	/**  Row creation time: UTC milliseconds. */
 	created_at: number,
 	/**  Row update time: UTC milliseconds. */
 	updated_at: number,
 };
 
-/**  The Tasks due on one day of Upcoming. */
-export type UpcomingDay = {
-	/**  `YYYY-MM-DD`. */
-	date: string,
-	/**  Timed Tasks by time, then the rest in manual order. */
-	tasks: Task[],
-};
-
-/**  Upcoming: Overdue on top, then only the days from tomorrow on that have Tasks. */
+/**  Upcoming: Overdue on top, then the Tasks from tomorrow on in groups. */
 export type UpcomingView = {
-	/**  Open Tasks due before today, oldest date first. */
-	overdue: Task[],
-	/**  Days with Tasks, earliest first. */
-	days: UpcomingDay[],
+	/**  How the coming Tasks are grouped (a Preference): by day unless changed. */
+	group_by: GroupBy,
+	/**
+	 *  Overdue first, then the groups. By day, only days that have Tasks, earliest first; inside
+	 *  any group Tasks run by date, timed ones by time, then the manual order.
+	 */
+	groups: TaskGroup[],
 };
 
 /**  Last known window geometry. */
