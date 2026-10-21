@@ -635,6 +635,86 @@ fn inbox_has_a_second_group_of_undated_tasks_in_lists() {
 }
 
 #[test]
+fn rows_not_due_today_name_their_day_in_grey_except_where_a_heading_does() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
+    add(
+        &mut conn,
+        "Today timed",
+        Some(TODAY),
+        Some("09:00"),
+        None,
+        Some(&home.id),
+    );
+    add(
+        &mut conn,
+        "Tomorrow timed",
+        Some("2026-10-22"),
+        Some("11:00"),
+        None,
+        Some(&home.id),
+    );
+    add(
+        &mut conn,
+        "Tomorrow untimed",
+        Some("2026-10-22"),
+        None,
+        None,
+        Some(&home.id),
+    );
+    add(
+        &mut conn,
+        "Later",
+        Some("2026-11-04"),
+        None,
+        None,
+        Some(&home.id),
+    );
+    add(&mut conn, "Undated", None, None, None, Some(&home.id));
+    add(
+        &mut conn,
+        "Late",
+        Some("2026-10-20"),
+        Some("10:00"),
+        None,
+        Some(&home.id),
+    );
+    let bridge = phone.bridge();
+
+    let snap = view(&bridge, &format!("list:{}", home.id));
+    let by = |t: &str| {
+        snap["groups"][0]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["title"] == t)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(by("Today timed")["time"], "09:00");
+    assert_eq!(by("Tomorrow timed")["time"], "Tomorrow 11:00");
+    assert_eq!(by("Tomorrow untimed")["time"], "Tomorrow");
+    assert_eq!(by("Later")["time"], "Wed 4 Nov");
+    assert_eq!(by("Undated")["time"], Value::Null);
+    // Overdue keeps the red day and no time.
+    assert_eq!(by("Late")["day"], "Yesterday");
+    assert_eq!(by("Late")["time"], Value::Null);
+
+    // All and Inbox name days too; Today and Upcoming's day groups do not.
+    let all = view(&bridge, "all");
+    assert!(
+        all["groups"][0]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["time"] == "Tomorrow 11:00")
+    );
+    let upcoming = view(&bridge, "upcoming");
+    assert_eq!(upcoming["groups"][1]["rows"][0]["time"], "11:00");
+    assert_eq!(upcoming["groups"][1]["rows"][1]["time"], Value::Null);
+}
+
+#[test]
 fn an_empty_inbox_is_zero() {
     let (phone, mut conn) = Phone::migrated();
     add(&mut conn, "Dated in a list", Some(TODAY), None, None, None);

@@ -1,5 +1,5 @@
 {
-  "about": "Text rules the Todo widget's Rust code (crates/todo/src/widget_text.rs) shares with the app's TypeScript (src/modules/todo/dates.ts, notes.ts, lib/ui/when-time.ts, when-grid.ts). The same cases run in Rust and in Vitest (widget-text.test.ts). plain_title: a title without its Markdown marks. row_date_label: today, date, label. format_hm: a time as the Setting wants it. Known gaps, out of scope here: nested or unbalanced marks, links whose address the app refuses, strikethrough and highlight (kept as text in both).",
+  "about": "Text rules the Todo widget's Rust code (crates/todo/src/widget_text.rs) shares with the app's TypeScript (src/modules/todo/dates.ts, notes.ts, lib/ui/when-time.ts, when-grid.ts). The same cases run in Rust and in Vitest (widget-text.test.ts). plain_title: a title without its Markdown marks. row_date_label: today, date, label. format_hm: a time as the Setting wants it. row_day_label (Rust only, no TypeScript peer): the day on a widget row for a Task not due today. Known gaps, out of scope here: nested or unbalanced marks, links whose address the app refuses, strikethrough and highlight (kept as text in both).",
   "plain_title": [
     { "title": "Call mum", "plain": "Call mum" },
     { "title": "Pay **rent** at [the bank](https://x.y)", "plain": "Pay rent at the bank" },
@@ -23,6 +23,14 @@
     { "today": "2026-10-21", "date": "2026-10-19", "label": "19 Oct" },
     { "today": "2026-12-30", "date": "2027-01-04", "label": "Mon" },
     { "today": "2026-12-30", "date": "2027-01-20", "label": "20 Jan 2027" }
+  ],
+  "row_day_label": [
+    { "today": "2026-10-21", "date": "2026-10-22", "label": "Tomorrow" },
+    { "today": "2026-10-21", "date": "2026-10-23", "label": "Fri" },
+    { "today": "2026-10-21", "date": "2026-10-27", "label": "Tue" },
+    { "today": "2026-10-21", "date": "2026-10-28", "label": "Wed 28 Oct" },
+    { "today": "2026-10-21", "date": "2026-11-04", "label": "Wed 4 Nov" },
+    { "today": "2026-12-30", "date": "2027-01-20", "label": "Wed 20 Jan 2027" }
   ],
   "format_hm": [
     { "hm": "09:05", "format": "24h", "text": "09:05" },

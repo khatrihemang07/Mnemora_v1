@@ -96,6 +96,20 @@ pub fn row_date_label(date: &str, today: &str) -> String {
     }
 }
 
+/// The day a widget row shows for a Task due after today: `Tomorrow`, a weekday within the week,
+/// then `Wed 4 Nov` (with the year when it is not this year). Overdue rows use
+/// [`overdue_day_label`] instead.
+pub fn row_day_label(date: &str, today: &str) -> String {
+    match days_between(today, date) {
+        Some(1) => "Tomorrow".to_owned(),
+        Some(n) if (2..7).contains(&n) => weekday_short(date).unwrap_or("").to_owned(),
+        _ => match weekday_short(date) {
+            Some(weekday) => format!("{weekday} {}", short_date(date, today)),
+            None => date.to_owned(),
+        },
+    }
+}
+
 /// How late an Overdue row is: `Yesterday`, the weekday for the days before that within the week,
 /// then `19 Oct`. The widget shows it in red where a time would go.
 pub fn overdue_day_label(date: &str, today: &str) -> String {
@@ -264,6 +278,18 @@ mod tests {
                 "{case}"
             );
         }
+    }
+
+    #[test]
+    fn row_days_for_tasks_not_due_today() {
+        for case in cases("row_day_label") {
+            assert_eq!(
+                row_day_label(text(&case, "date"), text(&case, "today")),
+                text(&case, "label"),
+                "{case}"
+            );
+        }
+        assert_eq!(row_day_label("nope", "2026-10-21"), "nope");
     }
 
     #[test]

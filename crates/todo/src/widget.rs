@@ -24,6 +24,7 @@ use crate::task::Task;
 use crate::when::LocalNow;
 use crate::widget_text::{
     TimeFormat, day_heading, format_hm, overdue_day_label, plain_title, row_date_label,
+    row_day_label,
 };
 
 /// How many days ahead the Upcoming view looks.
@@ -155,7 +156,7 @@ struct Context<'a> {
 }
 
 impl Context<'_> {
-    fn row(&self, task: &Task, show_list: bool) -> WidgetRow {
+    fn row(&self, task: &Task, show_list: bool, show_day: bool) -> WidgetRow {
         // Late wherever it shows: the diamond's edge turns reddish and the day it was due is red.
         let overdue = task
             .due_date
@@ -172,11 +173,7 @@ impl Context<'_> {
             },
             overdue,
             // An Overdue row shows the day it was due where the time would go.
-            time: task
-                .due_time
-                .as_deref()
-                .filter(|_| !overdue)
-                .map(|t| format_hm(t, self.format)),
+            time: self.when(task, overdue, show_day),
             day: task
                 .due_date
                 .as_deref()
@@ -188,6 +185,27 @@ impl Context<'_> {
                 .filter(|_| show_list)
                 .and_then(|id| self.lists.get(id))
                 .cloned(),
+        }
+    }
+}
+
+impl Context<'_> {
+    /// The grey text on the right: the time, with the day in front when the Task is due on a day
+    /// other than today and the view's heading does not already say it (`Tomorrow 11:00`,
+    /// `Wed 4 Nov`). Overdue rows show their red day instead.
+    fn when(&self, task: &Task, overdue: bool, show_day: bool) -> Option<String> {
+        if overdue {
+            return None;
+        }
+        let time = task.due_time.as_deref().map(|t| format_hm(t, self.format));
+        let day = task
+            .due_date
+            .as_deref()
+            .filter(|d| show_day && *d != self.local.today)
+            .map(|d| row_day_label(d, &self.local.today));
+        match (day, time) {
+            (Some(d), Some(t)) => Some(format!("{d} {t}")),
+            (day, time) => day.or(time),
         }
     }
 }
@@ -298,7 +316,7 @@ fn today_snapshot(conn: &Connection, cx: &Context<'_>) -> AppResult<WidgetSnapsh
     let app = today(conn, cx.local)?;
     let (mut late, mut due) = (Vec::new(), Vec::new());
     for group in &app.groups {
-        let rows = group.tasks.iter().map(|t| cx.row(t, true));
+        let rows = group.tasks.iter().map(|t| cx.row(t, true, false));
         if group.key == GroupKey::Overdue {
             late.extend(rows);
         } else {
@@ -348,7 +366,7 @@ fn upcoming_snapshot(conn: &Connection, cx: &Context<'_>) -> AppResult<WidgetSna
     let (late, days) = week_ahead(conn, cx.local, UPCOMING_DAYS)?;
     let mut groups = Vec::new();
     groups.extend(overdue_group(
-        late.iter().map(|t| cx.row(t, true)).collect(),
+        late.iter().map(|t| cx.row(t, true, false)).collect(),
     ));
     for day in &days {
         let GroupKey::Day { date } = &day.key else {
@@ -357,7 +375,7 @@ fn upcoming_snapshot(conn: &Connection, cx: &Context<'_>) -> AppResult<WidgetSna
         groups.push(WidgetGroup {
             heading: Some(day_heading(date, &cx.local.today)),
             tone: Tone::Normal,
-            rows: day.tasks.iter().map(|t| cx.row(t, true)).collect(),
+            rows: day.tasks.iter().map(|t| cx.row(t, true, false)).collect(),
         });
     }
     let empty = EmptyState {
@@ -442,7 +460,11 @@ impl Context<'_> {
         WidgetGroup {
             heading,
             tone,
-            rows: group.tasks.iter().map(|t| self.row(t, show_list)).collect(),
+            rows: group
+                .tasks
+                .iter()
+                .map(|t| self.row(t, show_list, true))
+                .collect(),
         }
     }
 
