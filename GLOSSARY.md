@@ -109,6 +109,26 @@ _Avoid_: Late, missed
 The compact picker that sets a Task's Due date, time and Repeat: a typed field, quick days, a rolling five-week calendar from this week (days a Repeat lands on are ringed), and a Time and a Repeat chip whose panels float over the calendar. Past days cannot be picked.
 _Avoid_: Date picker (that is the Journal's), scheduler
 
+**Capture box**:
+The one box that adds or edits a Task in place: "+ New task", Q, the phone sheet and Quick edit all use it. As you type it recognises dates, weekdays, times, Repeats, `#List` and `p1`–`p4`, highlights those words and says how each was read ("tomorrow → Thu 22 Oct"). The words stay in the title. Property chips (List, When, Priority, Notes) set the rest by hand.
+_Avoid_: Composer (that is the Journal's), add form, quick entry
+
+**Recognised word**:
+A word or phrase in a Task's title that capture read as a date, time, Repeat, List or Priority. It is highlighted while typing, and shown with a dotted underline and "Understood as …" afterwards, until the field it set is changed by hand. When two recognised words set the same kind of field, the last one wins; the others offer "use instead". Numeric dates ("2/3"), bare numbers and text in quotes or backticks are never recognised.
+_Avoid_: Token, entity, tag
+
+**Kept as text**:
+A recognised word the user turned back into plain text (× on its chip, ⌫ right after it, or quotes). A "kept as text ↺" chip reads it again.
+_Avoid_: Ignored, escaped, dismissed
+
+**Quick add**:
+Adding a Task with the Q key. Inside Todo it opens the capture box in place on the page showing (so the Task inherits Today, a List or an Upcoming day); anywhere else it opens a floating box that adds to the Inbox and says where the Task went.
+_Avoid_: Quick capture, global add
+
+**Quick edit**:
+Turning a Task's row into the capture box (⋯ ▸ Quick edit, or E) to change its title and what it says. Words already in the old title are never read again; only new text is. Enter or clicking away saves (with Undo), Esc cancels.
+_Avoid_: Inline edit, rename
+
 **Repeat**:
 A rule that brings a Task back after it is done: every N days, weeks (on chosen weekdays), months or years, counted either from the Due date or from the day it was done. Doing a repeating Task records that occurrence and moves the same Task to its next Due date. A repeating Task always has a Due date; if none was set, it takes the first day the rule matches; removing the date removes the Repeat. "After done" is only offered for an interval, never with chosen weekdays.
 _Avoid_: Recurrence, rrule, habit
