@@ -14,12 +14,12 @@ use crate::when::{LocalNow, NewWhen, resolve_when};
 use crate::{list_repo, repo};
 
 /// Change-log entity name for Tasks.
-const ENTITY: &str = "todo_task";
+pub(crate) const ENTITY: &str = "todo_task";
 
 /// Writes a change-log record. The snapshot is the Task plus its `deleted_at`, which the Task
 /// type does not carry: a delete record shows when it was deleted, every other one shows null.
 pub(crate) fn record(conn: &Connection, task: &Task, op: ChangeOp) -> AppResult<()> {
-    record_at(conn, task, op, None)
+    record_in(conn, task, op, None, None)
 }
 
 /// Like `record`, with the `deleted_at` the snapshot shows.
@@ -29,8 +29,29 @@ pub(crate) fn record_at(
     op: ChangeOp,
     deleted_at: Option<i64>,
 ) -> AppResult<()> {
+    record_in(conn, task, op, deleted_at, None)
+}
+
+/// Like `record`, as part of an editing session: the session keeps a single record.
+pub(crate) fn record_session(
+    conn: &Connection,
+    task: &Task,
+    op: ChangeOp,
+    session_id: &str,
+) -> AppResult<()> {
+    record_in(conn, task, op, None, Some(session_id))
+}
+
+fn record_in(
+    conn: &Connection,
+    task: &Task,
+    op: ChangeOp,
+    deleted_at: Option<i64>,
+    session_id: Option<&str>,
+) -> AppResult<()> {
     let mut snapshot = serde_json::to_value(task).map_err(TodoError::Snapshot)?;
     if let Some(fields) = snapshot.as_object_mut() {
+        fields.remove("comment_count");
         fields.insert("deleted_at".into(), deleted_at.into());
     }
     changelog::record(
@@ -40,7 +61,7 @@ pub(crate) fn record_at(
             entity: ENTITY.into(),
             entity_id: task.id.clone(),
             op,
-            session_id: None,
+            session_id: session_id.map(str::to_owned),
             snapshot,
         },
     )
@@ -90,6 +111,7 @@ pub fn create_task(
         sort_key: key_after(repo::last_sort_key(&tx)?.as_deref()),
         created_at: now,
         updated_at: now,
+        comment_count: 0,
     };
     repo::insert(&tx, &task)?;
     record(&tx, &task, ChangeOp::Create)?;

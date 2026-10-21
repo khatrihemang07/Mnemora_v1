@@ -7,7 +7,9 @@ use crate::task::{Task, TaskState};
 
 const COLUMNS: &str = "id, list_id, title, notes, due_date, due_time, repeat_freq, repeat_every,
     repeat_days, repeat_mode, priority, state, closed_at, repeat_of, understood, sort_key,
-    created_at, updated_at";
+    created_at, updated_at,
+    (SELECT COUNT(*) FROM todo_comments c
+      WHERE c.task_id = todo_tasks.id AND c.deleted_at IS NULL)";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
     let state: String = r.get(11)?;
@@ -36,6 +38,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
         sort_key: r.get(15)?,
         created_at: r.get(16)?,
         updated_at: r.get(17)?,
+        comment_count: r.get(18)?,
     })
 }
 
@@ -257,7 +260,7 @@ pub fn latest_occurrence(conn: &Connection, task_id: &str) -> AppResult<Option<T
     .map_err(corrupt_or_db)
 }
 
-/// The days on which something was done, newest first, strictly before `before` (a local day,
+/// The days on which something was done or marked Won't do, newest first, strictly before `before` (a local day,
 /// `YYYY-MM-DD`) when given. Days are the device's: closing times are UTC, shifted by the offset.
 pub fn done_days(
     conn: &Connection,
@@ -267,7 +270,7 @@ pub fn done_days(
 ) -> AppResult<Vec<String>> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT date((closed_at + ?1 * 60000) / 1000, 'unixepoch') FROM todo_tasks
-         WHERE state = 'done' AND closed_at IS NOT NULL AND deleted_at IS NULL
+         WHERE state IN ('done', 'wont') AND closed_at IS NOT NULL AND deleted_at IS NULL
            AND (?2 IS NULL OR date((closed_at + ?1 * 60000) / 1000, 'unixepoch') < ?2)
          ORDER BY 1 DESC LIMIT ?3",
     )?;
@@ -276,11 +279,11 @@ pub fn done_days(
         .collect::<Result<_, _>>()?)
 }
 
-/// Live Tasks done in the UTC millisecond range `[start, end)`, newest first.
+/// Live Tasks done or marked Won't do in the UTC millisecond range `[start, end)`, newest first.
 pub fn done_between_newest_first(conn: &Connection, start: i64, end: i64) -> AppResult<Vec<Task>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLUMNS} FROM todo_tasks
-         WHERE state = 'done' AND closed_at >= ?1 AND closed_at < ?2 AND deleted_at IS NULL
+         WHERE state IN ('done', 'wont') AND closed_at >= ?1 AND closed_at < ?2 AND deleted_at IS NULL
          ORDER BY closed_at DESC, sort_key DESC, id DESC"
     ))?;
     stmt.query_map([start, end], from_row)?
@@ -352,4 +355,49 @@ pub fn day_counts(
     Ok(stmt
         .query_map(params![from, to, exclude], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<Result<_, _>>()?)
+}
+
+/// How many live Comments a Task has.
+pub fn count_comments(conn: &Connection, task_id: &str) -> AppResult<u32> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM todo_comments WHERE task_id = ?1 AND deleted_at IS NULL",
+        [task_id],
+        |r| r.get(0),
+    )?)
+}
+
+/// Writes the title and notes, and stamps `updated_at`.
+pub fn update_text(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET title = ?2, notes = ?3, updated_at = ?4 WHERE id = ?1",
+        params![t.id, t.title, t.notes, t.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Writes the Priority, and stamps `updated_at`.
+pub fn update_priority(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET priority = ?2, updated_at = ?3 WHERE id = ?1",
+        params![t.id, t.priority, t.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Ids of Tasks deleted before `cutoff` (UTC milliseconds).
+pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM todo_tasks WHERE deleted_at < ?1 ORDER BY id")?;
+    Ok(stmt
+        .query_map([cutoff], |r| r.get(0))?
+        .collect::<Result<_, _>>()?)
+}
+
+/// Erases a Task row for good. Its occurrences stay, as plain done Tasks.
+pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET repeat_of = NULL WHERE repeat_of = ?1",
+        [id],
+    )?;
+    conn.execute("DELETE FROM todo_tasks WHERE id = ?1", [id])?;
+    Ok(())
 }

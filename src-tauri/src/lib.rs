@@ -39,6 +39,18 @@ macro_rules! specta_builder_for {
                 todo::todo_task_skip,
                 todo::todo_done,
                 todo::todo_task_move,
+                todo::todo_task,
+                todo::todo_task_update,
+                todo::todo_task_set_priority,
+                todo::todo_task_wont_do,
+                todo::todo_task_delete,
+                todo::todo_task_restore,
+                todo::todo_comments,
+                todo::todo_comment_add,
+                todo::todo_comment_edit,
+                todo::todo_comment_delete,
+                todo::todo_comment_restore,
+                todo::todo_task_history,
                 todo::todo_task_set_when,
                 todo::todo_tasks_restore_when,
                 todo::todo_tasks_move_overdue,
@@ -66,6 +78,8 @@ mod state;
 mod test_support;
 mod theme_inject;
 mod todo;
+#[cfg(test)]
+mod todo_sheet_tests;
 #[cfg(desktop)]
 mod window_state;
 
@@ -291,6 +305,18 @@ mod tests {
             "todoTaskSkip",
             "todoDone",
             "todoTaskMove",
+            "todoTask",
+            "todoTaskUpdate",
+            "todoTaskSetPriority",
+            "todoTaskWontDo",
+            "todoTaskDelete",
+            "todoTaskRestore",
+            "todoComments",
+            "todoCommentAdd",
+            "todoCommentEdit",
+            "todoCommentDelete",
+            "todoCommentRestore",
+            "todoTaskHistory",
             "todoTaskSetWhen",
             "todoTasksRestoreWhen",
             "todoTasksMoveOverdue",

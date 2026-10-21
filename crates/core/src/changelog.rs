@@ -1,5 +1,6 @@
 //! The app-wide change log (ADR 0008): full JSON snapshots of changed entities, one record per
-//! editing session. Internal in v1; nothing here is exposed over IPC.
+//! editing session. A Module may read its own records to build a readable history (Todo's Task
+//! History); the raw log itself is never sent over IPC.
 //!
 //! Snapshots hold user content, so nothing in this file may log them.
 
@@ -78,6 +79,49 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
         ],
     )?;
     Ok(())
+}
+
+/// One stored record, as read back.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Record {
+    /// What happened.
+    pub op: String,
+    /// The editing session, if the change had one.
+    pub session_id: Option<String>,
+    /// Full state of the entity after the change.
+    pub snapshot: Value,
+    /// When it was recorded: UTC milliseconds. A session's record carries its latest edit.
+    pub at: i64,
+}
+
+/// Every record of one entity, oldest first. A record whose snapshot cannot be read back is
+/// skipped: the log must never stop a screen from loading.
+pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<Record>> {
+    let mut stmt = conn.prepare(
+        "SELECT op, session_id, snapshot, at FROM change_log
+         WHERE entity = ?1 AND entity_id = ?2 ORDER BY at, rowid",
+    )?;
+    let rows = stmt.query_map([entity, entity_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, Option<String>>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, i64>(3)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (op, session_id, snapshot, at) = row?;
+        if let Ok(snapshot) = serde_json::from_str(&snapshot) {
+            out.push(Record {
+                op,
+                session_id,
+                snapshot,
+                at,
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// Deletes all history of the given entities of one kind. Returns how many records went.
@@ -163,6 +207,19 @@ mod tests {
         record(&conn, &change("e2", Some("s1"), json!({"v": 3}))).unwrap();
         assert_eq!(snapshots(&conn, "e1").len(), 2);
         assert_eq!(snapshots(&conn, "e2").len(), 1);
+    }
+
+    #[test]
+    fn read_returns_one_entity_oldest_first() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"v": 1}))).unwrap();
+        record(&conn, &change("e2", None, json!({"v": 9}))).unwrap();
+        record(&conn, &change("e1", Some("s1"), json!({"v": 2}))).unwrap();
+        let read = read(&conn, "entry", "e1").unwrap();
+        let seen: Vec<_> = read.iter().map(|r| r.snapshot.clone()).collect();
+        assert_eq!(seen, vec![json!({"v": 1}), json!({"v": 2})]);
+        assert_eq!(read[1].session_id.as_deref(), Some("s1"));
+        assert!(super::read(&conn, "entry", "nope").unwrap().is_empty());
     }
 
     #[test]

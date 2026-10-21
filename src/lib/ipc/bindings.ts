@@ -105,6 +105,43 @@ export const commands = {
 	 *  a `move` change.
 	 */
 	todoTaskMove: (id: string, listId: string | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_move", { id, listId })),
+	/**  One Task in any state, with its Comment count: what the Task sheet opens. */
+	todoTask: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task", { id })),
+	/**
+	 *  Replaces a Task's title and notes: the Task sheet's autosave. All the saves of one opening of
+	 *  the sheet carry the same `session_id`, so the change log keeps one `update` record for them.
+	 *  A blank, multi-line or over-long title is refused; the same text changes nothing.
+	 */
+	todoTaskUpdate: (id: string, title: string, notes: string, sessionId: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_update", { id, title, notes, sessionId })),
+	/**  Sets an open Task's Priority: 1 (highest) to 4 (none, the default). Records an `update` change. */
+	todoTaskSetPriority: (id: string, priority: number) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_set_priority", { id, priority })),
+	/**
+	 *  Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. A repeating Task
+	 *  is refused (it is skipped instead). Undo is `todo_task_reopen`. Records a `tick` change.
+	 */
+	todoTaskWontDo: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_wont_do", { id })),
+	/**
+	 *  Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
+	 *  stay in Done. Records a `delete` change.
+	 */
+	todoTaskDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("todo_task_delete", { id })),
+	/**
+	 *  Undoes `todo_task_delete`. A Task whose List was deleted meanwhile returns to the Inbox.
+	 *  Records a `restore` change.
+	 */
+	todoTaskRestore: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_restore", { id })),
+	/**  A Task's Comments, oldest first. */
+	todoComments: (taskId: string) => typedError<Comment[], AppError>(__TAURI_INVOKE("todo_comments", { taskId })),
+	/**  Adds a Comment (one line, up to 1000 characters) to a Task. */
+	todoCommentAdd: (taskId: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_add", { taskId, body })),
+	/**  Replaces a Comment's text; it then shows "edited". */
+	todoCommentEdit: (id: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_edit", { id, body })),
+	/**  Deletes a Comment (erased after 30 days); `todo_comment_restore` is Undo. */
+	todoCommentDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("todo_comment_delete", { id })),
+	/**  Undoes `todo_comment_delete`. */
+	todoCommentRestore: (id: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_restore", { id })),
+	/**  A Task's History: readable lines built from the change log, newest first. */
+	todoTaskHistory: (id: string) => typedError<HistoryLine[], AppError>(__TAURI_INVOKE("todo_task_history", { id })),
 	/**
 	 *  Sets an open Task's Due date, time and Repeat, or clears them when all are none. A time
 	 *  without a date means today if it is still ahead and tomorrow otherwise; a Repeat without a date
@@ -214,6 +251,25 @@ export type AppInfo = {
 	log_dir: string,
 	/**  First name from the OS account, for the greeting when no display name is set. */
 	os_first_name: string,
+};
+
+/**
+ *  A note left on a Task. It belongs to the Task row it was written on: for a repeating Task, the
+ *  current occurrence (completing moves it to the done copy).
+ */
+export type Comment = {
+	/**  `UUIDv7`. */
+	id: string,
+	/**  The Task it is on. */
+	task_id: string,
+	/**  One line with inline Markdown marks, up to 1000 characters. */
+	body: string,
+	/**  Whether it was changed after it was written. */
+	edited: boolean,
+	/**  When it was written: UTC milliseconds. */
+	created_at: number,
+	/**  When it was last edited: UTC milliseconds. */
+	updated_at: number,
 };
 
 /**  What ticking a Task did. */
@@ -336,6 +392,19 @@ export type ErrorCode =
 "database" | 
 /**  Anything else; a bug or an unexpected state. */
 "internal";
+
+/**  One line of a Task's History. */
+export type HistoryLine = {
+	/**  When it happened: UTC milliseconds. */
+	at: number,
+	/**
+	 *  What kind of change: `create`, `done`, `reopen`, `wont`, `delete`, `restore`, `list`,
+	 *  `date`, `time`, `repeat`, `priority`, `title` or `notes`. The UI picks an icon from it.
+	 */
+	kind: string,
+	/**  The readable line. */
+	text: string,
+};
 
 /**  One Entry found by a search. */
 export type Hit = {
@@ -596,6 +665,11 @@ export type Task = {
 	created_at: number,
 	/**  Row update time: UTC milliseconds. */
 	updated_at: number,
+	/**
+	 *  How many live Comments it has: counted when read, never stored (and left out of the
+	 *  change-log snapshot).
+	 */
+	comment_count: number,
 };
 
 /**  Where a Task stands. A Task is open until it is done or marked Won't do. */
