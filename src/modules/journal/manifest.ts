@@ -7,7 +7,7 @@ import type { ModuleContext, ModuleManifest } from '../../lib/router';
 import { requestCompose, requestGoToDate } from './launcher.svelte';
 import { requestSearch } from './search.svelte';
 
-/** ⌘N, "New journal entry" and the Home card's Write: Today, composer focused, from anywhere. */
+/** ⌘N, N, "New journal entry" and the Home card's Write: Today, composer focused, from anywhere. */
 function compose(ctx: ModuleContext) {
   requestCompose();
   ctx.navigate('/journal');
@@ -27,6 +27,8 @@ export const journalManifest: ModuleManifest = {
     component: () => import('./JournalSettings.svelte'),
   },
   create: compose,
+  // N starts an Entry from anywhere (ADR 0011): ⌘N's bare twin, never while typing.
+  bareKeys: [{ key: 'n', run: compose }],
   paletteActions: [
     {
       id: 'new',

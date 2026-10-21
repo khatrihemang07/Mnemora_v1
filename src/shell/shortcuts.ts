@@ -55,6 +55,7 @@ export const SHORTCUT_LIST = [
     label: 'Todo: G, then T U I A or D goes to Today, Upcoming, Inbox, All or Done',
     keys: ['G', 'T U I A D'],
   },
+  { label: 'Journal: start an Entry (anywhere, when not typing)', keys: 'N' },
   { label: 'Journal: search', keys: shortcutLabel('F') },
   { label: 'Journal: go to date', keys: shortcutLabel('G') },
   { label: 'Journal: finish writing (either key)', keys: [shortcutLabel('↵'), 'Esc'] },
