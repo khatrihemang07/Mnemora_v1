@@ -7,7 +7,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   AllView,
   AppError,
+  Completion,
   DayCount,
+  DoneView,
   ListDeletion,
   LocalNow,
   OverdueMove,
@@ -22,6 +24,7 @@ import {
   createTodoMock,
   foldName,
   keyAfter,
+  resetChecklist,
   validateEmoji,
   validateListName,
   validateTitle,
@@ -40,7 +43,9 @@ interface Step {
     | 'list_restore'
     | 'set_when'
     | 'move_overdue'
-    | 'undo_move';
+    | 'undo_move'
+    | 'skip'
+    | 'reopen_occurrence';
   title?: string;
   date?: string | null;
   time?: string | null;
@@ -53,6 +58,15 @@ interface Step {
   list?: number | string | null;
   choice?: 'delete' | 'inbox' | { list: number | string };
   deletion?: number;
+  repeat?: FixtureRepeat | null;
+  occurrence?: number;
+}
+interface FixtureRepeat {
+  freq: string;
+  every: number;
+  mode: string;
+  weekdays?: number[];
+  anchor?: number;
 }
 interface Case {
   today?: string;
@@ -67,8 +81,23 @@ interface Case {
 const pick = <T>(v: number | string | null | undefined, made: T[]) =>
   typeof v === 'number' ? made[v] : (v ?? null);
 
+/** A fixture's Repeat (`weekdays` or `anchor` instead of the wire's `days`) as the wire shape. */
+const wireRepeat = (r: FixtureRepeat | null | undefined) =>
+  r
+    ? {
+        freq: r.freq,
+        every: r.every,
+        days:
+          r.freq === 'week'
+            ? (r.weekdays ?? []).reduce((m, d) => m | (1 << d), 0)
+            : (r.anchor ?? 0),
+        mode: r.mode,
+      }
+    : null;
+
 const DEFAULT_TODAY = '2026-10-21';
 const DEFAULT_NOW = '14:05';
+const LOCAL: LocalNow = { today: DEFAULT_TODAY, now: DEFAULT_NOW, offset_min: 0 };
 
 function run(c: Case) {
   const mock = createTodoMock();
@@ -76,6 +105,7 @@ function run(c: Case) {
   const lists: string[] = [];
   const deletions: ListDeletion[] = [];
   const moves: OverdueMove[] = [];
+  const occurrences: string[] = [];
   // The clock steps run against: the case's, unless a step pins its own.
   const clock = (step?: Step): LocalNow => ({
     today: step?.today ?? c.today ?? DEFAULT_TODAY,
@@ -103,8 +133,20 @@ function run(c: Case) {
             id,
             date: step.date ?? null,
             time: step.time ?? null,
+            repeat: wireRepeat(step.repeat),
             local: clock(step),
           });
+          break;
+        case 'complete': {
+          const done = mock.handle('todo_task_complete', { id, local: clock(step) }) as Completion;
+          if (done.occurrence) occurrences.push(done.occurrence.id);
+          break;
+        }
+        case 'skip':
+          mock.handle('todo_task_skip', { id, local: clock(step) });
+          break;
+        case 'reopen_occurrence':
+          mock.handle('todo_task_reopen', { id: pick(step.occurrence, occurrences) });
           break;
         case 'move_overdue':
           moves.push(
@@ -158,6 +200,7 @@ function run(c: Case) {
   const titles = (ts: Task[]) => ts.map((t) => t.title);
   const todayView = mock.handle('todo_today', { local: view }) as TodayView;
   const upcoming = mock.handle('todo_upcoming', { local: view }) as UpcomingView;
+  const doneView = mock.handle('todo_done', { before: null, days: 60, local: view }) as DoneView;
   const counts = mock.handle('todo_day_counts', {
     from: view.today,
     to: '2027-12-31',
@@ -178,6 +221,12 @@ function run(c: Case) {
     sidebar_today: [sidebar.today_count, sidebar.overdue_count],
     counts: [sidebar.inbox_count, ...sidebar.lists.map((e) => e.open_count)],
     all: all.groups.map((g) => [g.list?.name ?? 'Inbox', g.tasks.map((t) => t.title)]),
+    repeats: all.groups.flatMap((g) =>
+      g.tasks
+        .filter((t) => t.repeat_freq !== null)
+        .map((t) => [t.title, t.repeat_freq, t.repeat_every, t.repeat_days, t.repeat_mode]),
+    ),
+    done: doneView.days.flatMap((d) => d.tasks.map((t) => t.title)),
   };
 }
 
@@ -193,6 +242,60 @@ describe('the Todo mock follows the shared rule fixtures', () => {
   }
 });
 
+describe('the Todo mock: Done', () => {
+  const kolkata: LocalNow = { today: '2026-10-21', now: '14:05', offset_min: 330 };
+
+  /** Five Tasks done at fixed UTC instants on four device days (Kolkata). */
+  function doneAt() {
+    vi.useFakeTimers();
+    const mock = createTodoMock();
+    const stamps: [string, string][] = [
+      ['a', '2026-10-21T10:00:00Z'],
+      ['b', '2026-10-21T12:00:00Z'],
+      ['c', '2026-10-20T08:00:00Z'],
+      ['d', '2026-10-18T20:00:00Z'],
+      ['e', '2026-10-15T04:00:00Z'],
+    ];
+    for (const [title, at] of stamps) {
+      const { id } = mock.handle('todo_task_create', { title }) as Task;
+      vi.setSystemTime(new Date(at));
+      mock.handle('todo_task_complete', { id, local: LOCAL });
+    }
+    return mock;
+  }
+  const page = (mock: ReturnType<typeof createTodoMock>, before: string | null, days: number) =>
+    mock.handle('todo_done', { before, days, local: kolkata }) as DoneView;
+  const shape = (v: DoneView) => v.days.map((d) => [d.date, d.tasks.map((t) => t.title)]);
+
+  it('pages by day, newest first, with a cursor', () => {
+    try {
+      const mock = doneAt();
+      const first = page(mock, null, 2);
+      expect(shape(first)).toEqual([
+        ['2026-10-21', ['b', 'a']],
+        ['2026-10-20', ['c']],
+      ]);
+      expect(first.next_cursor).toBe('2026-10-20');
+      const second = page(mock, first.next_cursor, 2);
+      expect(shape(second)).toEqual([
+        ['2026-10-19', ['d']],
+        ['2026-10-15', ['e']],
+      ]);
+      expect(second.next_cursor).toBeNull();
+      expect(page(mock, '2026-10-15', 2).days).toEqual([]);
+      expect(() => page(mock, 'nope', 2)).toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('unticks Checklist items the way Rust does', () => {
+    expect(
+      resetChecklist('Buy:\n- [x] milk\n- [ ] eggs\n  * [X] nested\n+ [x]\nplain - [x] text'),
+    ).toBe('Buy:\n- [ ] milk\n- [ ] eggs\n  * [ ] nested\n+ [ ]\nplain - [x] text');
+  });
+});
+
 describe('the Todo mock', () => {
   it("lists what was done today in the device's day", () => {
     vi.useFakeTimers();
@@ -205,9 +308,9 @@ describe('the Todo mock', () => {
       for (const t of [a, b, c]) {
         mock.handle('todo_task_set_when', { id: t.id, date: '2026-10-21', time: null, local });
       }
-      mock.handle('todo_task_complete', { id: a.id });
+      mock.handle('todo_task_complete', { id: a.id, local });
       vi.setSystemTime(new Date('2026-10-20T18:29:59Z')); // a minute before Kolkata's midnight
-      mock.handle('todo_task_complete', { id: b.id });
+      mock.handle('todo_task_complete', { id: b.id, local });
       const view = mock.handle('todo_today', { local }) as TodayView;
       expect(view.done.map((t) => t.title)).toEqual(['a']);
       expect(view.tasks.map((t) => t.title)).toEqual(['c']);
@@ -244,8 +347,12 @@ describe('the Todo mock', () => {
   it('sets and clears the done time', () => {
     const mock = createTodoMock();
     const { id } = mock.handle('todo_task_create', { title: 'a' }) as Task;
-    const done = mock.handle('todo_task_complete', { id }) as Task;
+    const { task: done, occurrence } = mock.handle('todo_task_complete', {
+      id,
+      local: LOCAL,
+    }) as Completion;
     expect(done.state).toBe('done');
+    expect(occurrence).toBeNull();
     expect(done.closed_at).toBeTypeOf('number');
     const back = mock.handle('todo_task_reopen', { id }) as Task;
     expect([back.state, back.closed_at]).toEqual(['open', null]);
@@ -280,7 +387,7 @@ describe('the Todo mock', () => {
     const list = mock.handle('todo_list_create', { name: 'Home' }) as TodoList;
     const a = mock.handle('todo_task_create', { title: 'a', listId: list.id }) as Task;
     mock.handle('todo_task_create', { title: 'b', listId: list.id });
-    mock.handle('todo_task_complete', { id: a.id });
+    mock.handle('todo_task_complete', { id: a.id, local: LOCAL });
     const entry = (
       mock.handle('todo_lists', {
         local: { today: DEFAULT_TODAY, now: DEFAULT_NOW, offset_min: 0 },
