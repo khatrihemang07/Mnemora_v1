@@ -6,6 +6,7 @@ pub mod migrate;
 use std::path::Path;
 
 pub use rusqlite::Connection;
+use rusqlite::OpenFlags;
 
 use crate::error::AppResult;
 
@@ -19,6 +20,21 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
     configure(&conn)?;
     Ok(conn)
+}
+
+/// Opens the database at `path` only if it already exists; never creates the file or its folder.
+/// `Ok(None)` means there is no database yet. For readers that must not make one (the Todo
+/// widget): the app alone creates and migrates.
+pub fn open_existing(path: &Path) -> AppResult<Option<Connection>> {
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE,
+    )?;
+    configure(&conn)?;
+    Ok(Some(conn))
 }
 
 /// An in-memory database with the same pragmas that apply to memory databases; for tests.
@@ -56,6 +72,29 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let conn = open(&dir.path().join("deep/er/x.db")).unwrap();
         assert_eq!(pragma_string(&conn, "journal_mode"), "wal");
+        assert_eq!(pragma_string(&conn, "foreign_keys"), "1");
+    }
+
+    #[test]
+    fn open_existing_returns_none_and_creates_nothing_for_a_missing_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("deep/er/x.db");
+        assert!(open_existing(&missing).unwrap().is_none());
+        assert!(!dir.path().join("deep").exists());
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn open_existing_opens_a_database_made_by_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.db");
+        open(&path)
+            .unwrap()
+            .execute_batch("CREATE TABLE t(a); INSERT INTO t VALUES (7)")
+            .unwrap();
+        let conn = open_existing(&path).unwrap().unwrap();
+        let a: i64 = conn.query_row("SELECT a FROM t", [], |r| r.get(0)).unwrap();
+        assert_eq!(a, 7);
         assert_eq!(pragma_string(&conn, "foreign_keys"), "1");
     }
 

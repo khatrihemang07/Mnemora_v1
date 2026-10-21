@@ -1,6 +1,7 @@
 //! Tracing setup: daily rolling files, a console layer (which is logcat on Android), 7-day pruning.
 
 use std::path::Path;
+use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use tracing_appender::non_blocking::WorkerGuard;
@@ -16,6 +17,9 @@ pub const LOG_PREFIX: &str = "mnemora";
 pub const RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+
+/// The filter of the subscriber this process already installed, so a second `init` can share it.
+static INSTALLED: Mutex<Option<reload::Handle<EnvFilter, Registry>>> = Mutex::new(None);
 
 /// Keeps the file writer alive and allows changing the level at runtime.
 /// Dropping it flushes pending log lines.
@@ -58,8 +62,20 @@ pub fn normalize_level(level: &str) -> AppResult<String> {
 }
 
 /// Prunes old files, then installs the global subscriber. `RUST_LOG` overrides `level`
-/// for developers. Call once per process.
+/// for developers.
+///
+/// Safe to call more than once per process (the Todo widget can start the process before Tauri
+/// does): later calls install nothing and return a handle on the same filter, so `set_level`
+/// still works. Only the first handle owns the file writer, so it must stay alive.
 pub fn init(log_dir: &Path, level: &str) -> AppResult<LogHandle> {
+    let mut installed = INSTALLED.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(filter) = installed.as_ref() {
+        let (_writer, guard) = tracing_appender::non_blocking(std::io::sink());
+        return Ok(LogHandle {
+            _guard: guard,
+            filter: filter.clone(),
+        });
+    }
     std::fs::create_dir_all(log_dir)?;
     if let Err(e) = prune_old_logs(log_dir, SystemTime::now(), RETENTION) {
         // Pruning is housekeeping; never block startup on it. eprintln because the subscriber
@@ -99,6 +115,7 @@ pub fn init(log_dir: &Path, level: &str) -> AppResult<LogHandle> {
     subscriber.try_init().map_err(|e| {
         AppError::new(ErrorCode::Internal, "Logging was already initialised").with_details(e)
     })?;
+    *installed = Some(filter_handle.clone());
     Ok(LogHandle {
         _guard: guard,
         filter: filter_handle,
@@ -194,6 +211,10 @@ mod tests {
     fn init_writes_readable_lines_and_level_can_change() {
         let dir = tempfile::tempdir().unwrap();
         let handle = init(dir.path(), "info").unwrap();
+        // A second start in the same process is harmless and shares the level control.
+        let second = init(dir.path(), "info").unwrap();
+        second.set_level("info").unwrap();
+        drop(second);
         tracing::info!(target: "mnemora_core::test", "hello from test");
         tracing::debug!("hidden at info");
         handle.set_level("debug").unwrap();

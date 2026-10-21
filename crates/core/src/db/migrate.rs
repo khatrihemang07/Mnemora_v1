@@ -91,6 +91,39 @@ fn from_total(conn: &Connection, modules: &[&dyn Module]) -> AppResult<usize> {
         .try_fold(0, |acc, m| Ok(acc + stored_version(conn, m.id())?))
 }
 
+/// Whether every Module is at its latest version. Writes nothing (not even `user_version`, which
+/// `plan` borrows), so a reader that must never migrate, such as the Todo widget, can ask.
+/// A database without the migration table is behind. One newer than the app is an error.
+pub fn is_current(conn: &Connection, modules: &[&dyn Module]) -> AppResult<bool> {
+    let has_table: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_module_migrations')",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_table {
+        return Ok(false);
+    }
+    // The version counter lives in the file header, so count pending steps on a scratch
+    // in-memory connection instead of lending `user_version` on the real one.
+    let scratch = Connection::open_in_memory()?;
+    for module in modules {
+        let from = stored_version(conn, module.id())?;
+        scratch.pragma_update(None, "user_version", i64::try_from(from).unwrap_or(0))?;
+        let pending = module.migrations().pending_migrations(&scratch)?;
+        if pending < 0 {
+            return Err(AppError::new(
+                ErrorCode::Database,
+                "The database is newer than this version of the app",
+            )
+            .with_details(format!("module {} is at version {from}", module.id())));
+        }
+        if pending > 0 {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Works out which Modules have pending migrations, without changing any schema.
 fn plan(conn: &Connection, modules: &[&dyn Module]) -> AppResult<Vec<Step>> {
     let mut steps = Vec::new();
@@ -239,6 +272,43 @@ mod tests {
             !has_table(&copy, "b_items"),
             "backup predates the migration"
         );
+    }
+
+    #[test]
+    fn is_current_reports_behind_then_current_without_writing() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = crate::db::open_in_memory().unwrap();
+        let one_short = Fake {
+            id: "a",
+            sql: &["CREATE TABLE a_items(id INTEGER)"],
+        };
+        assert!(!is_current(&conn, &[&A]).unwrap(), "no migration table yet");
+
+        run(&mut conn, &[&one_short], dir.path()).unwrap();
+        assert!(is_current(&conn, &[&one_short]).unwrap());
+        assert!(!is_current(&conn, &[&A]).unwrap(), "one migration short");
+        assert!(!is_current(&conn, &[&one_short, &B]).unwrap(), "new Module");
+        let uv: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(uv, 0, "the check leaves user_version alone");
+        assert_eq!(version(&conn, "a"), Some(1), "and migrates nothing");
+
+        run(&mut conn, &[&A, &B], dir.path()).unwrap();
+        assert!(is_current(&conn, &[&A, &B]).unwrap());
+    }
+
+    #[test]
+    fn is_current_refuses_a_database_newer_than_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = crate::db::open_in_memory().unwrap();
+        run(&mut conn, &[&A], dir.path()).unwrap();
+        let old_a = Fake {
+            id: "a",
+            sql: &["CREATE TABLE a_items(id INTEGER)"],
+        };
+        let err = is_current(&conn, &[&old_a]).unwrap_err();
+        assert_eq!(err.code, crate::error::ErrorCode::Database);
     }
 
     #[test]
