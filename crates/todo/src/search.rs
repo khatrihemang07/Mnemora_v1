@@ -93,6 +93,8 @@ fn hits(conn: &Connection, tasks: Vec<Task>, matcher: &Matcher) -> AppResult<Vec
 
 /// Searches live Tasks. Every word is required and matches by prefix; quoted text is an exact
 /// phrase. Nothing to search for returns nothing; deleted Tasks and Comments are never found.
+/// A known v1 limit: the words must all match in the title and notes together or all in one
+/// Comment, so words split between a Task and its Comments find nothing.
 pub fn search(conn: &Connection, query: &str) -> AppResult<TaskSearchResults> {
     let terms = query::parse(query);
     let mut results = TaskSearchResults {

@@ -3,7 +3,7 @@
   then a "Lists" header with a + and the Lists. The + turns into an inline name field (Enter
   creates the List and opens it). Right-click (long-press on a phone) a List for Rename, Emoji… and
   Delete list…; a List with Tasks asks what becomes of them first. Counts are open Tasks. ⋯ on the
-  Lists header sorts the Lists (Manual, Name A–Z or Z–A, Most open, Recently created); with Manual
+  Lists header sorts the Lists (Manual, Name A–Z or Z–A, Most open, Oldest first); with Manual
   a List can be dragged to a new place, and a dragged Task dropped on a List, Today or the Inbox
   moves there.
 -->
@@ -21,14 +21,13 @@
   import EmojiPicker from '../../lib/ui/EmojiPicker.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
-  import { LIST_SORT_OPTIONS, LISTS_SORT_PREF, sortMenuLabel } from './arrange';
   import DeleteListDialog from './DeleteListDialog.svelte';
   import DragLayer from './DragLayer.svelte';
   import ListGlyph from './ListGlyph.svelte';
-  import { createListAndOpen, deleteListWithUndo } from './list-actions';
+  import { createListAndOpen, deleteListWithUndo, listSortItems } from './list-actions';
   import ListNameField from './ListNameField.svelte';
   import { todoNav } from './nav.svelte';
-  import { invalidateTodo, listsQuery, renameList, savePreference, setListEmoji } from './queries';
+  import { invalidateTodo, listsQuery, renameList, setListEmoji } from './queries';
   import TreeRow from './TreeRow.svelte';
   import { VIEW_ICONS } from './view-icons';
   import { listView, SMART_VIEWS, sameView, smartView, type TodoView, viewCount } from './views';
@@ -51,15 +50,7 @@
   // The Lists sort: a choice menu on the header's ⋯, kept as a Preference.
   let sortOpen = $state(false);
   let sortButton = $state<HTMLButtonElement | null>(null);
-  const sortItems = $derived<MenuItem[]>(
-    LIST_SORT_OPTIONS.map((o) => ({
-      label: sortMenuLabel(o),
-      checked: sortedBy === o.value,
-      onselect: () => {
-        void savePreference(LISTS_SORT_PREF, o.value).catch(() => notifyError("Couldn't sort the Lists"));
-      },
-    })),
-  );
+  const sortItems = $derived(listSortItems(sortedBy, true));
 
   // Creating: the + turns into a field under the header.
   let creating = $state(false);
@@ -162,7 +153,7 @@
         label="Sort Lists"
         size="sm"
         onclick={() => (sortOpen = true)}
-        class={sortedBy === 'manual' ? '' : 'text-hue-todo'}
+        class={sortedBy === 'manual' ? '' : 'text-hue-todo!'}
       />
       <IconButton
         bind:ref={plus}

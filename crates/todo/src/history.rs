@@ -22,8 +22,8 @@ pub struct HistoryLine {
     /// When it happened: UTC milliseconds.
     #[specta(type = u32)]
     pub at: i64,
-    /// What kind of change: `create`, `done`, `reopen`, `wont`, `delete`, `restore`, `list`,
-    /// `date`, `time`, `repeat`, `priority`, `title` or `notes`. The UI picks an icon from it.
+    /// What kind of change: `create`, `done`, `skip`, `reopen`, `wont`, `delete`, `restore`,
+    /// `list`, `date`, `time`, `repeat`, `priority`, `title` or `notes`. The UI picks an icon from it.
     pub kind: String,
     /// The readable line.
     pub text: String,
@@ -49,6 +49,21 @@ fn day_text(date: &str) -> String {
         WEEKDAYS[weekday],
         MONTHS[month.clamp(1, 12) - 1]
     )
+}
+
+/// `Thu` for a `YYYY-MM-DD` date, or the full `Thu 22 Oct` when `other` is a week or more away
+/// (a weekday alone would then be ambiguous). For "Skipped (Thu → Sat)".
+fn skip_days(from: &str, to: &str) -> (String, String) {
+    let near = matches!((epoch_day(from), epoch_day(to)), (Some(a), Some(b)) if (b - a).abs() < 7);
+    let name = |d: &str| {
+        let full = day_text(d);
+        if near {
+            full.split(' ').next().unwrap_or(&full).to_owned()
+        } else {
+            full
+        }
+    };
+    (name(from), name(to))
 }
 
 /// `22 Oct`: the day without its weekday, for "occurrence of 18 Oct".
@@ -147,8 +162,9 @@ fn first_line(cur: &Snap) -> (&'static str, String) {
 }
 
 /// Deleted, restored, and the state: done, Won't do, reopened. A repeating Task is ticked without
-/// closing, moving to its next date instead: that is an occurrence (`step`).
-fn state_lines(old: &Snap, cur: &Snap, step: bool, out: &mut Lines) {
+/// closing, moving to its next date instead: that is an occurrence (`step`), unless the record is
+/// marked `skipped` (Skip moves it on without doing it).
+fn state_lines(old: &Snap, cur: &Snap, step: bool, skipped: bool, out: &mut Lines) {
     match (is_deleted(old), is_deleted(cur)) {
         (false, true) => out.push(("delete", "Deleted".to_owned())),
         (true, false) => out.push(("restore", "Restored".to_owned())),
@@ -156,7 +172,10 @@ fn state_lines(old: &Snap, cur: &Snap, step: bool, out: &mut Lines) {
     }
     if step {
         if let (Some(a), Some(b)) = (old.text("due_date"), cur.text("due_date")) {
-            out.push(if b > a {
+            out.push(if skipped {
+                let (from, to) = skip_days(a, b);
+                ("skip", format!("Skipped ({from} → {to})"))
+            } else if b > a {
                 ("done", format!("Done (occurrence of {})", short_day(a)))
             } else {
                 (
@@ -287,8 +306,9 @@ fn record_lines(
         && old_due.is_some()
         && new_due.is_some()
         && old_due != new_due;
+    let skipped = step && cur.0.get("skipped").and_then(Value::as_bool) == Some(true);
     let mut out = Vec::new();
-    state_lines(&old, &cur, step, &mut out);
+    state_lines(&old, &cur, step, skipped, &mut out);
     schedule_lines(conn, &old, &cur, step, &mut out)?;
     edit_lines(&old, &cur, record, base, &mut out);
     Ok(out)
@@ -340,6 +360,18 @@ mod tests {
         assert_eq!(day_text("2026-10-18"), "Sun 18 Oct");
         assert_eq!(short_day("2026-10-18"), "18 Oct");
         assert_eq!(day_text("nonsense"), "nonsense");
+    }
+
+    #[test]
+    fn a_skip_names_weekdays_alone_within_a_week_and_whole_days_beyond() {
+        assert_eq!(
+            skip_days("2026-10-22", "2026-10-24"),
+            ("Thu".to_owned(), "Sat".to_owned())
+        );
+        assert_eq!(
+            skip_days("2026-10-22", "2026-11-05"),
+            ("Thu 22 Oct".to_owned(), "Thu 5 Nov".to_owned())
+        );
     }
 
     #[test]

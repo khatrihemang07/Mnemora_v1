@@ -2,12 +2,11 @@ import { isTypingTarget } from '../../lib/bare-key';
 import type { Task } from '../../lib/ipc/bindings';
 
 /**
- * The rows on screen, for the keys that act on "the row under the pointer or with focus". Each row
- * registers its Task while it is mounted; the hovered row is the one under the pointer.
+ * The rows on screen, for the keys that act on the focused row. Each row registers its Task while it
+ * is mounted.
  */
 class TaskRows {
   #rows = new Map<string, { task: Task; pickers: RowPickers }>();
-  hoveredId = $state<string | null>(null);
 
   /** `pickers` open the row's own pickers, for the keys D and M. */
   register(task: Task, pickers: RowPickers): () => void {
@@ -15,7 +14,6 @@ class TaskRows {
     this.#rows.set(task.id, entry);
     return () => {
       if (this.#rows.get(task.id) === entry) this.#rows.delete(task.id);
-      if (this.hoveredId === task.id) this.hoveredId = null;
     };
   }
 

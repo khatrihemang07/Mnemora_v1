@@ -90,7 +90,7 @@ export const LIST_SORT_OPTIONS: readonly Option<ListSort>[] = [
   { value: 'name_asc', label: 'Name A–Z' },
   { value: 'name_desc', label: 'Name Z–A' },
   { value: 'most_open', label: 'Most open' },
-  { value: 'created', label: 'Recently created' },
+  { value: 'created', label: 'Oldest first' },
 ];
 
 /** What Done Tasks in Lists can do: the Settings screen offers these. */

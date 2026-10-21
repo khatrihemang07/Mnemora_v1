@@ -2705,7 +2705,7 @@
     },
     {
       "rule": "repeat.skip",
-      "name": "skipping moves the Task on and records nothing",
+      "name": "skipping moves the Task on and records no occurrence",
       "steps": [
         {
           "op": "create",
@@ -2997,7 +2997,7 @@
     },
     {
       "rule": "wont.refused",
-      "name": "Won't do needs an open, non-repeating Task",
+      "name": "Won't do needs an open Task, and on a repeating Task it skips to the next date",
       "steps": [
         {
           "op": "create",
@@ -3036,7 +3036,8 @@
         }
       ],
       "expect": {
-        "results": ["ok", "ok", "validation", "ok", "ok", "validation", "not_found"],
+        "results": ["ok", "ok", "validation", "ok", "ok", "ok", "not_found"],
+        "dues": [["r", "2026-10-22", null]],
         "wont": []
       }
     },
@@ -3696,6 +3697,84 @@
           "Reopened (occurrence of 21 Oct)",
           "Done (occurrence of 21 Oct)",
           "Repeat set: Every day",
+          "Created"
+        ]
+      }
+    },
+    {
+      "rule": "history.skip",
+      "name": "a skip reads as Skipped with the weekdays, not as an occurrence or a Due date edit",
+      "steps": [
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-22",
+          "repeat": {
+            "freq": "day",
+            "every": 2,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "skip",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "history": ["Skipped (Thu → Sat)", "Repeat set: Every 2 days", "Created"]
+      }
+    },
+    {
+      "rule": "history.skip",
+      "name": "undoing a skip is a Due date edit, and completing after a skip is still an occurrence",
+      "steps": [
+        {
+          "op": "create",
+          "title": "r",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-22",
+          "repeat": {
+            "freq": "day",
+            "every": 2,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "skip",
+          "task": 0
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-22",
+          "repeat": {
+            "freq": "day",
+            "every": 2,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "history": [
+          "Done (occurrence of 22 Oct)",
+          "Due date Sat 24 Oct → Thu 22 Oct",
+          "Skipped (Thu → Sat)",
+          "Repeat set: Every 2 days",
           "Created"
         ]
       }

@@ -82,7 +82,7 @@ A short, dated remark added to a Task, kept apart from its notes. On a repeating
 _Avoid_: Note, reply, message
 
 **History**:
-The list of every change made to a Task, oldest to newest, read from the app's record of changes. It cannot be edited.
+The list of every change made to a Task, oldest to newest, read from the app's record of changes. It cannot be edited. A Skip reads "Skipped (Thu → Sat)"; completing a repeating Task reads "Done (occurrence of 18 Oct)".
 _Avoid_: Log, audit trail, activity
 
 **Task sheet**:
@@ -139,7 +139,7 @@ One time a repeating Task was done, kept as a done copy of the Task linked to it
 _Avoid_: Instance, run, completion
 
 **Skip**:
-Moving a repeating Task to its next Due date without recording an occurrence. It is what Won't do means on a repeating Task.
+Moving a repeating Task to its next Due date without recording an occurrence (History still shows it, as "Skipped"). The Checklist ticks are kept. It is what Won't do means on a repeating Task.
 _Avoid_: Snooze, postpone
 
 **Group by**:
@@ -147,7 +147,7 @@ How a view splits its open Tasks into groups: Today by Priority or List, Upcomin
 _Avoid_: Filter, section
 
 **Sort**:
-How Tasks are ordered inside each group on a List page or the Inbox: Manual, Due date, Priority, Title or Recently added. Grouping happens first. Dragging is off while a sort other than Manual is on, and Manual brings back the drag order untouched. The Lists in the sidebar have their own sort: Manual, Name A–Z or Z–A, Most open or Recently created.
+How Tasks are ordered inside each group on a List page or the Inbox: Manual, Due date, Priority, Title or Recently added. Grouping happens first. Dragging is off while a sort other than Manual is on, and Manual brings back the drag order untouched. The Lists in the sidebar have their own sort: Manual, Name A–Z or Z–A, Most open or Oldest first.
 _Avoid_: Order by
 
 **Manual order**:
@@ -162,7 +162,7 @@ Finding Tasks by words in their title, notes or Comments, with the Journal's mat
 _Avoid_: Filter, find
 
 **Focus ring**:
-The mark (a ring and a tint) on the one Task row the keyboard is on. ↑ ↓ move it, and the Task keys act on the Task it sits on (or, for the quick ones, the row under the pointer).
+The mark (a ring and a tint) on the one Task row the keyboard is on. ↑ ↓ move it, and the Task keys act on the Task it sits on, never on a row the pointer merely rests on.
 _Avoid_: Selection, cursor
 
 **G chord**:

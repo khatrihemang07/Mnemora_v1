@@ -50,8 +50,6 @@ pub(crate) fn record_list(
     )
 }
 
-const NAME_TAKEN: TodoError = TodoError::Validation("There’s already a List with that name");
-
 /// Live Lists with their open counts, in the order `sort` says.
 pub(crate) fn ordered_lists(conn: &Connection, sort: ListSort) -> AppResult<Vec<ListEntry>> {
     let counts: HashMap<Option<String>, (u32, u32)> = repo::task_counts(conn)?
@@ -182,7 +180,7 @@ pub fn create_list(conn: &mut Connection, name: &str) -> AppResult<TodoList> {
     let key = name_key(name);
     let tx = conn.transaction()?;
     if list_repo::name_taken(&tx, &key, None)? {
-        return Err(NAME_TAKEN.into());
+        return Err(TodoError::NameTaken(name.to_owned()).into());
     }
     let now = now_ms();
     let list = TodoList {
@@ -208,7 +206,7 @@ pub fn rename_list(conn: &mut Connection, id: &str, name: &str) -> AppResult<Tod
     let tx = conn.transaction()?;
     let mut list = list_repo::get(&tx, id)?.ok_or(TodoError::ListNotFound)?;
     if list_repo::name_taken(&tx, &key, Some(id))? {
-        return Err(NAME_TAKEN.into());
+        return Err(TodoError::NameTaken(name.to_owned()).into());
     }
     if list.name == name {
         return Ok(list);
@@ -294,7 +292,7 @@ pub fn restore_list(conn: &mut Connection, deletion: &ListDeletion) -> AppResult
         return Err(TodoError::Validation("That List isn't deleted").into());
     }
     if list_repo::name_taken(&tx, &name_key(&list.name), None)? {
-        return Err(NAME_TAKEN.into());
+        return Err(TodoError::NameTaken(list.name).into());
     }
     let now = now_ms();
     list.updated_at = now;

@@ -181,7 +181,7 @@ pub fn todo_task_complete(
 }
 
 /// Moves a repeating Task to its next date without recording anything done. Undo is
-/// `todo_tasks_restore_when`. Records an `update` change.
+/// `todo_tasks_restore_when`. Records a `tick` change (marked skipped).
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_skip(
@@ -272,12 +272,17 @@ pub fn todo_task_set_priority(
     mnemora_todo::set_priority(&mut lock(&state.db), &id, priority)
 }
 
-/// Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. A repeating Task
-/// is refused (it is skipped instead). Undo is `todo_task_reopen`. Records a `tick` change.
+/// Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. On a repeating
+/// Task it is a Skip instead (the next date, Undo is `todo_tasks_restore_when`). Undo of a plain
+/// Won't do is `todo_task_reopen`. Records a `tick` change either way.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_task_wont_do(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
-    mnemora_todo::wont_do(&mut lock(&state.db), &id)
+pub fn todo_task_wont_do(
+    state: State<'_, AppState>,
+    id: String,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::wont_do(&mut lock(&state.db), &id, &local)
 }
 
 /// Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
@@ -817,6 +822,24 @@ mod tests {
             .unwrap_err();
         assert_eq!(err["code"], "validation");
         assert_eq!(ops_since(&app, 0).len(), 1, "a refused write logs nothing");
+    }
+
+    #[test]
+    fn a_taken_list_name_is_named_in_the_error_as_typed() {
+        let app = TestApp::new();
+        new_list(&app, "Work");
+        let other = new_list(&app, "Home");
+        let err = app
+            .invoke::<Value>("todo_list_create", json!({ "name": "  work " }))
+            .unwrap_err();
+        assert_eq!(err["message"], "There’s already a List called work");
+        let err = app
+            .invoke::<Value>(
+                "todo_list_rename",
+                json!({ "id": other["id"], "name": "WORK" }),
+            )
+            .unwrap_err();
+        assert_eq!(err["message"], "There’s already a List called WORK");
     }
 
     #[test]
@@ -2009,7 +2032,7 @@ mod tests {
     }
 
     #[test]
-    fn skipping_moves_the_date_on_and_records_nothing() {
+    fn skipping_moves_the_date_on_and_logs_a_marked_tick() {
         let app = TestApp::new();
         let a = repeating(
             &app,
@@ -2031,7 +2054,7 @@ mod tests {
             occurrences_of(&app, &a).is_empty(),
             "no occurrence is recorded"
         );
-        assert_eq!(ops_since(&app, before), [pair("update", "todo_task")]);
+        assert_eq!(ops_since(&app, before), [pair("tick", "todo_task")]);
         let plain = create(&app, "plain").unwrap();
         let err = app
             .invoke::<Value>(

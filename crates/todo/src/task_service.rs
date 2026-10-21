@@ -10,9 +10,10 @@ use rusqlite::Connection;
 use crate::comment_service;
 use crate::error::TodoError;
 use crate::list_repo;
-use crate::repeat::rule_of;
+use crate::repeat::{rule_of, skip_task};
 use crate::service::{ENTITY, record, record_at, record_session};
 use crate::task::{Task, TaskState, validate_notes, validate_priority, validate_title};
+use crate::when::LocalNow;
 use crate::{comment_repo, repo};
 
 /// Deleted Tasks, Lists and Comments are erased this long after deletion (30 days).
@@ -72,16 +73,18 @@ pub fn set_priority(conn: &mut Connection, id: &str, priority: u32) -> AppResult
 }
 
 /// Marks an open Task Won't do, now: it joins Done but never counts as done. A repeating Task is
-/// skipped instead (see `skip_task`). Reopening brings it back.
-pub fn wont_do(conn: &mut Connection, id: &str) -> AppResult<Task> {
-    let tx = conn.transaction()?;
-    let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
+/// skipped instead (`skip_task`, which is why this takes the device's day): "Won't do" on one
+/// means "not this time". Reopening brings a Won't do Task back.
+pub fn wont_do(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<Task> {
+    let task = repo::get(conn, id)?.ok_or(TodoError::TaskNotFound)?;
     if task.state != TaskState::Open {
         return Err(TodoError::Validation("That Task is already closed").into());
     }
     if rule_of(&task)?.is_some() {
-        return Err(TodoError::Validation("A repeating Task is skipped instead").into());
+        return skip_task(conn, id, local);
     }
+    let tx = conn.transaction()?;
+    let mut task = task;
     let now = now_ms();
     task.state = TaskState::Wont;
     task.closed_at = Some(now);

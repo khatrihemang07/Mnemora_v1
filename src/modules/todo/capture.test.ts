@@ -11,6 +11,7 @@ import {
   listSuggestions,
   markSegments,
   NO_WORDS,
+  pasteIntoTitle,
   pasteParts,
   preferWord,
   pruneWords,
@@ -322,6 +323,30 @@ describe('pasting', () => {
 
   it('has no Task in blank lines', () => {
     expect(pasteParts('\n \n')).toBeNull();
+  });
+});
+
+describe('pasting into Quick edit', () => {
+  it('leaves a single line to the field', () => {
+    expect(pasteIntoTitle('Buy', 3, 3, 'milk')).toBeNull();
+    expect(pasteIntoTitle('Buy', 3, 3, 'milk\n')).toBeNull();
+  });
+
+  it('joins the lines with spaces and inserts them at the selection', () => {
+    expect(pasteIntoTitle('Buy X now', 4, 5, 'milk\r\n\n  and eggs\n')).toEqual({
+      text: 'Buy milk and eggs now',
+      caret: 17,
+    });
+  });
+
+  it('stays within the title limit', () => {
+    const got = pasteIntoTitle('a'.repeat(495), 495, 495, 'bbb\nccc\nddd');
+    expect(got?.text).toBe(`${'a'.repeat(495)}bbb c`);
+    expect(got?.caret).toBe(500);
+  });
+
+  it('has nothing to insert from blank lines', () => {
+    expect(pasteIntoTitle('x', 1, 1, '\n \n')).toBeNull();
   });
 });
 

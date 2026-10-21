@@ -302,10 +302,15 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   const record = (
     t: Stored,
     op: LogRecord['op'],
-    opts: { session?: string; deletedAt?: number } = {},
+    opts: { session?: string; deletedAt?: number; skipped?: boolean } = {},
   ) => {
     const { deleted: _d, comment_count: _c, ...rest } = t;
-    const snapshot = { ...copy(rest), deleted_at: opts.deletedAt ?? null };
+    const snapshot = {
+      ...copy(rest),
+      deleted_at: opts.deletedAt ?? null,
+      // A Skip is a tick marked so History can tell it from completing an occurrence.
+      ...(opts.skipped ? { skipped: true } : {}),
+    };
     const at = Date.now();
     const session = opts.session ?? null;
     const records = logs.get(t.id) ?? [];
@@ -341,7 +346,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   const findList = (id: unknown) => lists.find((l) => l.id === id && !l.deleted);
   const nameTaken = (name: string, except?: string) =>
     lists.some((l) => !l.deleted && l.id !== except && foldName(l.name) === foldName(name));
-  const taken = () => fail('validation', 'There’s already a List with that name');
+  const taken = (name: string) => fail('validation', `There’s already a List called ${name}`);
   const openIn = (listId: string | null) =>
     live()
       .filter((t) => t.list_id === listId && t.state === 'open')
@@ -394,6 +399,21 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   const wire = (t: Stored): Task => {
     const { deleted: _deleted, ...task } = t;
     return { ...task, comment_count: countComments(t.id) };
+  };
+  /** Skip to the next date: a `tick` marked skipped (Won't do on a repeating Task does the same). */
+  const skip = (id: string, local: LocalNow): Task => {
+    checkClock(local);
+    const task = find(id);
+    if (!task) throw missing();
+    if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+    const rule = ruleOf(task);
+    if (!rule) throw fail('validation', 'Only a repeating Task can be skipped');
+    const next = nextDue(rule, task.due_date ?? local.today, local.today);
+    if (next === null) throw fail('validation', 'That repeat runs past the year 9999');
+    task.due_date = next;
+    task.updated_at = Date.now();
+    record(task, 'tick', { skipped: true });
+    return copy(wire(task));
   };
   const wireList = (l: StoredList): TodoList => {
     const { deleted: _deleted, ...list } = l;
@@ -530,21 +550,8 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           const done: Completion = { task: wire(task), occurrence: null };
           return copy(done);
         }
-        case 'todo_task_skip': {
-          const local = a.local as LocalNow;
-          checkClock(local);
-          const task = find(a.id);
-          if (!task) throw missing();
-          if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
-          const rule = ruleOf(task);
-          if (!rule) throw fail('validation', 'Only a repeating Task can be skipped');
-          const next = nextDue(rule, task.due_date ?? local.today, local.today);
-          if (next === null) throw fail('validation', 'That repeat runs past the year 9999');
-          task.due_date = next;
-          task.updated_at = Date.now();
-          record(task, 'update');
-          return copy(wire(task));
-        }
+        case 'todo_task_skip':
+          return skip(a.id as string, a.local as LocalNow);
         case 'todo_done': {
           const local = a.local as LocalNow;
           checkClock(local);
@@ -1033,7 +1040,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
         }
         case 'todo_list_create': {
           const name = validateListName(a.name as string);
-          if (nameTaken(name)) throw taken();
+          if (nameTaken(name)) throw taken(name);
           const last = lists.reduce<string | null>(
             (max, l) => (max === null || l.sort_key > max ? l.sort_key : max),
             null,
@@ -1056,7 +1063,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           const name = validateListName(a.name as string);
           const list = findList(a.id);
           if (!list) throw listMissing();
-          if (nameTaken(name, list.id)) throw taken();
+          if (nameTaken(name, list.id)) throw taken(name);
           if (list.name !== name) {
             list.name = name;
             list.updated_at = Date.now();
@@ -1112,7 +1119,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           const list = lists.find((l) => l.id === deletion.list_id);
           if (!list) throw listMissing();
           if (!list.deleted) throw fail('validation', "That List isn't deleted");
-          if (nameTaken(list.name)) throw taken();
+          if (nameTaken(list.name)) throw taken(list.name);
           const now = Date.now();
           list.deleted = false;
           list.updated_at = now;
@@ -1181,7 +1188,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           const task = find(a.id);
           if (!task) throw missing();
           if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
-          if (ruleOf(task)) throw fail('validation', 'A repeating Task is skipped instead');
+          if (ruleOf(task)) return skip(task.id, a.local as LocalNow);
           task.state = 'wont';
           task.closed_at = task.updated_at = Date.now();
           record(task, 'tick');

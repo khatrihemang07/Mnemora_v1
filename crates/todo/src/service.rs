@@ -25,7 +25,7 @@ pub(crate) const ENTITY: &str = "todo_task";
 /// Writes a change-log record. The snapshot is the Task plus its `deleted_at`, which the Task
 /// type does not carry: a delete record shows when it was deleted, every other one shows null.
 pub(crate) fn record(conn: &Connection, task: &Task, op: ChangeOp) -> AppResult<()> {
-    record_in(conn, task, op, None, None)
+    record_in(conn, task, op, None, None, false)
 }
 
 /// Like `record`, with the `deleted_at` the snapshot shows.
@@ -35,7 +35,7 @@ pub(crate) fn record_at(
     op: ChangeOp,
     deleted_at: Option<i64>,
 ) -> AppResult<()> {
-    record_in(conn, task, op, deleted_at, None)
+    record_in(conn, task, op, deleted_at, None, false)
 }
 
 /// Like `record`, as part of an editing session: the session keeps a single record.
@@ -45,7 +45,13 @@ pub(crate) fn record_session(
     op: ChangeOp,
     session_id: &str,
 ) -> AppResult<()> {
-    record_in(conn, task, op, None, Some(session_id))
+    record_in(conn, task, op, None, Some(session_id), false)
+}
+
+/// Records a Skip: a `tick` (the Task moved on without closing) whose snapshot carries
+/// `skipped: true`, which is how History tells it from completing an occurrence.
+pub(crate) fn record_skip(conn: &Connection, task: &Task) -> AppResult<()> {
+    record_in(conn, task, ChangeOp::Tick, None, None, true)
 }
 
 fn record_in(
@@ -54,11 +60,15 @@ fn record_in(
     op: ChangeOp,
     deleted_at: Option<i64>,
     session_id: Option<&str>,
+    skipped: bool,
 ) -> AppResult<()> {
     let mut snapshot = serde_json::to_value(task).map_err(TodoError::Snapshot)?;
     if let Some(fields) = snapshot.as_object_mut() {
         fields.remove("comment_count");
         fields.insert("deleted_at".into(), deleted_at.into());
+        if skipped {
+            fields.insert("skipped".into(), true.into());
+        }
     }
     changelog::record(
         conn,

@@ -4,7 +4,7 @@
   bar's button, ⌘F, or ⌘K) lays its results over the view, which stays mounted underneath. The open
   Task's sheet (`?task=‹id›`) and the "steps still open" question live here too, and so does the
   desktop key map: every key goes through the one reducer in task-keymap.ts, which says what it
-  means for the Task with the focus ring, the one under the pointer or the open sheet's Task; the
+  means for the Task with the focus ring or the open sheet's Task (never the one under the pointer); the
   keys stay out of text fields, menus and Dialogs. Tasks are dragged by their rows (see
   drag.svelte.ts); the layer that floats above the page while one is held lives here.
   On a phone this is also where the chrome lives: the segments pinned under the large title, the
@@ -39,7 +39,7 @@
   import { listsQuery } from './queries';
   import { quickAdd } from './quick-add.svelte';
   import { quickEditing } from './quick-edit.svelte';
-  import { PALETTE_CLOSE_MS, searchLauncher, todoSearch } from './search.svelte';
+  import { todoSearch } from './search.svelte';
   import {
     dateTaskToday,
     deleteTaskWithUndo,
@@ -84,16 +84,7 @@
     taskFocus.id = null;
   });
 
-  // A search asked for from ⌘K (possibly just before this page mounted) opens with its words.
   let searchView = $state<ReturnType<typeof TodoSearch> | null>(null);
-  $effect(() => {
-    const query = searchLauncher.pending;
-    if (query === null) return;
-    searchLauncher.pending = null;
-    untrack(() => todoSearch.open(query));
-    // The palette gives focus back to where it was as it closes; take it again once it has.
-    setTimeout(() => searchView?.focus(false), PALETTE_CLOSE_MS);
-  });
 
   // --- Phone chrome ----------------------------------------------------------------------------
   let listsOpen = $state(false);
@@ -152,7 +143,7 @@
 
   let keys = IDLE_KEYS;
 
-  /** The Task a key means, and how it was pointed at: the focus ring, or only the pointer. */
+  /** The Task a key means: the one with the focus ring or focus, else none. */
   function keyTarget(e: KeyboardEvent): { task: Task | null; reach: KeyScene['target'] } {
     // The sheet's own Task, unless focus is in a picker or Dialog opened over it.
     if (taskSheet.id !== null) return { task: taskSheet.task, reach: 'ring' };
@@ -164,8 +155,8 @@
       const ringed = taskRows.get(taskFocus.id);
       if (ringed) return { task: ringed, reach: 'ring' };
     }
-    const hovered = taskRows.get(taskRows.hoveredId);
-    return { task: hovered, reach: hovered ? 'hover' : 'none' };
+    // A row the pointer rests on is not a target (ADR 0013).
+    return { task: null, reach: 'none' };
   }
 
   function sceneFor(e: KeyboardEvent): { scene: KeyScene; task: Task | null } {

@@ -63,7 +63,7 @@ describe('the option tables', () => {
       'Name A–Z',
       'Name Z–A',
       'Most open',
-      'Recently created',
+      'Oldest first',
     ]);
     expect(DONE_IN_LISTS_OPTIONS.map((o) => o.value)).toEqual([
       'today_shown',

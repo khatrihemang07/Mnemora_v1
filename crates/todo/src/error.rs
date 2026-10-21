@@ -8,6 +8,10 @@ pub enum TodoError {
     /// Input broke a rule; the message is shown to the user.
     #[error("{0}")]
     Validation(&'static str),
+    /// Another live List has this name (ignoring case and accents). The message names the List as
+    /// the user typed it, so it is shown but never logged (ADR 0008: no user text in logs).
+    #[error("There’s already a List called {0}")]
+    NameTaken(String),
     /// The Task does not exist (or is deleted).
     #[error("That Task no longer exists")]
     TaskNotFound,
@@ -25,7 +29,7 @@ pub enum TodoError {
 impl From<TodoError> for AppError {
     fn from(e: TodoError) -> Self {
         let code = match &e {
-            TodoError::Validation(_) => ErrorCode::Validation,
+            TodoError::Validation(_) | TodoError::NameTaken(_) => ErrorCode::Validation,
             TodoError::TaskNotFound | TodoError::ListNotFound | TodoError::CommentNotFound => {
                 ErrorCode::NotFound
             }
@@ -45,10 +49,15 @@ mod tests {
 
     #[test]
     fn maps_to_the_wire_codes_the_ui_relies_on() {
-        let v: AppError = TodoError::Validation("A Task needs a title").into();
+        let invalid: AppError = TodoError::Validation("A Task needs a title").into();
         assert_eq!(
-            (v.code, v.message.as_str()),
+            (invalid.code, invalid.message.as_str()),
             (ErrorCode::Validation, "A Task needs a title")
+        );
+        let taken: AppError = TodoError::NameTaken("Work".into()).into();
+        assert_eq!(
+            (taken.code, taken.message.as_str()),
+            (ErrorCode::Validation, "There’s already a List called Work")
         );
         let n: AppError = TodoError::TaskNotFound.into();
         assert_eq!(n.code, ErrorCode::NotFound);

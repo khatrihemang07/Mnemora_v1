@@ -120,7 +120,7 @@ export const commands = {
 	todoTaskReopen: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_reopen", { id })),
 	/**
 	 *  Moves a repeating Task to its next date without recording anything done. Undo is
-	 *  `todo_tasks_restore_when`. Records an `update` change.
+	 *  `todo_tasks_restore_when`. Records a `tick` change (marked skipped).
 	 */
 	todoTaskSkip: (id: string, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_skip", { id, local })),
 	/**
@@ -152,10 +152,11 @@ export const commands = {
 	/**  Sets an open Task's Priority: 1 (highest) to 4 (none, the default). Records an `update` change. */
 	todoTaskSetPriority: (id: string, priority: number) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_set_priority", { id, priority })),
 	/**
-	 *  Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. A repeating Task
-	 *  is refused (it is skipped instead). Undo is `todo_task_reopen`. Records a `tick` change.
+	 *  Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. On a repeating
+	 *  Task it is a Skip instead (the next date, Undo is `todo_tasks_restore_when`). Undo of a plain
+	 *  Won't do is `todo_task_reopen`. Records a `tick` change either way.
 	 */
-	todoTaskWontDo: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_wont_do", { id })),
+	todoTaskWontDo: (id: string, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_wont_do", { id, local })),
 	/**
 	 *  Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
 	 *  stay in Done. Records a `delete` change.
@@ -522,8 +523,8 @@ export type HistoryLine = {
 	/**  When it happened: UTC milliseconds. */
 	at: number,
 	/**
-	 *  What kind of change: `create`, `done`, `reopen`, `wont`, `delete`, `restore`, `list`,
-	 *  `date`, `time`, `repeat`, `priority`, `title` or `notes`. The UI picks an icon from it.
+	 *  What kind of change: `create`, `done`, `skip`, `reopen`, `wont`, `delete`, `restore`,
+	 *  `list`, `date`, `time`, `repeat`, `priority`, `title` or `notes`. The UI picks an icon from it.
 	 */
 	kind: string,
 	/**  The readable line. */
@@ -877,7 +878,7 @@ export type SidebarView = {
 	lists_sort: ListSort,
 };
 
-/**  Where a TaskHit's snippet line comes from. */
+/**  Where a `TaskHit`'s snippet line comes from. */
 export type SnippetSource = 
 /**  A line of the Task's notes. */
 "notes" | 

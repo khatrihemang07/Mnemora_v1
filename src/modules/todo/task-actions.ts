@@ -54,7 +54,10 @@ export async function tickTask(task: Task): Promise<void> {
   await completeNow(task);
 }
 
-/** "Tick all and complete": the notes get every step ticked, then the Task is completed. */
+/**
+ * "Tick all and complete": the notes get every step ticked, then the Task is completed. Undo
+ * reopens it and puts the original notes back (a repeating Task's rewind already restores them).
+ */
 export async function tickAllAndComplete(task: Task): Promise<void> {
   const notes = tickAllSteps(task.notes);
   try {
@@ -63,7 +66,7 @@ export async function tickAllAndComplete(task: Task): Promise<void> {
     notifyError(e instanceof IpcError ? e.message : "Couldn't tick the steps");
     return;
   }
-  await completeNow({ ...task, notes });
+  await completeNow({ ...task, notes }, task.notes);
 }
 
 /**
@@ -71,9 +74,11 @@ export async function tickAllAndComplete(task: Task): Promise<void> {
  * which reopens it in its old place. A repeating Task stays: the toast says where it went
  * ("· next Sat 24 Oct") and Undo reopens that occurrence, which rewinds the Task. A failed write
  * brings the Task back from Rust's truth. Returns the Task as it is now, or none on failure.
+ * `undoNotes` are the notes to put back on Undo, when completing changed them (Tick all).
  */
-export async function completeNow(task: Task): Promise<Task | null> {
-  // A light tick on a phone, at once, while the touch that asked for it still counts.
+export async function completeNow(task: Task, undoNotes?: string): Promise<Task | null> {
+  // A light tick on a phone, at once, while the touch that asked for it still counts. It fires on
+  // every completion there, whatever started it (a v1 decision).
   if (viewport.isPhone) lightTick();
   const repeating = task.repeat_freq !== null;
   if (!repeating) removeCachedTask(task.id);
@@ -92,6 +97,14 @@ export async function completeNow(task: Task): Promise<Task | null> {
     : completedMessage(task.title);
   notifyUndo(message, () => {
     reopenTask(done.occurrence?.id ?? task.id)
+      .then((reopened) =>
+        // A repeating Task's rewind has put its notes back; a plain one needs them restored.
+        undoNotes !== undefined && !done.occurrence && reopened.notes !== undoNotes
+          ? updateTask(reopened.id, reopened.title, undoNotes, crypto.randomUUID()).catch(() =>
+              notifyError("Couldn't put the notes back"),
+            )
+          : undefined,
+      )
       .catch(() => notifyError("Couldn't reopen the Task"))
       .finally(() => void invalidateTodo());
   });
@@ -189,8 +202,15 @@ export async function setTaskWhen(
 export const dateTaskToday = (task: Task): Promise<void> =>
   setTaskWhen(task, todoClock.today, task.due_time, taskRepeat(task));
 
-/** "Skip to ‹date›": a repeating Task moves to its next date and records nothing. Undo moves it back. */
-export async function skipRepeating(task: Task): Promise<void> {
+/**
+ * "Skip to ‹date›": a repeating Task moves to its next date and records no occurrence. Undo moves
+ * it back. `run` is the command that does it: Skip itself, or Won't do (which Rust turns into a
+ * Skip for a repeating Task).
+ */
+export async function skipRepeating(
+  task: Task,
+  run: (id: string) => Promise<Task> = skipTask,
+): Promise<void> {
   const before: DueChange = {
     id: task.id,
     due_date: task.due_date,
@@ -199,7 +219,7 @@ export async function skipRepeating(task: Task): Promise<void> {
   };
   let after: Task;
   try {
-    after = await skipTask(task.id);
+    after = await run(task.id);
   } catch (e) {
     notifyError(e instanceof IpcError ? e.message : "Couldn't skip the Task");
     return;
@@ -256,13 +276,14 @@ export async function setTaskPriority(task: Task, priority: number): Promise<voi
 }
 
 /**
- * Won't do: the Task joins Done with a ⊗ and Undo reopens it. On a repeating Task it is Skip
- * (the next date, nothing recorded).
+ * Won't do: the Task joins Done with a ⊗ and Undo reopens it. Rust owns the rule: on a repeating
+ * Task the same command is a Skip (the next date, no occurrence recorded), so the toast and its
+ * Undo follow `repeat_freq` only to say and undo what happened.
  */
 export async function wontDoTask(task: Task): Promise<void> {
   if (task.state !== 'open') return;
   if (task.repeat_freq !== null) {
-    await skipRepeating(task);
+    await skipRepeating(task, wontDo);
     return;
   }
   removeCachedTask(task.id);
