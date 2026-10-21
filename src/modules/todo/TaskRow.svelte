@@ -282,7 +282,7 @@
   onpointercancel={() => press.cancel()}
   class="group grid grid-cols-[26px_1fr_auto] items-start gap-x-2 rounded-sm px-2 py-[7px] transition-colors duration-(--dur) ease-out
     hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5 {drag.draggedId === task.id ? 'opacity-40' : ''}
-    {ringed ? 'bg-hover shadow-[0_0_0_2px_var(--ring)]' : ''}"
+    {ringed ? 'bg-hover outline-[1.5px] outline-accent shadow-[0_0_0_3px_var(--ring)]' : ''}"
 >
   <TaskCheckbox
     checked={!isOpen}
@@ -292,9 +292,10 @@
     onchange={() => (isOpen ? ontick(task) : onuntick?.(task))}
     class="mt-px"
   />
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex -- Enter is handled; the title may hold links, so it is not a button element -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex -- Enter is handled by the key map; the title may hold links, so it is not a button element -->
   <div
-    class="min-w-0 cursor-pointer pt-px outline-none"
+    class="min-w-0 cursor-pointer pt-px"
+    data-bare
     role="button"
     tabindex="0"
     aria-label="Open {plainTitle(task.title)}"

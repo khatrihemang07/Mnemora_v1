@@ -6,6 +6,7 @@
   that matched. Opening a Task shows its sheet over the results; Esc on the sheet returns here with
   the words intact. ↓ and ↑ walk the results from the field (and ↑ from the first returns to it),
   Enter opens the first or the focused one, Esc clears the words and a second Esc closes search.
+  On a phone the page's own header is covered, so a Cancel button closes search, and so does Back.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
@@ -14,6 +15,9 @@
   import SearchX from '~icons/lucide/search-x';
   import X from '~icons/lucide/x';
   import type { TaskHit } from '../../lib/ipc/bindings';
+  import { interceptBack } from '../../lib/router';
+  import { viewport } from '../../lib/viewport.svelte';
+  import Button from '../../lib/ui/Button.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
@@ -49,7 +53,11 @@
     if (select) input?.select();
   }
 
-  onMount(() => focus(false));
+  onMount(() => {
+    focus(false);
+    // Android Back leaves search before it leaves the page.
+    return interceptBack(() => todoSearch.close());
+  });
 
   /** ↓ from the field enters the results; ↑ from the first leaves them for the field. */
   function onkeydown(e: KeyboardEvent) {
@@ -103,9 +111,9 @@
 
 <div class="flex h-full flex-col bg-bg">
   <div class="shrink-0 px-(--pad) pt-(--pad) pb-2">
-    <div class="mx-auto max-w-3xl">
+    <div class="mx-auto flex max-w-3xl items-center gap-2">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div bind:this={fieldBox} class="relative" {onkeydown} data-todo-search>
+      <div bind:this={fieldBox} class="relative min-w-0 flex-1" {onkeydown} data-todo-search>
         <Search class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
         <Input
           value={todoSearch.query}
@@ -132,6 +140,9 @@
           />
         {/if}
       </div>
+      {#if viewport.isPhone}
+        <Button variant="ghost" onclick={() => todoSearch.close()}>Cancel</Button>
+      {/if}
     </div>
   </div>
 
