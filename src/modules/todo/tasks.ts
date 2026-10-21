@@ -48,6 +48,13 @@ export function withoutTaskInUpcoming(view: UpcomingView, id: string): UpcomingV
   };
 }
 
+/** The Undo toast after a Quick edit: names the Task. */
+export const editedMessage = (title: string): string => `Edited ${quotedTitle(title)}`;
+
+/** The toast after a Quick add from outside Todo: names the Task and where it went. */
+export const quickAddedMessage = (title: string, where: string): string =>
+  `Added ${quotedTitle(title)} to ${where}`;
+
 /** The Undo toast after Won't do: names the Task. */
 export const wontMessage = (title: string): string => `Won’t do ${quotedTitle(title)}`;
 

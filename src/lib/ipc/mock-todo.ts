@@ -30,8 +30,11 @@ import type {
   ListDeletion,
   ListView,
   LocalNow,
+  NewTaskDetails,
   NewWhen,
   OverdueMove,
+  ParseRequest,
+  QuickEdit,
   SidebarView,
   Task,
   TodayView,
@@ -39,6 +42,7 @@ import type {
   UpcomingView,
 } from './bindings';
 import { historyOf, type LogRecord } from './mock-todo-history';
+import { parseText } from './mock-todo-parse';
 
 const MAX_TITLE_CHARS = 500;
 const MAX_LIST_NAME_CHARS = 60;
@@ -177,6 +181,44 @@ function checkRule(rule: RepeatRule): RepeatRule {
   return settleRule(rule);
 }
 
+/** Longest record of understood words, like `MAX_UNDERSTOOD_CHARS` in Rust. */
+const MAX_UNDERSTOOD_CHARS = 4000;
+
+/** Mirrors `validate_understood`: a JSON array of at most 4000 characters, or nothing. */
+function validateUnderstood(understood: string | null | undefined): string | null {
+  if (understood === null || understood === undefined) return null;
+  let ok = [...understood].length <= MAX_UNDERSTOOD_CHARS;
+  if (ok) {
+    try {
+      ok = Array.isArray(JSON.parse(understood));
+    } catch {
+      ok = false;
+    }
+  }
+  if (!ok) throw fail('validation', 'That record of understood words is not valid');
+  return understood;
+}
+
+/**
+ * Mirrors `settle_when`: a time without a date means today if still ahead, otherwise tomorrow; a
+ * Repeat without a date gives the first day it lands on; past dates are refused.
+ */
+function settleWhen(
+  date: string | null,
+  time: string | null,
+  repeat: RepeatRule | null,
+  local: LocalNow,
+): [string | null, string | null, RepeatRule | null] {
+  const rule = repeat ? checkRule(repeat) : null;
+  if (date === null && rule) {
+    checkClock(local);
+    if (time !== null && !isTime(time)) throw fail('validation', 'Not a valid time');
+    return [firstMatch(rule, local.today), time, rule];
+  }
+  const [d, t] = resolveWhen(date, time, local);
+  return [d, t, rule];
+}
+
 /** A month or year rule that already keeps to a day of the month. */
 const hasDay = (r: RepeatRule) => (r.freq === 'month' || r.freq === 'year') && (r.days ?? 0) !== 0;
 
@@ -189,6 +231,38 @@ function ruleOf(t: Task): RepeatRule | null {
     days: t.repeat_days,
     mode: t.repeat_mode,
   };
+}
+
+/**
+ * Mirrors `assign_when`: puts a When and Repeat on a Task and says whether anything changed. No
+ * date means no time and no Repeat; a new date is the new anchor of a month or year Repeat unless
+ * `keepDay` and the rule has a day already.
+ */
+function assignWhen(
+  task: Task,
+  date: string | null,
+  time: string | null,
+  rule: RepeatRule | null,
+  keepDay: boolean,
+): boolean {
+  let next = rule;
+  if (date === null) next = null;
+  else if (next && !(keepDay && hasDay(next))) next = anchoredOn(next, date);
+  const before = ruleOf(task);
+  if (
+    task.due_date === date &&
+    task.due_time === time &&
+    JSON.stringify(before) === JSON.stringify(next)
+  ) {
+    return false;
+  }
+  task.due_date = date;
+  task.due_time = time;
+  task.repeat_freq = next?.freq ?? null;
+  task.repeat_every = next?.every ?? null;
+  task.repeat_days = next?.days ?? null;
+  task.repeat_mode = next?.mode ?? null;
+  return true;
 }
 
 /**
@@ -272,10 +346,7 @@ export function createTodoMock() {
       .filter((t) => t.list_id === listId && t.state === 'open')
       .sort(byKey);
   const openDated = () => live().filter((t) => t.state === 'open' && t.due_date !== null);
-  /**
-   * Mirrors `apply`: writes a When and Repeat. No date means no time and no Repeat; a new date is
-   * the new anchor of a month or year Repeat unless `keepDay` and the rule has a day already.
-   */
+  /** Mirrors `apply`: `assignWhen`, then the stamp and the change-log record. */
   const applyWhen = (
     task: Stored,
     date: string | null,
@@ -283,23 +354,7 @@ export function createTodoMock() {
     rule: RepeatRule | null,
     keepDay: boolean,
   ) => {
-    let next = rule;
-    if (date === null) next = null;
-    else if (next && !(keepDay && hasDay(next))) next = anchoredOn(next, date);
-    const before = ruleOf(task);
-    if (
-      task.due_date === date &&
-      task.due_time === time &&
-      JSON.stringify(before) === JSON.stringify(next)
-    ) {
-      return;
-    }
-    task.due_date = date;
-    task.due_time = time;
-    task.repeat_freq = next?.freq ?? null;
-    task.repeat_every = next?.every ?? null;
-    task.repeat_days = next?.days ?? null;
-    task.repeat_mode = next?.mode ?? null;
+    if (!assignWhen(task, date, time, rule, keepDay)) return;
     task.updated_at = Date.now();
     record(task, 'update');
   };
@@ -326,9 +381,29 @@ export function createTodoMock() {
           const title = validateTitle(a.title as string);
           const listId = (a.listId as string | null | undefined) ?? null;
           const when = (a.when as NewWhen | null | undefined) ?? null;
-          const [dueDate, dueTime] = when
-            ? resolveWhen(when.date, when.time, when.local)
-            : [null, null];
+          const details = (a.details as NewTaskDetails | null | undefined) ?? null;
+          const notes = details?.notes ?? '';
+          if ([...notes].length > 100_000) {
+            throw fail('validation', 'Notes can be at most 100,000 characters');
+          }
+          const priority = details?.priority ?? 4;
+          if (!Number.isInteger(priority) || priority < 1 || priority > 4) {
+            throw fail('validation', 'Priority is 1 to 4');
+          }
+          const understood = validateUnderstood(details?.understood);
+          let dueDate: string | null = null;
+          let dueTime: string | null = null;
+          let rule: RepeatRule | null = null;
+          if (when) {
+            [dueDate, dueTime, rule] = settleWhen(
+              when.date,
+              when.time,
+              details?.repeat ?? null,
+              when.local,
+            );
+          } else if (details?.repeat) {
+            throw fail('validation', 'A Repeat needs a date');
+          }
           if (listId !== null && !findList(listId)) throw listMissing();
           const now = Date.now();
           const last = all.reduce<string | null>(
@@ -339,23 +414,24 @@ export function createTodoMock() {
             id: crypto.randomUUID(),
             list_id: listId,
             title,
-            notes: '',
-            due_date: dueDate,
-            due_time: dueTime,
+            notes,
+            due_date: null,
+            due_time: null,
             repeat_freq: null,
             repeat_every: null,
             repeat_days: null,
             repeat_mode: null,
-            priority: 4,
+            priority,
             state: 'open',
             closed_at: null,
             repeat_of: null,
-            understood: null,
+            understood,
             sort_key: keyAfter(last),
             created_at: now,
             updated_at: now,
             comment_count: 0,
           };
+          assignWhen(task, dueDate, dueTime, rule, false);
           all.push(task);
           record(task, 'create');
           return copy(wire(task));
@@ -509,25 +585,72 @@ export function createTodoMock() {
           return copy(wire(task));
         }
         case 'todo_task_set_when': {
-          const local = a.local as LocalNow;
-          const given = (a.repeat as RepeatRule | null | undefined) ?? null;
-          const rule = given ? checkRule(given) : null;
-          const inDate = (a.date as string | null) ?? null;
-          const inTime = (a.time as string | null) ?? null;
-          let date: string | null;
-          let time: string | null;
-          if (inDate === null && rule) {
-            checkClock(local);
-            if (inTime !== null && !isTime(inTime)) throw fail('validation', 'Not a valid time');
-            date = firstMatch(rule, local.today);
-            time = inTime;
-          } else {
-            [date, time] = resolveWhen(inDate, inTime, local);
-          }
+          const [date, time, rule] = settleWhen(
+            (a.date as string | null) ?? null,
+            (a.time as string | null) ?? null,
+            (a.repeat as RepeatRule | null | undefined) ?? null,
+            a.local as LocalNow,
+          );
           const task = find(a.id);
           if (!task) throw missing();
           if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
           applyWhen(task, date, time, rule, task.due_date === date);
+          return copy(wire(task));
+        }
+        case 'todo_parse': {
+          const request = a.request as ParseRequest;
+          const refs = liveLists().map((l) => ({ id: l.id, name: l.name }));
+          return copy(parseText(request, refs, foldName));
+        }
+        case 'todo_task_quick_edit':
+        case 'todo_task_quick_edit_undo': {
+          const restoring = cmd === 'todo_task_quick_edit_undo';
+          const edit = a.edit as QuickEdit;
+          const title = validateTitle(edit.title);
+          if (!Number.isInteger(edit.priority) || edit.priority < 1 || edit.priority > 4) {
+            throw fail('validation', 'Priority is 1 to 4');
+          }
+          const understood = validateUnderstood(edit.understood);
+          const wanted = edit.repeat ? checkRule(edit.repeat) : null;
+          const task = find(a.id);
+          if (!task) throw missing();
+          const same =
+            task.due_date === edit.due_date &&
+            task.due_time === edit.due_time &&
+            JSON.stringify(ruleOf(task)) === JSON.stringify(wanted);
+          if (
+            (!same || task.priority !== edit.priority || task.list_id !== edit.list_id) &&
+            task.state !== 'open'
+          ) {
+            throw fail('validation', 'That Task is already closed');
+          }
+          if (edit.list_id !== null && !findList(edit.list_id)) throw listMissing();
+          const before = JSON.stringify(task);
+          let when: [string | null, string | null, RepeatRule | null] | null = null;
+          if (!same) {
+            if (restoring) {
+              if (edit.due_date !== null && epochDay(edit.due_date) === null) {
+                throw fail('validation', 'Not a valid date');
+              }
+              if (edit.due_time !== null && !isTime(edit.due_time)) {
+                throw fail('validation', 'Not a valid time');
+              }
+              when = [edit.due_date, edit.due_time, wanted];
+            } else {
+              when = settleWhen(edit.due_date, edit.due_time, edit.repeat, a.local as LocalNow);
+            }
+          }
+          task.title = title;
+          task.priority = edit.priority;
+          task.list_id = edit.list_id;
+          task.understood = understood;
+          if (when) {
+            assignWhen(task, when[0], when[1], when[2], task.due_date === when[0] || restoring);
+          }
+          if (JSON.stringify(task) !== before) {
+            task.updated_at = Date.now();
+            record(task, 'update');
+          }
           return copy(wire(task));
         }
         case 'todo_tasks_restore_when': {

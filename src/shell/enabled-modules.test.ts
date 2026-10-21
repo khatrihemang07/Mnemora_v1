@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ModuleManifest } from '../lib/router';
 import {
+  bareKeyFor,
   createTarget,
   enabledModules,
   homeCards,
   moduleSettingsSections,
+  overlayModules,
   redirectForDisabled,
   setModuleEnabled,
 } from './enabled-modules';
@@ -105,5 +107,39 @@ describe('redirectForDisabled', () => {
   it('leaves enabled and unknown routes alone', () => {
     expect(redirectForDisabled('/todo', all, enabled)).toBeNull();
     expect(redirectForDisabled('/nowhere', all, enabled)).toBeNull();
+  });
+});
+
+describe('bareKeyFor', () => {
+  const run = () => {};
+  const keyed = mod('todo', 30, { bareKeys: [{ key: 'q', run }] });
+  const other = mod('journal', 20, {
+    bareKeys: [
+      { key: 'n', run },
+      { key: 'q', run: () => {} },
+    ],
+  });
+
+  it('finds the Module that owns a key, in either case', () => {
+    expect(bareKeyFor([keyed], 'q')?.run).toBe(run);
+    expect(bareKeyFor([keyed], 'Q')?.run).toBe(run);
+    expect(bareKeyFor([keyed], 'n')).toBeNull();
+  });
+
+  it('gives a contested key to the first Module by nav order', () => {
+    expect(bareKeyFor([keyed, other], 'q')?.run).not.toBe(run);
+    expect(bareKeyFor([keyed, other], 'n')).not.toBeNull();
+  });
+
+  it('forgets a Module that is switched off', () => {
+    expect(bareKeyFor(enabledModules([keyed, other], ['journal']), 'q')?.run).toBe(run);
+  });
+});
+
+describe('overlayModules', () => {
+  it('lists the enabled Modules that mount an overlay, in nav order', () => {
+    const a = mod('a', 40, { overlay: comp });
+    const b = mod('b', 25, { overlay: comp });
+    expect(ids(overlayModules([a, journal, b]))).toEqual(['b', 'a']);
   });
 });

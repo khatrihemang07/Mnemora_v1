@@ -68,7 +68,9 @@ export const commands = {
 	/**
 	 *  Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
 	 *  title, one over 500 characters and one with a line break. `when` gives it a Due date and time
-	 *  under the rules of `todo_task_set_when`.
+	 *  under the rules of `todo_task_set_when`. `details` adds what capture reads out of the text:
+	 *  notes, a Priority, a Repeat (which needs `when`, for the clock) and the record of understood
+	 *  words.
 	 */
 	todoTaskCreate: (title: string, listId: string | null, when: {
 	/**  Due date, `YYYY-MM-DD`. */
@@ -77,7 +79,30 @@ export const commands = {
 	time: string | null,
 	/**  The device's clock. */
 	local: LocalNow,
-} | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title, listId, when })),
+} | null, details: {
+	/**  Markdown notes. */
+	notes?: string,
+	/**  1 to 4; none means 4. */
+	priority: number | null,
+	/**  A Repeat; it needs the clock of `when` to find its first day. */
+	repeat: RepeatRule | null,
+	/**  What the parser recognised, as JSON `[{word, kind, value}]`. */
+	understood: string | null,
+} | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title, listId, when, details })),
+	/**
+	 *  Reads typed text as the capture box does: dates, times, Repeats, `#List` and `p1`-`p4`, with
+	 *  what was recognised, what lost to a later word of the same kind, and what the user keeps as
+	 *  text. Writes nothing.
+	 */
+	todoParse: (request: ParseRequest) => typedError<Parsed, AppError>(__TAURI_INVOKE("todo_parse", { request })),
+	/**
+	 *  Saves a Quick edit in one write: the title, the record of understood words, the When, Repeat,
+	 *  Priority and List as they should be afterwards. A When that differs goes through the rules of
+	 *  `todo_task_set_when` (past dates refused). Records an `update` change.
+	 */
+	todoTaskQuickEdit: (id: string, edit: QuickEdit, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_quick_edit", { id, edit, local })),
+	/**  Undo for a Quick edit: puts the old values back, a past date included. */
+	todoTaskQuickEditUndo: (id: string, edit: QuickEdit, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_quick_edit_undo", { id, edit, local })),
 	/**
 	 *  Marks an open Task done, now. A repeating Task stays open: that occurrence is recorded as a
 	 *  done copy (taking the Task's Comments), the Checklist is reset and the Due date moves on, with
@@ -132,7 +157,7 @@ export const commands = {
 	todoTaskRestore: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_restore", { id })),
 	/**  A Task's Comments, oldest first. */
 	todoComments: (taskId: string) => typedError<Comment[], AppError>(__TAURI_INVOKE("todo_comments", { taskId })),
-	/**  Adds a Comment (one line, up to 1000 characters) to a Task. */
+	/**  Adds a Comment (line breaks allowed, up to 5000 characters) to a Task. */
 	todoCommentAdd: (taskId: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_add", { taskId, body })),
 	/**  Replaces a Comment's text; it then shows "edited". */
 	todoCommentEdit: (id: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_edit", { id, body })),
@@ -262,7 +287,7 @@ export type Comment = {
 	id: string,
 	/**  The Task it is on. */
 	task_id: string,
-	/**  One line with inline Markdown marks, up to 1000 characters. */
+	/**  Text with inline Markdown marks (line breaks allowed), up to 5000 characters. */
 	body: string,
 	/**  Whether it was changed after it was written. */
 	edited: boolean,
@@ -489,6 +514,18 @@ export type NewEntry = {
 	session_id: string,
 };
 
+/**  What a captured Task carries besides its title, List and When. */
+export type NewTaskDetails = {
+	/**  Markdown notes. */
+	notes?: string,
+	/**  1 to 4; none means 4. */
+	priority: number | null,
+	/**  A Repeat; it needs the clock of `when` to find its first day. */
+	repeat: RepeatRule | null,
+	/**  What the parser recognised, as JSON `[{word, kind, value}]`. */
+	understood: string | null,
+};
+
 /**  A date and time to give a new Task, with the clock it was picked against. */
 export type NewWhen = {
 	/**  Due date, `YYYY-MM-DD`. */
@@ -527,6 +564,94 @@ export type PageDirection =
 "from" | 
 /**  The Pages just after the cursor (newer), nearest first picked; needs a cursor. */
 "newer";
+
+/**  A word that was recognised but did not win. */
+export type ParseAlternative = {
+	/**  Why it lost: `conflict` (a later one of the same kind won). */
+	reason: string,
+} & ParseSpan;
+
+/**  What to read, and what the user has already decided. */
+export type ParseRequest = {
+	/**  The typed text. */
+	text: string,
+	/**  Keys of words the user keeps as text. */
+	ignored?: string[],
+	/**  Per kind, the key of the word the user picked over the last one ("use instead"). */
+	prefer?: { [key in string]: string },
+	/**  Stretches already read before (Quick edit's old title): candidates inside them are dropped. */
+	frozen?: TextRange[],
+	/**  Today, `YYYY-MM-DD`. */
+	today: string,
+	/**  The time of day, `HH:MM`. */
+	now: string,
+	/**  `mon` or `sun`: the first day of the week, which "next week" and "next fri" count from. */
+	week_start: string,
+};
+
+/**  A recognised word and what it means. */
+export type ParseSpan = {
+	/**  Names the word across parses: `kind:word:n` for the nth such word in the text. */
+	key: string,
+	/**  `date`, `time`, `repeat`, `prio` or `list`. */
+	kind: string,
+	/**  Where it starts in the text. */
+	start: number,
+	/**  Where it ends. */
+	end: number,
+	/**  The words as typed. */
+	word: string,
+	/**
+	 *  The meaning: a `YYYY-MM-DD` date, an `HH:MM` time, the Repeat as JSON, a Priority number
+	 *  or a List's name.
+	 */
+	value: string,
+	/**  A List that does not exist yet and is created when the Task is added. */
+	new_list: boolean,
+};
+
+/**  What the text means. */
+export type Parsed = {
+	/**  The words that won, first to last. */
+	spans: ParseSpan[],
+	/**  The words that lost. */
+	alternatives: ParseAlternative[],
+	/**  The words the user keeps as text, which would have been read. */
+	ignored: ParseSpan[],
+	/**  The Due date: a date word, or today/tomorrow for a time alone. */
+	date: string | null,
+	/**  The Due time. */
+	time: string | null,
+	/**  The Repeat. */
+	repeat: RepeatRule | null,
+	/**  1 to 4. */
+	priority: number | null,
+	/**  The List a `#Name` matched. */
+	list_id: string | null,
+	/**  A `#Name` that matched nothing: the List to create. */
+	new_list: string | null,
+};
+
+/**
+ *  Everything Quick edit can change, as the Task should be afterwards. What the box left alone is
+ *  passed back as it was.
+ */
+export type QuickEdit = {
+	/**  The title as typed. */
+	title: string,
+	/**  What the parser recognised in it, as JSON. */
+	understood: string | null,
+	/**  Due date, `YYYY-MM-DD`. */
+	due_date: string | null,
+	/**  Due time, `HH:MM`. */
+	due_time: string | null,
+	/**  The Repeat after the edit. */
+	repeat: RepeatRule | null,
+	/**  1 to 4. */
+	priority: number,
+	/**  The List, or none for the Inbox. */
+	list_id: string | null,
+};
 
 /**  A Repeat as it crosses IPC and is stored in the Task's columns. */
 export type RepeatRule = {
@@ -680,6 +805,14 @@ export type TaskState =
 "done" | 
 /**  Decided against; `closed_at` says when. */
 "wont";
+
+/**  A stretch of the text, in UTF-16 code units. */
+export type TextRange = {
+	/**  First unit. */
+	start: number,
+	/**  One past the last unit. */
+	end: number,
+};
 
 /**  The Entry written last on the day. */
 export type TodayLatest = {

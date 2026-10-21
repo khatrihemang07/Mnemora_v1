@@ -16,6 +16,17 @@ export interface ModuleContext {
   isActive: (path: RoutePath) => boolean;
 }
 
+/**
+ * A bare single-key shortcut a Module owns across the whole app (ADR 0011): Q for Todo's quick
+ * add. It fires only when nothing is being typed into and no dialog or menu is open, with no
+ * modifier held. The first enabled Module (by nav order) that claims a key gets it.
+ */
+export interface BareKey {
+  /** A single letter, either case. */
+  key: string;
+  run: (ctx: ModuleContext) => void;
+}
+
 /** What the shell gives a Module's sidebar tree. */
 export interface NavTreeProps {
   ctx: ModuleContext;
@@ -71,4 +82,8 @@ export interface ModuleManifest {
   /** What ⌘N does while this Module is enabled (the first enabled Module with one wins). */
   create?: (ctx: ModuleContext) => void;
   paletteActions?: ModuleAction[];
+  /** Bare single-key shortcuts that work anywhere in the app. */
+  bareKeys?: BareKey[];
+  /** A component the shell mounts for as long as the Module is on (a floating box a key opens). */
+  overlay?: () => Promise<{ default: Component }>;
 }

@@ -9,8 +9,12 @@ use rusqlite::Connection;
 use crate::MODULE_ID;
 use crate::error::TodoError;
 use crate::repeat::{self, Completion};
-use crate::task::{InboxView, Task, TaskState, key_after, validate_title};
-use crate::when::{LocalNow, NewWhen, resolve_when};
+use crate::schedule::{assign_when, settle_when};
+use crate::task::{
+    InboxView, NewTaskDetails, Task, TaskState, key_after, validate_notes, validate_priority,
+    validate_title, validate_understood,
+};
+use crate::when::{LocalNow, NewWhen};
 use crate::{list_repo, repo};
 
 /// Change-log entity name for Tasks.
@@ -75,50 +79,61 @@ pub fn inbox(conn: &Connection) -> AppResult<InboxView> {
 }
 
 /// Adds an open Task at the bottom of the order, in a List or (with none) the Inbox. `when`
-/// gives it a Due date and time under the same rules as `set_when`.
+/// gives it a Due date and time under the same rules as `set_when`; `details` adds notes, a
+/// Priority, a Repeat (which needs `when` for the clock) and the record of understood words.
 pub fn create_task(
     conn: &mut Connection,
     title: &str,
     list_id: Option<&str>,
     when: Option<&NewWhen>,
+    details: Option<&NewTaskDetails>,
 ) -> AppResult<Task> {
     let title = validate_title(title)?;
-    let (due_date, due_time) = match when {
-        Some(w) => resolve_when(w.date.as_deref(), w.time.as_deref(), &w.local)?,
-        None => (None, None),
+    let details = details.cloned().unwrap_or_default();
+    validate_notes(&details.notes)?;
+    let priority = validate_priority(details.priority.unwrap_or(4))?;
+    let understood = validate_understood(details.understood.as_deref())?.map(str::to_owned);
+    let (due_date, due_time, rule) = match (when, details.repeat.as_ref()) {
+        (Some(w), repeat) => {
+            let (date, time, rule) =
+                settle_when(w.date.as_deref(), w.time.as_deref(), repeat, &w.local)?;
+            (date, time, rule)
+        }
+        (None, Some(_)) => return Err(TodoError::Validation("A Repeat needs a date").into()),
+        (None, None) => (None, None, None),
     };
     let tx = conn.transaction()?;
     if let Some(list_id) = list_id {
         list_repo::get(&tx, list_id)?.ok_or(TodoError::ListNotFound)?;
     }
     let now = now_ms();
-    let task = Task {
+    let mut task = Task {
         id: new_id(),
         list_id: list_id.map(str::to_owned),
         title: title.to_owned(),
-        notes: String::new(),
-        due_date,
-        due_time,
+        notes: details.notes,
+        due_date: None,
+        due_time: None,
         repeat_freq: None,
         repeat_every: None,
         repeat_days: None,
         repeat_mode: None,
-        priority: 4,
+        priority,
         state: TaskState::Open,
         closed_at: None,
         repeat_of: None,
-        understood: None,
+        understood,
         sort_key: key_after(repo::last_sort_key(&tx)?.as_deref()),
         created_at: now,
         updated_at: now,
         comment_count: 0,
     };
+    assign_when(&mut task, due_date, due_time, rule, false)?;
     repo::insert(&tx, &task)?;
     record(&tx, &task, ChangeOp::Create)?;
     tx.commit()?;
     Ok(task)
 }
-
 /// Marks an open Task done, now. A repeating Task is not closed: that occurrence is recorded as a
 /// done copy and the Task moves to its next date (`local` says what today is for that).
 pub fn complete_task(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<Completion> {

@@ -1,4 +1,4 @@
-import type { HomeCardLoader, ModuleManifest, RoutePath } from '../lib/router';
+import type { BareKey, HomeCardLoader, ModuleManifest, RoutePath } from '../lib/router';
 import { activeModuleId } from './phone-tabs';
 
 const byOrder = (a: ModuleManifest, b: ModuleManifest) => a.nav.order - b.nav.order;
@@ -17,6 +17,20 @@ export function setModuleEnabled(disabled: string[], id: string, on: boolean): s
 /** What ⌘N runs: the first enabled Module (by nav order) with a create action. */
 export const createTarget = (enabled: ModuleManifest[]) =>
   [...enabled].sort(byOrder).find((m) => m.create);
+
+/** The bare key `key` (a letter, either case) is owned by the first enabled Module that claims it. */
+export function bareKeyFor(enabled: ModuleManifest[], key: string): BareKey | null {
+  const wanted = key.toLowerCase();
+  for (const m of [...enabled].sort(byOrder)) {
+    const hit = m.bareKeys?.find((k) => k.key.toLowerCase() === wanted);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** The enabled Modules that mount an always-on overlay, in nav order. */
+export const overlayModules = (enabled: ModuleManifest[]) =>
+  [...enabled].sort(byOrder).filter((m) => m.overlay);
 
 /** Home cards of the enabled Modules, in nav order. */
 export function homeCards(enabled: ModuleManifest[]): { id: string; load: HomeCardLoader }[] {

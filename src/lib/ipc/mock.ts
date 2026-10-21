@@ -42,6 +42,7 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'journal.font': { default: 'serif', validate: oneOf('serif', 'sans') },
   'journal.width': { default: 'default', validate: oneOf('narrow', 'default', 'wide') },
   'journal.page_summary': { default: true, validate: bool },
+  'todo.parse_dates': { default: true, validate: bool },
 };
 
 const err = (code: AppError['code'], message: string): AppError => ({
