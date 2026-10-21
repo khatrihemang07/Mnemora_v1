@@ -1,13 +1,10 @@
 import Plus from '~icons/lucide/plus';
-import Search from '~icons/lucide/search';
 import SquareCheckBig from '~icons/lucide/square-check-big';
-import { shortcutLabel } from '../../lib/platform';
 import type { ModuleAction, ModuleManifest } from '../../lib/router';
 import { useTodoBadge } from './badge.svelte';
 import { todoNav } from './nav.svelte';
 import { addTaskFromPalette, previewAddTask } from './palette-add';
 import { quickAdd } from './quick-add.svelte';
-import { requestSearch } from './search.svelte';
 import type { GoTarget } from './task-keymap';
 import { VIEW_ICONS } from './view-icons';
 import { SMART_VIEWS, smartView } from './views';
@@ -61,27 +58,6 @@ export const todoManifest: ModuleManifest = {
       queryLabel: (query) => `Add task: “${query}”`,
       queryPreview: previewAddTask,
       run: (_ctx, query) => void addTaskFromPalette(query),
-    },
-    {
-      id: 'search',
-      label: 'Search tasks',
-      icon: Search,
-      shortcut: shortcutLabel('F'),
-      run: (ctx) => {
-        requestSearch('');
-        ctx.navigate('/todo');
-      },
-    },
-    {
-      // Shown once something is typed: ⌘K, "passport", Enter searches Tasks for it.
-      id: 'search-for',
-      label: 'Search tasks for…',
-      icon: Search,
-      queryLabel: (query) => `Search tasks for “${query}”`,
-      run: (ctx, query) => {
-        requestSearch(query);
-        ctx.navigate('/todo');
-      },
     },
   ],
   settingsSection: {

@@ -39,7 +39,7 @@
   import { listsQuery } from './queries';
   import { quickAdd } from './quick-add.svelte';
   import { quickEditing } from './quick-edit.svelte';
-  import { PALETTE_CLOSE_MS, searchLauncher, todoSearch } from './search.svelte';
+  import { todoSearch } from './search.svelte';
   import {
     dateTaskToday,
     deleteTaskWithUndo,
@@ -84,16 +84,7 @@
     taskFocus.id = null;
   });
 
-  // A search asked for from ⌘K (possibly just before this page mounted) opens with its words.
   let searchView = $state<ReturnType<typeof TodoSearch> | null>(null);
-  $effect(() => {
-    const query = searchLauncher.pending;
-    if (query === null) return;
-    searchLauncher.pending = null;
-    untrack(() => todoSearch.open(query));
-    // The palette gives focus back to where it was as it closes; take it again once it has.
-    setTimeout(() => searchView?.focus(false), PALETTE_CLOSE_MS);
-  });
 
   // --- Phone chrome ----------------------------------------------------------------------------
   let listsOpen = $state(false);

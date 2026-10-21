@@ -1,8 +1,5 @@
 import { SEARCH_DEBOUNCE_MS } from './search-results';
 
-/** The palette hands focus back as it closes; a field that wants it takes it after this. */
-export const PALETTE_CLOSE_MS = 80;
-
 /**
  * Todo's search session. `query` is what the field holds; `committed` is what the results follow:
  * it trails typing by 150ms and follows every other change at once. A Task opened from the
@@ -52,14 +49,3 @@ class TodoSearch {
 }
 
 export const todoSearch = new TodoSearch();
-
-/** A search asked for from ⌘K; Todo takes it once its page is up. */
-class SearchLauncher {
-  pending = $state<string | null>(null);
-}
-export const searchLauncher = new SearchLauncher();
-
-/** Opens Todo's search holding `query` (empty for a blank one). */
-export const requestSearch = (query: string): void => {
-  searchLauncher.pending = query;
-};
