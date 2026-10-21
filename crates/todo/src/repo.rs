@@ -195,3 +195,84 @@ pub fn set_deleted(
     )?;
     Ok(())
 }
+
+/// Writes the Due date and time, and stamps `updated_at`. Without a date there is no Repeat
+/// either: a repeating Task always has a Due date.
+pub fn update_when(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET due_date = ?2, due_time = ?3, updated_at = ?4,
+             repeat_freq = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_freq END,
+             repeat_every = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_every END,
+             repeat_days = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_days END,
+             repeat_mode = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_mode END
+         WHERE id = ?1",
+        params![t.id, t.due_date, t.due_time, t.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Open, live Tasks that have a Due date, by date then manual order. The views regroup them.
+pub fn open_dated(conn: &Connection) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE due_date IS NOT NULL AND state = 'open' AND deleted_at IS NULL
+         ORDER BY due_date, sort_key, id"
+    ))?;
+    stmt.query_map([], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
+/// Open, live Task counts `(due before today, due today)`.
+pub fn due_counts(conn: &Connection, today: &str) -> AppResult<(u32, u32)> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FILTER (WHERE due_date < ?1), COUNT(*) FILTER (WHERE due_date = ?1)
+         FROM todo_tasks
+         WHERE due_date IS NOT NULL AND state = 'open' AND deleted_at IS NULL",
+        [today],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?)
+}
+
+/// Open, live Tasks due before `today`.
+pub fn overdue(conn: &Connection, today: &str) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE due_date < ?1 AND state = 'open' AND deleted_at IS NULL
+         ORDER BY due_date, sort_key, id"
+    ))?;
+    stmt.query_map([today], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
+/// Live Tasks done in the UTC millisecond range `[start, end)`, earliest first. Won't do does not
+/// count as done.
+pub fn done_between(conn: &Connection, start: i64, end: i64) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE state = 'done' AND closed_at >= ?1 AND closed_at < ?2 AND deleted_at IS NULL
+         ORDER BY closed_at, sort_key, id"
+    ))?;
+    stmt.query_map([start, end], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
+/// How many open, live Tasks are due on each date in `[from, to]`, leaving out `exclude`.
+pub fn day_counts(
+    conn: &Connection,
+    from: &str,
+    to: &str,
+    exclude: Option<&str>,
+) -> AppResult<Vec<(String, u32)>> {
+    let mut stmt = conn.prepare(
+        "SELECT due_date, COUNT(*) FROM todo_tasks
+         WHERE due_date BETWEEN ?1 AND ?2 AND state = 'open' AND deleted_at IS NULL
+           AND (?3 IS NULL OR id <> ?3)
+         GROUP BY due_date ORDER BY due_date",
+    )?;
+    Ok(stmt
+        .query_map(params![from, to, exclude], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?)
+}

@@ -16,6 +16,7 @@ use crate::list::{
 };
 use crate::service::record_at;
 use crate::task::key_after;
+use crate::when::LocalNow;
 use crate::{list_repo, repo};
 
 /// Change-log entity name for Lists.
@@ -47,8 +48,11 @@ fn record(
 
 const NAME_TAKEN: TodoError = TodoError::Validation("There’s already a List with that name");
 
-/// The sidebar's data: the Inbox count and every List with its open count.
-pub fn sidebar(conn: &Connection) -> AppResult<SidebarView> {
+/// The sidebar's data: the Inbox count, Today's count (due today plus Overdue) and every List
+/// with its open count.
+pub fn sidebar(conn: &Connection, local: &LocalNow) -> AppResult<SidebarView> {
+    local.check()?;
+    let (overdue_count, due_today) = repo::due_counts(conn, &local.today)?;
     let counts: HashMap<Option<String>, (u32, u32)> = repo::task_counts(conn)?
         .into_iter()
         .map(|(list, open, all)| (list, (open, all)))
@@ -69,6 +73,8 @@ pub fn sidebar(conn: &Connection) -> AppResult<SidebarView> {
         .collect();
     Ok(SidebarView {
         inbox_count: counts.get(&None).map_or(0, |c| c.0),
+        today_count: overdue_count + due_today,
+        overdue_count,
         lists,
     })
 }

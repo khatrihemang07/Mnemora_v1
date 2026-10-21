@@ -67,9 +67,17 @@ export const commands = {
 	todoInbox: () => typedError<InboxView, AppError>(__TAURI_INVOKE("todo_inbox")),
 	/**
 	 *  Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
-	 *  title, one over 500 characters and one with a line break.
+	 *  title, one over 500 characters and one with a line break. `when` gives it a Due date and time
+	 *  under the rules of `todo_task_set_when`.
 	 */
-	todoTaskCreate: (title: string, listId: string | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title, listId })),
+	todoTaskCreate: (title: string, listId: string | null, when: {
+	/**  Due date, `YYYY-MM-DD`. */
+	date: string | null,
+	/**  Due time, `HH:MM`; with no date it means today if still ahead, otherwise tomorrow. */
+	time: string | null,
+	/**  The device's clock. */
+	local: LocalNow,
+} | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title, listId, when })),
 	/**  Marks an open Task done, now. */
 	todoTaskComplete: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_complete", { id })),
 	/**  Brings a done Task back to open, in its old place. */
@@ -79,8 +87,39 @@ export const commands = {
 	 *  a `move` change.
 	 */
 	todoTaskMove: (id: string, listId: string | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_move", { id, listId })),
-	/**  The sidebar's data: the Inbox's open count and every List, in order, with its open count. */
-	todoLists: () => typedError<SidebarView, AppError>(__TAURI_INVOKE("todo_lists")),
+	/**
+	 *  Sets an open Task's Due date and time, or clears them when both are none. A time without a
+	 *  date means today if it is still ahead and tomorrow otherwise. Past dates are refused. `local`
+	 *  is the device's today and now. Records an `update` change.
+	 */
+	todoTaskSetWhen: (id: string, date: string | null, time: string | null, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_set_when", { id, date, time, local })),
+	/**
+	 *  Puts Due dates and times back as they were: Undo for a When change, past dates included.
+	 *  Tasks that no longer exist are skipped. Records an `update` change for each Task changed.
+	 */
+	todoTasksRestoreWhen: (changes: DueChange[]) => typedError<Task[], AppError>(__TAURI_INVOKE("todo_tasks_restore_when", { changes })),
+	/**
+	 *  Moves every Overdue Task to `date` (today or later), keeping times. Returns what
+	 *  `todo_tasks_restore_when` needs to undo it. Records an `update` change for each Task.
+	 */
+	todoTasksMoveOverdue: (date: string, local: LocalNow) => typedError<OverdueMove, AppError>(__TAURI_INVOKE("todo_tasks_move_overdue", { date, local })),
+	/**
+	 *  Today: Overdue first, then today's Tasks (timed by time, then manual order), then the Tasks
+	 *  done today.
+	 */
+	todoToday: (local: LocalNow) => typedError<TodayView, AppError>(__TAURI_INVOKE("todo_today", { local })),
+	/**  Upcoming: Overdue on top, then each day after today that has Tasks. */
+	todoUpcoming: (local: LocalNow) => typedError<UpcomingView, AppError>(__TAURI_INVOKE("todo_upcoming", { local })),
+	/**
+	 *  Open Tasks per date from `from` to `to`, both included (only dates that have any), leaving
+	 *  out the Task `exclude`: the dots in the When picker.
+	 */
+	todoDayCounts: (from: string, to: string, exclude: string | null) => typedError<DayCount[], AppError>(__TAURI_INVOKE("todo_day_counts", { from, to, exclude })),
+	/**
+	 *  The sidebar's data: the Inbox's open count, Today's count (due today plus Overdue, with the
+	 *  Overdue part apart) and every List, in order, with its open count.
+	 */
+	todoLists: (local: LocalNow) => typedError<SidebarView, AppError>(__TAURI_INVOKE("todo_lists", { local })),
 	/**  One List and its open Tasks in manual order. */
 	todoList: (id: string) => typedError<ListView, AppError>(__TAURI_INVOKE("todo_list", { id })),
 	/**  Open Tasks grouped by List, the Inbox first. Empty groups are left out. */
@@ -143,6 +182,14 @@ export type AppInfo = {
 	os_first_name: string,
 };
 
+/**  The number of open Tasks due on one date. */
+export type DayCount = {
+	/**  `YYYY-MM-DD`. */
+	date: string,
+	/**  Open Tasks due that day. */
+	count: number,
+};
+
 /**  What happens to a deleted List's Tasks. */
 export type DeleteChoice = 
 /**  Delete them with the List (the default). */
@@ -166,6 +213,16 @@ export type DeviceSettings = {
 	log_level?: string,
 	/**  Spellcheck in every text editor. Per device: input methods and dictionaries differ. */
 	spellcheck?: boolean,
+};
+
+/**  A Task's Due date and time as they were, for Undo. A past date can only come back this way. */
+export type DueChange = {
+	/**  The Task. */
+	id: string,
+	/**  Due date, `YYYY-MM-DD`. */
+	due_date: string | null,
+	/**  Due time, `HH:MM`. */
+	due_time: string | null,
 };
 
 /**  One untitled piece of writing on a Page. */
@@ -270,6 +327,19 @@ export type ListView = {
 	tasks: Task[],
 };
 
+/**  What the UI says "now" is on the device: every date-dependent command takes one. */
+export type LocalNow = {
+	/**  Today's date, `YYYY-MM-DD`. "Today" ends at midnight, like the Journal's. */
+	today: string,
+	/**  The time of day, `HH:MM`. */
+	now: string,
+	/**
+	 *  Minutes the device's clock is ahead of UTC. Only needed to tell which Tasks were closed
+	 *  today, because closing times are stored in UTC.
+	 */
+	offset_min: number,
+};
+
 /**  Everything the UI supplies to write a new Entry. */
 export type NewEntry = {
 	/**  The Page to put it on, `YYYY-MM-DD`. Future dates are fine. */
@@ -282,6 +352,24 @@ export type NewEntry = {
 	written_offset_min: number,
 	/**  The composer session writing this Entry; groups its autosaves in the change log. */
 	session_id: string,
+};
+
+/**  A date and time to give a new Task, with the clock it was picked against. */
+export type NewWhen = {
+	/**  Due date, `YYYY-MM-DD`. */
+	date: string | null,
+	/**  Due time, `HH:MM`; with no date it means today if still ahead, otherwise tomorrow. */
+	time: string | null,
+	/**  The device's clock. */
+	local: LocalNow,
+};
+
+/**  What "Move all" did: hand `previous` to `todo_tasks_restore_when` to undo it. */
+export type OverdueMove = {
+	/**  The date they were moved to. */
+	to_date: string,
+	/**  The Tasks moved, with the date and time each had. */
+	previous: DueChange[],
 };
 
 /**  All Entries of one date, oldest first. */
@@ -372,6 +460,10 @@ export type SidebarState = {
 export type SidebarView = {
 	/**  Open Tasks with no List. */
 	inbox_count: number,
+	/**  Open Tasks due today, plus every Overdue one: Today's count. */
+	today_count: number,
+	/**  Open Tasks due before today: the Today count turns red while this is above zero. */
+	overdue_count: number,
 	/**  Lists in their order. */
 	lists: ListEntry[],
 };
@@ -455,6 +547,21 @@ export type TodaySummary = {
 	latest: TodayLatest | null,
 };
 
+/**  Today: what is late, what is due, and what is already done. */
+export type TodayView = {
+	/**  Open Tasks due before today, oldest date first. */
+	overdue: Task[],
+	/**
+	 *  Open Tasks due today: timed ones by time, then the rest in manual order. A timed Task whose
+	 *  time has passed stays here.
+	 */
+	tasks: Task[],
+	/**  Tasks done today, earliest first. Won't do is not counted. */
+	done: Task[],
+	/**  Overdue, due and done today together: the "of M" in "N of M done". */
+	total: number,
+};
+
 /**  A flat group of Tasks. Tasks with no List are in the Inbox, which is not a List. */
 export type TodoList = {
 	/**  `UUIDv7`. */
@@ -469,6 +576,22 @@ export type TodoList = {
 	created_at: number,
 	/**  Row update time: UTC milliseconds. */
 	updated_at: number,
+};
+
+/**  The Tasks due on one day of Upcoming. */
+export type UpcomingDay = {
+	/**  `YYYY-MM-DD`. */
+	date: string,
+	/**  Timed Tasks by time, then the rest in manual order. */
+	tasks: Task[],
+};
+
+/**  Upcoming: Overdue on top, then only the days from tomorrow on that have Tasks. */
+export type UpcomingView = {
+	/**  Open Tasks due before today, oldest date first. */
+	overdue: Task[],
+	/**  Days with Tasks, earliest first. */
+	days: UpcomingDay[],
 };
 
 /**  Last known window geometry. */

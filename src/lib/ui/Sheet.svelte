@@ -17,9 +17,11 @@
     restoreFocus?: () => void;
     /** Adds a Close button in the title row, for sheets with no other obvious way out. */
     closable?: boolean;
+    /** Returns true when Esc belongs to something inside (a floating panel), so the sheet stays open. */
+    guardEscape?: () => boolean;
     children: Snippet;
   }
-  let { open, title, onclose, restoreFocus, closable = false, children }: Props = $props();
+  let { open, title, onclose, restoreFocus, closable = false, guardEscape, children }: Props = $props();
 
   // Android Back closes the sheet instead of leaving the screen.
   closeOnBack(() => open, () => onclose());
@@ -30,6 +32,7 @@
     <Dialog.Overlay data-editor-popup class="fixed inset-0 z-40 bg-scrim" />
     <Dialog.Content
       data-editor-popup
+      onEscapeKeydown={(e) => guardEscape?.() && e.preventDefault()}
       onCloseAutoFocus={(e) => {
         if (!restoreFocus) return;
         e.preventDefault();

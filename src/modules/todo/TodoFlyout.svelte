@@ -9,11 +9,11 @@
   import { todoNav } from './nav.svelte';
   import { listsQuery } from './queries';
   import { VIEW_ICONS } from './view-icons';
-  import { listView, SMART_VIEWS, sameView, smartView, type TodoView } from './views';
+  import { listView, SMART_VIEWS, sameView, smartView, type TodoView, viewCount } from './views';
 
   let { ctx, onclose }: NavFlyoutProps = $props();
 
-  const sidebar = createQuery(() => listsQuery);
+  const sidebar = createQuery(() => listsQuery());
   const inside = $derived(ctx.isActive('/todo'));
 
   function go(view: TodoView) {
@@ -31,7 +31,7 @@
   <p class={heading}>Todo</p>
   {#each SMART_VIEWS as v (v.id)}
     {@const Icon = VIEW_ICONS[v.id]}
-    {@const count = v.id === 'inbox' ? (sidebar.data?.inbox_count ?? 0) : 0}
+    {@const shown = viewCount(sidebar.data, v.id)}
     <button
       type="button"
       role="menuitem"
@@ -40,7 +40,7 @@
     >
       <span class="grid size-[1.15rem] shrink-0 place-items-center text-muted"><Icon class="size-4" /></span>
       <span class="flex-1">{v.label}</span>
-      {#if count > 0}<span class="text-xs font-normal text-muted tabular-nums">{count}</span>{/if}
+      {#if shown.count > 0}<span class="text-xs tabular-nums {shown.alert ? 'font-semibold text-danger' : 'font-normal text-muted'}">{shown.count}</span>{/if}
     </button>
   {/each}
   <div class="my-1 h-px bg-[color-mix(in_oklch,var(--ink)_12%,transparent)]"></div>

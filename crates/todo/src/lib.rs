@@ -9,8 +9,10 @@ mod list_repo;
 mod list_service;
 mod migrations;
 mod repo;
+mod schedule;
 mod service;
 mod task;
+mod when;
 
 use mnemora_core::module::Module;
 use mnemora_core::settings::SettingsRegistry;
@@ -24,8 +26,13 @@ pub use list::{
 pub use list_service::{
     all, create_list, delete_list, list_view, rename_list, restore_list, set_list_emoji, sidebar,
 };
+pub use schedule::{
+    DayCount, DueChange, OverdueMove, TodayView, UpcomingDay, UpcomingView, day_counts,
+    move_overdue, restore_when, set_when, today, upcoming,
+};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use task::{InboxView, MAX_TITLE_CHARS, Task, TaskState};
+pub use when::{LocalNow, NewWhen};
 
 /// The Todo Module.
 pub struct TodoModule;

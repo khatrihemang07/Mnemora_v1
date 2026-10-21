@@ -94,8 +94,12 @@ The one calendar date a Task is meant to be done on, optionally with a time of d
 _Avoid_: Deadline, when, scheduled date
 
 **Overdue**:
-An open Task whose Due date (and time, if set) has passed.
+An open Task whose Due date is before today. A Task due today is never Overdue, even when its time has passed: it stays in Today with the time shown in red.
 _Avoid_: Late, missed
+
+**When picker**:
+The compact picker that sets a Task's Due date and time (and, later, its Repeat): a typed field, quick days, a rolling five-week calendar from this week, and a Time chip. Past days cannot be picked.
+_Avoid_: Date picker (that is the Journal's), scheduler
 
 **Repeat**:
 A rule that brings a Task back after it is done: every N days, weeks (on chosen weekdays), months or years, counted either from the Due date or from the day it was done. Doing a repeating Task records that occurrence and moves the same Task to its next Due date. A repeating Task always has a Due date; if none was set, it takes the first day the rule matches.

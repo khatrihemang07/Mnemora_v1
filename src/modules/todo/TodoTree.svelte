@@ -24,12 +24,12 @@
   import { invalidateTodo, listsQuery, renameList, setListEmoji } from './queries';
   import TreeRow from './TreeRow.svelte';
   import { VIEW_ICONS } from './view-icons';
-  import { listView, SMART_VIEWS, sameView, smartView, type TodoView } from './views';
+  import { listView, SMART_VIEWS, sameView, smartView, type TodoView, viewCount } from './views';
   import { notifyError } from '../../lib/ui/toast';
 
   let { ctx }: NavTreeProps = $props();
 
-  const sidebar = createQuery(() => listsQuery);
+  const sidebar = createQuery(() => listsQuery());
   const lists = $derived(sidebar.data?.lists ?? []);
   const inside = $derived(ctx.isActive('/todo'));
 
@@ -121,7 +121,8 @@
     <TreeRow
       label={v.label}
       active={isOpen(smartView(v.id))}
-      count={v.id === 'inbox' ? (sidebar.data?.inbox_count ?? 0) : 0}
+      count={viewCount(sidebar.data, v.id).count}
+      alert={viewCount(sidebar.data, v.id).alert}
       onclick={() => go(smartView(v.id))}
     >
       {#snippet glyph()}

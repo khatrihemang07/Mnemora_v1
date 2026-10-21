@@ -1,5 +1,5 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check.",
+  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027. sidebar_today: [Today's count (open Tasks due today plus Overdue), the Overdue part].",
   "cases": [
     {
       "rule": "title.blank",
@@ -1302,6 +1302,927 @@
       ],
       "expect": {
         "results": ["ok", "ok", "ok", "validation"]
+      }
+    },
+    {
+      "rule": "when.set",
+      "name": "a date and a time are stored as given",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": "09:00"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["A", "2026-10-23", "09:00"]]
+      }
+    },
+    {
+      "rule": "when.set",
+      "name": "a date alone keeps no time",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": null
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["A", "2026-10-23", null]]
+      }
+    },
+    {
+      "rule": "when.set",
+      "name": "setting a new When replaces the old time",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": "09:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-24",
+          "time": null
+        }
+      ],
+      "expect": {
+        "dues": [["A", "2026-10-24", null]]
+      }
+    },
+    {
+      "rule": "when.past",
+      "name": "a past date is refused and nothing changes",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-20",
+          "time": null
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "dues": [["A", null, null]]
+      }
+    },
+    {
+      "rule": "when.past",
+      "name": "a past date does not replace a good one",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": null
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-01",
+          "time": "09:00"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation"],
+        "dues": [["A", "2026-10-23", null]]
+      }
+    },
+    {
+      "rule": "when.past",
+      "name": "today is allowed, even with a time already behind us",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "time": "09:00"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["A", "2026-10-21", "09:00"]]
+      }
+    },
+    {
+      "rule": "when.invalid",
+      "name": "an impossible date or time is refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-02-30",
+          "time": null
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": null,
+          "time": "25:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-13-01",
+          "time": null
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": "9am"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "validation", "validation", "validation"],
+        "dues": [["A", null, null]]
+      }
+    },
+    {
+      "rule": "when.time_only",
+      "name": "a time still ahead means today",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": null,
+          "time": "15:00"
+        }
+      ],
+      "expect": {
+        "dues": [["A", "2026-10-21", "15:00"]]
+      }
+    },
+    {
+      "rule": "when.time_only",
+      "name": "a time already passed means tomorrow",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": null,
+          "time": "09:00"
+        }
+      ],
+      "expect": {
+        "dues": [["A", "2026-10-22", "09:00"]]
+      }
+    },
+    {
+      "rule": "when.time_only",
+      "name": "the minute we are in still counts as ahead",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": null,
+          "time": "14:05"
+        }
+      ],
+      "expect": {
+        "dues": [["A", "2026-10-21", "14:05"]]
+      }
+    },
+    {
+      "rule": "when.time_only",
+      "name": "tomorrow rolls over the end of the month",
+      "today": "2026-10-31",
+      "now": "23:00",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": null,
+          "time": "09:00",
+          "today": "2026-10-31",
+          "now": "23:00"
+        }
+      ],
+      "expect": {
+        "dues": [["A", "2026-11-01", "09:00"]]
+      }
+    },
+    {
+      "rule": "when.clear",
+      "name": "no date and no time clears both",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": "09:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": null,
+          "time": null
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["A", null, null]]
+      }
+    },
+    {
+      "rule": "when.closed",
+      "name": "a done Task cannot be dated",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "time": null
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation"]
+      }
+    },
+    {
+      "rule": "when.missing",
+      "name": "an unknown Task is not found",
+      "steps": [
+        {
+          "op": "set_when",
+          "task": "nope",
+          "date": "2026-10-23",
+          "time": null
+        }
+      ],
+      "expect": {
+        "results": ["not_found"]
+      }
+    },
+    {
+      "rule": "when.create",
+      "name": "a new Task can be created with a date and a time",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-23",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "time": "09:00"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["A", "2026-10-23", "09:00"], ["B", "2026-10-22", "09:00"]]
+      }
+    },
+    {
+      "rule": "when.create",
+      "name": "creating with a past date creates nothing",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-20"
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "view.today",
+      "name": "Overdue is by date, oldest first, whatever the manual order",
+      "steps": [
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-20",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Today"
+        }
+      ],
+      "expect": {
+        "today": {
+          "overdue": ["A", "B"],
+          "tasks": []
+        }
+      }
+    },
+    {
+      "rule": "view.today",
+      "name": "timed Tasks come first by time, the rest in manual order",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Untimed 1"
+        },
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-21",
+          "time": "16:00"
+        },
+        {
+          "op": "create",
+          "title": "Untimed 2",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Early",
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "time": null
+        }
+      ],
+      "expect": {
+        "today": {
+          "overdue": [],
+          "tasks": ["Early", "Late", "Untimed 1", "Untimed 2"]
+        }
+      }
+    },
+    {
+      "rule": "view.today",
+      "name": "equal times keep the manual order",
+      "steps": [
+        {
+          "op": "create",
+          "title": "First",
+          "date": "2026-10-21",
+          "time": "10:00"
+        },
+        {
+          "op": "create",
+          "title": "Second",
+          "date": "2026-10-21",
+          "time": "10:00"
+        }
+      ],
+      "expect": {
+        "today": {
+          "overdue": [],
+          "tasks": ["First", "Second"]
+        }
+      }
+    },
+    {
+      "rule": "view.today",
+      "name": "a passed time stays in Today, not in Overdue",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Passed",
+          "date": "2026-10-21",
+          "time": "08:00"
+        }
+      ],
+      "expect": {
+        "today": {
+          "overdue": [],
+          "tasks": ["Passed"]
+        }
+      }
+    },
+    {
+      "rule": "view.today",
+      "name": "undated, future and done Tasks are not in Today",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Undated"
+        },
+        {
+          "op": "create",
+          "title": "Future",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "create",
+          "title": "Done",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "complete",
+          "task": 2
+        },
+        {
+          "op": "create",
+          "title": "Due",
+          "date": "2026-10-21"
+        }
+      ],
+      "expect": {
+        "today": {
+          "overdue": [],
+          "tasks": ["Due"]
+        }
+      }
+    },
+    {
+      "rule": "view.today",
+      "name": "a Task in a deleted List leaves Today and returns with Undo",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "A",
+          "list": 0,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "today": {
+          "overdue": [],
+          "tasks": ["A"]
+        }
+      }
+    },
+    {
+      "rule": "view.upcoming",
+      "name": "only days with Tasks, earliest first, timed first within a day",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Later",
+          "date": "2026-11-02"
+        },
+        {
+          "op": "create",
+          "title": "Untimed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "create",
+          "title": "Timed",
+          "date": "2026-10-22",
+          "time": "08:00"
+        },
+        {
+          "op": "create",
+          "title": "Weekend",
+          "date": "2026-10-25"
+        },
+        {
+          "op": "create",
+          "title": "Today",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Undated"
+        }
+      ],
+      "expect": {
+        "upcoming": {
+          "overdue": [],
+          "days": [
+            ["2026-10-22", ["Timed", "Untimed"]],
+            ["2026-10-25", ["Weekend"]],
+            ["2026-11-02", ["Later"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "view.upcoming",
+      "name": "Overdue is on top and today is not a day",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-18",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Today",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Next",
+          "date": "2026-10-23"
+        }
+      ],
+      "expect": {
+        "upcoming": {
+          "overdue": ["Late"],
+          "days": [["2026-10-23", ["Next"]]]
+        }
+      }
+    },
+    {
+      "rule": "view.upcoming",
+      "name": "nothing dated gives nothing",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Undated"
+        }
+      ],
+      "expect": {
+        "upcoming": {
+          "overdue": [],
+          "days": []
+        }
+      }
+    },
+    {
+      "rule": "overdue.move_all",
+      "name": "Move all to Today keeps each time",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-19",
+          "time": "08:00",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-20",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Today",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-21"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "dues": [
+          ["A", "2026-10-21", "08:00"],
+          ["B", "2026-10-21", null],
+          ["Today", "2026-10-21", null]
+        ],
+        "today": {
+          "overdue": [],
+          "tasks": ["A", "B", "Today"]
+        }
+      }
+    },
+    {
+      "rule": "overdue.move_all",
+      "name": "Move all to a picked date",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-20",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-25"
+        }
+      ],
+      "expect": {
+        "dues": [["A", "2026-10-25", null], ["B", "2026-10-25", null]],
+        "upcoming": {
+          "overdue": [],
+          "days": [["2026-10-25", ["A", "B"]]]
+        }
+      }
+    },
+    {
+      "rule": "overdue.move_all",
+      "name": "a past target date is refused and nothing moves",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-20"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "dues": [["A", "2026-10-19", null]]
+      }
+    },
+    {
+      "rule": "overdue.move_all",
+      "name": "Undo puts each Task back on its past date",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-19",
+          "time": "08:00",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-20",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "undo_move",
+          "move": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "dues": [["A", "2026-10-19", "08:00"], ["B", "2026-10-20", null]],
+        "today": {
+          "overdue": ["A", "B"],
+          "tasks": []
+        }
+      }
+    },
+    {
+      "rule": "overdue.move_all",
+      "name": "done and future Tasks are left alone",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Done",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "create",
+          "title": "Future",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-21"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "dues": [["Future", "2026-10-23", null]]
+      }
+    },
+    {
+      "rule": "overdue.move_all",
+      "name": "with nothing overdue nothing moves",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Today",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-22"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["Today", "2026-10-21", null]]
+      }
+    },
+    {
+      "rule": "picker.day_counts",
+      "name": "open Tasks per date from today, done ones not counted",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-22",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "C",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "create",
+          "title": "D",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "complete",
+          "task": 3
+        },
+        {
+          "op": "create",
+          "title": "Old",
+          "date": "2026-10-01",
+          "today": "2026-10-10",
+          "now": "09:00"
+        }
+      ],
+      "expect": {
+        "day_counts": [["2026-10-22", 2], ["2026-10-23", 1]]
+      }
+    },
+    {
+      "rule": "sidebar.today",
+      "name": "Today's count is due today plus Overdue, the Overdue part apart",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Due",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Due 2",
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Future",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "create",
+          "title": "Undated"
+        }
+      ],
+      "expect": {
+        "sidebar_today": [3, 1]
+      }
+    },
+    {
+      "rule": "sidebar.today",
+      "name": "done Tasks do not count, and nothing due gives zero",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Done",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "create",
+          "title": "Undated"
+        }
+      ],
+      "expect": {
+        "sidebar_today": [0, 0]
+      }
+    },
+    {
+      "rule": "sidebar.today",
+      "name": "Move all turns the Overdue part to zero without changing the total",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Due",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-21"
+        }
+      ],
+      "expect": {
+        "sidebar_today": [2, 0]
       }
     }
   ]

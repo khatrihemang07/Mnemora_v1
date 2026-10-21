@@ -11,6 +11,8 @@
     label: string;
     active: boolean;
     count?: number;
+    /** Shows the count in red (something is Overdue). */
+    alert?: boolean;
     onclick: () => void;
     /** Right-click or long-press at a point. */
     onmenu?: (x: number, y: number) => void;
@@ -18,7 +20,7 @@
     ref?: HTMLButtonElement | null;
     glyph: Snippet;
   }
-  let { label, active, count = 0, onclick, onmenu, ref = $bindable(), glyph }: Props = $props();
+  let { label, active, count = 0, alert = false, onclick, onmenu, ref = $bindable(), glyph }: Props = $props();
 
   const press = new LongPress({ onpress: (x, y) => onmenu?.(x, y) });
   const touchLike = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
@@ -48,6 +50,6 @@
   {@render glyph()}
   <span class="min-w-0 flex-1 truncate">{label}</span>
   {#if count > 0}
-    <span class="text-xs font-normal text-muted tabular-nums">{count}</span>
+    <span class="text-xs tabular-nums {alert ? 'font-semibold text-danger' : 'font-normal text-muted'}">{count}</span>
   {/if}
 </button>
