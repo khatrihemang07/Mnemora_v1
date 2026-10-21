@@ -196,19 +196,96 @@ pub fn set_deleted(
     Ok(())
 }
 
-/// Writes the Due date and time, and stamps `updated_at`. Without a date there is no Repeat
-/// either: a repeating Task always has a Due date.
+/// Writes the Due date and time and the Repeat, and stamps `updated_at`. The caller has already
+/// settled the rules: without a date there is no Repeat.
 pub fn update_when(conn: &Connection, t: &Task) -> AppResult<()> {
     conn.execute(
-        "UPDATE todo_tasks SET due_date = ?2, due_time = ?3, updated_at = ?4,
-             repeat_freq = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_freq END,
-             repeat_every = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_every END,
-             repeat_days = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_days END,
-             repeat_mode = CASE WHEN ?2 IS NULL THEN NULL ELSE repeat_mode END
+        "UPDATE todo_tasks SET due_date = ?2, due_time = ?3, repeat_freq = ?4, repeat_every = ?5,
+             repeat_days = ?6, repeat_mode = ?7, updated_at = ?8
          WHERE id = ?1",
-        params![t.id, t.due_date, t.due_time, t.updated_at],
+        params![
+            t.id,
+            t.due_date,
+            t.due_time,
+            t.repeat_freq,
+            t.repeat_every,
+            t.repeat_days,
+            t.repeat_mode,
+            t.updated_at
+        ],
     )?;
     Ok(())
+}
+
+/// Writes a repeating Task's notes (Checklist reset or put back) and Due date, and stamps
+/// `updated_at`. The Repeat itself stays as it is.
+pub fn update_notes_and_due(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET notes = ?2, due_date = ?3, due_time = ?4, updated_at = ?5
+         WHERE id = ?1",
+        params![t.id, t.notes, t.due_date, t.due_time, t.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Gives the Comments of one Task to another, and returns their ids (deleted ones too: they come
+/// back with Undo).
+pub fn move_comments(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM todo_comments WHERE task_id = ?1 ORDER BY id")?;
+    let ids: Vec<String> = stmt
+        .query_map([from], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    conn.execute(
+        "UPDATE todo_comments SET task_id = ?2 WHERE task_id = ?1",
+        params![from, to],
+    )?;
+    Ok(ids)
+}
+
+/// The newest done occurrence copy of a repeating Task, if any is left.
+pub fn latest_occurrence(conn: &Connection, task_id: &str) -> AppResult<Option<Task>> {
+    conn.query_row(
+        &format!(
+            "SELECT {COLUMNS} FROM todo_tasks
+             WHERE repeat_of = ?1 AND state = 'done' AND deleted_at IS NULL
+             ORDER BY closed_at DESC, id DESC LIMIT 1"
+        ),
+        [task_id],
+        from_row,
+    )
+    .optional()
+    .map_err(corrupt_or_db)
+}
+
+/// The days on which something was done, newest first, strictly before `before` (a local day,
+/// `YYYY-MM-DD`) when given. Days are the device's: closing times are UTC, shifted by the offset.
+pub fn done_days(
+    conn: &Connection,
+    before: Option<&str>,
+    offset_min: i32,
+    limit: u32,
+) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT date((closed_at + ?1 * 60000) / 1000, 'unixepoch') FROM todo_tasks
+         WHERE state = 'done' AND closed_at IS NOT NULL AND deleted_at IS NULL
+           AND (?2 IS NULL OR date((closed_at + ?1 * 60000) / 1000, 'unixepoch') < ?2)
+         ORDER BY 1 DESC LIMIT ?3",
+    )?;
+    Ok(stmt
+        .query_map(params![offset_min, before, limit], |r| r.get(0))?
+        .collect::<Result<_, _>>()?)
+}
+
+/// Live Tasks done in the UTC millisecond range `[start, end)`, newest first.
+pub fn done_between_newest_first(conn: &Connection, start: i64, end: i64) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE state = 'done' AND closed_at >= ?1 AND closed_at < ?2 AND deleted_at IS NULL
+         ORDER BY closed_at DESC, sort_key DESC, id DESC"
+    ))?;
+    stmt.query_map([start, end], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
 }
 
 /// Open, live Tasks that have a Due date, by date then manual order. The views regroup them.

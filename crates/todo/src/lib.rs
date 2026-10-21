@@ -8,6 +8,8 @@ mod list;
 mod list_repo;
 mod list_service;
 mod migrations;
+mod recurrence;
+mod repeat;
 mod repo;
 mod schedule;
 mod service;
@@ -26,6 +28,8 @@ pub use list::{
 pub use list_service::{
     all, create_list, delete_list, list_view, rename_list, restore_list, set_list_emoji, sidebar,
 };
+pub use recurrence::{MAX_EVERY, RepeatRule};
+pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};
 pub use schedule::{
     DayCount, DueChange, OverdueMove, TodayView, UpcomingDay, UpcomingView, day_counts,
     move_overdue, restore_when, set_when, today, upcoming,

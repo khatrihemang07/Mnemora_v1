@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::error::TodoError;
+use crate::recurrence::{RepeatRule, Rule};
+use crate::repeat::rule_of;
 use crate::repo;
 use crate::service::record_at;
 use crate::task::{Task, TaskState};
@@ -58,7 +60,8 @@ pub struct DayCount {
     pub count: u32,
 }
 
-/// A Task's Due date and time as they were, for Undo. A past date can only come back this way.
+/// A Task's Due date, time and Repeat as they were, for Undo. A past date can only come back this
+/// way.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct DueChange {
     /// The Task.
@@ -67,6 +70,8 @@ pub struct DueChange {
     pub due_date: Option<String>,
     /// Due time, `HH:MM`.
     pub due_time: Option<String>,
+    /// The Repeat, which goes with the date.
+    pub repeat: Option<RepeatRule>,
 }
 
 /// What "Move all" did: hand `previous` to `todo_tasks_restore_when` to undo it.
@@ -95,47 +100,76 @@ fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// Writes a new When onto an open Task; logs it unless nothing changes. Returns whether it did.
+/// A Task's Repeat as it is stored, settled.
+fn stored_rule(task: &Task) -> AppResult<Option<Rule>> {
+    rule_of(task)
+}
+
+/// Writes a new When and Repeat onto an open Task; logs it unless nothing changes. Returns
+/// whether it did. Without a date there is no Repeat. A month or year Repeat keeps to the day of
+/// the month of its date, so a new date is the new anchor; `keep_day` leaves the day it has.
 fn apply(
     conn: &Connection,
     task: &mut Task,
     date: Option<String>,
     time: Option<String>,
+    rule: Option<Rule>,
+    keep_day: bool,
 ) -> AppResult<bool> {
-    if task.due_date == date && task.due_time == time {
+    let rule = match (&date, rule) {
+        (Some(date), Some(rule)) if !(keep_day && rule.has_day()) => Some(rule.anchored_on(date)),
+        (Some(_), rule) => rule,
+        (None, _) => None,
+    };
+    let wire = rule.map(Rule::to_wire);
+    let before = stored_rule(task)?.map(Rule::to_wire);
+    if task.due_date == date && task.due_time == time && before == wire {
         return Ok(false);
     }
     task.due_date = date;
     task.due_time = time;
-    if task.due_date.is_none() {
-        task.repeat_freq = None;
-        task.repeat_every = None;
-        task.repeat_days = None;
-        task.repeat_mode = None;
-    }
+    task.repeat_freq = wire.as_ref().map(|r| r.freq.clone());
+    task.repeat_every = wire.as_ref().map(|r| r.every);
+    task.repeat_days = wire.as_ref().and_then(|r| r.days);
+    task.repeat_mode = wire.map(|r| r.mode);
     task.updated_at = now_ms();
     repo::update_when(conn, task)?;
     record_at(conn, task, ChangeOp::Update, None)?;
     Ok(true)
 }
 
-/// Sets a Task's Due date and time, or clears them (no date, no time). A time without a date
-/// means today if still ahead, otherwise tomorrow. Past dates are refused. Setting what is
-/// already there changes and logs nothing.
+/// Sets a Task's Due date, time and Repeat, or clears them (no date, no time, no Repeat). A time
+/// without a date means today if still ahead, otherwise tomorrow; a Repeat without a date gives
+/// the first day it lands on. Past dates are refused. Setting what is already there changes and
+/// logs nothing. A date changed by hand is the new anchor of its Repeat; removing the date
+/// removes the Repeat.
 pub fn set_when(
     conn: &mut Connection,
     id: &str,
     date: Option<&str>,
     time: Option<&str>,
+    repeat: Option<&RepeatRule>,
     local: &LocalNow,
 ) -> AppResult<Task> {
-    let (date, time) = resolve_when(date, time, local)?;
+    let rule = repeat.map(RepeatRule::check).transpose()?;
+    let (date, time) = match (date, rule) {
+        (None, Some(rule)) => {
+            local.check()?;
+            let time = time.map(validate_time).transpose()?.map(str::to_owned);
+            let first = rule
+                .first_match(&local.today)
+                .ok_or(TodoError::Validation("Not a valid date"))?;
+            (Some(first), time)
+        }
+        _ => resolve_when(date, time, local)?,
+    };
     let tx = conn.transaction()?;
     let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
     if task.state != TaskState::Open {
         return Err(TodoError::Validation("That Task is already closed").into());
     }
-    apply(&tx, &mut task, date, time)?;
+    let keep_day = task.due_date == date;
+    apply(&tx, &mut task, date, time, rule, keep_day)?;
     tx.commit()?;
     Ok(task)
 }
@@ -143,20 +177,29 @@ pub fn set_when(
 /// Puts Due dates and times back as they were (Undo), past dates included. Tasks that are gone
 /// are skipped. Each change is logged.
 pub fn restore_when(conn: &mut Connection, changes: &[DueChange]) -> AppResult<Vec<Task>> {
+    let mut rules = Vec::with_capacity(changes.len());
     for c in changes {
         c.due_date.as_deref().map(validate_date).transpose()?;
         c.due_time.as_deref().map(validate_time).transpose()?;
         if c.due_time.is_some() && c.due_date.is_none() {
             return Err(TodoError::Validation("A time needs a date").into());
         }
+        rules.push(c.repeat.as_ref().map(RepeatRule::check).transpose()?);
     }
     let tx = conn.transaction()?;
     let mut restored = Vec::with_capacity(changes.len());
-    for c in changes {
+    for (c, rule) in changes.iter().zip(rules) {
         let Some(mut task) = repo::get(&tx, &c.id)? else {
             continue;
         };
-        apply(&tx, &mut task, c.due_date.clone(), c.due_time.clone())?;
+        apply(
+            &tx,
+            &mut task,
+            c.due_date.clone(),
+            c.due_time.clone(),
+            rule,
+            true,
+        )?;
         restored.push(task);
     }
     tx.commit()?;
@@ -171,13 +214,15 @@ pub fn move_overdue(conn: &mut Connection, date: &str, local: &LocalNow) -> AppR
     let tx = conn.transaction()?;
     let mut previous = Vec::new();
     for mut task in repo::overdue(&tx, &local.today)? {
+        let rule = stored_rule(&task)?;
         previous.push(DueChange {
             id: task.id.clone(),
             due_date: task.due_date.clone(),
             due_time: task.due_time.clone(),
+            repeat: rule.map(Rule::to_wire),
         });
         let time = task.due_time.clone();
-        apply(&tx, &mut task, Some(date.to_owned()), time)?;
+        apply(&tx, &mut task, Some(date.to_owned()), time, rule, false)?;
     }
     tx.commit()?;
     Ok(OverdueMove {

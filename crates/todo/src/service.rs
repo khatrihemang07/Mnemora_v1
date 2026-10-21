@@ -8,8 +8,9 @@ use rusqlite::Connection;
 
 use crate::MODULE_ID;
 use crate::error::TodoError;
+use crate::repeat::{self, Completion};
 use crate::task::{InboxView, Task, TaskState, key_after, validate_title};
-use crate::when::{NewWhen, resolve_when};
+use crate::when::{LocalNow, NewWhen, resolve_when};
 use crate::{list_repo, repo};
 
 /// Change-log entity name for Tasks.
@@ -17,7 +18,7 @@ const ENTITY: &str = "todo_task";
 
 /// Writes a change-log record. The snapshot is the Task plus its `deleted_at`, which the Task
 /// type does not carry: a delete record shows when it was deleted, every other one shows null.
-fn record(conn: &Connection, task: &Task, op: ChangeOp) -> AppResult<()> {
+pub(crate) fn record(conn: &Connection, task: &Task, op: ChangeOp) -> AppResult<()> {
     record_at(conn, task, op, None)
 }
 
@@ -96,12 +97,19 @@ pub fn create_task(
     Ok(task)
 }
 
-/// Marks an open Task done, now.
-pub fn complete_task(conn: &mut Connection, id: &str) -> AppResult<Task> {
+/// Marks an open Task done, now. A repeating Task is not closed: that occurrence is recorded as a
+/// done copy and the Task moves to its next date (`local` says what today is for that).
+pub fn complete_task(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<Completion> {
+    local.check()?;
     let tx = conn.transaction()?;
     let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
     if task.state != TaskState::Open {
         return Err(TodoError::Validation("That Task is already closed").into());
+    }
+    if let Some(rule) = repeat::rule_of(&task)? {
+        let completion = repeat::complete(&tx, task, rule, local)?;
+        tx.commit()?;
+        return Ok(completion);
     }
     let now = now_ms();
     task.state = TaskState::Done;
@@ -110,15 +118,24 @@ pub fn complete_task(conn: &mut Connection, id: &str) -> AppResult<Task> {
     repo::update_state(&tx, &task)?;
     record(&tx, &task, ChangeOp::Tick)?;
     tx.commit()?;
-    Ok(task)
+    Ok(Completion {
+        task,
+        occurrence: None,
+    })
 }
 
-/// Brings a done (or Won't do) Task back to open, in its old place.
+/// Brings a done (or Won't do) Task back to open, in its old place. Reopening an occurrence of a
+/// repeating Task works only for the latest one and rewinds the Task: the Task is returned.
 pub fn reopen_task(conn: &mut Connection, id: &str) -> AppResult<Task> {
     let tx = conn.transaction()?;
     let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
     if task.state == TaskState::Open {
         return Err(TodoError::Validation("That Task is already open").into());
+    }
+    if let (Some(parent), TaskState::Done) = (task.repeat_of.clone(), task.state) {
+        let rewound = repeat::rewind(&tx, task, &parent)?;
+        tx.commit()?;
+        return Ok(rewound);
     }
     task.state = TaskState::Open;
     task.closed_at = None;

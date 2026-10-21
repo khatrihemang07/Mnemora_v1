@@ -1,5 +1,5 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027. sidebar_today: [Today's count (open Tasks due today plus Overdue), the Overdue part].",
+  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027. sidebar_today: [Today's count (open Tasks due today plus Overdue), the Overdue part]. Repeat: set_when{task,date?,time?,repeat?: {freq,every,weekdays?,anchor?,mode}}; complete and skip take the step's clock (today); reopen_occurrence{occurrence: n} reopens the n-th occurrence copy recorded by a complete. repeats: every open repeating Task as [title, freq, every, days (weekday bitmask or day of month), mode]. done: titles in Done, newest first.",
   "cases": [
     {
       "rule": "title.blank",
@@ -2223,6 +2223,554 @@
       ],
       "expect": {
         "sidebar_today": [2, 0]
+      }
+    },
+    {
+      "rule": "repeat.first_match",
+      "name": "a Repeat on an undated Task dates it to the first matching day",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Gym"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "repeat": {
+            "freq": "week",
+            "every": 1,
+            "mode": "fixed",
+            "weekdays": [1, 4]
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["Gym", "2026-10-22", null]],
+        "repeats": [["Gym", "week", 1, 18, "fixed"]]
+      }
+    },
+    {
+      "rule": "repeat.first_match",
+      "name": "a Repeat on a dated Task keeps its date and the time",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Gym",
+          "date": "2026-10-30",
+          "time": "07:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-30",
+          "time": "07:00",
+          "repeat": {
+            "freq": "day",
+            "every": 2,
+            "mode": "fixed"
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["Gym", "2026-10-30", "07:00"]],
+        "repeats": [["Gym", "day", 2, null, "fixed"]]
+      }
+    },
+    {
+      "rule": "repeat.anchor",
+      "name": "a month Repeat keeps to the day of its Due date",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Rent",
+          "date": "2026-10-31"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-31",
+          "repeat": {
+            "freq": "month",
+            "every": 1,
+            "mode": "fixed"
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "repeats": [["Rent", "month", 1, 31, "fixed"]]
+      }
+    },
+    {
+      "rule": "repeat.anchor",
+      "name": "a new date by hand is the new anchor",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Rent",
+          "date": "2026-10-31"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-31",
+          "repeat": {
+            "freq": "month",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-11-05",
+          "repeat": {
+            "freq": "month",
+            "every": 1,
+            "mode": "fixed",
+            "anchor": 31
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Rent", "2026-11-05", null]],
+        "repeats": [["Rent", "month", 1, 5, "fixed"]]
+      }
+    },
+    {
+      "rule": "repeat.date_removed",
+      "name": "removing the date removes the Repeat",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Gym",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "set_when",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Gym", null, null]],
+        "repeats": []
+      }
+    },
+    {
+      "rule": "repeat.bounds",
+      "name": "an interval of 100 is refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Gym",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "repeat": {
+            "freq": "day",
+            "every": 100,
+            "mode": "fixed"
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "repeats": []
+      }
+    },
+    {
+      "rule": "repeat.bounds",
+      "name": "after done with chosen weekdays is refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Gym",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "repeat": {
+            "freq": "week",
+            "every": 1,
+            "mode": "after",
+            "weekdays": [1, 4]
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "repeats": []
+      }
+    },
+    {
+      "rule": "repeat.complete",
+      "name": "completing a repeating Task moves it and records one done copy",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Water",
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "time": "09:00",
+          "repeat": {
+            "freq": "day",
+            "every": 3,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Water", "2026-10-24", "09:00"]],
+        "done": ["Water"],
+        "inbox": ["Water"],
+        "today": {
+          "overdue": [],
+          "tasks": []
+        }
+      }
+    },
+    {
+      "rule": "repeat.complete",
+      "name": "completing twice records two copies",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Water",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "complete",
+          "task": 0,
+          "today": "2026-10-22"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "dues": [["Water", "2026-10-23", null]],
+        "done": ["Water", "Water"]
+      }
+    },
+    {
+      "rule": "repeat.late",
+      "name": "a late fixed Repeat goes to the first occurrence after today",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Bins",
+          "date": "2026-09-28",
+          "today": "2026-09-28"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-09-28",
+          "repeat": {
+            "freq": "week",
+            "every": 1,
+            "mode": "fixed",
+            "weekdays": [1]
+          },
+          "today": "2026-09-28"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Bins", "2026-10-26", null]]
+      }
+    },
+    {
+      "rule": "repeat.early",
+      "name": "an early fixed Repeat goes one step after the Due date",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Report",
+          "date": "2026-10-23"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-23",
+          "repeat": {
+            "freq": "week",
+            "every": 1,
+            "mode": "fixed",
+            "weekdays": [5]
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Report", "2026-10-30", null]]
+      }
+    },
+    {
+      "rule": "repeat.after_done",
+      "name": "after done counts from the day it is done",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Water",
+          "date": "2026-10-18",
+          "today": "2026-10-18"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-18",
+          "repeat": {
+            "freq": "day",
+            "every": 3,
+            "mode": "after"
+          },
+          "today": "2026-10-18"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Water", "2026-10-24", null]],
+        "repeats": [["Water", "day", 3, null, "after"]]
+      }
+    },
+    {
+      "rule": "repeat.clamp",
+      "name": "a month Repeat on the 31st clamps and comes back",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Rent",
+          "date": "2026-10-31",
+          "today": "2026-10-31"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-31",
+          "repeat": {
+            "freq": "month",
+            "every": 1,
+            "mode": "fixed"
+          },
+          "today": "2026-10-31"
+        },
+        {
+          "op": "complete",
+          "task": 0,
+          "today": "2026-10-31"
+        },
+        {
+          "op": "complete",
+          "task": 0,
+          "today": "2026-11-30"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "dues": [["Rent", "2026-12-31", null]],
+        "repeats": [["Rent", "month", 1, 31, "fixed"]]
+      }
+    },
+    {
+      "rule": "repeat.reopen",
+      "name": "reopening the latest occurrence rewinds the Task",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Water",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 3,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "reopen_occurrence",
+          "occurrence": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "dues": [["Water", "2026-10-21", null]],
+        "done": [],
+        "repeats": [["Water", "day", 3, null, "fixed"]]
+      }
+    },
+    {
+      "rule": "repeat.reopen",
+      "name": "an older occurrence cannot be reopened",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Water",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 1,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "complete",
+          "task": 0,
+          "today": "2026-10-22"
+        },
+        {
+          "op": "reopen_occurrence",
+          "occurrence": 0
+        },
+        {
+          "op": "reopen_occurrence",
+          "occurrence": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "validation", "ok"],
+        "dues": [["Water", "2026-10-22", null]],
+        "done": ["Water"]
+      }
+    },
+    {
+      "rule": "repeat.skip",
+      "name": "skipping moves the Task on and records nothing",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Water",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-21",
+          "repeat": {
+            "freq": "day",
+            "every": 3,
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "skip",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Water", "2026-10-24", null]],
+        "done": []
+      }
+    },
+    {
+      "rule": "repeat.skip",
+      "name": "only a repeating Task can be skipped",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Plain",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "skip",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "dues": [["Plain", "2026-10-21", null]]
+      }
+    },
+    {
+      "rule": "repeat.plain",
+      "name": "completing a plain Task still closes it",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Plain",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [],
+        "done": ["Plain"],
+        "repeats": []
       }
     }
   ]

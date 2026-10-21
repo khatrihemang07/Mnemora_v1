@@ -1,0 +1,322 @@
+{
+  "about": "Repeat rules shared by the Rust engine (crates/todo/src/recurrence.rs) and its TypeScript copy (src/lib/ui/when-repeat.ts). Rule: freq (day|week|month|year), every (1-99), mode (fixed|after), weekdays (weeks: 0 Sunday to 6 Saturday), anchor (months and years: the day of the month kept to, 0 for the date's own). Ops: first_match{today} is the date an undated Task gets; next_due{due,today} is where a Task due `due` goes when done on `today`; preview{from} is the next three dates after `from`; invalid has no result. 2026-10-21 is a Wednesday.",
+  "cases": [
+    {
+      "name": "every Mon and Thu set on Wed 21 Oct gives Thu 22 Oct",
+      "op": "first_match",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1, 4], "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-22"
+    },
+    {
+      "name": "a chosen weekday that is today keeps today",
+      "op": "first_match",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1, 4], "mode": "fixed" },
+      "today": "2026-10-22",
+      "expect": "2026-10-22"
+    },
+    {
+      "name": "after the last chosen weekday it wraps to Monday",
+      "op": "first_match",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1, 4], "mode": "fixed" },
+      "today": "2026-10-23",
+      "expect": "2026-10-26"
+    },
+    {
+      "name": "a Sunday-only rule set on Wednesday",
+      "op": "first_match",
+      "rule": { "freq": "week", "every": 1, "weekdays": [0], "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-25"
+    },
+    {
+      "name": "a day interval starts today",
+      "op": "first_match",
+      "rule": { "freq": "day", "every": 3, "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-21"
+    },
+    {
+      "name": "weeks with no chosen days start today",
+      "op": "first_match",
+      "rule": { "freq": "week", "every": 2, "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-21"
+    },
+    {
+      "name": "a month rule starts today",
+      "op": "first_match",
+      "rule": { "freq": "month", "every": 1, "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-21"
+    },
+    {
+      "name": "an interval of 1 is accepted",
+      "op": "first_match",
+      "rule": { "freq": "day", "every": 1, "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-21"
+    },
+    {
+      "name": "an interval of 99 is accepted",
+      "op": "first_match",
+      "rule": { "freq": "year", "every": 99, "mode": "fixed" },
+      "today": "2026-10-21",
+      "expect": "2026-10-21"
+    },
+
+    {
+      "name": "every 3 days",
+      "op": "preview",
+      "rule": { "freq": "day", "every": 3, "mode": "fixed" },
+      "from": "2026-10-21",
+      "expect": ["2026-10-24", "2026-10-27", "2026-10-30"]
+    },
+    {
+      "name": "every day over a year end",
+      "op": "preview",
+      "rule": { "freq": "day", "every": 1, "mode": "fixed" },
+      "from": "2026-12-30",
+      "expect": ["2026-12-31", "2027-01-01", "2027-01-02"]
+    },
+    {
+      "name": "every 99 days",
+      "op": "preview",
+      "rule": { "freq": "day", "every": 99, "mode": "fixed" },
+      "from": "2026-10-21",
+      "expect": ["2027-01-28", "2027-05-07", "2027-08-14"]
+    },
+    {
+      "name": "every weekday from a Friday",
+      "op": "preview",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1, 2, 3, 4, 5], "mode": "fixed" },
+      "from": "2026-10-23",
+      "expect": ["2026-10-26", "2026-10-27", "2026-10-28"]
+    },
+    {
+      "name": "every Mon and Thu from a Monday",
+      "op": "preview",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1, 4], "mode": "fixed" },
+      "from": "2026-10-19",
+      "expect": ["2026-10-22", "2026-10-26", "2026-10-29"]
+    },
+    {
+      "name": "every 2 weeks on Mon and Thu skips the off week",
+      "op": "preview",
+      "rule": { "freq": "week", "every": 2, "weekdays": [1, 4], "mode": "fixed" },
+      "from": "2026-10-22",
+      "expect": ["2026-11-02", "2026-11-05", "2026-11-16"]
+    },
+    {
+      "name": "Sunday closes the week",
+      "op": "preview",
+      "rule": { "freq": "week", "every": 1, "weekdays": [0], "mode": "fixed" },
+      "from": "2026-10-25",
+      "expect": ["2026-11-01", "2026-11-08", "2026-11-15"]
+    },
+    {
+      "name": "weekly with no chosen days keeps the weekday",
+      "op": "preview",
+      "rule": { "freq": "week", "every": 1, "mode": "fixed" },
+      "from": "2026-10-21",
+      "expect": ["2026-10-28", "2026-11-04", "2026-11-11"]
+    },
+    {
+      "name": "the 31st clamps to short months and comes back",
+      "op": "preview",
+      "rule": { "freq": "month", "every": 1, "anchor": 31, "mode": "fixed" },
+      "from": "2026-01-31",
+      "expect": ["2026-02-28", "2026-03-31", "2026-04-30"]
+    },
+    {
+      "name": "without the remembered day the clamp sticks",
+      "op": "preview",
+      "rule": { "freq": "month", "every": 1, "mode": "fixed" },
+      "from": "2026-01-31",
+      "expect": ["2026-02-28", "2026-03-28", "2026-04-28"]
+    },
+    {
+      "name": "every 2 months on the 31st",
+      "op": "preview",
+      "rule": { "freq": "month", "every": 2, "anchor": 31, "mode": "fixed" },
+      "from": "2026-10-31",
+      "expect": ["2026-12-31", "2027-02-28", "2027-04-30"]
+    },
+    {
+      "name": "a leap year keeps the 29th of February",
+      "op": "preview",
+      "rule": { "freq": "month", "every": 1, "anchor": 31, "mode": "fixed" },
+      "from": "2024-01-31",
+      "expect": ["2024-02-29", "2024-03-31", "2024-04-30"]
+    },
+    {
+      "name": "a month rule rolls over the year",
+      "op": "preview",
+      "rule": { "freq": "month", "every": 1, "anchor": 15, "mode": "fixed" },
+      "from": "2026-12-15",
+      "expect": ["2027-01-15", "2027-02-15", "2027-03-15"]
+    },
+    {
+      "name": "every year",
+      "op": "preview",
+      "rule": { "freq": "year", "every": 1, "mode": "fixed" },
+      "from": "2026-10-21",
+      "expect": ["2027-10-21", "2028-10-21", "2029-10-21"]
+    },
+    {
+      "name": "every 4 years from a leap day",
+      "op": "preview",
+      "rule": { "freq": "year", "every": 4, "anchor": 29, "mode": "fixed" },
+      "from": "2024-02-29",
+      "expect": ["2028-02-29", "2032-02-29", "2036-02-29"]
+    },
+    {
+      "name": "a leap day clamps in common years",
+      "op": "preview",
+      "rule": { "freq": "year", "every": 1, "anchor": 29, "mode": "fixed" },
+      "from": "2027-02-28",
+      "expect": ["2028-02-29", "2029-02-28", "2030-02-28"]
+    },
+
+    {
+      "name": "fixed on time: one step after the due date",
+      "op": "next_due",
+      "rule": { "freq": "day", "every": 3, "mode": "fixed" },
+      "due": "2026-10-21",
+      "today": "2026-10-21",
+      "expect": "2026-10-24"
+    },
+    {
+      "name": "fixed late: the first occurrence after today",
+      "op": "next_due",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1], "mode": "fixed" },
+      "due": "2026-09-28",
+      "today": "2026-10-21",
+      "expect": "2026-10-26"
+    },
+    {
+      "name": "fixed late daily: tomorrow, not a pile of catch-up days",
+      "op": "next_due",
+      "rule": { "freq": "day", "every": 1, "mode": "fixed" },
+      "due": "2026-10-10",
+      "today": "2026-10-21",
+      "expect": "2026-10-22"
+    },
+    {
+      "name": "fixed early: one step after the due date",
+      "op": "next_due",
+      "rule": { "freq": "week", "every": 1, "weekdays": [5], "mode": "fixed" },
+      "due": "2026-10-23",
+      "today": "2026-10-21",
+      "expect": "2026-10-30"
+    },
+    {
+      "name": "fixed early every 3 days",
+      "op": "next_due",
+      "rule": { "freq": "day", "every": 3, "mode": "fixed" },
+      "due": "2026-10-24",
+      "today": "2026-10-21",
+      "expect": "2026-10-27"
+    },
+    {
+      "name": "monthly fixed late keeps the 31st",
+      "op": "next_due",
+      "rule": { "freq": "month", "every": 1, "anchor": 31, "mode": "fixed" },
+      "due": "2026-08-31",
+      "today": "2026-10-21",
+      "expect": "2026-10-31"
+    },
+    {
+      "name": "a clamped leap day returns after a common year",
+      "op": "next_due",
+      "rule": { "freq": "year", "every": 1, "anchor": 29, "mode": "fixed" },
+      "due": "2027-02-28",
+      "today": "2027-03-01",
+      "expect": "2028-02-29"
+    },
+    {
+      "name": "after done counts from the day it is done",
+      "op": "next_due",
+      "rule": { "freq": "day", "every": 3, "mode": "after" },
+      "due": "2026-10-18",
+      "today": "2026-10-21",
+      "expect": "2026-10-24"
+    },
+    {
+      "name": "after done ignores a due date still ahead",
+      "op": "next_due",
+      "rule": { "freq": "day", "every": 3, "mode": "after" },
+      "due": "2026-12-01",
+      "today": "2026-10-21",
+      "expect": "2026-10-24"
+    },
+    {
+      "name": "after done every 2 weeks",
+      "op": "next_due",
+      "rule": { "freq": "week", "every": 2, "mode": "after" },
+      "due": "2026-10-01",
+      "today": "2026-10-21",
+      "expect": "2026-11-04"
+    },
+    {
+      "name": "after done monthly clamps",
+      "op": "next_due",
+      "rule": { "freq": "month", "every": 1, "anchor": 31, "mode": "after" },
+      "due": "2026-01-05",
+      "today": "2026-01-31",
+      "expect": "2026-02-28"
+    },
+    {
+      "name": "after done monthly in a leap year",
+      "op": "next_due",
+      "rule": { "freq": "month", "every": 1, "mode": "after" },
+      "due": "2024-01-05",
+      "today": "2024-01-31",
+      "expect": "2024-02-29"
+    },
+    {
+      "name": "after done yearly",
+      "op": "next_due",
+      "rule": { "freq": "year", "every": 1, "mode": "after" },
+      "due": "2026-01-05",
+      "today": "2026-10-21",
+      "expect": "2027-10-21"
+    },
+
+    {
+      "name": "an interval of 0 is refused",
+      "op": "invalid",
+      "rule": { "freq": "day", "every": 0, "mode": "fixed" }
+    },
+    {
+      "name": "an interval of 100 is refused",
+      "op": "invalid",
+      "rule": { "freq": "day", "every": 100, "mode": "fixed" }
+    },
+    {
+      "name": "an unknown unit is refused",
+      "op": "invalid",
+      "rule": { "freq": "decade", "every": 1, "mode": "fixed" }
+    },
+    {
+      "name": "an unknown mode is refused",
+      "op": "invalid",
+      "rule": { "freq": "day", "every": 1, "mode": "weird" }
+    },
+    {
+      "name": "after done with chosen weekdays is refused",
+      "op": "invalid",
+      "rule": { "freq": "week", "every": 1, "weekdays": [1, 4], "mode": "after" }
+    },
+    {
+      "name": "a weekday above Saturday is refused",
+      "op": "invalid",
+      "rule": { "freq": "week", "every": 1, "weekdays": [7], "mode": "fixed" }
+    },
+    {
+      "name": "a day of month above 31 is refused",
+      "op": "invalid",
+      "rule": { "freq": "month", "every": 1, "anchor": 32, "mode": "fixed" }
+    }
+  ]
+}
