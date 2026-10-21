@@ -34,7 +34,6 @@
   import Sun from '~icons/lucide/sun';
   import Trash2 from '~icons/lucide/trash-2';
   import type { SnippetSource, Span, Task, TodoList } from '../../lib/ipc/bindings';
-  import { LongPress } from '../../lib/long-press';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import MarkdownInline from '../../lib/ui/MarkdownInline.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
@@ -42,6 +41,7 @@
   import { formatHm } from '../../lib/ui/when-time';
   import { nextDue, repeatLabel } from '../../lib/ui/when-repeat';
   import { createQuery } from '@tanstack/svelte-query';
+  import Undo2 from '~icons/lucide/undo-2';
   import CaptureBox from './CaptureBox.svelte';
   import { todoClock } from './clock.svelte';
   import { closedTime, isOverdue, nextText, rowDateLabel, taskRepeat, timePassed } from './dates';
@@ -65,6 +65,7 @@
   import { taskFocus } from './task-focus.svelte';
   import { taskRows } from './task-keys.svelte';
   import { taskSheet } from './task-sheet.svelte';
+  import { RowTouch } from './row-touch.svelte';
   import { priorityTone } from './tasks';
   import { understoodMarks } from './understood';
   import WhenHost from './WhenHost.svelte';
@@ -244,11 +245,21 @@
 
   function oncontextmenu(e: MouseEvent) {
     e.preventDefault();
+    // A finger held on the row asks for this too (Android's long-press): the hold has its own menu.
+    if (touch.touching) return;
     // The keyboard's menu key reports no position: hang it off the row.
     openMenu(e.clientX === 0 && e.clientY === 0 && row ? row : { x: e.clientX, y: e.clientY });
   }
 
-  const press = new LongPress({ onpress: (x, y) => openMenu({ x, y }) });
+  // A finger: slide right to complete (or reopen), left for When; hold to lift the row, then lift
+  // the finger for the menu or move it to drag the row into place.
+  const touch = new RowTouch({
+    sides: () => ({ right: true, left: isOpen }),
+    onright: () => (isOpen ? ontick(task) : onuntick?.(task)),
+    onleft: () => (whenOpen = true),
+    onhold: (e) =>
+      drag.armTouch(e, task, () => openMenu({ x: e.clientX, y: e.clientY }), draggable && isOpen),
+  });
   const touchLike = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
 
   const hover =
@@ -259,29 +270,53 @@
   <CaptureBox
     mode="edit"
     {task}
-    class="-mx-0.5 my-1"
+    class="-mx-0.5 my-1 phone:mx-0"
     onclose={() => quickEditing.stop()}
     onsaved={() => quickEditing.stop()}
   />
 {:else}
+<div class="swipe relative phone:overflow-hidden phone:rounded-sm">
+  {#if touch.dx !== 0}
+    <!-- What the slide reveals: Done on the left (Reopen for a closed Task), When on the right. -->
+    <div
+      aria-hidden="true"
+      class="absolute inset-y-0 flex w-1/2 items-center gap-1.5 px-4 text-sm font-semibold
+        {touch.dx > 0 ? 'left-0 bg-hue-todo text-on-accent' : 'right-0 justify-end bg-warning text-on-warning'}"
+    >
+      {#if touch.dx > 0}
+        {#if isOpen}<Check class="size-5" />Done{:else}<Undo2 class="size-5" />Reopen{/if}
+      {:else}
+        When<Calendar class="size-5" />
+      {/if}
+    </div>
+  {/if}
 <div
   bind:this={row}
   role="presentation"
   data-task-row={task.id}
   {oncontextmenu}
   {onfocusin}
+  onclickcapture={(e) => {
+    if (!touch.swallowsClick) return;
+    e.stopPropagation();
+    e.preventDefault();
+  }}
   onpointerenter={(e) => !touchLike(e) && (taskRows.hoveredId = task.id)}
   onpointerleave={() => taskRows.hoveredId === task.id && (taskRows.hoveredId = null)}
   onpointerdown={(e) => {
     if (!touchLike(e)) {
       if (draggable && isOpen) drag.pressTask(e, task);
-    } else if (!(e.target as Element).closest('button, a')) press.start(e.clientX, e.clientY);
+    } else touch.down(e);
   }}
-  onpointermove={(e) => touchLike(e) && press.move(e.clientX, e.clientY)}
-  onpointerup={() => press.cancel()}
-  onpointercancel={() => press.cancel()}
-  class="group grid grid-cols-[26px_1fr_auto] items-start gap-x-2 rounded-sm px-2 py-[7px] transition-colors duration-(--dur) ease-out
-    hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5 {drag.draggedId === task.id ? 'opacity-40' : ''}
+  onpointermove={(e) => touchLike(e) && touch.move(e)}
+  onpointerup={(e) => touchLike(e) && touch.up(e)}
+  onpointercancel={() => touch.cancel()}
+  style:transform={touch.dx !== 0 ? `translateX(${touch.dx}px)` : undefined}
+  style:transition-property={touch.following ? 'background-color' : undefined}
+  class="group grid grid-cols-[26px_1fr_auto] items-start gap-x-2 rounded-sm px-2 py-[7px] transition-[background-color,transform] duration-(--dur) ease-out
+    hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5 phone:touch-pan-y phone:select-none phone:[-webkit-touch-callout:none]
+    {touch.dx !== 0 ? 'bg-bg' : ''}
+    {touch.lifted ? 'bg-hover shadow-card' : ''} {drag.draggedId === task.id ? 'opacity-40' : ''}
     {ringed ? 'bg-hover outline-[1.5px] outline-accent shadow-[0_0_0_3px_var(--ring)]' : ''}"
 >
   <TaskCheckbox
@@ -393,6 +428,7 @@
       class="{hover} {menuOpen ? 'opacity-100' : ''}"
     />
   </div>
+</div>
 </div>
 {/if}
 

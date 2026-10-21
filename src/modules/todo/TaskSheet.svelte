@@ -11,7 +11,7 @@
   let { id }: { id: string } = $props();
 </script>
 
-<Sheet open title="Task" centered bare autoFocus={false} onclose={() => taskSheet.close()}>
+<Sheet open title="Task" centered bare tall autoFocus={false} onclose={() => taskSheet.close()}>
   {#key id}
     <TaskSheetBody {id} />
   {/key}

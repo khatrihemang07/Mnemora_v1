@@ -35,6 +35,10 @@
   import Check from '~icons/lucide/check';
   import { closeOnBack } from '../router/back-button.svelte';
   import Kbd from './Kbd.svelte';
+  import { untrack } from 'svelte';
+  import { viewport } from '../viewport.svelte';
+  import { openSheets } from './sheet-open.svelte';
+  import { afterRelease } from './pointer-held';
 
   interface Props {
     open: boolean;
@@ -60,7 +64,25 @@
 
   closeOnBack(() => open, () => (open = false));
 
+  // On a phone a menu covers the bottom where toasts sit: they move to the top while it is open.
+  $effect(() => {
+    if (!open || !viewport.isPhone) return;
+    untrack(() => (openSheets.count += 1));
+    return () => {
+      openSheets.count -= 1;
+    };
+  });
+
   let picked = false;
+
+  // A menu opened by a long-press appears under a finger that is still down; that finger's release
+  // (and the click after it) must neither pick an item nor count as a tap outside.
+  let settled = $state(true);
+  $effect(() => {
+    if (!open) return;
+    settled = false;
+    return afterRelease(() => (settled = true));
+  });
 
   // Bits positions against anything that can measure itself; a point is a zero-size rectangle.
   const measurable = $derived(
@@ -76,7 +98,7 @@
 
   function onCloseAutoFocus(e: Event) {
     e.preventDefault();
-    if (!picked) (anchor instanceof HTMLElement ? anchor : returnFocus)?.focus();
+    if (!picked && !viewport.isPhone) (anchor instanceof HTMLElement ? anchor : returnFocus)?.focus();
     picked = false;
   }
 </script>
@@ -91,6 +113,7 @@
       collisionPadding={8}
       aria-label={label}
       {onCloseAutoFocus}
+      onInteractOutside={(e) => !settled && e.preventDefault()}
       class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-sm leading-normal shadow-pop outline-none"
     >
       {#if heading}
@@ -104,7 +127,8 @@
         <DropdownMenu.Item
           textValue={item.label}
           disabled={item.disabled}
-          onSelect={() => {
+          onSelect={(e) => {
+            if (!settled) return e.preventDefault();
             picked = true;
             item.onselect();
           }}

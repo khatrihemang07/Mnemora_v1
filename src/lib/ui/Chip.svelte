@@ -35,7 +35,7 @@
     disabled:cursor-default disabled:opacity-60 disabled:active:scale-100
     {tone === 'warm'
     ? 'border-transparent bg-[color-mix(in_oklch,var(--chip-hue)_14%,transparent)] text-(--chip-hue)'
-    : 'border-line bg-surface-2 text-ink hover:border-faint'} {cls}"
+    : 'border-line-strong bg-surface-2 text-ink hover:border-faint'} {cls}"
   {...rest}
 >
   {#if Icon}<Icon class="size-3.5" />{/if}

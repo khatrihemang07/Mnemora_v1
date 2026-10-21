@@ -26,6 +26,7 @@
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-accent: var(--accent);
@@ -233,4 +234,58 @@ textarea,
   :is(.flash, .flash-header) {
     background-color: var(--flash-tint);
   }
+}
+
+/* Todo on a phone: the view a swipe moved to slides in from the side it was swiped towards. Zero under reduced motion (--dur-fade). */
+.view-slide-next {
+  animation: view-slide-next var(--dur-fade) var(--ease) both;
+}
+.view-slide-prev {
+  animation: view-slide-prev var(--dur-fade) var(--ease) both;
+}
+@keyframes view-slide-next {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes view-slide-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+/* A phone never selects the words of controls, rows or headers on a long-press (no handles, no Copy bar). */
+:root[data-phone]
+:is(
+  button,
+  nav,
+  h1,
+  h2,
+  summary,
+  [role="option"],
+  [role="tab"],
+  [role="menuitem"],
+  [data-task-row]
+) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Home on a phone: labels, headings and card text are chrome, not content; only user content (data-user-text) selects. */
+:root[data-phone] [data-home] :where(*):not([data-user-text], [data-user-text] *) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Phone scrollbars overlay and never take width: nothing may shift when a page starts to overflow. */
+:root[data-phone] * {
+  scrollbar-width: none;
+}
+:root[data-phone] *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }

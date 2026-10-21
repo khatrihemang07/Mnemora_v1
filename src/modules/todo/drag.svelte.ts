@@ -14,6 +14,8 @@ import { dropTaskOnSidebar, placeTask } from './task-actions';
 
 /** How far the pointer travels before a press becomes a drag. */
 const DRAG_SLOP_PX = 5;
+/** A finger jitters more than a mouse: it needs a longer move before the held row lifts. */
+const TOUCH_DRAG_SLOP_PX = 10;
 /** Controls inside a row that keep their own clicks: a press on them never starts a drag. */
 const NO_DRAG = 'button, a, input, textarea, select, [contenteditable="true"], [data-no-drag]';
 
@@ -64,6 +66,9 @@ class DragController {
   };
 
   #origin: { x: number; y: number } | null = null;
+  /** Set while a held finger (not a mouse) owns the press: what a lift without moving does. */
+  #tap: (() => void) | null = null;
+  #canDrag = true;
   #pending: Item | null = null;
   #from: Neighbours = { before: null, after: null };
   #drop: Drop | null = null;
@@ -89,24 +94,58 @@ class DragController {
     this.#press(e, { kind: 'list', list }, false);
   }
 
+  /**
+   * A finger held on a Task's row long enough: it is picked up. Moving more than a few pixels
+   * drags it (the page stops scrolling under the finger); lifting without moving calls `ontap`
+   * (the row opens its menu), and a cancelled touch does nothing.
+   */
+  armTouch(e: PointerEvent, task: Task, ontap: () => void, canDrag: boolean): void {
+    if (this.#pending || this.item) return;
+    this.#tap = ontap;
+    this.#canDrag = canDrag;
+    this.#hold(e, { kind: 'task', task });
+  }
+
   #press(e: PointerEvent, item: Item, guard = true): void {
     if (e.button !== 0 || e.pointerType === 'touch' || this.#pending || this.item) return;
     if (guard && e.target instanceof Element && e.target.closest(NO_DRAG)) return;
+    this.#hold(e, item);
+  }
+
+  #hold(e: PointerEvent, item: Item): void {
     this.#pending = item;
     this.#origin = { x: e.clientX, y: e.clientY };
+    this.x = e.clientX;
+    this.y = e.clientY;
     this.#scroller = e.target instanceof Element ? scrollerOf(e.target) : null;
     window.addEventListener('pointermove', this.#move);
     window.addEventListener('pointerup', this.#up);
     window.addEventListener('pointercancel', this.#cancel);
     window.addEventListener('keydown', this.#key, true);
+    // A held finger must not scroll the page: the first touchmove is still cancellable.
+    window.addEventListener('touchmove', this.#hold_scroll, { passive: false });
   }
+
+  #hold_scroll = (e: TouchEvent): void => {
+    if (this.#tap) e.preventDefault();
+  };
 
   #move = (e: PointerEvent): void => {
     this.x = e.clientX;
     this.y = e.clientY;
     if (!this.item) {
       const o = this.#origin;
-      if (!o || Math.hypot(e.clientX - o.x, e.clientY - o.y) < DRAG_SLOP_PX) return;
+      if (
+        !o ||
+        Math.hypot(e.clientX - o.x, e.clientY - o.y) <
+          (this.#tap ? TOUCH_DRAG_SLOP_PX : DRAG_SLOP_PX)
+      )
+        return;
+      // A row that cannot be arranged just lets go when the finger moves.
+      if (this.#tap && !this.#canDrag) {
+        this.#end();
+        return;
+      }
       this.#start();
     }
     this.#resolve();
@@ -250,7 +289,12 @@ class DragController {
     const drop = this.#drop;
     const from = this.#from;
     const summary = this.summary;
+    const tap = this.item ? null : this.#tap;
     this.#end();
+    if (tap) {
+      tap();
+      return;
+    }
     if (!item || !drop) return;
     if (item.kind === 'list' && drop.kind === 'list-place' && !drop.same) {
       void placeList(item.list.id, drop.place.before, drop.place.after);
@@ -282,6 +326,8 @@ class DragController {
     window.removeEventListener('pointerup', this.#up);
     window.removeEventListener('pointercancel', this.#cancel);
     window.removeEventListener('keydown', this.#key, true);
+    window.removeEventListener('touchmove', this.#hold_scroll);
+    this.#tap = null;
     // The click that follows the release is swallowed (it would open the Task); a press that never
     // became a drag lets it through. The click comes before the next task, so drop the guard then.
     if (this.item) setTimeout(() => window.removeEventListener('click', swallow, true), 0);

@@ -123,6 +123,7 @@ _Avoid_: Ignored, escaped, dismissed
 
 **Quick add**:
 Adding a Task with the Q key. Inside Todo it opens the capture box in place on the page showing (so the Task inherits Today, a List or an Upcoming day); anywhere else it opens a floating box that adds to the Inbox and says where the Task went. The Add button on Todo's Home card opens the same box with the Task due today.
+On a phone the teal + button opens it for the view on show, and long-pressing the Todo tab opens it from any page.
 _Avoid_: Quick capture, global add
 
 **Quick edit**:

@@ -29,7 +29,7 @@
 </script>
 
 {#if open}
-  <CaptureBox class="-mx-0.5 my-1.5" {listId} {date} onclose={(reason) => close(reason === 'escape')} />
+  <CaptureBox class="-mx-0.5 my-1.5 phone:mx-0" {listId} {date} onclose={(reason) => close(reason === 'escape')} />
 {:else}
   <button
     bind:this={opener}

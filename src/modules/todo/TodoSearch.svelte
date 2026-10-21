@@ -119,7 +119,7 @@
           value={todoSearch.query}
           oninput={(e) => todoSearch.setQuery(e.currentTarget.value)}
           label="Search tasks"
-          placeholder="Search tasks, notes and comments"
+          placeholder={viewport.isPhone ? 'Search tasks' : 'Search tasks, notes and comments'}
           autocomplete="off"
           autocapitalize="off"
           spellcheck={false}

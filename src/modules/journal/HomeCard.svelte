@@ -48,6 +48,7 @@
   {:else if text}
     {#if text.quote}
       <p
+        data-user-text
         class="mt-3 line-clamp-3 font-display text-lg leading-snug text-ink"
         style="font-weight: var(--display-weight)"
       >

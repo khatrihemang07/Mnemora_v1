@@ -188,3 +188,16 @@ export function whenChipLabel(
   ].filter((p) => p !== null);
   return parts.join(' · ') || 'When';
 }
+
+/**
+ * Where a just-added Task landed, for the toast when the page it was typed into does not show it:
+ * "Today", "Upcoming · Thu 22 Oct", or its List (or the Inbox) when it has no date.
+ */
+export function landedIn(
+  task: Pick<Task, 'due_date'>,
+  listName: string | null,
+  today: string,
+): string {
+  if (task.due_date === null) return listName ?? 'Inbox';
+  return task.due_date <= today ? 'Today' : `Upcoming · ${dayText(task.due_date, today)}`;
+}

@@ -7,10 +7,21 @@
   means for the Task with the focus ring, the one under the pointer or the open sheet's Task; the
   keys stay out of text fields, menus and Dialogs. Tasks are dragged by their rows (see
   drag.svelte.ts); the layer that floats above the page while one is held lives here.
+  On a phone this is also where the chrome lives: the segments pinned under the large title, the
+  Lists sheet behind ☰, the swipe on the title or segment bar that moves between Today, Upcoming and
+  Inbox (rows keep their own sideways swipes), the teal + button, and scrolling to the top when the
+  Todo tab is tapped again.
 -->
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import Plus from '~icons/lucide/plus';
   import type { Task } from '../../lib/ipc/bindings';
+  import { keyboard } from '../../lib/keyboard.svelte';
+  import { viewSwipeStep } from '../../lib/swipe';
+  import { addDays } from '../../lib/ui/calendar';
+  import { phoneFab } from '../../lib/ui/sheet-open.svelte';
+  import { pageHeader } from '../../lib/ui/page-header.svelte';
+  import { viewport } from '../../lib/viewport.svelte';
   import { clock } from '../../lib/time/clock.svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import AllPage from './AllPage.svelte';
@@ -20,10 +31,13 @@
   import { drag } from './drag.svelte';
   import InboxPage from './InboxPage.svelte';
   import ListPage from './ListPage.svelte';
+  import ListsSheet from './ListsSheet.svelte';
   import { todoNav } from './nav.svelte';
   import OpenStepsDialog from './OpenStepsDialog.svelte';
+  import PhoneSegments from './PhoneSegments.svelte';
   import { followCoreSettings } from './prefs.svelte';
   import { listsQuery } from './queries';
+  import { quickAdd } from './quick-add.svelte';
   import { quickEditing } from './quick-edit.svelte';
   import { PALETTE_CLOSE_MS, searchLauncher, todoSearch } from './search.svelte';
   import {
@@ -42,7 +56,7 @@
   import TodayPage from './TodayPage.svelte';
   import TodoSearch from './TodoSearch.svelte';
   import UpcomingPage from './UpcomingPage.svelte';
-  import { smartView } from './views';
+  import { addPlaceFor, smartView, swipedView } from './views';
 
   // The shared clock ticks only while someone is subscribed; the views read the day and the minute
   // from it, so midnight rolls them over without any polling of ours.
@@ -80,6 +94,61 @@
     // The palette gives focus back to where it was as it closes; take it again once it has.
     setTimeout(() => searchView?.focus(false), PALETTE_CLOSE_MS);
   });
+
+  // --- Phone chrome ----------------------------------------------------------------------------
+  let listsOpen = $state(false);
+  let scroller = $state<HTMLElement | null>(null);
+
+  // The segments sit under each page's large title, so the title row asks for them (see PageHeader).
+  $effect(() => {
+    if (!viewport.isPhone || todoSearch.active) return;
+    return pageHeader.setPhoneBar(segments);
+  });
+
+  // Toasts keep clear of the + button while it shows.
+  $effect(() => {
+    phoneFab.shown = viewport.isPhone && !todoSearch.active && !keyboard.open;
+    return () => {
+      phoneFab.shown = false;
+    };
+  });
+
+  // The Todo tab tapped again: back to the top (Today was already chosen by `todoNav.home`).
+  let seenTopRequests = todoNav.topRequests;
+  $effect(() => {
+    const asked = todoNav.topRequests;
+    if (asked === seenTopRequests) return;
+    seenTopRequests = asked;
+    const reduce =
+      document.documentElement.dataset.reduceMotion === 'true' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    untrack(() => scroller?.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' }));
+  });
+
+  /** Where a sideways swipe on the title or segment bar began. */
+  let swipeFrom: { x: number; y: number; id: number } | null = null;
+  const swipeStart = (e: PointerEvent) => {
+    swipeFrom = null;
+    if (e.pointerType === 'mouse' || !viewport.isPhone) return;
+    if ((e.target as Element).closest('[data-view-swipe]') && !(e.target as Element).closest('[data-task-row]')) {
+      swipeFrom = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    }
+  };
+  const swipeEnd = (e: PointerEvent) => {
+    const from = swipeFrom;
+    swipeFrom = null;
+    if (!from || from.id !== e.pointerId) return;
+    const step = viewSwipeStep(e.clientX - from.x, e.clientY - from.y);
+    const next = step === 0 ? null : swipedView(todoNav.view, step);
+    if (next && step !== 0) todoNav.swipeTo(next, step);
+  };
+
+  /** The + button: the capture box in a bottom sheet, for the place this view stands for. */
+  function addHere() {
+    const today = todoClock.today;
+    const place = addPlaceFor(todoNav.view, today, addDays(today, 1));
+    quickAdd.openFloating(place.date, place.listId);
+  }
 
   let keys = IDLE_KEYS;
 
@@ -203,33 +272,57 @@
 
 <svelte:window {onkeydown} {onkeyup} {onfocusin} {onpointerdown} />
 
+{#snippet segments()}
+  <PhoneSegments onmore={() => (listsOpen = true)} moreOpen={listsOpen} />
+{/snippet}
+
 <div class="relative h-full">
   <div
+    bind:this={scroller}
     data-task-scope="view"
-    class="selectable h-full overflow-y-auto p-(--pad)"
+    class="selectable h-full overflow-y-auto p-(--pad) phone:pb-24 phone:[scrollbar-width:none]"
     inert={todoSearch.active}
     aria-hidden={todoSearch.active}
+    onpointerdown={swipeStart}
+    onpointerup={swipeEnd}
+    onpointercancel={() => (swipeFrom = null)}
   >
-    {#if view.kind === 'list'}
-      {#key view.id}<ListPage id={view.id} />{/key}
-    {:else if view.id === 'inbox'}
-      <InboxPage />
-    {:else if view.id === 'all'}
-      <AllPage />
-    {:else if view.id === 'today'}
-      <TodayPage />
-    {:else if view.id === 'upcoming'}
-      <UpcomingPage />
-    {:else}
-      <DonePage />
-    {/if}
+    {#key `${view.kind}:${view.id}`}
+      <div class={todoNav.slide === 'next' ? 'view-slide-next' : todoNav.slide === 'prev' ? 'view-slide-prev' : ''}>
+        {#if view.kind === 'list'}
+          <ListPage id={view.id} />
+        {:else if view.id === 'inbox'}
+          <InboxPage />
+        {:else if view.id === 'all'}
+          <AllPage />
+        {:else if view.id === 'today'}
+          <TodayPage />
+        {:else if view.id === 'upcoming'}
+          <UpcomingPage />
+        {:else}
+          <DonePage />
+        {/if}
+      </div>
+    {/key}
   </div>
   {#if todoSearch.active}
     <div class="absolute inset-0 z-10">
       <TodoSearch bind:this={searchView} />
     </div>
+  {:else if viewport.isPhone && !keyboard.open}
+    <button
+      type="button"
+      aria-label="New task"
+      onclick={addHere}
+      class="absolute right-4 bottom-4 z-20 grid size-14 cursor-pointer place-items-center rounded-lg bg-hue-todo text-on-accent
+        shadow-[0_8px_22px_-6px_color-mix(in_oklch,var(--hue-todo)_60%,transparent)] transition-transform duration-(--dur) ease-out active:scale-[0.94]"
+    >
+      <Plus class="size-6" />
+    </button>
   {/if}
 </div>
+
+<ListsSheet bind:open={listsOpen} />
 
 {#if taskSheet.id !== null}
   <TaskSheet id={taskSheet.id} />

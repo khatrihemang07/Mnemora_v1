@@ -287,7 +287,8 @@
     </div>
 
     <div class="relative grid grid-cols-[104px_1fr] desktop:grid-cols-[148px_1fr]">
-      <div class="flex flex-col border-r border-line p-1">
+      <!-- Hidden (not removed) while a panel floats over them: their edges must not peek out beside it. -->
+      <div class="flex flex-col border-r border-line p-1 {panel ? 'invisible' : ''}">
         {#each quick as q, i (q.key)}
           {@const Icon = QUICK_ICONS[i] ?? CalendarCheck}
           <button
@@ -316,7 +317,7 @@
         {/if}
       </div>
 
-      <div class="px-2 py-1.5">
+      <div class="px-2 py-1.5 {panel ? 'invisible' : ''}">
         <div class="flex items-center pl-1">
           <b class="flex-1 text-xs font-semibold" aria-live="polite">{grid.heading}</b>
           <IconButton
@@ -381,7 +382,7 @@
       </div>
 
       {#if panel === 'time'}
-        <div class="absolute inset-x-1.5 inset-y-1 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-pop shadow-pop">
+        <div class="absolute inset-x-1.5 inset-y-1 z-10 flex flex-col overflow-hidden rounded-md border border-line-strong bg-pop shadow-pop">
           <div class="flex items-center gap-1 border-b border-line py-1 pr-1 pl-3">
             <b class="flex flex-1 items-center gap-1.5 text-xs font-semibold"><Clock class="size-3.5" />Time</b>
             {#if value.time}
@@ -446,7 +447,7 @@
           class="inline-flex h-6.5 max-w-40 cursor-pointer items-center gap-1.25 rounded-full border px-2.25 text-xs font-medium whitespace-nowrap transition-colors duration-(--dur) ease-out
             {value.time
             ? 'border-transparent bg-[color-mix(in_oklch,var(--wp-hue)_14%,transparent)] text-(--wp-hue)'
-            : 'border-line text-muted hover:border-faint'}
+            : 'border-line-strong text-muted hover:border-faint'}
             {panel === 'time' ? 'shadow-[0_0_0_2px_var(--ring)]' : ''}"
         >
           <Clock class="size-3.5" />
@@ -463,7 +464,7 @@
           class="inline-flex h-6.5 max-w-44 cursor-pointer items-center gap-1.25 rounded-full border px-2.25 text-xs font-medium whitespace-nowrap transition-colors duration-(--dur) ease-out
             {repeat
             ? 'border-transparent bg-[color-mix(in_oklch,var(--wp-hue)_14%,transparent)] text-(--wp-hue)'
-            : 'border-line text-muted hover:border-faint'}
+            : 'border-line-strong text-muted hover:border-faint'}
             {panel === 'repeat' ? 'shadow-[0_0_0_2px_var(--ring)]' : ''}"
         >
           <Repeat class="size-3.5 shrink-0" />

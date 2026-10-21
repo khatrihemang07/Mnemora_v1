@@ -35,7 +35,7 @@
   import type { WhenValue } from '../../lib/ui/WhenPicker.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
-  import { notifyError, notifyUndo } from '../../lib/ui/toast';
+  import { notify, notifyError, notifyUndo } from '../../lib/ui/toast';
   import { todoClock } from './clock.svelte';
   import {
     applySuggestion,
@@ -59,7 +59,8 @@
     suggestionKey,
     unchangedRanges,
   } from './capture';
-  import { taskRepeat, whenChipLabel } from './dates';
+  import { landedIn, taskRepeat, whenChipLabel } from './dates';
+  import { todoNav } from './nav.svelte';
   import ListGlyph from './ListGlyph.svelte';
   import ListPicker from './ListPicker.svelte';
   import PriorityMenu from './PriorityMenu.svelte';
@@ -73,7 +74,7 @@
     quickEdit,
     quickEditUndo,
   } from './queries';
-  import { editedMessage, PRIORITY_NAMES } from './tasks';
+  import { editedMessage, PRIORITY_NAMES, quickAddedMessage } from './tasks';
   import {
     mergeUnderstood,
     parseUnderstood,
@@ -82,6 +83,7 @@
     understoodFromSpans,
     type UnderstoodKind,
   } from './understood';
+  import { visibleOn } from './views';
   import WhenHost from './WhenHost.svelte';
 
   interface Props {
@@ -356,7 +358,14 @@
       hand = {};
       parsed = null;
       await invalidateTodo();
-      onadded?.(added, target === null ? 'Inbox' : (f.newList ?? listName(target)));
+      const where = target === null ? 'Inbox' : (f.newList ?? listName(target));
+      onadded?.(added, where);
+      // A Task the typed words sent elsewhere (a later day, another List) would just vanish from
+      // this page: say where it went. The floating box (`onadded`) has its own toast.
+      if (!onadded && !visibleOn(todoNav.view, added, todoClock.today)) {
+        const list = target === null ? null : where;
+        notify(quickAddedMessage(added.title, landedIn(added, list, todoClock.today)));
+      }
       await tick();
       input?.focus();
       input?.scrollIntoView({ block: 'nearest' });
@@ -672,7 +681,7 @@
             title="Another one wins · click to use this one"
             onpointerdown={keepFocus}
             onclick={() => useInstead(s)}
-            class="{chipBase} cursor-pointer border border-dashed border-line px-2 text-faint transition-colors duration-(--dur) ease-out hover:border-faint hover:text-muted"
+            class="{chipBase} cursor-pointer border border-dashed border-line-strong px-2 text-faint transition-colors duration-(--dur) ease-out hover:border-faint hover:text-muted"
           >
             <Icon class="size-3" />
             {word(s)} → {mark(s)} · use instead
@@ -684,7 +693,7 @@
             title="Click to read it again"
             onpointerdown={keepFocus}
             onclick={() => readAgain(s.key)}
-            class="{chipBase} cursor-pointer border border-dashed border-line px-2 text-faint transition-colors duration-(--dur) ease-out hover:border-faint hover:text-muted"
+            class="{chipBase} cursor-pointer border border-dashed border-line-strong px-2 text-faint transition-colors duration-(--dur) ease-out hover:border-faint hover:text-muted"
           >
             “{word(s)}” kept as text
             <Undo2 class="size-3" />

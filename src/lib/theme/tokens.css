@@ -16,6 +16,9 @@
   --muted: oklch(50% 0.016 60);
   --faint: oklch(62% 0.014 65);
   --line: oklch(91% 0.011 70);
+  --line-strong: oklch(
+    83% 0.013 70
+  ); /* outlines that must read on their own: chips, floating panels */
   --hover: oklch(30% 0.03 60 / 0.06); /* N2-A neutral tint */
   --active: oklch(30% 0.03 60 / 0.1);
 
@@ -90,6 +93,7 @@
   --muted: oklch(68% 0.013 70);
   --faint: oklch(58% 0.012 65);
   --line: oklch(26% 0.01 60);
+  --line-strong: oklch(38% 0.012 60);
   --hover: oklch(100% 0 0 / 0.06);
   --active: oklch(100% 0 0 / 0.1);
 
@@ -116,6 +120,7 @@
   --surface-2: oklch(18% 0.005 270);
   --pop: oklch(20% 0.005 270);
   --line: oklch(22% 0.005 270);
+  --line-strong: oklch(36% 0.006 270);
   --elev-card: none;
 }
 

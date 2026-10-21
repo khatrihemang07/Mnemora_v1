@@ -2,11 +2,12 @@
   WeekStrip: Upcoming's sticky strip of one week. Seven days with a dot under each that has Tasks;
   today and days before it are disabled; ‹ › move by a week, to any future week but never before
   this one. `selected` is filled. Picking a day tells the page, which scrolls to it. The week starts
-  on the Week start Setting.
+  on the Week start Setting. On a phone a sideways swipe on the strip changes week too.
 -->
 <script lang="ts">
   import ChevronLeft from '~icons/lucide/chevron-left';
   import ChevronRight from '~icons/lucide/chevron-right';
+  import { viewSwipeStep } from '../../lib/swipe';
   import { addDays, type WeekStart } from '../../lib/ui/calendar';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import { dayText, weekdayShort, weekStartOf } from '../../lib/ui/when-grid';
@@ -24,6 +25,17 @@
   /** Weeks after this one. */
   let offset = $state(0);
 
+  /** Where a swipe began. */
+  let from: { x: number; y: number; id: number } | null = null;
+  function swipeEnd(e: PointerEvent) {
+    const began = from;
+    from = null;
+    if (!began || began.id !== e.pointerId) return;
+    // Left is the next week; the strip never goes before this one.
+    const step = viewSwipeStep(e.clientX - began.x, e.clientY - began.y);
+    if (step !== 0) offset = Math.max(0, offset + step);
+  }
+
   const start = $derived(addDays(weekStartOf(today, weekStart), offset * 7));
   const days = $derived(Array.from({ length: 7 }, (_, i) => addDays(start, i)));
   const month = $derived(
@@ -38,6 +50,10 @@
   role="group"
   aria-label="Week of {month}"
   title={month}
+  style:touch-action="pan-y"
+  onpointerdown={(e) => (from = e.pointerType === 'mouse' ? null : { x: e.clientX, y: e.clientY, id: e.pointerId })}
+  onpointerup={swipeEnd}
+  onpointercancel={() => (from = null)}
 >
   <IconButton
     icon={ChevronLeft}

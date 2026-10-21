@@ -26,7 +26,7 @@
     aria-label="{badge.count} due or overdue"
     class="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-1 text-2xs font-semibold tabular-nums
       {badge.alert ? 'bg-danger text-on-accent' : 'bg-active text-muted'}
-      {placement === 'corner' ? 'absolute -top-1 -right-2 ring-2 ring-side' : ''}"
+      {placement === 'corner' ? 'absolute -top-2 -right-3.5 ring-2 ring-side' : ''}"
   >
     {shown}
   </span>

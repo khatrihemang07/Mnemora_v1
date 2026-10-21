@@ -4,6 +4,8 @@
   Phone: renders a large title at the top of the content.
   An optional `icon` (with its Module `hue`) is drawn before the title on both. An optional `heading`
   snippet replaces icon and title with the page's own (a List's emoji and click-to-rename title).
+  On a phone the title row is marked `data-view-swipe` (a Module that switches views by swiping the
+  title listens for it) and a bar the Module pinned (`pageHeader.phoneBar`) follows it.
 -->
 <script lang="ts">
   import type { Component, Snippet } from 'svelte';
@@ -32,7 +34,7 @@
 </script>
 
 {#if viewport.isPhone}
-  <div class="mb-3 flex items-center justify-between gap-3">
+  <div class="mb-3 flex items-center justify-between gap-3" data-view-swipe style:touch-action="pan-y">
     <div class="flex min-w-0 items-center gap-2">
       {#if heading}
         {@render heading()}
@@ -47,4 +49,5 @@
     <!-- One group, so several actions sit together on the right rather than spread out. -->
     {#if actions}<div class="flex items-center gap-1">{@render actions()}</div>{/if}
   </div>
+  {#if pageHeader.phoneBar}{@render pageHeader.phoneBar()}{/if}
 {/if}
