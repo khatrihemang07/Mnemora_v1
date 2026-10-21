@@ -1,0 +1,252 @@
+{
+  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order; `task` is the index of the n-th successfully created Task (or a literal id). results: 'ok' or the error code of each step. inbox: titles in the Inbox afterwards. expect lists just the keys to check.",
+  "cases": [
+    {
+      "rule": "title.blank",
+      "name": "an empty title is rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": ""
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "title.blank",
+      "name": "whitespace only is rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": "  \t "
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "title.trim",
+      "name": "a title is stored trimmed",
+      "steps": [
+        {
+          "op": "create",
+          "title": "  Buy oat milk  "
+        }
+      ],
+      "expect": {
+        "results": ["ok"],
+        "inbox": ["Buy oat milk"]
+      }
+    },
+    {
+      "rule": "title.single_line",
+      "name": "a line break is rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": "one\ntwo"
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "title.single_line",
+      "name": "a carriage return is rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": "one\r\ntwo"
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "title.length",
+      "name": "500 characters are accepted",
+      "steps": [
+        {
+          "op": "create",
+          "title": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "expect": {
+        "results": ["ok"]
+      }
+    },
+    {
+      "rule": "title.length",
+      "name": "501 characters are rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "order.bottom",
+      "name": "new Tasks go to the bottom",
+      "steps": [
+        {
+          "op": "create",
+          "title": "one"
+        },
+        {
+          "op": "create",
+          "title": "two"
+        },
+        {
+          "op": "create",
+          "title": "three"
+        }
+      ],
+      "expect": {
+        "inbox": ["one", "two", "three"]
+      }
+    },
+    {
+      "rule": "complete.leaves_inbox",
+      "name": "a done Task leaves the Inbox",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "inbox": ["b"]
+      }
+    },
+    {
+      "rule": "complete.twice",
+      "name": "completing a closed Task is rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "complete",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "reopen.old_place",
+      "name": "reopening returns the Task to its place",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "reopen",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "inbox": ["a", "b"]
+      }
+    },
+    {
+      "rule": "reopen.open",
+      "name": "reopening an open Task is rejected",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "reopen",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "inbox": ["a"]
+      }
+    },
+    {
+      "rule": "missing",
+      "name": "an unknown Task is not found",
+      "steps": [
+        {
+          "op": "complete",
+          "task": "nope"
+        },
+        {
+          "op": "reopen",
+          "task": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["not_found", "not_found"]
+      }
+    },
+    {
+      "rule": "order.after_close",
+      "name": "a Task made after others were closed still goes last",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "complete",
+          "task": 1
+        },
+        {
+          "op": "create",
+          "title": "c"
+        }
+      ],
+      "expect": {
+        "inbox": ["a", "c"]
+      }
+    }
+  ]
+}

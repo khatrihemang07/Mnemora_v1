@@ -1,8 +1,12 @@
-import type { Snippet } from 'svelte';
+import type { Component, Snippet } from 'svelte';
 import type { Environment } from '../ipc/bindings';
 
 export interface PageHeaderEntry {
   title: string;
+  /** A Module icon shown before the title, tinted with `hue`. */
+  icon?: Component<{ class?: string }>;
+  /** A Module hue token name, e.g. `--hue-todo`. */
+  hue?: string;
   actions?: Snippet;
 }
 

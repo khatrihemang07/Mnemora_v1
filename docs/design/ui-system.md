@@ -101,11 +101,12 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Skeleton` | Loading placeholder (appears after 300ms) |
 | `ErrorBanner` | An inline failure with Retry and Copy details |
 | `EnvBadge` | The SANDBOX marker (nothing in Production). Also shown next to the phone `PageHeader` title on sandbox builds |
-| `PageHeader` | Every page's title. Desktop: sets the top bar title; phone: large title in the content. Optional actions slot |
+| `PageHeader` | Every page's title. Desktop: sets the top bar title; phone: large title in the content. Optional actions slot, and an optional `icon` with its Module `hue` token name drawn before the title (Todo: the teal icon beside "Inbox") |
 | `SegmentedControl` | Pick one of 2-5 short options. Equal-width segments; a 2x2 grid below 360px for four or more |
 | `Switch` | An on/off Setting |
 | `Select` | Pick one of many options |
-| `Input` | A single-line text field |
+| `Input` | A single-line text field. `bare` drops the frame (border, fill, height, focus ring) for a field inside a frame that shows focus itself, such as Todo's inline "New task" field; `bind:ref` focuses it |
+| `TaskCheckbox` | The Task's checkbox: a rounded square turned 45° (a diamond) with an upright tick, ticked in the Todo hue. `checked`, `label`, `onchange(next)`; `tone` (`plain`, `p1`-`p3` Priority rings, `overdue` tint) sets the edge and fill. The hit area is larger than the diamond, and the diamond carries the focus ring. Tasks only: Checklist items in notes keep the plain square (`MarkdownView`) |
 | `VirtualList` | A long scrolling list (hundreds of rows or an infinite feed). Wraps `@tanstack/svelte-virtual`; rows may vary in height; `onnearend` / `onnearstart` load more below / above; `scrollToIndex(i, smooth?)` / `offsetOf(i)` / `indexAt(offset)` jump to and measure rows (smooth respects reduced motion); rows added or removed above the ones being read never move the view; `isSticky` + `pinned` draw a pinned header overlay (never `position: sticky` inside rows, which misplaces itself in the translated rows) |
 | `MarkdownEditor` | Live Markdown writing: CodeMirror 6, loaded on first use. Marks stay visible but faded; shortcuts, list keys, auto-pairs, slash menu, rich-text paste, ⌘/Ctrl-click links. `value` + `onchange`, `onfinish` (Esc, ⌘↵), `bare` for a framed parent, `font`, `spellcheck`, `slashValues`; `focus()` / `run()` via `bind:this`. Never import CodeMirror anywhere else |
 | `MarkdownView` | Read-only Markdown. Same parser and typography as the editor (`markdown.css`: `.md*`), symbols hidden, built from Svelte elements, **never `{@html}`**. Links open externally; checklist rows look like checkboxes; with `ontoggle` the whole row ticks on click (hover tint, ringed box; links and text selections excepted) and the box stays keyboard reachable |

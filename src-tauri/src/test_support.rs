@@ -28,7 +28,7 @@ use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tempfile::TempDir;
 
 use crate::state::{AppState, DeviceStore, lock};
-use crate::{SettingsChangedEvent, commands, journal, modules, settings_store};
+use crate::{SettingsChangedEvent, commands, journal, modules, settings_store, todo};
 
 /// A mock Tauri app with every registered command, on an in-memory database migrated with every
 /// Module. Device files and backups go to a temp folder that is removed on drop.

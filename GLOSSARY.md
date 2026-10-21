@@ -54,3 +54,49 @@ _Avoid_: Day, day page, date
 One continuous stretch of writing or editing an Entry, from opening it until you finish. An Entry counts as edited only when it changes more than 10 minutes after it was written.
 _Avoid_: Draft, revision
 
+
+### Todo
+
+**Task**:
+One thing to do in the Todo Module, with its own identity. It may carry a Due date, a Repeat and a Priority, and is open, done or Won't do.
+_Avoid_: Todo, to-do, item, reminder
+
+**List**:
+A named collection of Tasks with an optional emoji, such as Home or Groceries. A Task belongs to at most one List, and Lists do not nest.
+_Avoid_: Project, folder, area, category
+
+**Inbox**:
+Where Tasks with no List wait to be sorted. It also shows undated Tasks from Lists in a separate group, which does not count toward emptying it.
+_Avoid_: Unsorted, default list
+
+**Priority**:
+How urgent a Task is, from P1 (most urgent) to P4. P4 means no priority and is the default.
+_Avoid_: Importance, flag, level
+
+**Won't do**:
+A Task closed without being done. It is kept with the done Tasks but never counts as done. On a repeating Task it skips to the next Due date and keeps no record.
+_Avoid_: Cancelled, dismissed, archived
+
+**Comment**:
+A short, dated remark added to a Task, kept apart from its notes. On a repeating Task, comments belong to the current occurrence and stay with that occurrence once it is done.
+_Avoid_: Note, reply, message
+
+**History**:
+The list of every change made to a Task, oldest to newest, read from the app's record of changes. It cannot be edited.
+_Avoid_: Log, audit trail, activity
+
+**Checklist item**:
+A `- [ ]` line inside Markdown text (an Entry, or a Task's notes) that can be ticked in place. It is not a Task and has no date.
+_Avoid_: Task, subtask, todo
+
+**Due date**:
+The one calendar date a Task is meant to be done on, optionally with a time of day. A Task without one is undated.
+_Avoid_: Deadline, when, scheduled date
+
+**Overdue**:
+An open Task whose Due date (and time, if set) has passed.
+_Avoid_: Late, missed
+
+**Repeat**:
+A rule that brings a Task back after it is done: every N days, weeks (on chosen weekdays), months or years, counted either from the Due date or from the day it was done. Doing a repeating Task records that occurrence and moves the same Task to its next Due date. A repeating Task always has a Due date; if none was set, it takes the first day the rule matches.
+_Avoid_: Recurrence, rrule, habit
