@@ -31,6 +31,18 @@ export function dayText(date: string): string {
 /** `22 Oct`: the day without its weekday. */
 const shortDay = (date: string): string => dayText(date).split(' ').slice(1).join(' ');
 
+const epochDay = (date: string): number => {
+  const [y = 0, m = 1, d = 1] = date.split('-').map(Number);
+  return Date.UTC(y, m - 1, d) / 86_400_000;
+};
+
+/** `Thu` and `Sat` within a week of each other, else whole days (a bare weekday would be ambiguous). */
+function skipDays(from: string, to: string): [string, string] {
+  const near = Math.abs(epochDay(to) - epochDay(from)) < 7;
+  const name = (d: string) => (near ? dayText(d).split(' ')[0] : dayText(d)) as string;
+  return [name(from), name(to)];
+}
+
 const str = (s: Record<string, unknown>, k: string): string | null =>
   typeof s[k] === 'string' ? (s[k] as string) : null;
 const num = (s: Record<string, unknown>, k: string): number | null =>
@@ -79,10 +91,13 @@ function recordLines(
     newDue !== null &&
     oldDue !== newDue;
   if (step && oldDue !== null && newDue !== null) {
+    const [from, to] = skipDays(oldDue, newDue);
     out.push(
-      newDue > oldDue
-        ? ['done', `Done (occurrence of ${shortDay(oldDue)})`]
-        : ['reopen', `Reopened (occurrence of ${shortDay(newDue)})`],
+      cur.skipped === true
+        ? ['skip', `Skipped (${from} → ${to})`]
+        : newDue > oldDue
+          ? ['done', `Done (occurrence of ${shortDay(oldDue)})`]
+          : ['reopen', `Reopened (occurrence of ${shortDay(newDue)})`],
     );
   } else if (str(prev, 'state') !== str(cur, 'state')) {
     const state = str(cur, 'state');

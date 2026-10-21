@@ -5,7 +5,7 @@
   Checklist progress "1/3" and the number of comments. Clicking the title (or Enter on it) opens the
   Task sheet. On hover (not on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click,
   long-press on a phone) holds Open, Quick edit (E: the row becomes the capture box), When…, Priority…, Move to list…,
-  Won't do (Skip to ‹date› on a repeating Task: it moves on and records nothing) and Delete. The
+  Won't do (Skip to ‹date› on a repeating Task: it moves on and records no occurrence) and Delete. The
   keys (E, D, T, M, 1 to 4, Space, ⇧Space, ↵, ⌫) act on the focused row only, never on one the
   pointer merely rests on (see task-keymap.ts). The focus ring (taskFocus) tints and rings the
   row it is on. In search results `lit` tints the matched words of the title and `snippet` shows the

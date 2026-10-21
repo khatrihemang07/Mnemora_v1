@@ -181,7 +181,7 @@ pub fn todo_task_complete(
 }
 
 /// Moves a repeating Task to its next date without recording anything done. Undo is
-/// `todo_tasks_restore_when`. Records an `update` change.
+/// `todo_tasks_restore_when`. Records a `tick` change (marked skipped).
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_skip(
@@ -2009,7 +2009,7 @@ mod tests {
     }
 
     #[test]
-    fn skipping_moves_the_date_on_and_records_nothing() {
+    fn skipping_moves_the_date_on_and_logs_a_marked_tick() {
         let app = TestApp::new();
         let a = repeating(
             &app,
@@ -2031,7 +2031,7 @@ mod tests {
             occurrences_of(&app, &a).is_empty(),
             "no occurrence is recorded"
         );
-        assert_eq!(ops_since(&app, before), [pair("update", "todo_task")]);
+        assert_eq!(ops_since(&app, before), [pair("tick", "todo_task")]);
         let plain = create(&app, "plain").unwrap();
         let err = app
             .invoke::<Value>(

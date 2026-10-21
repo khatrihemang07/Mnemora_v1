@@ -1,6 +1,6 @@
 //! Repeating Tasks: completing one records the occurrence as a done copy and moves the same Task
 //! to its next date; reopening the latest occurrence rewinds the Task; skipping moves it on and
-//! records nothing. Also the Done view, which lists those copies with everything else done. Task
+//! records no occurrence (only a `tick` marked skipped). Also the Done view, which lists those copies with everything else done. Task
 //! text must never reach a log line.
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
@@ -12,7 +12,7 @@ use specta::Type;
 
 use crate::error::TodoError;
 use crate::recurrence::Rule;
-use crate::service::{record, record_at};
+use crate::service::{record, record_at, record_skip};
 use crate::task::{Task, TaskState};
 use crate::when::{DAY_MS, LocalNow, add_days, epoch_day, validate_date};
 use crate::{MODULE_ID, repo};
@@ -196,6 +196,7 @@ fn move_comments(conn: &Connection, from: &str, to: &str, now: i64) -> AppResult
 }
 
 /// Moves a repeating Task to its next date without recording anything done: "Skip to ‹date›".
+/// The change log gets a `tick` marked `skipped` (not an occurrence copy), see `record_skip`.
 pub fn skip_task(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<Task> {
     local.check()?;
     let tx = conn.transaction()?;
@@ -210,7 +211,7 @@ pub fn skip_task(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult
     task.due_date = Some(rule.next_due(&due, &local.today)?);
     task.updated_at = now_ms();
     repo::update_when(&tx, &task)?;
-    record(&tx, &task, ChangeOp::Update)?;
+    record_skip(&tx, &task)?;
     tx.commit()?;
     Ok(task)
 }

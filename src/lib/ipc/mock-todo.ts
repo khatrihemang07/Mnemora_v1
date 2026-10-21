@@ -302,10 +302,15 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   const record = (
     t: Stored,
     op: LogRecord['op'],
-    opts: { session?: string; deletedAt?: number } = {},
+    opts: { session?: string; deletedAt?: number; skipped?: boolean } = {},
   ) => {
     const { deleted: _d, comment_count: _c, ...rest } = t;
-    const snapshot = { ...copy(rest), deleted_at: opts.deletedAt ?? null };
+    const snapshot = {
+      ...copy(rest),
+      deleted_at: opts.deletedAt ?? null,
+      // A Skip is a tick marked so History can tell it from completing an occurrence.
+      ...(opts.skipped ? { skipped: true } : {}),
+    };
     const at = Date.now();
     const session = opts.session ?? null;
     const records = logs.get(t.id) ?? [];
@@ -542,7 +547,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           if (next === null) throw fail('validation', 'That repeat runs past the year 9999');
           task.due_date = next;
           task.updated_at = Date.now();
-          record(task, 'update');
+          record(task, 'tick', { skipped: true });
           return copy(wire(task));
         }
         case 'todo_done': {

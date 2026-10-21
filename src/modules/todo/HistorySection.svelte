@@ -17,6 +17,7 @@
   import Pencil from '~icons/lucide/pencil';
   import Plus from '~icons/lucide/plus';
   import Repeat from '~icons/lucide/repeat';
+  import SkipForward from '~icons/lucide/skip-forward';
   import Trash2 from '~icons/lucide/trash-2';
   import Undo2 from '~icons/lucide/undo-2';
   import { todoClock } from './clock.svelte';
@@ -40,6 +41,7 @@
     done: CircleCheck,
     reopen: Circle,
     wont: CircleX,
+    skip: SkipForward,
     delete: Trash2,
     restore: Undo2,
     list: FolderInput,

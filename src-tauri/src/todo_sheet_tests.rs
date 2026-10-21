@@ -982,6 +982,36 @@ fn completing_a_repeating_task_reads_as_an_occurrence_and_so_does_its_copy() {
 }
 
 #[test]
+fn a_skip_reads_as_skipped_and_not_as_an_occurrence_or_a_date_edit() {
+    let app = TestApp::new();
+    let r = dated(&app, "r", "2026-10-22", None);
+    let rule = json!({ "freq": "day", "every": 2, "days": null, "mode": "fixed" });
+    app.invoke::<Value>(
+        "todo_task_set_when",
+        json!({ "id": r["id"], "date": "2026-10-22", "time": null, "local": local(TODAY),
+                "repeat": rule }),
+    )
+    .unwrap();
+    app.invoke::<Value>(
+        "todo_task_skip",
+        json!({ "id": r["id"], "local": local(TODAY) }),
+    )
+    .unwrap();
+    assert_eq!(history(&app, &r)[0], "Skipped (Thu → Sat)");
+    // Undo puts the date back with set_when: an ordinary Due date line, not a second skip.
+    app.invoke::<Value>(
+        "todo_task_set_when",
+        json!({ "id": r["id"], "date": "2026-10-22", "time": null, "local": local(TODAY),
+                "repeat": rule }),
+    )
+    .unwrap();
+    assert_eq!(history(&app, &r)[0], "Due date Sat 24 Oct → Thu 22 Oct");
+    // Completing after a skip is still an occurrence.
+    complete(&app, &r).unwrap();
+    assert_eq!(history(&app, &r)[0], "Done (occurrence of 22 Oct)");
+}
+
+#[test]
 fn history_shows_deleted_and_restored_and_names_a_deleted_list() {
     let app = TestApp::new();
     let list: Value = app

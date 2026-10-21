@@ -189,7 +189,7 @@ export async function setTaskWhen(
 export const dateTaskToday = (task: Task): Promise<void> =>
   setTaskWhen(task, todoClock.today, task.due_time, taskRepeat(task));
 
-/** "Skip to ‹date›": a repeating Task moves to its next date and records nothing. Undo moves it back. */
+/** "Skip to ‹date›": a repeating Task moves to its next date and records no occurrence. Undo moves it back. */
 export async function skipRepeating(task: Task): Promise<void> {
   const before: DueChange = {
     id: task.id,
@@ -257,7 +257,7 @@ export async function setTaskPriority(task: Task, priority: number): Promise<voi
 
 /**
  * Won't do: the Task joins Done with a ⊗ and Undo reopens it. On a repeating Task it is Skip
- * (the next date, nothing recorded).
+ * (the next date, no occurrence recorded).
  */
 export async function wontDoTask(task: Task): Promise<void> {
   if (task.state !== 'open') return;
