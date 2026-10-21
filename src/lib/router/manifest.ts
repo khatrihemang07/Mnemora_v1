@@ -12,6 +12,28 @@ export type HomeCardLoader = () => Promise<{ default: Component<HomeCardProps> }
 /** What the shell hands to a Module's actions, so Modules never import the shell. */
 export interface ModuleContext {
   navigate: (path: RoutePath) => void;
+  /** Whether the app is on that path (a sidebar tree shows its active row only inside its Module). */
+  isActive: (path: RoutePath) => boolean;
+}
+
+/** What the shell gives a Module's sidebar tree. */
+export interface NavTreeProps {
+  ctx: ModuleContext;
+}
+/** What the shell gives a Module's rail flyout; `onclose` dismisses it after a pick. */
+export interface NavFlyoutProps {
+  ctx: ModuleContext;
+  onclose: () => void;
+}
+
+/**
+ * A Module's own navigation nested under its sidebar row (Todo's views and Lists). The row gets a
+ * chevron and the tree unfolds by the fold rule in `shell/tree-fold.ts`; on the icon rail the
+ * flyout shows the same destinations on hover or right-click.
+ */
+export interface NavTree {
+  tree: () => Promise<{ default: Component<NavTreeProps> }>;
+  flyout: () => Promise<{ default: Component<NavFlyoutProps> }>;
 }
 
 /** A command a Module adds to the ⌘K palette. */
@@ -38,6 +60,8 @@ export interface ModuleManifest {
   routes: { path: RoutePath; component: RouteLoader }[];
   /** `shortcut` is the digit used with the modifier key (Cmd/Ctrl+1..9), or null. */
   nav: { order: number; shortcut: number | null; placement?: 'main' | 'bottom' };
+  /** Nested navigation under the Module's sidebar row. */
+  navTree?: NavTree;
   /** Home and Settings: always on, no switch in Settings ▸ Modules. */
   required?: true;
   /** A card on Home, loaded only when Home renders it. */

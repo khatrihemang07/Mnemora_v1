@@ -7,6 +7,9 @@ export type {
   ModuleAction,
   ModuleContext,
   ModuleManifest,
+  NavFlyoutProps,
+  NavTree,
+  NavTreeProps,
   RouteLoader,
   RoutePath,
 } from './manifest';

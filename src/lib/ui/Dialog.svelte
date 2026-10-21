@@ -9,9 +9,11 @@
     title: string;
     description?: string;
     onclose: () => void;
+    /** Content between the description and the actions: choices, a field. */
+    children?: Snippet;
     actions: Snippet;
   }
-  let { open, title, description, onclose, actions }: Props = $props();
+  let { open, title, description, onclose, children, actions }: Props = $props();
 
   closeOnBack(() => open, () => onclose());
 </script>
@@ -26,6 +28,7 @@
       {#if description}
         <Dialog.Description class="mt-1.5 text-muted">{description}</Dialog.Description>
       {/if}
+      {#if children}<div class="mt-4">{@render children()}</div>{/if}
       <div class="mt-5 flex justify-end gap-2">{@render actions()}</div>
     </Dialog.Content>
   </Dialog.Portal>

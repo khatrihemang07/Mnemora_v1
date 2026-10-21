@@ -8,4 +8,8 @@ export const todoManifest: ModuleManifest = {
   accentVar: '--hue-todo',
   routes: [{ path: '/todo', component: () => import('./TodoPage.svelte') }],
   nav: { order: 30, shortcut: 3 },
+  navTree: {
+    tree: () => import('./TodoTree.svelte'),
+    flyout: () => import('./TodoFlyout.svelte'),
+  },
 };

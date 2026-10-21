@@ -8,6 +8,8 @@ export interface PageHeaderEntry {
   /** A Module hue token name, e.g. `--hue-todo`. */
   hue?: string;
   actions?: Snippet;
+  /** Replaces the icon and title with the page's own heading (a renamable List title). */
+  heading?: Snippet;
 }
 
 /** What the desktop top bar shows. Written by `PageHeader`, read by the shell's top bar. */

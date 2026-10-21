@@ -62,7 +62,7 @@ One thing to do in the Todo Module, with its own identity. It may carry a Due da
 _Avoid_: Todo, to-do, item, reminder
 
 **List**:
-A named collection of Tasks with an optional emoji, such as Home or Groceries. A Task belongs to at most one List, and Lists do not nest.
+A named collection of Tasks with an optional emoji, such as Home or Groceries. A Task belongs to at most one List, and Lists do not nest. Names are unique ignoring case and accents, and at most 60 characters.
 _Avoid_: Project, folder, area, category
 
 **Inbox**:

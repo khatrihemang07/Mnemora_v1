@@ -68,6 +68,13 @@ pub fn device_set_sidebar(
     })
 }
 
+/// Remembers whether Todo's views and Lists are unfolded under "Todo" in the sidebar.
+#[tauri::command]
+#[specta::specta]
+pub fn device_set_todo_open(state: State<'_, AppState>, open: bool) -> Result<(), AppError> {
+    state.device.update(|d| d.sidebar.todo_open = Some(open))
+}
+
 /// Changes the log level immediately and remembers it.
 #[tauri::command]
 #[specta::specta]
@@ -222,6 +229,22 @@ mod tests {
             .unwrap();
         let device: Value = app.invoke("device_get", json!({})).unwrap();
         assert_eq!(device["spellcheck"], true);
+    }
+
+    #[test]
+    fn the_todo_fold_state_is_a_device_setting_with_no_choice_at_first() {
+        let app = TestApp::new();
+        let device: Value = app.invoke("device_get", json!({})).unwrap();
+        assert_eq!(device["sidebar"]["todo_open"], Value::Null);
+        app.invoke::<()>("device_set_todo_open", json!({ "open": true }))
+            .unwrap();
+        let device: Value = app.invoke("device_get", json!({})).unwrap();
+        assert_eq!(device["sidebar"]["todo_open"], true);
+        // The sidebar width and rail are saved separately and leave the fold state alone.
+        app.invoke::<()>("device_set_sidebar", json!({ "width": 300, "rail": true }))
+            .unwrap();
+        let device: Value = app.invoke("device_get", json!({})).unwrap();
+        assert_eq!(device["sidebar"]["todo_open"], true);
     }
 
     #[test]
