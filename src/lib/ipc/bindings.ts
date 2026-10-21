@@ -877,7 +877,7 @@ export type SidebarView = {
 	lists_sort: ListSort,
 };
 
-/**  Where a TaskHit's snippet line comes from. */
+/**  Where a `TaskHit`'s snippet line comes from. */
 export type SnippetSource = 
 /**  A line of the Task's notes. */
 "notes" | 
