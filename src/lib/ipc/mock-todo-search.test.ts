@@ -53,11 +53,21 @@ describe('the shared search fixtures', () => {
         expect(titles(found.exact), `exact for ${q.q}`).toEqual(q.exact);
         expect(titles(found.similar), `similar for ${q.q}`).toEqual(q.similar);
       }
-      for (const [title, m] of Object.entries((c as { marked?: Record<string, { q: string; words: string[] }> }).marked ?? {})) {
+      for (const [title, m] of Object.entries(
+        (c as { marked?: Record<string, { q: string; words: string[] }> }).marked ?? {},
+      )) {
         const hit = search(m.q).exact.find((h) => h.task.title === title);
         expect(flat(hit?.title ?? []).marked).toEqual(m.words);
       }
-      const snippets = (c as { snippets?: Record<string, { q: string; source: string | null; marked: string[]; text: string }> }).snippets ?? {};
+      const snippets =
+        (
+          c as {
+            snippets?: Record<
+              string,
+              { q: string; source: string | null; marked: string[]; text: string }
+            >;
+          }
+        ).snippets ?? {};
       for (const [title, s] of Object.entries(snippets)) {
         const hit = search(s.q).exact.find((h) => h.task.title === title);
         expect(hit?.snippet_source).toBe(s.source);

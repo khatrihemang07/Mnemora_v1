@@ -13,7 +13,7 @@
   import type { TaskGroup } from '../../lib/ipc/bindings';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
-  import NewTaskButton from './NewTaskButton.svelte';
+  import TodoActions from './TodoActions.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { GROUP_OPTIONS, GROUP_PREF_KEYS } from './arrange';
   import { todoClock } from './clock.svelte';
@@ -75,7 +75,7 @@
 </script>
 
 <PageHeader title="Upcoming" icon={VIEW_ICONS.upcoming} hue="--hue-todo">
-  {#snippet actions()}<NewTaskButton />{/snippet}
+  {#snippet actions()}<TodoActions />{/snippet}
 </PageHeader>
 <div class="mx-auto max-w-3xl">
   <div class="sticky -top-(--pad) z-10 -mt-(--pad) mb-2 bg-bg pt-(--pad)">

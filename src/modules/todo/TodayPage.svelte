@@ -11,7 +11,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
-  import NewTaskButton from './NewTaskButton.svelte';
+  import TodoActions from './TodoActions.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { todoClock } from './clock.svelte';
   import { longDate } from './dates';
@@ -48,7 +48,7 @@
 </script>
 
 <PageHeader title="Today" icon={VIEW_ICONS.today} hue="--hue-todo">
-  {#snippet actions()}<NewTaskButton />{/snippet}
+  {#snippet actions()}<TodoActions />{/snippet}
 </PageHeader>
 <div class="mx-auto max-w-3xl">
   {#if today.isPending}

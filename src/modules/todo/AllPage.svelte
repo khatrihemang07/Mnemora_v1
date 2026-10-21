@@ -10,7 +10,7 @@
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { GROUP_OPTIONS, GROUP_PREF_KEYS } from './arrange';
   import { todoClock } from './clock.svelte';
-  import NewTaskButton from './NewTaskButton.svelte';
+  import TodoActions from './TodoActions.svelte';
   import { allQuery, savePreference } from './queries';
   import { useSidebar } from './sidebar.svelte';
   import TaskGroups from './TaskGroups.svelte';
@@ -22,7 +22,7 @@
 </script>
 
 <PageHeader title="All" icon={VIEW_ICONS.all} hue="--hue-todo">
-  {#snippet actions()}<NewTaskButton />{/snippet}
+  {#snippet actions()}<TodoActions />{/snippet}
 </PageHeader>
 <div class="mx-auto max-w-3xl">
   {#if all.isPending}

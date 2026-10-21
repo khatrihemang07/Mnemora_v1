@@ -13,7 +13,7 @@
   import { canDrag, GROUP_OPTIONS } from './arrange';
   import { todoClock } from './clock.svelte';
   import ListDoneSection from './ListDoneSection.svelte';
-  import NewTaskButton from './NewTaskButton.svelte';
+  import TodoActions from './TodoActions.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import ListGlyph from './ListGlyph.svelte';
@@ -118,7 +118,7 @@
 {/snippet}
 
 <PageHeader title={list?.name ?? 'List'} {heading}>
-  {#snippet actions()}<NewTaskButton />{/snippet}
+  {#snippet actions()}<TodoActions />{/snippet}
 </PageHeader>
 <EmojiPicker bind:open={emojiOpen} anchor={emojiButton} value={list?.emoji ?? null} onpick={pickEmoji} />
 <div class="mx-auto max-w-3xl">

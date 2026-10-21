@@ -31,10 +31,7 @@
     },
     {
       "name": "quoted text is a phrase",
-      "tasks": [
-        { "title": "Fix the red door" },
-        { "title": "Paint the door red" }
-      ],
+      "tasks": [{ "title": "Fix the red door" }, { "title": "Paint the door red" }],
       "queries": [
         { "q": "\"red door\"", "exact": ["Fix the red door"], "similar": [] },
         { "q": "\"red door", "exact": ["Fix the red door"], "similar": [] },
@@ -57,7 +54,10 @@
     {
       "name": "notes are searched and the matching line is the snippet",
       "tasks": [
-        { "title": "Plan trip", "notes": "Pack light\n- [ ] Check the passport expiry\nBring snacks" },
+        {
+          "title": "Plan trip",
+          "notes": "Pack light\n- [ ] Check the passport expiry\nBring snacks"
+        },
         { "title": "Groceries" }
       ],
       "queries": [
@@ -66,13 +66,21 @@
         { "q": "snacks groceries", "exact": [], "similar": [] }
       ],
       "snippets": {
-        "Plan trip": { "q": "passport", "source": "notes", "marked": ["passport"], "text": "Check the passport expiry" }
+        "Plan trip": {
+          "q": "passport",
+          "source": "notes",
+          "marked": ["passport"],
+          "text": "Check the passport expiry"
+        }
       }
     },
     {
       "name": "comments are searched and the comment line is the snippet",
       "tasks": [
-        { "title": "Renew licence", "comments": ["Office closes at five", "Ask about the Zürich form"] },
+        {
+          "title": "Renew licence",
+          "comments": ["Office closes at five", "Ask about the Zürich form"]
+        },
         { "title": "Unrelated" }
       ],
       "queries": [
@@ -80,7 +88,12 @@
         { "q": "office", "exact": ["Renew licence"], "similar": [] }
       ],
       "snippets": {
-        "Renew licence": { "q": "zurich", "source": "comment", "marked": ["Zürich"], "text": "Ask about the Zürich form" }
+        "Renew licence": {
+          "q": "zurich",
+          "source": "comment",
+          "marked": ["Zürich"],
+          "text": "Ask about the Zürich form"
+        }
       }
     },
     {

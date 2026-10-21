@@ -4,25 +4,18 @@
  * phrases, typos as a separate group). The shared fixtures (fixtures/todo-search-rules.json) keep
  * it in step with Rust.
  */
-import type {
-  Comment,
-  Task,
-  TaskHit,
-  TaskSearchResults,
-  SnippetSource,
-  Span,
-} from './bindings';
+import type { Comment, SnippetSource, Span, Task, TaskHit, TaskSearchResults } from './bindings';
 import {
   hasMarks,
   highlightSpans,
   matches,
+  type Near,
   nearWords,
   parse,
   plainText,
-  type Near,
   type Term,
-  words,
   windowSpans,
+  words,
 } from './mock-journal-search';
 
 const MAX_EXACT = 500;
@@ -84,7 +77,10 @@ export function searchTasks(live: Task[], comments: Comment[], query: string): T
   const rows = live.map((t) => ({
     task: t,
     own: commentsOf.get(t.id) ?? [],
-    rows: [[...words(t.title), '\0', ...words(t.notes)], ...(commentsOf.get(t.id) ?? []).map((c) => words(c.body))],
+    rows: [
+      [...words(t.title), '\0', ...words(t.notes)],
+      ...(commentsOf.get(t.id) ?? []).map((c) => words(c.body)),
+    ],
   }));
   const vocab = new Map<string, number>();
   for (const r of rows) {
@@ -93,7 +89,8 @@ export function searchTasks(live: Task[], comments: Comment[], query: string): T
     }
   }
   const sorted = rows.sort((a, b) => byResultOrder(a.task, b.task));
-  const found = (near: Near) => sorted.filter((r) => r.rows.some((tokens) => matches(tokens, terms, near)));
+  const found = (near: Near) =>
+    sorted.filter((r) => r.rows.some((tokens) => matches(tokens, terms, near)));
 
   const exact = found([]);
   const exactIds = new Set(exact.map((r) => r.task.id));
