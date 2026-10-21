@@ -262,7 +262,8 @@ mod tests {
     #[test]
     fn an_existing_install_that_never_saved_its_tabs_gets_todo_appended() {
         let app = TestApp::new();
-        let saved = app.with_db(|c| mnemora_core::settings::stored(c, "core", "phone_tabs").unwrap());
+        let saved =
+            app.with_db(|c| mnemora_core::settings::stored(c, "core", "phone_tabs").unwrap());
         assert_eq!(saved, None, "no choice is stored, so the default applies");
         let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
         assert_eq!(

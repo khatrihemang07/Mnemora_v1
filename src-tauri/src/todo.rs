@@ -1094,7 +1094,13 @@ mod tests {
             set_when(&app, &t, json!("2026-10-21"), Value::Null, "2026-10-21");
         }
         let timed = create(&app, "timed").unwrap();
-        set_when(&app, &timed, json!("2026-10-21"), json!("17:00"), "2026-10-21");
+        set_when(
+            &app,
+            &timed,
+            json!("2026-10-21"),
+            json!("17:00"),
+            "2026-10-21",
+        );
         let soon = create(&app, "soon").unwrap();
         set_when(&app, &soon, json!("2026-10-24"), Value::Null, "2026-10-21");
         let later = create(&app, "later").unwrap();
@@ -1110,12 +1116,18 @@ mod tests {
             .iter()
             .map(|t| t["title"].as_str().unwrap())
             .collect();
-        assert_eq!(titles, ["timed", "today 1", "today 2", "today 3", "today 4"]);
+        assert_eq!(
+            titles,
+            ["timed", "today 1", "today 2", "today 3", "today 4"]
+        );
         assert_eq!(c["next"]["title"], "soon");
 
         // The same Tasks on another day: nothing is due and the next one moves on.
         let c = counts("2026-10-25");
-        assert_eq!((c["due_today"].clone(), c["overdue"].clone()), (json!(0), json!(9)));
+        assert_eq!(
+            (c["due_today"].clone(), c["overdue"].clone()),
+            (json!(0), json!(9))
+        );
         assert_eq!(c["card"], json!([]));
         assert_eq!(c["next"]["title"], "later");
 
