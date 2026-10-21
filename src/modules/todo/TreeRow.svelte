@@ -18,7 +18,7 @@
     ref?: HTMLButtonElement | null;
     glyph: Snippet;
   }
-  let { label, active, count = 0, onclick, onmenu, ref = $bindable(null), glyph }: Props = $props();
+  let { label, active, count = 0, onclick, onmenu, ref = $bindable(), glyph }: Props = $props();
 
   const press = new LongPress({ onpress: (x, y) => onmenu?.(x, y) });
   const touchLike = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
@@ -42,7 +42,7 @@
   onpointermove={(e) => touchLike(e) && press.move(e.clientX, e.clientY)}
   onpointerup={() => press.cancel()}
   onpointercancel={() => press.cancel()}
-  class="flex h-(--row) min-h-8 w-full cursor-pointer items-center gap-2.5 rounded-sm pr-2.5 pl-8 text-left text-sm transition-colors
+  class="flex h-[calc(var(--row)-4px)] min-h-8 w-full cursor-pointer items-center gap-2.5 rounded-sm pr-2.5 pl-7.5 text-left text-sm transition-colors
     duration-(--dur) ease-out hover:bg-hover {active ? 'bg-active font-semibold text-ink' : 'text-ink'}"
 >
   {@render glyph()}

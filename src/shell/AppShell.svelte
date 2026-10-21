@@ -91,13 +91,13 @@
                 />
               </div>
               {#if pageHeader.current?.heading}
-                <div class="ml-2 flex min-w-0 items-center gap-2">{@render pageHeader.current.heading()}</div>
+                <div class="ml-2 flex min-w-0 items-center gap-2">{@render pageHeader.current?.heading?.()}</div>
               {:else if pageHeader.current}
-                {@const Icon = pageHeader.current.icon}
+                {@const Icon = pageHeader.current?.icon}
                 {#if Icon}
                   <span
                     class="ml-2 shrink-0"
-                    style={pageHeader.current.hue ? `color: var(${pageHeader.current.hue})` : undefined}
+                    style={pageHeader.current?.hue ? `color: var(${pageHeader.current.hue})` : undefined}
                   >
                     <Icon class="size-[18px]" />
                   </span>
@@ -106,7 +106,7 @@
                   class="ml-2 truncate font-display text-lg"
                   style="font-weight: var(--display-weight); letter-spacing: var(--display-track)"
                 >
-                  {pageHeader.current.title}
+                  {pageHeader.current?.title}
                 </h1>
               {/if}
               {#snippet trailing()}

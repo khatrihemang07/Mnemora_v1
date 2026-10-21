@@ -130,7 +130,7 @@
     </TreeRow>
   {/each}
 
-  <div class="flex items-center justify-between pr-1 pl-8 pt-2.5 pb-0.5">
+  <div class="flex items-center justify-between pr-1 pl-7.5 pt-2.5 pb-0.5">
     <span class="text-xs font-medium text-faint">Lists</span>
     <IconButton
       bind:ref={plus}
@@ -143,7 +143,7 @@
 
   {#each lists as entry (entry.list.id)}
     {#if renaming === entry.list.id}
-      <div class="flex min-h-8 items-center gap-2.5 rounded-sm bg-surface pr-2.5 pl-8">
+      <div class="flex min-h-8 items-center gap-2.5 rounded-sm bg-surface pr-2.5 pl-7.5">
         <ListGlyph emoji={entry.list.emoji} />
         <ListNameField
           class="flex-1"
@@ -168,7 +168,7 @@
   {/each}
 
   {#if creating}
-    <div class="flex min-h-8 items-start gap-2.5 rounded-sm bg-surface py-1.5 pr-2.5 pl-8">
+    <div class="flex min-h-8 items-start gap-2.5 rounded-sm bg-surface py-1.5 pr-2.5 pl-7.5">
       <ListGlyph emoji={null} class="mt-px" />
       <ListNameField
         class="flex-1"

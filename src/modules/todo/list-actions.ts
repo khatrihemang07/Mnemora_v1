@@ -1,8 +1,9 @@
 import type { DeleteChoice, ListEntry } from '../../lib/ipc/bindings';
+import { queryClient } from '../../lib/ipc/query-client';
 import { notifyError, notifyUndo } from '../../lib/ui/toast';
 import { deletedListMessage } from './lists';
 import { todoNav } from './nav.svelte';
-import { createList, deleteList, invalidateTodo, restoreList } from './queries';
+import { createList, deleteList, invalidateTodo, restoreList, todoKeys } from './queries';
 import { listView, sameView, viewAfterListGone } from './views';
 
 /** Creates a List and opens it. Throws Rust's refusal (a taken or invalid name) for the field to show. */
@@ -27,6 +28,8 @@ export async function deleteListWithUndo(
   try {
     const deletion = await deleteList(list.id, choice);
     todoNav.go(viewAfterListGone(todoNav.view, list.id));
+    // Forget the List's page, so its "gone" error cannot greet it when Undo reopens it.
+    queryClient.removeQueries({ queryKey: todoKeys.list(list.id) });
     void invalidateTodo();
     notifyUndo(deletedListMessage(list, entry.task_count, choice, targetName), () => {
       restoreList(deletion)

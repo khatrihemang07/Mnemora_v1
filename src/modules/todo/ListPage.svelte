@@ -23,7 +23,7 @@
   const list = $derived(page.data?.list ?? null);
 
   $effect(() => {
-    if (page.isError && 'code' in page.error && page.error.code === 'not_found') {
+    if (page.isError && !page.isFetching && 'code' in page.error && page.error.code === 'not_found') {
       todoNav.go(smartView('inbox'));
     }
   });
@@ -82,7 +82,7 @@
           type="button"
           aria-label="Rename list: {list.name}"
           onclick={() => (renaming = true)}
-          class="max-w-full cursor-text truncate rounded-sm px-1 -mx-1 text-left transition-colors duration-(--dur) ease-out hover:bg-hover"
+          class="cursor-text rounded-sm px-1 -mx-1 text-left transition-colors duration-(--dur) ease-out hover:bg-hover"
         >
           {list.name}
         </button>
