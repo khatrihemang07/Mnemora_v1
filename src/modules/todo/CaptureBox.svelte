@@ -50,6 +50,7 @@
     markSegments,
     MAX_TITLE,
     NO_WORDS,
+    pasteIntoTitle,
     pasteParts,
     preferWord,
     pruneWords,
@@ -512,13 +513,23 @@
   }
 
   function onpaste(e: ClipboardEvent) {
-    const parts = pasteParts(e.clipboardData?.getData('text/plain') ?? '');
-    if (!parts || !input) return;
-    e.preventDefault();
-    if (editing) {
-      text = parts.title;
+    const pasted = e.clipboardData?.getData('text/plain') ?? '';
+    if (editing && input) {
+      // Quick edit keeps a multi-line paste in the title (Capture sends the rest to the notes).
+      const from = input.selectionStart ?? text.length;
+      const got = pasteIntoTitle(text, from, input.selectionEnd ?? text.length, pasted);
+      if (!got) return;
+      e.preventDefault();
+      text = got.text;
+      void tick().then(() => {
+        input?.setSelectionRange(got.caret, got.caret);
+        caret = got.caret;
+      });
       return;
     }
+    const parts = pasteParts(pasted);
+    if (!parts || !input) return;
+    e.preventDefault();
     const start = input.selectionStart ?? text.length;
     const end = input.selectionEnd ?? text.length;
     text = `${text.slice(0, start)}${parts.title}${text.slice(end)}`.slice(0, MAX_TITLE);

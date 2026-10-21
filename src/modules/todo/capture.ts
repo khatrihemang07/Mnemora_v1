@@ -262,7 +262,8 @@ export function unchangedRanges(oldText: string, newText: string): TextRange[] {
 // --- Pasting ---------------------------------------------------------------------------------------
 
 /**
- * A multi-line paste is one Task: the first line is the title and the rest are its notes. A paste
+ * A multi-line paste is one Task: the first line is the title and the rest are its notes. Capture only:
+ * Quick edit joins the lines into the title instead (`pasteIntoTitle`). A paste
  * with no line break is left to the field. A title over the limit spills into the notes.
  */
 export function pasteParts(pasted: string): { title: string; notes: string } | null {
@@ -275,6 +276,29 @@ export function pasteParts(pasted: string): { title: string; notes: string } | n
   const spill = [...head].slice(MAX_TITLE).join('');
   const rest = lines.slice(first + 1).join('\n');
   return { title, notes: [spill, rest].filter(Boolean).join('\n').trim() };
+}
+
+/**
+ * A multi-line paste into Quick edit stays in the title: the lines are joined with single spaces
+ * and replace the selection, and the title stays within the limit. (Capture is different on
+ * purpose: there the first line is the title and the rest are notes, see `pasteParts`.) A paste
+ * with no line break is left to the field; blank lines give null too.
+ */
+export function pasteIntoTitle(
+  text: string,
+  start: number,
+  end: number,
+  pasted: string,
+): { text: string; caret: number } | null {
+  const lines = pasted
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return null;
+  const room = Math.max(0, MAX_TITLE - [...text.slice(0, start)].length - [...text.slice(end)].length);
+  const insert = [...lines.join(' ')].slice(0, room).join('');
+  return { text: `${text.slice(0, start)}${insert}${text.slice(end)}`, caret: start + insert.length };
 }
 
 // --- What the Task gets ----------------------------------------------------------------------------
