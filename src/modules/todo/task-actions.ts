@@ -54,7 +54,10 @@ export async function tickTask(task: Task): Promise<void> {
   await completeNow(task);
 }
 
-/** "Tick all and complete": the notes get every step ticked, then the Task is completed. */
+/**
+ * "Tick all and complete": the notes get every step ticked, then the Task is completed. Undo
+ * reopens it and puts the original notes back (a repeating Task's rewind already restores them).
+ */
 export async function tickAllAndComplete(task: Task): Promise<void> {
   const notes = tickAllSteps(task.notes);
   try {
@@ -63,7 +66,7 @@ export async function tickAllAndComplete(task: Task): Promise<void> {
     notifyError(e instanceof IpcError ? e.message : "Couldn't tick the steps");
     return;
   }
-  await completeNow({ ...task, notes });
+  await completeNow({ ...task, notes }, task.notes);
 }
 
 /**
@@ -71,8 +74,9 @@ export async function tickAllAndComplete(task: Task): Promise<void> {
  * which reopens it in its old place. A repeating Task stays: the toast says where it went
  * ("· next Sat 24 Oct") and Undo reopens that occurrence, which rewinds the Task. A failed write
  * brings the Task back from Rust's truth. Returns the Task as it is now, or none on failure.
+ * `undoNotes` are the notes to put back on Undo, when completing changed them (Tick all).
  */
-export async function completeNow(task: Task): Promise<Task | null> {
+export async function completeNow(task: Task, undoNotes?: string): Promise<Task | null> {
   // A light tick on a phone, at once, while the touch that asked for it still counts.
   if (viewport.isPhone) lightTick();
   const repeating = task.repeat_freq !== null;
@@ -92,6 +96,14 @@ export async function completeNow(task: Task): Promise<Task | null> {
     : completedMessage(task.title);
   notifyUndo(message, () => {
     reopenTask(done.occurrence?.id ?? task.id)
+      .then((reopened) =>
+        // A repeating Task's rewind has put its notes back; a plain one needs them restored.
+        undoNotes !== undefined && !done.occurrence && reopened.notes !== undoNotes
+          ? updateTask(reopened.id, reopened.title, undoNotes, crypto.randomUUID()).catch(() =>
+              notifyError("Couldn't put the notes back"),
+            )
+          : undefined,
+      )
       .catch(() => notifyError("Couldn't reopen the Task"))
       .finally(() => void invalidateTodo());
   });
