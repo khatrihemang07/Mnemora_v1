@@ -137,7 +137,8 @@ export async function setTaskWhen(
     now,
     before.repeat !== null,
   );
-  notifyUndo(message, () => undoWhen([before], "Couldn't undo the date change"));
+  // Changing the same Task's When again replaces its toast instead of stacking them.
+  notifyUndo(message, () => undoWhen([before], "Couldn't undo the date change"), `when-${task.id}`);
 }
 
 /** The ☀ on a row: due today, keeping its time and its Repeat. */

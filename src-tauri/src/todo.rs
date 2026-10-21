@@ -38,8 +38,9 @@ pub fn todo_task_create(
 
 /// Sets an open Task's Due date, time and Repeat, or clears them when all are none. A time
 /// without a date means today if it is still ahead and tomorrow otherwise; a Repeat without a date
-/// gives the first day it lands on. Past dates are refused. A date changed by hand is the new
-/// anchor of the Repeat; no date means no Repeat. `local` is the device's today and now. Records
+/// gives the first day it lands on. Past dates are refused. `repeat` is the Repeat after the
+/// change (none removes it), so callers that keep it pass it back. A date changed by hand is the
+/// new anchor of the Repeat; no date means no Repeat. `local` is the device's today and now. Records
 /// an `update` change.
 #[tauri::command]
 #[specta::specta]

@@ -127,7 +127,7 @@
   data-when-repeat
   class="absolute inset-x-1.5 inset-y-1 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-pop shadow-pop"
 >
-  <div class="flex items-center gap-1 border-b border-line py-1 pr-1 pl-2">
+  <div class="flex items-center gap-1 border-b border-line py-0.5 pr-1 pl-2">
     {#if view === 'custom'}
       <IconButton icon={ChevronLeft} label="Back to presets" size="sm" onclick={() => (view = 'presets')} />
     {/if}
@@ -157,7 +157,7 @@
     <IconButton icon={X} label="Close" size="sm" onclick={onclose} />
   </div>
 
-  <div class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto p-1.5">
+  <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-1">
     {#if view === 'presets'}
       <div class="grid grid-cols-2 gap-px" role="group" aria-label="Repeat presets">
         {#each presets as p (p.key)}
@@ -165,7 +165,7 @@
             type="button"
             aria-pressed={selected === p.key}
             onclick={() => pickPreset(p)}
-            class="{btn} flex h-6.5 items-center justify-between gap-1 phone:h-8 {selected === p.key ? 'bg-active' : ''}"
+            class="{btn} flex h-6 items-center justify-between gap-1 phone:h-7 {selected === p.key ? 'bg-active' : ''}"
           >
             <span class="truncate">{p.label}</span>
             {#if selected === p.key}<span aria-hidden="true" class="text-(--wp-hue)">✓</span>{/if}
@@ -178,7 +178,6 @@
           <span class="text-muted">Every</span>
           <input
             data-when-every
-            data-bare
             type="text"
             inputmode="numeric"
             autocomplete="off"
@@ -187,7 +186,7 @@
             onkeydown={stepEvery}
             onblur={() => (everyText = String(draft.every))}
             aria-label="Every how many (1 to 99)"
-            class="selectable h-6.5 w-11 rounded-sm border border-line bg-transparent text-center text-sm text-ink tabular-nums outline-none focus:border-faint phone:h-8 phone:text-base"
+            class="selectable h-6.5 w-11 rounded-sm border border-line bg-surface-2 text-center text-sm text-ink tabular-nums outline-none focus:border-faint phone:h-7 phone:text-base"
           />
         </label>
         <div class="grid grid-cols-4 gap-0.5 rounded-sm bg-surface-2 p-0.5" role="group" aria-label="Unit">
@@ -196,8 +195,8 @@
               type="button"
               aria-pressed={draft.freq === f.value}
               onclick={() => setFreq(f.value)}
-              class="cursor-pointer rounded-sm py-1 text-xs font-medium text-muted transition-colors duration-(--dur) ease-out phone:py-1.5
-                {draft.freq === f.value ? 'bg-surface text-ink shadow-card' : 'hover:text-ink'}"
+              class="cursor-pointer rounded-sm py-1 text-xs font-medium text-muted transition-colors duration-(--dur) ease-out phone:py-1
+                {draft.freq === f.value ? 'bg-[color-mix(in_oklch,var(--wp-hue)_16%,transparent)] font-semibold text-(--wp-hue)' : 'hover:text-ink'}"
             >
               {unit(f)}
             </button>
@@ -212,7 +211,7 @@
                 aria-label={NAMES[d]}
                 title={NAMES[d]}
                 onclick={() => toggleDay(d)}
-                class="grid size-6.5 cursor-pointer place-items-center rounded-full text-xs font-semibold transition-colors duration-(--dur) ease-out phone:size-8
+                class="grid size-6.5 cursor-pointer place-items-center rounded-full text-xs font-semibold transition-colors duration-(--dur) ease-out phone:size-7
                   {(days & dayBit(d)) !== 0
                   ? 'bg-(--wp-hue) text-on-accent'
                   : 'text-muted hover:bg-hover'}"
@@ -229,14 +228,14 @@
     {/if}
 
     {#if rule}
-      <div class="mt-auto flex flex-col gap-1.5 px-1">
+      <div class="mt-auto flex flex-col gap-1">
         <div class="grid grid-cols-2 gap-0.5 rounded-sm bg-surface-2 p-0.5" role="group" aria-label="Count from">
           <button
             type="button"
             aria-pressed={rule.mode === 'fixed'}
             onclick={() => setMode('fixed')}
-            class="cursor-pointer rounded-sm py-1 text-xs font-medium transition-colors duration-(--dur) ease-out phone:py-1.5
-              {rule.mode === 'fixed' ? 'bg-surface text-ink shadow-card' : 'text-muted hover:text-ink'}"
+            class="cursor-pointer rounded-sm py-0.75 text-xs font-medium transition-colors duration-(--dur) ease-out phone:py-1
+              {rule.mode === 'fixed' ? 'bg-[color-mix(in_oklch,var(--wp-hue)_16%,transparent)] font-semibold text-(--wp-hue)' : 'text-muted hover:text-ink'}"
           >
             From the due date
           </button>
@@ -246,15 +245,15 @@
             disabled={!afterAllowed(rule)}
             title={afterAllowed(rule) ? undefined : 'Needs an interval, not chosen weekdays'}
             onclick={() => setMode('after')}
-            class="rounded-sm py-1 text-xs font-medium transition-colors duration-(--dur) ease-out phone:py-1.5
-              {rule.mode === 'after' ? 'bg-surface text-ink shadow-card' : 'text-muted'}
+            class="rounded-sm py-0.75 text-xs font-medium transition-colors duration-(--dur) ease-out phone:py-1
+              {rule.mode === 'after' ? 'bg-[color-mix(in_oklch,var(--wp-hue)_16%,transparent)] font-semibold text-(--wp-hue)' : 'text-muted'}
               {afterAllowed(rule) ? 'cursor-pointer hover:text-ink' : 'cursor-not-allowed opacity-40'}"
           >
             From the day it's done
           </button>
         </div>
         {#if dates.length > 0}
-          <p class="truncate text-xs text-faint" aria-live="polite">
+          <p class="truncate px-1 text-xs text-faint" aria-live="polite">
             <span class="font-semibold text-muted">Next:</span>
             {dates.map((d) => dayText(d, today)).join(' · ')}
           </p>
