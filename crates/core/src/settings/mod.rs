@@ -222,7 +222,7 @@ mod tests {
             "core.time_format": "24h",
             "core.date_format": "long",
             "core.week_start": "mon",
-            "core.phone_tabs": ["home", "journal"],
+            "core.phone_tabs": ["home", "journal", "todo"],
             "core.disabled_modules": []
         });
         assert_eq!(serde_json::to_value(&snap.values).unwrap(), expected);

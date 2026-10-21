@@ -38,7 +38,7 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'core.time_format': { default: '24h', validate: oneOf('24h', '12h') },
   'core.date_format': { default: 'long', validate: oneOf('long', 'short', 'iso') },
   'core.week_start': { default: 'mon', validate: oneOf('mon', 'sun') },
-  'core.phone_tabs': { default: ['home', 'journal'], validate: list(4) },
+  'core.phone_tabs': { default: ['home', 'journal', 'todo'], validate: list(4) },
   'core.disabled_modules': { default: [], validate: list(64) },
   'journal.font': { default: 'serif', validate: oneOf('serif', 'sans') },
   'journal.width': { default: 'default', validate: oneOf('narrow', 'default', 'wide') },

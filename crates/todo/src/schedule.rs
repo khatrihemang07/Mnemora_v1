@@ -37,6 +37,24 @@ pub struct TodayView {
     pub total: u32,
 }
 
+/// How many Tasks `TodoCounts::card` shows at most.
+pub const CARD_TASKS: usize = 5;
+
+/// What the badge and the Home card show, in one read.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+pub struct TodoCounts {
+    /// Open Tasks due today.
+    pub due_today: u32,
+    /// Open Tasks due before today: the badge turns red while this is above zero.
+    pub overdue: u32,
+    /// Up to five of the open Tasks due today, in Today's order (timed ones first).
+    pub card: Vec<Task>,
+    /// The soonest open Task due after today, for "Nothing due today · next: ...".
+    pub next: Option<Task>,
+    /// Whether any Task exists, done or not: false only on a first run.
+    pub any_tasks: bool,
+}
+
 /// Upcoming: Overdue on top, then the Tasks from tomorrow on in groups.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
 pub struct UpcomingView {
@@ -315,6 +333,37 @@ pub fn today(conn: &Connection, local: &LocalNow) -> AppResult<TodayView> {
         groups,
         done,
         total,
+    })
+}
+
+/// The counts behind Todo's badge and the Home card. The badge is `due_today + overdue`.
+pub fn counts(conn: &Connection, local: &LocalNow) -> AppResult<TodoCounts> {
+    local.check()?;
+    let (overdue, due_today) = repo::due_counts(conn, &local.today)?;
+    let (mut today, mut later) = (Vec::new(), Vec::new());
+    for task in repo::open_dated(conn)? {
+        match task
+            .due_date
+            .as_deref()
+            .map(|d| d.cmp(local.today.as_str()))
+        {
+            Some(Ordering::Equal) => today.push(task),
+            Some(Ordering::Greater) => later.push(task),
+            _ => {}
+        }
+    }
+    today.sort_by(in_day);
+    today.truncate(CARD_TASKS);
+    later.sort_by(by_date_then_day);
+    let any_tasks = conn.query_row("SELECT EXISTS (SELECT 1 FROM todo_tasks)", [], |r| {
+        r.get::<_, bool>(0)
+    })?;
+    Ok(TodoCounts {
+        due_today,
+        overdue,
+        card: today,
+        next: later.into_iter().next(),
+        any_tasks,
     })
 }
 

@@ -248,13 +248,45 @@ mod tests {
     }
 
     #[test]
-    fn phone_tabs_default_to_home_and_journal() {
+    fn phone_tabs_default_to_home_journal_and_todo() {
         let app = TestApp::new();
         let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
         assert_eq!(
             snapshot["values"]["core.phone_tabs"],
-            json!(["home", "journal"])
+            json!(["home", "journal", "todo"])
         );
+    }
+
+    /// An install from before Todo that never saved its tabs reads the same default, so Todo is
+    /// appended to its three (fewer than four) tabs without anything being written.
+    #[test]
+    fn an_existing_install_that_never_saved_its_tabs_gets_todo_appended() {
+        let app = TestApp::new();
+        let saved = app.with_db(|c| mnemora_core::settings::stored(c, "core", "phone_tabs").unwrap());
+        assert_eq!(saved, None, "no choice is stored, so the default applies");
+        let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(
+            snapshot["values"]["core.phone_tabs"],
+            json!(["home", "journal", "todo"])
+        );
+    }
+
+    /// The Journal's upgrade pins Home only for an install that never chose; Todo respects it, and
+    /// a choice the user made (even four tabs, or the old pair) stays exactly as saved.
+    #[test]
+    fn tabs_an_install_already_saved_do_not_gain_todo() {
+        for saved in [
+            json!(["home"]),
+            json!(["home", "journal"]),
+            json!(["home", "journal", "settings", "todo"]),
+        ] {
+            let app = TestApp::new();
+            app.with_db(|c| {
+                mnemora_core::settings::save_if_unset(c, "core", "phone_tabs", &saved).unwrap();
+            });
+            let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
+            assert_eq!(snapshot["values"]["core.phone_tabs"], saved);
+        }
     }
 
     #[test]

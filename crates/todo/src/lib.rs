@@ -57,7 +57,7 @@ pub use recurrence::{MAX_EVERY, RepeatRule};
 pub use reorder::{reorder_list, reorder_task};
 pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};
 pub use schedule::{
-    DayCount, DueChange, OverdueMove, TodayView, UpcomingView, day_counts, move_overdue,
+    DayCount, DueChange, OverdueMove, TodayView, TodoCounts, UpcomingView, counts, day_counts, move_overdue,
     restore_when, set_when, today, upcoming,
 };
 pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
