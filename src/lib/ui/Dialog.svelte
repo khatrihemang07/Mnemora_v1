@@ -29,7 +29,7 @@
         <Dialog.Description class="mt-1.5 text-muted">{description}</Dialog.Description>
       {/if}
       {#if children}<div class="mt-4">{@render children()}</div>{/if}
-      <div class="mt-5 flex justify-end gap-2">{@render actions()}</div>
+      <div class="mt-5 flex flex-wrap justify-end gap-2">{@render actions()}</div>
     </Dialog.Content>
   </Dialog.Portal>
 </Dialog.Root>

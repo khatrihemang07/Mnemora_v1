@@ -14,6 +14,12 @@
     shortcut?: string;
     /** Red: for destructive actions. */
     danger?: boolean;
+    /** A colour class for the icon, e.g. `text-danger` (ignored when `danger`). */
+    iconClass?: string;
+    /** Marks the current choice with a tick at the right edge. */
+    checked?: boolean;
+    /** Shown but not available yet. */
+    disabled?: boolean;
     /** Draws a hairline above the item. */
     separatorBefore?: boolean;
     onselect: () => void;
@@ -25,6 +31,7 @@
 
 <script lang="ts">
   import { DropdownMenu } from 'bits-ui';
+  import Check from '~icons/lucide/check';
   import { closeOnBack } from '../router/back-button.svelte';
   import Kbd from './Kbd.svelte';
 
@@ -89,16 +96,18 @@
         {/if}
         <DropdownMenu.Item
           textValue={item.label}
+          disabled={item.disabled}
           onSelect={() => {
             picked = true;
             item.onselect();
           }}
-          class="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-1.5 select-none data-highlighted:bg-hover
+          class="flex min-h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 py-1.5 select-none data-highlighted:bg-hover data-disabled:cursor-default data-disabled:opacity-50 data-disabled:data-highlighted:bg-transparent
             desktop:min-h-8 {item.danger ? 'text-danger' : 'text-ink'}"
         >
-          {#if item.icon}<item.icon class="size-4 shrink-0 {item.danger ? '' : 'text-muted'}" />{/if}
+          {#if item.icon}<item.icon class="size-4 shrink-0 {item.danger ? '' : (item.iconClass ?? 'text-muted')}" />{/if}
           <span class="flex-1">{item.label}</span>
-          {#if item.shortcut}<Kbd keys={item.shortcut} />{/if}
+          {#if item.checked}<Check class="size-4 text-accent" />{/if}
+          {#if item.shortcut}<span class="phone:hidden"><Kbd keys={item.shortcut} /></span>{/if}
         </DropdownMenu.Item>
       {/each}
     </DropdownMenu.Content>

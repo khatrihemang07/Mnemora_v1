@@ -32,6 +32,7 @@
   style="--chip-hue: var({hue})"
   class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold whitespace-nowrap select-none
     transition-[transform,background-color,border-color] duration-(--dur) ease-out active:scale-[0.96]
+    disabled:cursor-default disabled:opacity-60 disabled:active:scale-100
     {tone === 'warm'
     ? 'border-transparent bg-[color-mix(in_oklch,var(--chip-hue)_14%,transparent)] text-(--chip-hue)'
     : 'border-line bg-surface-2 text-ink hover:border-faint'} {cls}"

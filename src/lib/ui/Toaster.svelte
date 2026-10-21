@@ -31,6 +31,10 @@
     --error-border: var(--danger);
     font-family: var(--f-ui);
   }
+  /* A modal (the Task sheet) turns pointer events off on the page; a toast with Undo must stay clickable. */
+  :global(html [data-sonner-toast]) {
+    pointer-events: auto;
+  }
   :global(html [data-sonner-toast][data-styled='true'] [data-button]) {
     background: var(--accent);
     color: var(--on-accent);
