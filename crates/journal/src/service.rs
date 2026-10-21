@@ -3,6 +3,7 @@
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
 use mnemora_core::error::AppResult;
+use mnemora_core::search::plain;
 use mnemora_core::util::{new_id, now_ms};
 use rusqlite::Connection;
 
@@ -13,7 +14,6 @@ use crate::entry::{
 };
 use crate::error::JournalError;
 use crate::repo::{self, Window};
-use crate::words;
 
 /// Change-log entity name for Entries.
 const ENTITY: &str = "journal_entry";
@@ -68,7 +68,7 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     let entry = Entry {
         id: new_id(),
         page_date: new.page_date,
-        word_count: words::word_count(&new.text),
+        word_count: plain::word_count(&new.text),
         body: new.text,
         written_at: now,
         written_offset_min: new.written_offset_min,
@@ -96,7 +96,7 @@ pub fn update_entry(
     let tx = conn.transaction()?;
     let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
 
-    entry.word_count = words::word_count(&text);
+    entry.word_count = plain::word_count(&text);
     entry.body = text;
     let now = now_ms();
     entry.updated_at = now;

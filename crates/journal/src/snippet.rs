@@ -3,7 +3,7 @@
 
 use mnemora_core::search::{Matcher, Span, window};
 
-use crate::words::plain_text;
+use mnemora_core::search::plain::plain_text;
 
 /// The snippet for `body`, shown as plain text (Markdown removed): around its first match, or its
 /// start when nothing matches (a search by date alone).
@@ -19,7 +19,10 @@ mod tests {
 
     #[test]
     fn markdown_and_extra_whitespace_are_gone_before_marking() {
-        let out = snippet("the **red**   door", &Matcher::new(&parse("\"red door\""), &[]));
+        let out = snippet(
+            "the **red**   door",
+            &Matcher::new(&parse("\"red door\""), &[]),
+        );
         let texts: Vec<_> = out.iter().map(|x| (x.text.as_str(), x.matched)).collect();
         assert_eq!(
             texts,

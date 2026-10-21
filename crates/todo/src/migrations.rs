@@ -118,5 +118,11 @@ pub fn all() -> Migrations<'static> {
              END;",
         ),
         M::up(TRIM_KEY_ZEROS),
+        // The distinct indexed words, for typo-tolerant search.
+        M::up(
+            "CREATE VIRTUAL TABLE todo_tasks_fts_vocab USING fts5vocab('todo_tasks_fts', 'row');
+             CREATE VIRTUAL TABLE todo_comments_fts_vocab
+                 USING fts5vocab('todo_comments_fts', 'row');",
+        ),
     ])
 }

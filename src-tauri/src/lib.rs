@@ -43,6 +43,7 @@ macro_rules! specta_builder_for {
                 todo::todo_done,
                 todo::todo_task_move,
                 todo::todo_task,
+                todo::todo_search,
                 todo::todo_task_update,
                 todo::todo_task_set_priority,
                 todo::todo_task_wont_do,
@@ -89,6 +90,8 @@ mod todo;
 mod todo_capture_tests;
 #[cfg(test)]
 mod todo_order_tests;
+#[cfg(test)]
+mod todo_search_tests;
 #[cfg(test)]
 mod todo_sheet_tests;
 #[cfg(desktop)]
@@ -320,6 +323,7 @@ mod tests {
             "todoDone",
             "todoTaskMove",
             "todoTask",
+            "todoSearch",
             "todoTaskUpdate",
             "todoTaskSetPriority",
             "todoTaskWontDo",

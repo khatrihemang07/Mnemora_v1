@@ -4,8 +4,8 @@ use mnemora_core::error::AppError;
 use mnemora_todo::{
     AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, GroupBy, GroupKey,
     HistoryLine, InboxView, ListDeletion, ListView, LocalNow, NewTaskDetails, NewWhen, OverdueMove,
-    ParseRequest, Parsed, QuickEdit, RepeatRule, SidebarView, Task, TaskSort, TodayView, TodoList,
-    UpcomingView,
+    ParseRequest, Parsed, QuickEdit, RepeatRule, SearchResults, SidebarView, Task, TaskSort,
+    TodayView, TodoList, UpcomingView,
 };
 use tauri::State;
 
@@ -221,6 +221,17 @@ pub fn todo_task_move(
 #[specta::specta]
 pub fn todo_task(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
     mnemora_todo::task(&lock(&state.db), &id)
+}
+
+/// Searches live Tasks by title, notes and Comments. Every word is required and matches by
+/// prefix; quoted text is an exact phrase; case and accents are ignored. Open Tasks come first,
+/// then Done and Won't do ones. Each Hit carries the title with its matches marked and the note
+/// or Comment line that matched. `similar` holds Tasks that match only with a typo allowed, never
+/// repeating `exact`. Deleted Tasks and Comments are never found.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_search(state: State<'_, AppState>, query: String) -> Result<SearchResults, AppError> {
+    mnemora_todo::search(&lock(&state.db), &query)
 }
 
 /// Replaces a Task's title and notes: the Task sheet's autosave. All the saves of one opening of

@@ -5,6 +5,7 @@
 pub mod fold;
 pub mod fuzzy;
 pub mod mark;
+pub mod plain;
 pub mod query;
 
 pub use fuzzy::{near_terms, tolerance};

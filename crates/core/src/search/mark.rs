@@ -47,6 +47,12 @@ impl Matcher {
         Self { prefixes, whole }
     }
 
+    /// Whether any word of `text` matches.
+    pub fn matches(&self, text: &str) -> bool {
+        let chars: Vec<char> = text.chars().collect();
+        !marks_of(&chars, self).is_empty()
+    }
+
     fn hits(&self, folded: &str) -> bool {
         self.whole.iter().any(|w| w == folded)
             || self.prefixes.iter().any(|p| folded.starts_with(p))
