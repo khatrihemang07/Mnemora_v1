@@ -14,4 +14,5 @@ pub mod logging;
 pub mod module;
 pub mod paths;
 pub mod settings;
+pub mod text;
 pub mod util;

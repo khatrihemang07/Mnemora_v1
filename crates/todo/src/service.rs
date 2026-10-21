@@ -8,8 +8,8 @@ use rusqlite::Connection;
 
 use crate::MODULE_ID;
 use crate::error::TodoError;
-use crate::repo;
 use crate::task::{InboxView, Task, TaskState, key_after, validate_title};
+use crate::{list_repo, repo};
 
 /// Change-log entity name for Tasks.
 const ENTITY: &str = "todo_task";
@@ -17,9 +17,19 @@ const ENTITY: &str = "todo_task";
 /// Writes a change-log record. The snapshot is the Task plus its `deleted_at`, which the Task
 /// type does not carry: a delete record shows when it was deleted, every other one shows null.
 fn record(conn: &Connection, task: &Task, op: ChangeOp) -> AppResult<()> {
+    record_at(conn, task, op, None)
+}
+
+/// Like `record`, with the `deleted_at` the snapshot shows.
+pub(crate) fn record_at(
+    conn: &Connection,
+    task: &Task,
+    op: ChangeOp,
+    deleted_at: Option<i64>,
+) -> AppResult<()> {
     let mut snapshot = serde_json::to_value(task).map_err(TodoError::Snapshot)?;
     if let Some(fields) = snapshot.as_object_mut() {
-        fields.insert("deleted_at".into(), serde_json::Value::Null);
+        fields.insert("deleted_at".into(), deleted_at.into());
     }
     changelog::record(
         conn,
@@ -41,14 +51,17 @@ pub fn inbox(conn: &Connection) -> AppResult<InboxView> {
     })
 }
 
-/// Adds an open Task with no List at the bottom of the order.
-pub fn create_task(conn: &mut Connection, title: &str) -> AppResult<Task> {
+/// Adds an open Task at the bottom of the order, in a List or (with none) the Inbox.
+pub fn create_task(conn: &mut Connection, title: &str, list_id: Option<&str>) -> AppResult<Task> {
     let title = validate_title(title)?;
     let tx = conn.transaction()?;
+    if let Some(list_id) = list_id {
+        list_repo::get(&tx, list_id)?.ok_or(TodoError::ListNotFound)?;
+    }
     let now = now_ms();
     let task = Task {
         id: new_id(),
-        list_id: None,
+        list_id: list_id.map(str::to_owned),
         title: title.to_owned(),
         notes: String::new(),
         due_date: None,
@@ -101,6 +114,24 @@ pub fn reopen_task(conn: &mut Connection, id: &str) -> AppResult<Task> {
     task.updated_at = now_ms();
     repo::update_state(&tx, &task)?;
     record(&tx, &task, ChangeOp::Tick)?;
+    tx.commit()?;
+    Ok(task)
+}
+
+/// Puts a Task in a List, or in the Inbox when `list_id` is none. Undo is moving it back.
+pub fn move_task(conn: &mut Connection, id: &str, list_id: Option<&str>) -> AppResult<Task> {
+    let tx = conn.transaction()?;
+    let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
+    if let Some(list_id) = list_id {
+        list_repo::get(&tx, list_id)?.ok_or(TodoError::ListNotFound)?;
+    }
+    if task.list_id.as_deref() == list_id {
+        return Ok(task);
+    }
+    task.list_id = list_id.map(str::to_owned);
+    task.updated_at = now_ms();
+    repo::update_list(&tx, &task)?;
+    record(&tx, &task, ChangeOp::Move)?;
     tx.commit()?;
     Ok(task)
 }

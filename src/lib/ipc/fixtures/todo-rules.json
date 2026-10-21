@@ -1,5 +1,5 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order; `task` is the index of the n-th successfully created Task (or a literal id). results: 'ok' or the error code of each step. inbox: titles in the Inbox afterwards. expect lists just the keys to check.",
+  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check.",
   "cases": [
     {
       "rule": "title.blank",
@@ -246,6 +246,1062 @@
       ],
       "expect": {
         "inbox": ["a", "c"]
+      }
+    },
+    {
+      "rule": "list.name.blank",
+      "name": "a blank name is rejected",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "   "
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "lists": []
+      }
+    },
+    {
+      "rule": "list.name.single_line",
+      "name": "a line break is rejected",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "a\nb"
+        }
+      ],
+      "expect": {
+        "results": ["validation"],
+        "lists": []
+      }
+    },
+    {
+      "rule": "list.name.trim",
+      "name": "a name is stored trimmed",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "  Home "
+        }
+      ],
+      "expect": {
+        "results": ["ok"],
+        "lists": ["Home"]
+      }
+    },
+    {
+      "rule": "list.name.length",
+      "name": "60 characters are accepted, 61 are not",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        },
+        {
+          "op": "list_create",
+          "name": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"]
+      }
+    },
+    {
+      "rule": "list.name.unique",
+      "name": "a taken name is refused, ignoring case",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "work"
+        },
+        {
+          "op": "list_create",
+          "name": "WORK "
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "validation"],
+        "lists": ["Work"]
+      }
+    },
+    {
+      "rule": "list.name.unique",
+      "name": "a taken name is refused, ignoring accents",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Café"
+        },
+        {
+          "op": "list_create",
+          "name": "cafe"
+        },
+        {
+          "op": "list_create",
+          "name": "Cafè"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "validation"],
+        "lists": ["Café"]
+      }
+    },
+    {
+      "rule": "list.order",
+      "name": "new Lists go last",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "a"
+        },
+        {
+          "op": "list_create",
+          "name": "b"
+        },
+        {
+          "op": "list_create",
+          "name": "c"
+        }
+      ],
+      "expect": {
+        "lists": ["a", "b", "c"]
+      }
+    },
+    {
+      "rule": "list.rename",
+      "name": "renaming changes the name",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_rename",
+          "list": 0,
+          "name": "House"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "lists": ["House"]
+      }
+    },
+    {
+      "rule": "list.rename",
+      "name": "renaming to its own name in another case is fine",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "home"
+        },
+        {
+          "op": "list_rename",
+          "list": 0,
+          "name": "Home"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "lists": ["Home"]
+      }
+    },
+    {
+      "rule": "list.rename",
+      "name": "renaming to another List's name is refused",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_rename",
+          "list": 1,
+          "name": "HOME"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation"],
+        "lists": ["Home", "Work"]
+      }
+    },
+    {
+      "rule": "list.rename",
+      "name": "renaming an unknown List is not found",
+      "steps": [
+        {
+          "op": "list_rename",
+          "list": "nope",
+          "name": "x"
+        }
+      ],
+      "expect": {
+        "results": ["not_found"]
+      }
+    },
+    {
+      "rule": "list.emoji",
+      "name": "an emoji can be set and cleared",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_emoji",
+          "list": 0,
+          "emoji": "🏠"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        }
+      ],
+      "expect": {
+        "emojis": ["🏠", null]
+      }
+    },
+    {
+      "rule": "list.emoji",
+      "name": "clearing returns to none",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_emoji",
+          "list": 0,
+          "emoji": "🏠"
+        },
+        {
+          "op": "list_emoji",
+          "list": 0,
+          "emoji": ""
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "emojis": [null]
+      }
+    },
+    {
+      "rule": "list.emoji",
+      "name": "letters and spaces are refused",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_emoji",
+          "list": 0,
+          "emoji": "home"
+        },
+        {
+          "op": "list_emoji",
+          "list": 0,
+          "emoji": "🏠 🏠"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "validation"],
+        "emojis": [null]
+      }
+    },
+    {
+      "rule": "task.create_in_list",
+      "name": "a Task can be created in a List",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Water plants",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Loose"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "inbox": ["Loose"],
+        "all": [["Inbox", ["Loose"]], ["Home", ["Water plants"]]],
+        "counts": [1, 1]
+      }
+    },
+    {
+      "rule": "task.create_in_list",
+      "name": "creating in an unknown List is not found",
+      "steps": [
+        {
+          "op": "create",
+          "title": "x",
+          "list": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["not_found"],
+        "inbox": []
+      }
+    },
+    {
+      "rule": "counts",
+      "name": "open counts leave out done Tasks",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "b",
+          "list": 0
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "create",
+          "title": "c"
+        }
+      ],
+      "expect": {
+        "counts": [1, 1]
+      }
+    },
+    {
+      "rule": "all.order",
+      "name": "All groups by List with the Inbox first, empty groups left out",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Empty"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "w",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "h",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "i"
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        }
+      ],
+      "expect": {
+        "all": [["Inbox", ["i"]], ["Home", ["h", "h2"]], ["Work", ["w"]]]
+      }
+    },
+    {
+      "rule": "all.order",
+      "name": "an empty Inbox is left out",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "h",
+          "list": 0
+        }
+      ],
+      "expect": {
+        "all": [["Home", ["h"]]]
+      }
+    },
+    {
+      "rule": "move",
+      "name": "a Task moves to a List and keeps its place in the order",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "create",
+          "title": "b"
+        },
+        {
+          "op": "create",
+          "title": "c"
+        },
+        {
+          "op": "move",
+          "task": 1,
+          "list": 0
+        },
+        {
+          "op": "move",
+          "task": 0,
+          "list": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok"],
+        "inbox": ["c"],
+        "all": [["Inbox", ["c"]], ["Home", ["a", "b"]]],
+        "counts": [1, 2]
+      }
+    },
+    {
+      "rule": "move",
+      "name": "a Task moves back to the Inbox",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "move",
+          "task": 0,
+          "list": null
+        }
+      ],
+      "expect": {
+        "inbox": ["a"],
+        "counts": [1, 0]
+      }
+    },
+    {
+      "rule": "move",
+      "name": "moving to an unknown List is not found",
+      "steps": [
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "move",
+          "task": 0,
+          "list": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "not_found"],
+        "inbox": ["a"]
+      }
+    },
+    {
+      "rule": "move",
+      "name": "moving an unknown Task is not found",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "move",
+          "task": "nope",
+          "list": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "not_found"]
+      }
+    },
+    {
+      "rule": "move",
+      "name": "moving to its own List changes nothing",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "move",
+          "task": 0,
+          "list": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "counts": [0, 1]
+      }
+    },
+    {
+      "rule": "move",
+      "name": "a done Task can be moved",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "move",
+          "task": 0,
+          "list": 0
+        },
+        {
+          "op": "reopen",
+          "task": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "all": [["Home", ["a"]]]
+      }
+    },
+    {
+      "rule": "list.delete.tasks",
+      "name": "deleting with the Tasks removes them",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "i1"
+        },
+        {
+          "op": "complete",
+          "task": 1
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Work"],
+        "all": [["Inbox", ["i1"]], ["Work", ["w1"]]],
+        "counts": [1, 1]
+      }
+    },
+    {
+      "rule": "list.delete.inbox",
+      "name": "moving the Tasks to the Inbox keeps them",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "i1"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "inbox"
+        }
+      ],
+      "expect": {
+        "lists": ["Work"],
+        "all": [["Inbox", ["h1", "h2", "i1"]], ["Work", ["w1"]]],
+        "counts": [3, 1]
+      }
+    },
+    {
+      "rule": "list.delete.list",
+      "name": "moving the Tasks to another List keeps them",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "i1"
+        },
+        {
+          "op": "complete",
+          "task": 1
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": {
+            "list": 1
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Work"],
+        "all": [["Inbox", ["i1"]], ["Work", ["h1", "w1"]]],
+        "counts": [1, 2]
+      }
+    },
+    {
+      "rule": "list.delete.empty",
+      "name": "an empty List deletes whatever the choice",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "lists": []
+      }
+    },
+    {
+      "rule": "list.delete.target",
+      "name": "moving into the deleted List itself is refused",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": {
+            "list": 0
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "validation"],
+        "lists": ["Home"],
+        "counts": [0, 1]
+      }
+    },
+    {
+      "rule": "list.delete.target",
+      "name": "moving into an unknown List is refused",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": {
+            "list": "nope"
+          }
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "not_found"],
+        "lists": ["Home"],
+        "counts": [0, 1]
+      }
+    },
+    {
+      "rule": "list.delete.missing",
+      "name": "deleting an unknown List is not found",
+      "steps": [
+        {
+          "op": "list_delete",
+          "list": "nope",
+          "choice": "delete"
+        }
+      ],
+      "expect": {
+        "results": ["not_found"]
+      }
+    },
+    {
+      "rule": "list.delete.twice",
+      "name": "deleting a deleted List is not found",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "not_found"]
+      }
+    },
+    {
+      "rule": "list.delete.name_free",
+      "name": "a deleted List's name can be used again",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_create",
+          "name": "home"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "lists": ["home"]
+      }
+    },
+    {
+      "rule": "list.restore.tasks",
+      "name": "restoring brings back the List and its Tasks in place",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "i1"
+        },
+        {
+          "op": "complete",
+          "task": 1
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Home", "Work"],
+        "all": [["Inbox", ["i1"]], ["Home", ["h1"]], ["Work", ["w1"]]],
+        "counts": [1, 1, 1]
+      }
+    },
+    {
+      "rule": "list.restore.inbox",
+      "name": "restoring after a move to the Inbox sends the Tasks home",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "i1"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "inbox"
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "lists": ["Home", "Work"],
+        "inbox": ["i1"],
+        "counts": [1, 2, 1]
+      }
+    },
+    {
+      "rule": "list.restore.list",
+      "name": "restoring after a move to a List sends the Tasks home",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "i1"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": {
+            "list": 1
+          }
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "lists": ["Home", "Work"],
+        "counts": [1, 2, 1]
+      }
+    },
+    {
+      "rule": "list.restore.order",
+      "name": "a restored List returns to its old place",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "a"
+        },
+        {
+          "op": "list_create",
+          "name": "b"
+        },
+        {
+          "op": "list_create",
+          "name": "c"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "lists": ["a", "b", "c"]
+      }
+    },
+    {
+      "rule": "list.restore.name_taken",
+      "name": "restoring is refused when the name was taken meanwhile",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "validation"],
+        "lists": ["Home"]
+      }
+    },
+    {
+      "rule": "list.restore.live",
+      "name": "restoring a live List is refused",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_delete",
+          "list": 0,
+          "choice": "delete"
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        },
+        {
+          "op": "list_restore",
+          "deletion": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "validation"]
       }
     }
   ]

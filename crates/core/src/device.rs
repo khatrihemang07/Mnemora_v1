@@ -43,6 +43,9 @@ pub struct SidebarState {
     pub width: u32,
     /// Collapsed to the icon rail.
     pub rail: bool,
+    /// The Todo views and Lists under "Todo" are unfolded. Entering and leaving Todo set it;
+    /// clicking the Todo row or its chevron flips it; it is restored as left.
+    pub todo_open: bool,
 }
 
 impl Default for SidebarState {
@@ -50,6 +53,7 @@ impl Default for SidebarState {
         Self {
             width: 248,
             rail: false,
+            todo_open: false,
         }
     }
 }
@@ -145,6 +149,7 @@ mod tests {
         let mut s = DeviceSettings::default();
         s.sidebar.width = 300;
         s.sidebar.rail = true;
+        s.sidebar.todo_open = true;
         s.window = WindowState {
             w: 900,
             h: 700,
@@ -167,6 +172,10 @@ mod tests {
         assert_eq!(s.log_level, "debug");
         assert!(s.sidebar.rail);
         assert_eq!(s.sidebar.width, SidebarState::default().width);
+        assert!(
+            !s.sidebar.todo_open,
+            "a file from before the fold state keeps it folded"
+        );
         assert_eq!(s.window, WindowState::default());
         assert!(s.spellcheck, "a file from before the flag keeps it on");
     }

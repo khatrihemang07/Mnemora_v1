@@ -4,6 +4,9 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod list;
+mod list_repo;
+mod list_service;
 mod migrations;
 mod repo;
 mod service;
@@ -14,7 +17,14 @@ use mnemora_core::settings::SettingsRegistry;
 use rusqlite_migration::Migrations;
 
 pub use error::TodoError;
-pub use service::{complete_task, create_task, inbox, reopen_task};
+pub use list::{
+    AllGroup, AllView, DeleteChoice, ListDeletion, ListEntry, ListView, MAX_LIST_NAME_CHARS,
+    SidebarView, TodoList,
+};
+pub use list_service::{
+    all, create_list, delete_list, list_view, rename_list, restore_list, set_list_emoji, sidebar,
+};
+pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use task::{InboxView, MAX_TITLE_CHARS, Task, TaskState};
 
 /// The Todo Module.

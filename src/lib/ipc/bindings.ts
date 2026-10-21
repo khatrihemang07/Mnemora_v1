@@ -13,6 +13,8 @@ export const commands = {
 	deviceGet: () => __TAURI_INVOKE<DeviceSettings>("device_get"),
 	/**  Remembers the sidebar layout. Width is clamped to the allowed range. */
 	deviceSetSidebar: (width: number, rail: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_sidebar", { width, rail })),
+	/**  Remembers whether Todo's views and Lists are unfolded under "Todo" in the sidebar. */
+	deviceSetTodoOpen: (open: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_todo_open", { open })),
 	/**  Changes the log level immediately and remembers it. */
 	deviceSetLogLevel: (level: string) => typedError<null, AppError>(__TAURI_INVOKE("device_set_log_level", { level })),
 	/**  Turns spellcheck in every text editor on or off, and remembers it on this device. */
@@ -64,14 +66,41 @@ export const commands = {
 	/**  The Inbox: open Tasks that belong to no List, in manual order (new Tasks last). */
 	todoInbox: () => typedError<InboxView, AppError>(__TAURI_INVOKE("todo_inbox")),
 	/**
-	 *  Adds a Task to the bottom of the Inbox. Rejects a blank title, one over 500 characters and
-	 *  one with a line break.
+	 *  Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
+	 *  title, one over 500 characters and one with a line break.
 	 */
-	todoTaskCreate: (title: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title })),
+	todoTaskCreate: (title: string, listId: string | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_create", { title, listId })),
 	/**  Marks an open Task done, now. */
 	todoTaskComplete: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_complete", { id })),
 	/**  Brings a done Task back to open, in its old place. */
 	todoTaskReopen: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_reopen", { id })),
+	/**
+	 *  Puts a Task in a List, or in the Inbox when `list_id` is none. Undo moves it back. Records
+	 *  a `move` change.
+	 */
+	todoTaskMove: (id: string, listId: string | null) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_move", { id, listId })),
+	/**  The sidebar's data: the Inbox's open count and every List, in order, with its open count. */
+	todoLists: () => typedError<SidebarView, AppError>(__TAURI_INVOKE("todo_lists")),
+	/**  One List and its open Tasks in manual order. */
+	todoList: (id: string) => typedError<ListView, AppError>(__TAURI_INVOKE("todo_list", { id })),
+	/**  Open Tasks grouped by List, the Inbox first. Empty groups are left out. */
+	todoAll: () => typedError<AllView, AppError>(__TAURI_INVOKE("todo_all")),
+	/**
+	 *  Adds a List at the bottom. Names are unique ignoring case and accents, and at most 60
+	 *  characters.
+	 */
+	todoListCreate: (name: string) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_create", { name })),
+	/**  Renames a List, under the same rules as creating one. */
+	todoListRename: (id: string, name: string) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_rename", { id, name })),
+	/**  Sets a List's emoji; none or blank goes back to the neutral icon. */
+	todoListSetEmoji: (id: string, emoji: string | null) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_emoji", { id, emoji })),
+	/**
+	 *  Deletes a List. Its Tasks are deleted too or moved to the Inbox or another List, as `choice`
+	 *  says. Returns what `todo_list_restore` needs to undo it.
+	 */
+	todoListDelete: (id: string, choice: DeleteChoice) => typedError<ListDeletion, AppError>(__TAURI_INVOKE("todo_list_delete", { id, choice })),
+	/**  Undoes `todo_list_delete`: the List, its deleted Tasks and its moved Tasks all return. */
+	todoListRestore: (deletion: ListDeletion) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_restore", { deletion })),
 };
 
 /** Events */
@@ -80,6 +109,20 @@ export const events = {
 };
 
 /* Types */
+/**  Open Tasks of one List (or the Inbox) inside the All view. */
+export type AllGroup = {
+	/**  The List; none is the Inbox. */
+	list: TodoList | null,
+	/**  Its open Tasks in manual order. */
+	tasks: Task[],
+};
+
+/**  The All view: open Tasks grouped by List, the Inbox first. Empty groups are left out. */
+export type AllView = {
+	/**  Groups, Inbox first, then Lists in order. */
+	groups: AllGroup[],
+};
+
 /**  Error returned from commands: `{code, message, details}`. */
 export type AppError = {
 	/**  Category for UI branching. */
@@ -99,6 +142,17 @@ export type AppInfo = {
 	/**  First name from the OS account, for the greeting when no display name is set. */
 	os_first_name: string,
 };
+
+/**  What happens to a deleted List's Tasks. */
+export type DeleteChoice = 
+/**  Delete them with the List (the default). */
+{ kind: "delete_tasks" } | 
+/**  Move them to the Inbox. */
+{ kind: "move_to_inbox" } | 
+/**  Move them to another List. */
+{ kind: "move_to_list"; 
+/**  The receiving List. */
+list_id: string };
 
 /**  Everything stored per device. */
 export type DeviceSettings = {
@@ -187,6 +241,32 @@ export type InboxView = {
  *  fields stay `serde_json::Value`, which specta cannot export (recursive, i64 numbers).
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**  What a List deletion did: hand it back to `todo_list_restore` to undo it. */
+export type ListDeletion = {
+	/**  The deleted List. */
+	list_id: string,
+	/**  Tasks that were deleted with it. */
+	deleted_task_ids: string[],
+	/**  Tasks that were moved out of it. */
+	moved_task_ids: string[],
+};
+
+/**  A List with its number of open Tasks. */
+export type ListEntry = {
+	/**  The List. */
+	list: TodoList,
+	/**  Open Tasks in it. */
+	open_count: number,
+};
+
+/**  One List's page: the List and its open Tasks in manual order. */
+export type ListView = {
+	/**  The List. */
+	list: TodoList,
+	/**  Its open Tasks. */
+	tasks: Task[],
+};
 
 /**  Everything the UI supplies to write a new Entry. */
 export type NewEntry = {
@@ -278,6 +358,19 @@ export type SidebarState = {
 	width?: number,
 	/**  Collapsed to the icon rail. */
 	rail?: boolean,
+	/**
+	 *  The Todo views and Lists under "Todo" are unfolded. Entering and leaving Todo set it;
+	 *  clicking the Todo row or its chevron flips it; it is restored as left.
+	 */
+	todo_open?: boolean,
+};
+
+/**  What the sidebar shows: the Inbox count and every List, first to last. */
+export type SidebarView = {
+	/**  Open Tasks with no List. */
+	inbox_count: number,
+	/**  Lists in their order. */
+	lists: ListEntry[],
 };
 
 /**  A run of snippet text, either plain or a match. */
@@ -357,6 +450,22 @@ export type TodaySummary = {
 	count: number,
 	/**  The Entry written last, `None` on an empty day. */
 	latest: TodayLatest | null,
+};
+
+/**  A flat group of Tasks. Tasks with no List are in the Inbox, which is not a List. */
+export type TodoList = {
+	/**  `UUIDv7`. */
+	id: string,
+	/**  Unique among Lists once case and accents are ignored; up to 60 characters. */
+	name: string,
+	/**  One emoji shown beside the name; none shows a neutral list icon. */
+	emoji: string | null,
+	/**  Text that sorts bytewise into the List order. */
+	sort_key: string,
+	/**  Row creation time: UTC milliseconds. */
+	created_at: number,
+	/**  Row update time: UTC milliseconds. */
+	updated_at: number,
 };
 
 /**  Last known window geometry. */

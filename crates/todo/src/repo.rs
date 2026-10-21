@@ -115,3 +115,83 @@ fn corrupt_or_db(e: rusqlite::Error) -> AppError {
         other => other.into(),
     }
 }
+
+/// Open, live Tasks of one List, in manual order.
+pub fn open_in_list(conn: &Connection, list_id: &str) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE list_id = ?1 AND state = 'open' AND deleted_at IS NULL
+         ORDER BY sort_key, id"
+    ))?;
+    stmt.query_map([list_id], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
+/// Open, live Tasks that belong to any List, in manual order.
+pub fn open_in_lists(conn: &Connection) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE list_id IS NOT NULL AND state = 'open' AND deleted_at IS NULL
+         ORDER BY sort_key, id"
+    ))?;
+    stmt.query_map([], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
+/// Open, live Task counts per List; the `None` entry is the Inbox.
+pub fn open_counts(conn: &Connection) -> AppResult<Vec<(Option<String>, u32)>> {
+    let mut stmt = conn.prepare(
+        "SELECT list_id, COUNT(*) FROM todo_tasks
+         WHERE state = 'open' AND deleted_at IS NULL GROUP BY list_id",
+    )?;
+    Ok(stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
+/// Every live Task of a List, whatever its state, in manual order.
+pub fn in_list(conn: &Connection, list_id: &str) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE list_id = ?1 AND deleted_at IS NULL ORDER BY sort_key, id"
+    ))?;
+    stmt.query_map([list_id], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
+/// A Task whether or not it is deleted.
+pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<Task>> {
+    conn.query_row(
+        &format!("SELECT {COLUMNS} FROM todo_tasks WHERE id = ?1"),
+        [id],
+        from_row,
+    )
+    .optional()
+    .map_err(corrupt_or_db)
+}
+
+/// Puts a Task in a List (none is the Inbox), and stamps `updated_at`.
+pub fn update_list(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET list_id = ?2, updated_at = ?3 WHERE id = ?1",
+        params![t.id, t.list_id, t.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Sets or clears `deleted_at` (soft delete and Undo).
+pub fn set_deleted(
+    conn: &Connection,
+    id: &str,
+    deleted_at: Option<i64>,
+    now: i64,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET deleted_at = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, deleted_at, now],
+    )?;
+    Ok(())
+}
