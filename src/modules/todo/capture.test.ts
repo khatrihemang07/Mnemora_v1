@@ -222,6 +222,33 @@ describe('#List suggestions', () => {
   });
 });
 
+describe('accepting a #List suggestion never duplicates the tag', () => {
+  const text = 'Call mum tomorrow to tell today at 6pm #ho';
+  const lists = [{ id: '1', name: 'Home', emoji: null }];
+  const hash = hashQuery(text, text.length);
+  const pick = listSuggestions(hash?.query ?? '', lists)[0];
+
+  // Tab, Enter and a click all go through the same completion, so one case covers each path.
+  it('Tab and Enter accept the highlighted row; the tag is replaced, not appended', () => {
+    for (const key of ['Tab', 'Enter']) {
+      expect(suggestionKey(key, false, { count: 1, index: 0 })).toEqual({ type: 'accept' });
+      if (!hash || !pick) throw new Error('no suggestion');
+      expect(applySuggestion(text, hash, pick).text).toBe(
+        'Call mum tomorrow to tell today at 6pm #Home ',
+      );
+    }
+  });
+
+  it('a click accepts the same row with the same result', () => {
+    if (!hash || !pick) throw new Error('no suggestion');
+    const done = applySuggestion(text, hash, pick);
+    expect(done.text.match(/#Home/g)).toHaveLength(1);
+    expect(done.caret).toBe(done.text.length);
+    // Completing again finds no tag at the caret, so nothing more is inserted.
+    expect(hashQuery(done.text, done.caret)).toBeNull();
+  });
+});
+
 describe('Quick edit leaves the old title alone', () => {
   it('freezes everything when nothing changed', () => {
     expect(unchangedRanges('Pay rent tomorrow', 'Pay rent tomorrow')).toEqual([
