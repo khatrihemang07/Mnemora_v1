@@ -90,7 +90,9 @@
                   onclick={() => shell.toggleSidebar()}
                 />
               </div>
-              {#if pageHeader.current}
+              {#if pageHeader.current?.heading}
+                <div class="ml-2 flex min-w-0 items-center gap-2">{@render pageHeader.current.heading()}</div>
+              {:else if pageHeader.current}
                 {@const Icon = pageHeader.current.icon}
                 {#if Icon}
                   <span

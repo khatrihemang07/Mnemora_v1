@@ -9,3 +9,8 @@ export const setTimer = (fn: () => void, ms: number): (() => void) => {
 
 /** Waits this long after the last change before writing a Device setting. */
 export const PERSIST_DEBOUNCE_MS = 300;
+
+/** The hover that opens the icon rail's flyout, like a rail tooltip (N17-A). */
+export const RAIL_FLYOUT_DELAY_MS = 600;
+/** How long the flyout waits after the pointer leaves it and its icon before closing. */
+export const RAIL_FLYOUT_LEAVE_MS = 250;

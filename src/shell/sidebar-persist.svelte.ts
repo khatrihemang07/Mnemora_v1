@@ -4,7 +4,7 @@ import { deviceQuery } from '../lib/settings/queries';
 import { PERSIST_DEBOUNCE_MS } from '../lib/timing';
 import { shell } from './shell-state.svelte';
 
-/** Restores the sidebar layout once from Device settings, then persists changes (debounced). */
+/** Restores the sidebar layout and tree fold once from Device settings, then persists changes (debounced). */
 export function useSidebarPersistence() {
   const device = createQuery(() => deviceQuery);
 
@@ -12,7 +12,14 @@ export function useSidebarPersistence() {
     if (shell.layoutReady || !(device.isSuccess || device.isError)) return;
     const s = device.data?.sidebar;
     shell.layout = { width: s?.width ?? shell.layout.width, rail: s?.rail ?? false };
+    shell.treeOpen = s?.todo_open ?? false;
     shell.layoutReady = true;
+  });
+  $effect(() => {
+    if (!shell.layoutReady) return;
+    const open = shell.treeOpen;
+    const t = setTimeout(() => void commands.deviceSetTodoOpen(open), PERSIST_DEBOUNCE_MS);
+    return () => clearTimeout(t);
   });
   $effect(() => {
     if (!shell.layoutReady) return;

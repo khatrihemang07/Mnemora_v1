@@ -2,7 +2,7 @@
   NewTaskRow: "+ New task" at the end of the list. Click (or Enter) turns it into an inline field in
   place. Enter adds the Task and keeps the field open for the next; Esc or clicking away closes it
   (what was typed is dropped). Rust validates the title; a rejected one stays in the field with the
-  reason in a toast.
+  reason in a toast. With a `listId` the Task is added to that List instead of the Inbox.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -12,6 +12,8 @@
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import { createTask, invalidateTodo } from './queries';
+
+  let { listId = null }: { listId?: string | null } = $props();
 
   /** Longest title; Rust enforces it too. */
   const MAX_TITLE = 500;
@@ -38,7 +40,7 @@
     if (!title.trim()) return;
     value = '';
     try {
-      await createTask(title);
+      await createTask(title, listId);
     } catch (e) {
       // Put the text back unless the user already started the next one.
       if (!value) value = title;

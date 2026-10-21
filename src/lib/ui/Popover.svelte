@@ -4,7 +4,9 @@
   and focus handling; focus returns to the anchor on dismissal, or wherever `restoreFocus` says. Clicking the anchor itself never
   counts as "outside", so the button that opens it can also close it. `focus` is an optional CSS
   selector for what to focus on open (default: the first focusable). Marked `data-editor-popup` so
-  an open Entry editor does not treat clicks inside as "outside" and close.
+  an open Entry editor does not treat clicks inside as "outside" and close. `flush` gives the Menu's tight
+  padding (a list of rows); `autofocus={false}` leaves focus where it was on open (a
+  panel opened by hover).
 -->
 <script lang="ts">
   import { Popover } from 'bits-ui';
@@ -16,11 +18,13 @@
     anchor: HTMLElement | null;
     /** Names the panel for screen readers. */
     label: string;
-    side?: 'top' | 'bottom';
+    side?: 'top' | 'right' | 'bottom';
     align?: 'start' | 'center' | 'end';
     focus?: string;
     /** Takes over focus on dismissal (e.g. into an editor) instead of the anchor. */
     restoreFocus?: () => void;
+    flush?: boolean;
+    autofocus?: boolean;
     children: Snippet;
   }
   let {
@@ -31,6 +35,8 @@
     align = 'start',
     focus,
     restoreFocus,
+    flush = false,
+    autofocus = true,
     children,
   }: Props = $props();
 
@@ -39,6 +45,10 @@
   let content = $state<HTMLElement | null>(null);
 
   function onOpenAutoFocus(e: Event) {
+    if (!autofocus) {
+      e.preventDefault();
+      return;
+    }
     if (!focus) return;
     const target = content?.querySelector<HTMLElement>(focus);
     if (!target) return;
@@ -69,7 +79,7 @@
       onInteractOutside={(e) => {
         if (e.target instanceof Node && anchor?.contains(e.target)) e.preventDefault();
       }}
-      class="z-50 rounded-md bg-pop p-3 text-sm leading-normal shadow-pop outline-none"
+      class="z-50 rounded-md bg-pop {flush ? 'p-1.25' : 'p-3'} text-sm leading-normal shadow-pop outline-none"
     >
       {@render children()}
     </Popover.Content>

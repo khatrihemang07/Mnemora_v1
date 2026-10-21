@@ -8,6 +8,7 @@
   import AppMark from '../lib/ui/AppMark.svelte';
   import EnvBadge from '../lib/ui/EnvBadge.svelte';
   import NavItem from './NavItem.svelte';
+  import TreeNavItem from './TreeNavItem.svelte';
   import TitleBar from './TitleBar.svelte';
   import { useEnabledModules } from './enabled.svelte';
   import { router } from './router';
@@ -45,15 +46,19 @@
       <div class="my-1.5 h-px bg-line"></div>
     {/if}
     {#each main as e (e.id)}
-      <NavItem
-        label={e.manifest.name}
-        icon={e.manifest.icon}
-        href={router.href(e.path)}
-        active={router.isActive(e.path)}
-        accentVar={e.manifest.accentVar}
-        shortcut={hint(e.manifest.nav.shortcut)}
-        {rail}
-      />
+      {#if e.manifest.navTree}
+        <TreeNavItem entry={e} {rail} shortcut={hint(e.manifest.nav.shortcut)} />
+      {:else}
+        <NavItem
+          label={e.manifest.name}
+          icon={e.manifest.icon}
+          href={router.href(e.path)}
+          active={router.isActive(e.path)}
+          accentVar={e.manifest.accentVar}
+          shortcut={hint(e.manifest.nav.shortcut)}
+          {rail}
+        />
+      {/if}
     {/each}
     <div class="flex-1"></div>
     {#each bottom as e (e.id)}
