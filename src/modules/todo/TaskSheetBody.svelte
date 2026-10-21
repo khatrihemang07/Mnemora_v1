@@ -288,8 +288,7 @@
 
 <svelte:window onkeydowncapture={onkeydown} />
 
-<div data-task-sheet class="flex flex-col gap-3 px-4 pt-3 pb-3.5 phone:px-3.5">
-  <div class="mx-auto -mb-1 h-1 w-9 shrink-0 rounded-full bg-line desktop:hidden"></div>
+<div data-task-sheet class="flex flex-col gap-3 px-4 pt-3 pb-3.5 phone:min-h-full phone:px-3.5 phone:pt-6">
   {#if query.isPending || !stored || !editing}
     {#if query.isError}
       <ErrorBanner message="The Task couldn't load." error={query.error} onretry={() => query.refetch()} />
@@ -417,7 +416,7 @@
       <HistorySection taskId={id} />
     </div>
 
-    <div class="flex items-center gap-2.5 border-t border-line pt-2 text-[0.72rem] text-faint">
+    <div class="flex items-center gap-2.5 border-t border-line pt-2 text-[0.72rem] text-faint phone:mt-auto">
       <span>
         Created {stampLabel(stored.created_at, todoClock.today, todoPrefs.timeFormat, false)}{#if footerDone} · {footerDone}{/if}
       </span>

@@ -37,3 +37,62 @@ export const viewLabel = (id: SmartViewId): string =>
 export function viewAfterListGone(view: TodoView, listId: string): TodoView {
   return view.kind === 'list' && view.id === listId ? smartView('inbox') : view;
 }
+
+/** The phone's pinned segments, left to right; ☰ at the end holds the rest. */
+export const PHONE_SEGMENTS: readonly SmartViewId[] = ['today', 'upcoming', 'inbox'];
+
+/** Which segment is lit: one of the three, or `more` (☰) for All, Done and the Lists. */
+export function activeSegment(view: TodoView): SmartViewId | 'more' {
+  return view.kind === 'smart' && PHONE_SEGMENTS.includes(view.id) ? view.id : 'more';
+}
+
+/**
+ * The view a swipe on the title or segment bar moves to: the next (`1`) or previous (`-1`) of the
+ * three segments. It stops at the ends, and does nothing from a view that is not a segment.
+ */
+export function swipedView(view: TodoView, step: -1 | 1): TodoView | null {
+  if (view.kind !== 'smart') return null;
+  const at = PHONE_SEGMENTS.indexOf(view.id);
+  const to = PHONE_SEGMENTS[at + step];
+  return at === -1 || to === undefined ? null : smartView(to);
+}
+
+/**
+ * Where the phone's + adds: the Task is due today in Today, tomorrow in Upcoming, in the List in a
+ * List, and in the Inbox elsewhere.
+ */
+export function addPlaceFor(
+  view: TodoView,
+  today: string,
+  tomorrow: string,
+): { date: string | null; listId: string | null } {
+  if (view.kind === 'list') return { date: null, listId: view.id };
+  if (view.id === 'today') return { date: today, listId: null };
+  if (view.id === 'upcoming') return { date: tomorrow, listId: null };
+  return { date: null, listId: null };
+}
+
+/**
+ * Whether a new open Task shows on `view` as it stands: Today holds what is due today or earlier,
+ * Upcoming what is due later, the Inbox what has no List (and undated ones from Lists), a List its
+ * own Tasks, All everything open, and Done nothing open.
+ */
+export function visibleOn(
+  view: TodoView,
+  task: { due_date: string | null; list_id: string | null },
+  today: string,
+): boolean {
+  if (view.kind === 'list') return task.list_id === view.id;
+  switch (view.id) {
+    case 'today':
+      return task.due_date !== null && task.due_date <= today;
+    case 'upcoming':
+      return task.due_date !== null && task.due_date > today;
+    case 'inbox':
+      return task.list_id === null || task.due_date === null;
+    case 'all':
+      return true;
+    case 'done':
+      return false;
+  }
+}

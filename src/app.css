@@ -26,6 +26,7 @@
   --color-muted: var(--muted);
   --color-faint: var(--faint);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-hover: var(--hover);
   --color-active: var(--active);
   --color-accent: var(--accent);
@@ -232,5 +233,25 @@ textarea,
 @media (prefers-reduced-motion: reduce) {
   :is(.flash, .flash-header) {
     background-color: var(--flash-tint);
+  }
+}
+
+/* Todo on a phone: the view a swipe moved to slides in from the side it was swiped towards. Zero under reduced motion (--dur-fade). */
+.view-slide-next {
+  animation: view-slide-next var(--dur-fade) var(--ease) both;
+}
+.view-slide-prev {
+  animation: view-slide-prev var(--dur-fade) var(--ease) both;
+}
+@keyframes view-slide-next {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes view-slide-prev {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
   }
 }

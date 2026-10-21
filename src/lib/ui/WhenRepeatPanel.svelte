@@ -125,7 +125,7 @@
 
 <div
   data-when-repeat
-  class="absolute inset-x-1.5 inset-y-1 z-10 flex flex-col overflow-hidden rounded-md border border-line bg-pop shadow-pop"
+  class="absolute inset-x-1.5 inset-y-1 z-10 flex flex-col overflow-hidden rounded-md border border-line-strong bg-pop shadow-pop"
 >
   <div class="flex items-center gap-1 border-b border-line py-0.5 pr-1 pl-2">
     {#if view === 'custom'}

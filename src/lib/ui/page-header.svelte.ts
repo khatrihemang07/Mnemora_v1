@@ -15,8 +15,21 @@ export interface PageHeaderEntry {
 /** What the desktop top bar shows. Written by `PageHeader`, read by the shell's top bar. */
 class PageHeaderState {
   current = $state.raw<PageHeaderEntry | null>(null);
+  /**
+   * A bar a page pins under its large title on a phone (Todo's view segments). Set by the page's
+   * owner, drawn by `PageHeader` where the title is, so it follows whichever view is showing.
+   */
+  phoneBar = $state.raw<Snippet | null>(null);
   /** The build's Environment, set once by the shell; the phone title shows a SANDBOX badge from it. */
   env = $state<Environment | null>(null);
+
+  /** Pin `bar` under the phone title until the returned function runs. */
+  setPhoneBar(bar: Snippet): () => void {
+    this.phoneBar = bar;
+    return () => {
+      if (this.phoneBar === bar) this.phoneBar = null;
+    };
+  }
 
   /** Claim the bar; the returned function releases it unless a newer page already took over. */
   set(entry: PageHeaderEntry): () => void {

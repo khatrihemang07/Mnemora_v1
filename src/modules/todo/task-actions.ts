@@ -1,7 +1,9 @@
+import { lightTick } from '../../lib/haptic';
 import type { Completion, DueChange, GroupKey, Task, TodoList } from '../../lib/ipc/bindings';
 import { IpcError } from '../../lib/ipc/unwrap';
 import { notifyError, notifyUndo } from '../../lib/ui/toast';
 import type { RepeatRule } from '../../lib/ui/when-repeat';
+import { viewport } from '../../lib/viewport.svelte';
 import { todoClock } from './clock.svelte';
 import {
   completedRepeatMessage,
@@ -71,6 +73,8 @@ export async function tickAllAndComplete(task: Task): Promise<void> {
  * brings the Task back from Rust's truth. Returns the Task as it is now, or none on failure.
  */
 export async function completeNow(task: Task): Promise<Task | null> {
+  // A light tick on a phone, at once, while the touch that asked for it still counts.
+  if (viewport.isPhone) lightTick();
   const repeating = task.repeat_freq !== null;
   if (!repeating) removeCachedTask(task.id);
   let done: Completion;

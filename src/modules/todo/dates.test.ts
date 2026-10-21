@@ -3,6 +3,7 @@ import {
   closedTime,
   dayHeading,
   isOverdue,
+  landedIn,
   localNow,
   longDate,
   movedAllMessage,
@@ -161,5 +162,15 @@ describe('whenChipLabel', () => {
       repeat_mode: 'fixed',
     };
     expect(whenChipLabel(repeating, TODAY, '24h')).toBe('Today · Every month');
+  });
+});
+
+describe('landedIn', () => {
+  it('names the day for a dated Task and the List or Inbox for an undated one', () => {
+    expect(landedIn({ due_date: '2026-10-22' }, null, TODAY)).toBe('Upcoming · Thu 22 Oct');
+    expect(landedIn({ due_date: '2026-10-21' }, null, TODAY)).toBe('Today');
+    expect(landedIn({ due_date: '2026-10-20' }, null, TODAY)).toBe('Today');
+    expect(landedIn({ due_date: null }, 'Groceries', TODAY)).toBe('Groceries');
+    expect(landedIn({ due_date: null }, null, TODAY)).toBe('Inbox');
   });
 });

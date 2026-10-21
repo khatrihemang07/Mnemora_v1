@@ -10,6 +10,8 @@ class QuickAdd {
   floating = $state(false);
   /** The day a Task added in the floating box is due: Home's Add button opens it on today. */
   date = $state<string | null>(null);
+  /** The List a Task added in the floating box goes to (the phone's + inside a List). */
+  listId = $state<string | null>(null);
 
   /** `inTodo`: the shell says Todo is the page on screen. */
   request(inTodo: boolean): void {
@@ -29,15 +31,20 @@ class QuickAdd {
     this.openFloating(null);
   }
 
-  /** Opens the floating box, optionally with a day its Tasks are due (Home's Add: today). */
-  openFloating(date: string | null): void {
+  /**
+   * Opens the floating box, optionally with a day its Tasks are due (Home's Add: today) and a List
+   * they go to (the phone's + button takes both from the view it is pressed in).
+   */
+  openFloating(date: string | null, listId: string | null = null): void {
     this.date = date;
+    this.listId = listId;
     this.floating = true;
   }
 
   close(): void {
     this.floating = false;
     this.date = null;
+    this.listId = null;
   }
 }
 

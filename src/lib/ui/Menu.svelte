@@ -35,6 +35,7 @@
   import Check from '~icons/lucide/check';
   import { closeOnBack } from '../router/back-button.svelte';
   import Kbd from './Kbd.svelte';
+  import { afterRelease } from './pointer-held';
 
   interface Props {
     open: boolean;
@@ -61,6 +62,15 @@
   closeOnBack(() => open, () => (open = false));
 
   let picked = false;
+
+  // A menu opened by a long-press appears under a finger that is still down; that finger's release
+  // (and the click after it) must neither pick an item nor count as a tap outside.
+  let settled = $state(true);
+  $effect(() => {
+    if (!open) return;
+    settled = false;
+    return afterRelease(() => (settled = true));
+  });
 
   // Bits positions against anything that can measure itself; a point is a zero-size rectangle.
   const measurable = $derived(
@@ -91,6 +101,7 @@
       collisionPadding={8}
       aria-label={label}
       {onCloseAutoFocus}
+      onInteractOutside={(e) => !settled && e.preventDefault()}
       class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-sm leading-normal shadow-pop outline-none"
     >
       {#if heading}
@@ -104,7 +115,8 @@
         <DropdownMenu.Item
           textValue={item.label}
           disabled={item.disabled}
-          onSelect={() => {
+          onSelect={(e) => {
+            if (!settled) return e.preventDefault();
             picked = true;
             item.onselect();
           }}

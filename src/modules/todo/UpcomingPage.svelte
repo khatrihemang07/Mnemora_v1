@@ -78,7 +78,7 @@
   {#snippet actions()}<TodoActions />{/snippet}
 </PageHeader>
 <div class="mx-auto max-w-3xl">
-  <div class="sticky -top-(--pad) z-10 -mt-(--pad) mb-2 bg-bg pt-(--pad)">
+  <div class="sticky -top-(--pad) z-10 -mt-(--pad) mb-2 bg-bg pt-(--pad) phone:top-14 phone:mt-0 phone:pt-0">
     {#if byDay || view === undefined}
       <WeekStrip
         today={todoClock.today}

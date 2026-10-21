@@ -13,6 +13,7 @@ export type {
   NavFlyoutProps,
   NavTree,
   NavTreeProps,
+  PhoneTabActions,
   RouteLoader,
   RoutePath,
 } from './manifest';

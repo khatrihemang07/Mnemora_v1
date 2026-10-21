@@ -33,6 +33,15 @@ export interface BareKey {
   run: (ctx: ModuleContext) => void;
 }
 
+/**
+ * What a Module does with its own tab in the phone tab bar, beyond going to its page: when the tab
+ * is tapped while the Module is already on screen, and when it is long-pressed (from any page).
+ */
+export interface PhoneTabActions {
+  onActiveTap?: (ctx: ModuleContext) => void;
+  onLongPress?: (ctx: ModuleContext) => void;
+}
+
 /** What the shell gives a Module's sidebar tree. */
 export interface NavTreeProps {
   ctx: ModuleContext;
@@ -98,6 +107,8 @@ export interface ModuleManifest {
   /** What ⌘N does while this Module is enabled (the first enabled Module with one wins). */
   create?: (ctx: ModuleContext) => void;
   paletteActions?: ModuleAction[];
+  /** What its phone tab does when tapped again or long-pressed (Todo: back to Today, Quick add). */
+  phoneTab?: PhoneTabActions;
   /** Bare single-key shortcuts that work anywhere in the app. */
   bareKeys?: BareKey[];
   /** A component the shell mounts for as long as the Module is on (a floating box a key opens). */
