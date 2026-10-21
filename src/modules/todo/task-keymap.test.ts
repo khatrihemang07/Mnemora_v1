@@ -91,7 +91,10 @@ describe('who the key is for', () => {
     expect(action(key(' ', { shiftKey: true }), noTarget)).toBeNull();
     for (const k of ['e', 'd', 't', 'm', '3']) expect(action(key(k), scene())).not.toBeNull();
     expect(action(key(' ', { shiftKey: true }), scene())).toEqual({ type: 'wont' });
-    expect(action(key('ArrowDown', { altKey: true }), scene())).toEqual({ type: 'reorder', dir: 1 });
+    expect(action(key('ArrowDown', { altKey: true }), scene())).toEqual({
+      type: 'reorder',
+      dir: 1,
+    });
   });
 
   it('with no Task, every Task key does nothing and nothing is handled', () => {

@@ -296,9 +296,15 @@ export function pasteIntoTitle(
     .map((l) => l.trim())
     .filter(Boolean);
   if (lines.length < 2) return null;
-  const room = Math.max(0, MAX_TITLE - [...text.slice(0, start)].length - [...text.slice(end)].length);
+  const room = Math.max(
+    0,
+    MAX_TITLE - [...text.slice(0, start)].length - [...text.slice(end)].length,
+  );
   const insert = [...lines.join(' ')].slice(0, room).join('');
-  return { text: `${text.slice(0, start)}${insert}${text.slice(end)}`, caret: start + insert.length };
+  return {
+    text: `${text.slice(0, start)}${insert}${text.slice(end)}`,
+    caret: start + insert.length,
+  };
 }
 
 // --- What the Task gets ----------------------------------------------------------------------------
