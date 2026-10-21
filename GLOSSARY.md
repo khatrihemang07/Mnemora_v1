@@ -169,6 +169,10 @@ _Avoid_: Selection, cursor
 Pressing G and then T, U, I, A or D within a moment to go to Today, Upcoming, Inbox, All or Done.
 _Avoid_: Leader key, vim keys
 
+**Todo widget**:
+The Android home-screen widget that shows one Todo view (Today, Upcoming, Inbox, All or a List), lets you complete its Tasks in place and add new ones. Each one placed on the home screen is set to its own view.
+_Avoid_: Widget (alone), home card, launcher card
+
 **Todo badge**:
 The count beside Todo in the sidebar and on the phone tab bar: Tasks due today plus Overdue ones, red while anything is Overdue, hidden at zero. The Inbox and Today counts under Todo are separate.
 _Avoid_: Notification count, unread
