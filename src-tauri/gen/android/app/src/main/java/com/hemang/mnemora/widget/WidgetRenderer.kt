@@ -89,6 +89,8 @@ object WidgetRenderer {
         }
         views.setViewVisibility(R.id.message, View.GONE)
         views.setViewVisibility(R.id.list, View.VISIBLE)
+        // New contents start at the top, not where the last draw was scrolled to.
+        views.setScrollPosition(R.id.list, 0)
         views.setPendingIntentTemplate(R.id.list, open)
         views.setRemoteAdapter(R.id.list, items(context, palette, RowItems.flatten(snapshot.groups)))
     }

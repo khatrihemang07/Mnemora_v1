@@ -8,6 +8,9 @@ object Midnight {
     /** A few seconds past midnight, so the clock has certainly crossed it. */
     private const val SLACK_MS = 5_000L
 
+    /** How long the alarm may be delayed: an inexact window needs no permission and stays close to midnight. */
+    const val WINDOW_MS = 10 * 60_000L
+
     /** The next local midnight after [nowMs] in [zone] (daylight-saving aware), plus a little slack. */
     fun nextAfter(nowMs: Long, zone: ZoneId): Long {
         val today = Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()

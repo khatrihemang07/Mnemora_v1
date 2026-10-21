@@ -12,21 +12,21 @@
 
     <FrameLayout
         android:id="@+id/diamond"
-        android:layout_width="30dp"
-        android:layout_height="30dp">
+        android:layout_width="30sp"
+        android:layout_height="30sp">
 
         <ImageView
             android:id="@+id/diamond_fill"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:layout_width="22sp"
+            android:layout_height="22sp"
             android:layout_gravity="center"
             android:importantForAccessibility="no"
             android:src="@drawable/widget_diamond_fill" />
 
         <ImageView
             android:id="@+id/diamond_edge"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
+            android:layout_width="22sp"
+            android:layout_height="22sp"
             android:layout_gravity="center"
             android:importantForAccessibility="no"
             android:src="@drawable/widget_diamond_edge" />

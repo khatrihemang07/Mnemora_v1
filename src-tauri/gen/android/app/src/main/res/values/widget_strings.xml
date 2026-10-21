@@ -4,7 +4,7 @@
     <string name="widget_not_set_up_title">Open Mnemora once</string>
     <string name="widget_not_set_up_line">to set up your Todo widget</string>
     <string name="widget_needs_update_title">Open Mnemora to update</string>
-    <string name="widget_needs_update_line">Mnemora was updated. Open it once and the Todo widget comes back.</string>
+    <string name="widget_needs_update_line">Open it once and the Todo widget comes back.</string>
     <string name="widget_failed_title">Couldn\'t load Tasks</string>
     <string name="widget_failed_line">Tap to open Mnemora</string>
     <string name="widget_sandbox_tag">SANDBOX</string>

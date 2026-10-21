@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use jni::objects::{GlobalRef, JClass, JString};
 use jni::sys::jstring;
@@ -26,6 +27,9 @@ static LOG: OnceLock<LogHandle> = OnceLock::new();
 /// How to reach `WidgetBridge.onTodoChanged` from any thread.
 static NOTIFIER: OnceLock<Notifier> = OnceLock::new();
 
+/// A signal that fired before `nativeAttach` ran (the app's setup can finish first).
+static MISSED: AtomicBool = AtomicBool::new(false);
+
 struct Notifier {
     vm: JavaVM,
     class: GlobalRef,
@@ -39,6 +43,7 @@ pub fn register_app(app: AppHandle<tauri::Wry>) {
 /// Asks the Android side to redraw the Todo widgets. Quietly does nothing if it cannot.
 pub fn notify_todo_changed() {
     let Some(notifier) = NOTIFIER.get() else {
+        MISSED.store(true, Ordering::Relaxed);
         return;
     };
     let Ok(mut env) = notifier.vm.attach_current_thread() else {
@@ -91,6 +96,10 @@ pub extern "system" fn Java_com_hemang_mnemora_widget_WidgetBridge_nativeAttach(
         return;
     };
     let _ = NOTIFIER.set(Notifier { vm, class });
+    // Setup may have finished (database created or migrated) before this ran.
+    if MISSED.swap(false, Ordering::Relaxed) {
+        notify_todo_changed();
+    }
 }
 
 /// `WidgetBridge.nativeCall(dataDir, request)`: one JSON request in, one JSON reply out. Null

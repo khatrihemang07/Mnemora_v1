@@ -231,6 +231,10 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     app.manage(state);
     #[cfg(target_os = "android")]
     widget::register_app(app.handle().clone());
+    // A Todo widget placed before the app ever ran (or before an update) shows a "open Mnemora"
+    // state; now that the database exists and is current, it should redraw without waiting for
+    // the next Todo write.
+    app.state::<AppState>().widgets.todo_changed();
 
     create_main_window(app, &snapshot.values, &device)?;
     Ok(())

@@ -26,7 +26,12 @@ object WidgetUpdater {
     private val queued = AtomicBoolean(false)
 
     /** True for the broadcasts that mean "redraw all widgets". */
-    fun isRedrawAction(action: String?) = action == ACTION_TODO_CHANGED || action == ACTION_MIDNIGHT
+    fun isRedrawAction(action: String?) = when (action) {
+        ACTION_TODO_CHANGED, ACTION_MIDNIGHT,
+        // The day or clock moved, so Today and Overdue may have changed.
+        Intent.ACTION_TIME_CHANGED, Intent.ACTION_TIMEZONE_CHANGED, Intent.ACTION_DATE_CHANGED -> true
+        else -> false
+    }
 
     /** Todo data changed in the app: ask the provider to redraw all widgets. Safe on any thread. */
     fun signalChanged(context: Context) {
@@ -82,11 +87,11 @@ object WidgetUpdater {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-    /** Inexact on purpose: no exact-alarm permission, and a few minutes late is fine. Re-armed on every update. */
+    /** Inexact on purpose (a 10 minute window): no exact-alarm permission, and never an hour late. Re-armed on every update. */
     private fun armMidnight(context: Context, zone: ZoneId) {
         val alarms = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val at = Midnight.nextAfter(System.currentTimeMillis(), zone)
-        alarms.setAndAllowWhileIdle(AlarmManager.RTC, at, midnightIntent(context))
+        alarms.setWindow(AlarmManager.RTC, at, Midnight.WINDOW_MS, midnightIntent(context))
     }
 
     /** Called when the last widget is removed. */

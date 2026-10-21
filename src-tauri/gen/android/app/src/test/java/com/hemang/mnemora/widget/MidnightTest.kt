@@ -32,4 +32,9 @@ class MidnightTest {
         val noon = ms("2026-03-08T12:00:00-04:00", "America/New_York")
         assertEquals(ms("2026-03-09T00:00:05-04:00", "America/New_York"), Midnight.nextAfter(noon, zone))
     }
+
+    @Test
+    fun theAlarmWindowIsTenMinutes() {
+        assertEquals(10 * 60 * 1000L, Midnight.WINDOW_MS)
+    }
 }
