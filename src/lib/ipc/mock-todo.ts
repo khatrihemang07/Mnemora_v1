@@ -43,7 +43,7 @@ import { historyOf, type LogRecord } from './mock-todo-history';
 const MAX_TITLE_CHARS = 500;
 const MAX_LIST_NAME_CHARS = 60;
 const MAX_EMOJI_CHARS = 16;
-const MAX_COMMENT_CHARS = 1000;
+const MAX_COMMENT_CHARS = 5000;
 
 const fail = (code: AppError['code'], message: string): AppError => ({
   code,
@@ -89,9 +89,8 @@ export function validateTitle(title: string): string {
 export function validateBody(body: string): string {
   const b = body.trim();
   if (!b) throw fail('validation', "A comment can't be blank");
-  if (/[\n\r]/.test(b)) throw fail('validation', 'A comment must be a single line');
   if ([...b].length > MAX_COMMENT_CHARS) {
-    throw fail('validation', 'A comment can be at most 1000 characters');
+    throw fail('validation', 'A comment can be at most 5000 characters');
   }
   return b;
 }
@@ -771,6 +770,9 @@ export function createTodoMock() {
         }
         case 'todo_task_update': {
           const title = validateTitle(a.title as string);
+          if ([...(a.notes as string)].length > 100_000) {
+            throw fail('validation', 'Notes can be at most 100,000 characters');
+          }
           const session = a.sessionId as string;
           if (!session.trim()) throw fail('validation', 'An editing session needs an id');
           const task = find(a.id);

@@ -648,7 +648,7 @@ fn bad_comments_are_refused_and_record_nothing() {
     let app = TestApp::new();
     let a = create(&app, "a");
     let before = log_len(&app);
-    for bad in ["", "  ", "two\nlines"] {
+    for bad in ["", "  ", "\n\n"] {
         let err = app
             .invoke::<Value>(
                 "todo_comment_add",
@@ -657,7 +657,7 @@ fn bad_comments_are_refused_and_record_nothing() {
             .unwrap_err();
         assert_eq!(err["code"], "validation", "{bad:?}");
     }
-    let long = "x".repeat(1001);
+    let long = "x".repeat(5001);
     let err = app
         .invoke::<Value>(
             "todo_comment_add",
@@ -810,7 +810,8 @@ fn history_reads_the_change_log_as_lines_newest_first() {
         [
             "Reopened",
             "Won’t do",
-            "Title and notes edited",
+            "Title edited",
+            "Notes edited",
             "Moved 📥 Inbox → 💼 Work",
             "Priority P4 → P1",
             "Due date Thu 22 Oct → Fri 23 Oct",
@@ -845,6 +846,68 @@ fn title_and_notes_edits_make_one_line_per_opening_of_the_sheet() {
         history(&app, &a),
         ["Title edited", "Notes edited", "Created"]
     );
+}
+
+#[test]
+fn one_opening_is_one_line_per_field_even_when_other_changes_happen_in_between() {
+    let app = TestApp::new();
+    let a = create(&app, "a");
+    // Millisecond clock: let each step land in its own millisecond so the order is the real one.
+    let pause = || std::thread::sleep(std::time::Duration::from_millis(3));
+    pause();
+    update(&app, &a, "first", "x", "sheet");
+    pause();
+    priority(&app, &a, 1).unwrap();
+    pause();
+    update(&app, &a, "second", "xy", "sheet");
+    pause();
+    app.invoke::<Value>(
+        "todo_task_set_when",
+        json!({ "id": a["id"], "date": "2026-10-22", "time": null, "local": local(TODAY) }),
+    )
+    .unwrap();
+    pause();
+    update(&app, &a, "third", "xyz", "sheet");
+    assert_eq!(
+        history(&app, &a),
+        [
+            "Title edited",
+            "Notes edited",
+            "Due date no date → Thu 22 Oct",
+            "Priority P4 → P1",
+            "Created"
+        ],
+        "one Title edited and one Notes edited, whatever else happened during the opening"
+    );
+    pause();
+    update(&app, &a, "fourth", "xyz", "another");
+    assert_eq!(history(&app, &a)[0], "Title edited");
+    assert_eq!(history(&app, &a).len(), 6);
+}
+
+#[test]
+fn a_comment_may_hold_line_breaks_and_up_to_5000_characters() {
+    let app = TestApp::new();
+    let a = create(&app, "a");
+    let c = comment(&app, &a, "one\ntwo");
+    assert_eq!(c["body"], "one\ntwo");
+    let long = "é".repeat(5000);
+    comment(&app, &a, &long);
+    assert_eq!(get(&app, &a)["comment_count"], 2);
+}
+
+#[test]
+fn notes_over_100000_characters_are_refused() {
+    let app = TestApp::new();
+    let a = create(&app, "a");
+    let err = app
+        .invoke::<Value>(
+            "todo_task_update",
+            json!({ "id": a["id"], "title": "a", "notes": "x".repeat(100_001), "sessionId": "s" }),
+        )
+        .unwrap_err();
+    assert_eq!(err["code"], "validation");
+    update(&app, &a, "a", &"x".repeat(100_000), "s");
 }
 
 #[test]

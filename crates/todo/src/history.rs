@@ -222,9 +222,28 @@ fn schedule_lines(
     Ok(())
 }
 
-/// Priority, and the text edits. Those come from the sheet, one record per opening of it; a tick
-/// only resets or puts back Checklist ticks, which is not an edit.
-fn edit_lines(old: &Snap, cur: &Snap, op: &str, out: &mut Lines) {
+/// A Task's title and notes as History last counted them: what the next session's edits are
+/// compared with.
+#[derive(Clone)]
+struct Baseline {
+    title: String,
+    notes: String,
+}
+
+impl Baseline {
+    fn of(s: &Snap) -> Self {
+        Self {
+            title: s.text("title").unwrap_or_default().to_owned(),
+            notes: s.text("notes").unwrap_or_default().to_owned(),
+        }
+    }
+}
+
+/// Priority, and the text edits. Only an editing session edits text, and a session's record can
+/// be rewritten after other changes (it carries the latest snapshot), so the text is compared with
+/// the `base` from before the session, never with the neighbouring record: one opening of the
+/// sheet is one "Title edited" and one "Notes edited" line however much happened in between.
+fn edit_lines(old: &Snap, cur: &Snap, record: &Record, base: &Baseline, out: &mut Lines) {
     if old.number("priority") != cur.number("priority") {
         out.push((
             "priority",
@@ -235,21 +254,24 @@ fn edit_lines(old: &Snap, cur: &Snap, op: &str, out: &mut Lines) {
             ),
         ));
     }
-    if op == "tick" {
+    if record.session_id.is_none() {
         return;
     }
-    let title = old.text("title") != cur.text("title");
-    let notes = old.text("notes") != cur.text("notes");
-    match (title, notes) {
-        (true, true) => out.push(("title", "Title and notes edited".to_owned())),
-        (true, false) => out.push(("title", "Title edited".to_owned())),
-        (false, true) => out.push(("notes", "Notes edited".to_owned())),
-        (false, false) => {}
+    if cur.text("title").unwrap_or_default() != base.title {
+        out.push(("title", "Title edited".to_owned()));
+    }
+    if cur.text("notes").unwrap_or_default() != base.notes {
+        out.push(("notes", "Notes edited".to_owned()));
     }
 }
 
 /// The lines one record adds to its predecessor, in reading order.
-fn record_lines(conn: &Connection, prev: Option<&Value>, record: &Record) -> AppResult<Lines> {
+fn record_lines(
+    conn: &Connection,
+    prev: Option<&Value>,
+    base: &Baseline,
+    record: &Record,
+) -> AppResult<Lines> {
     let cur = Snap(&record.snapshot);
     let Some(prev) = prev else {
         return Ok(if record.op == "create" {
@@ -268,7 +290,7 @@ fn record_lines(conn: &Connection, prev: Option<&Value>, record: &Record) -> App
     let mut out = Vec::new();
     state_lines(&old, &cur, step, &mut out);
     schedule_lines(conn, &old, &cur, step, &mut out)?;
-    edit_lines(&old, &cur, &record.op, &mut out);
+    edit_lines(&old, &cur, record, base, &mut out);
     Ok(out)
 }
 
@@ -278,16 +300,31 @@ pub fn task_history(conn: &Connection, id: &str) -> AppResult<Vec<HistoryLine>> 
     let records = changelog::read(conn, ENTITY, id)?;
     let mut batches: Vec<Vec<HistoryLine>> = Vec::with_capacity(records.len());
     let mut prev: Option<&Value> = None;
+    let mut base: Option<Baseline> = None;
     for record in &records {
-        let lines = record_lines(conn, prev, record)?
-            .into_iter()
-            .map(|(kind, text)| HistoryLine {
-                at: record.at,
-                kind: kind.to_owned(),
-                text,
-            })
-            .collect();
+        let lines = record_lines(
+            conn,
+            prev,
+            base.as_ref()
+                .unwrap_or(&Baseline::of(&Snap(&record.snapshot))),
+            record,
+        )?
+        .into_iter()
+        .map(|(kind, text)| HistoryLine {
+            at: record.at,
+            kind: kind.to_owned(),
+            text,
+        })
+        .collect();
         batches.push(lines);
+        // A session settles the text; so do creating and a tick (a Checklist reset). Any other
+        // record only carries the text of a session that is still being written.
+        if base.is_none()
+            || record.session_id.is_some()
+            || matches!(record.op.as_str(), "create" | "tick")
+        {
+            base = Some(Baseline::of(&Snap(&record.snapshot)));
+        }
         prev = Some(&record.snapshot);
     }
     Ok(batches.into_iter().rev().flatten().collect())

@@ -26,6 +26,10 @@
 
   let { taskId }: { taskId: string } = $props();
 
+  // An emoji glyph is wider than its advance and runs into the word after it: give it room.
+  const EMOJI = /(\p{Extended_Pictographic}\uFE0F?)/u;
+  const EMOJI_ONLY = /^\p{Extended_Pictographic}\uFE0F?$/u;
+
   const history = createQuery(() => historyQuery(taskId));
   const lines = $derived(history.data ?? []);
   let all = $state(false);
@@ -65,7 +69,9 @@
     {@const Icon = ICONS[line.kind] ?? Circle}
     <div class="grid grid-cols-[1.1rem_1fr_auto] items-baseline gap-x-2 px-1 text-[0.78rem] text-muted">
       <Icon class="size-3.5 translate-y-0.5 text-faint" />
-      <span class="[overflow-wrap:anywhere]">{line.text}</span>
+      <span class="[overflow-wrap:anywhere]">
+        {#each line.text.split(EMOJI) as part, i (i)}{#if EMOJI_ONLY.test(part)}<span class="mr-[0.22em]">{part}</span>{:else}{part}{/if}{/each}
+      </span>
       <small class="text-[0.72rem] whitespace-nowrap text-faint">
         {stampLabel(line.at, todoClock.today, todoPrefs.timeFormat)}
       </small>

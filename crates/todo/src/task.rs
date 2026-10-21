@@ -126,6 +126,19 @@ pub fn validate_priority(priority: u32) -> Result<u32, TodoError> {
     }
 }
 
+/// Longest notes, in characters.
+pub const MAX_NOTES_CHARS: usize = 100_000;
+
+/// Notes that are allowed: any text, empty included, up to 100,000 characters.
+pub fn validate_notes(notes: &str) -> Result<&str, TodoError> {
+    if notes.chars().count() > MAX_NOTES_CHARS {
+        return Err(TodoError::Validation(
+            "Notes can be at most 100,000 characters",
+        ));
+    }
+    Ok(notes)
+}
+
 /// Base-62 digits in byte order, so keys built from them sort the same as text and as numbers.
 const DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 /// Width of the keys made here.

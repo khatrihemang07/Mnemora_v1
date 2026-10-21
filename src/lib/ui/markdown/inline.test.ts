@@ -67,6 +67,14 @@ describe('parseInlineMarkdown', () => {
     expect(parseInlineMarkdown('**~~x~~**')).toEqual([{ t: 'strong', c: [text('~~x~~')] }]);
   });
 
+  it('reads several lines, keeping the breaks and block syntax on later lines as text', () => {
+    expect(parseInlineMarkdown('one\n- two **b**')).toEqual([
+      text('one\n- two '),
+      { t: 'strong', c: [text('b')] },
+    ]);
+    expect(parseInlineMarkdown('a\n\nb')).toEqual([text('a\n\nb')]);
+  });
+
   it('keeps ordinary text, including hash tags and stars, as it is', () => {
     expect(parseInlineMarkdown('Call #home about 5 * 3')).toEqual([text('Call #home about 5 * 3')]);
     expect(parseInlineMarkdown('')).toEqual([]);

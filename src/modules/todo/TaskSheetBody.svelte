@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { onDestroy, onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, tick, untrack } from 'svelte';
   import CircleX from '~icons/lucide/circle-x';
   import Ellipsis from '~icons/lucide/ellipsis';
   import Flag from '~icons/lucide/flag';
@@ -25,12 +25,14 @@
   import Chip from '../../lib/ui/Chip.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
+  import MarkdownInline from '../../lib/ui/MarkdownInline.svelte';
   import MarkdownEditor from '../../lib/ui/MarkdownEditor.svelte';
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import { todoClock } from './clock.svelte';
+  import { plainTitle } from './notes';
   import CommentsSection from './CommentsSection.svelte';
   import { isOverdue, stampLabel, taskRepeat, whenChipLabel } from './dates';
   import HistorySection from './HistorySection.svelte';
@@ -80,6 +82,16 @@
   /** The newest `updated_at` this sheet has seen: later ones came from elsewhere (a completion). */
   let knownAt = 0;
   let titleField = $state<HTMLTextAreaElement | null>(null);
+  /** The title is shown with its inline Markdown until it is clicked; then it is the raw text. */
+  let titleEditing = $state(false);
+  const titleLook = 'min-w-0 flex-1 pt-0.5 text-[1.12rem] leading-[1.35] font-semibold';
+
+  async function editTitle() {
+    titleEditing = true;
+    await tick();
+    titleField?.focus();
+    titleField?.setSelectionRange(title.length, title.length);
+  }
   let editor = $state<ReturnType<typeof MarkdownEditor> | null>(null);
 
   function begin(t: Task) {
@@ -284,19 +296,41 @@
         onchange={() => void toggleDone()}
         class="mt-0.5"
       />
-      <AutoTextarea
-        bind:ref={titleField}
-        bind:value={title}
-        label="Title"
-        maxlength={500}
-        placeholder="Title"
-        class="min-w-0 flex-1 pt-0.5 text-[1.12rem] leading-[1.35] font-semibold {isOpen ? '' : 'text-muted'}"
-        oninput={() => (title = editing?.setTitle(title) ?? title)}
-        onblur={() => (title = editing?.leaveTitle() ?? title)}
-        onkeydown={(e) => {
-          if (e.key === 'Enter' && !e.isComposing && !e.metaKey && !e.ctrlKey) editor?.focus();
-        }}
-      />
+      {#if titleEditing}
+        <AutoTextarea
+          bind:ref={titleField}
+          bind:value={title}
+          label="Title"
+          maxlength={500}
+          placeholder="Title"
+          class="{titleLook} {isOpen ? '' : 'text-muted'}"
+          oninput={() => (title = editing?.setTitle(title) ?? title)}
+          onblur={() => {
+            title = editing?.leaveTitle() ?? title;
+            titleEditing = false;
+          }}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' && !e.isComposing && !e.metaKey && !e.ctrlKey) editor?.focus();
+          }}
+        />
+      {:else}
+        <!-- svelte-ignore a11y_click_events_have_key_events -- Enter and Space are handled below -->
+        <div
+          role="button"
+          tabindex="0"
+          aria-label="Title: {plainTitle(title)}. Edit"
+          class="{titleLook} cursor-text [overflow-wrap:anywhere] {isOpen ? '' : 'text-muted'}"
+          onclick={(e) => !(e.target as Element).closest('a') && void editTitle()}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              void editTitle();
+            }
+          }}
+        >
+          <MarkdownInline source={title} />
+        </div>
+      {/if}
       <IconButton icon={X} label="Close" size="sm" onclick={() => taskSheet.close()} class="-mr-1" />
     </div>
 
@@ -337,7 +371,7 @@
 
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -- a bigger target for the editor; it has its own keyboard handling -->
     <div
-      class="cursor-text border-t border-line pt-2.5"
+      class="cursor-text border-t border-line pt-2.5 [--md-cb-hue:var(--hue-todo)]"
       onclick={(e) => e.target === e.currentTarget && editor?.focus()}
     >
       <MarkdownEditor
@@ -352,6 +386,7 @@
         placeholder="Notes (Markdown). - [ ] adds a checklist item"
         font={todoPrefs.notesFont}
         bare
+        checklist
         class="min-h-20 text-[0.95rem] leading-[1.6]"
       />
     </div>

@@ -117,8 +117,19 @@ ol.md-list {
   line-height: 1;
 }
 .md-cb[data-checked] {
-  background: var(--hue-journal);
-  border-color: var(--hue-journal);
+  background: var(--md-cb-hue, var(--hue-journal));
+  border-color: var(--md-cb-hue, var(--hue-journal));
+}
+/* The editor's boxes (Todo's notes): the box stands in for "- [ ]", so it is clickable and sits on the text line. */
+.cm-md-cb {
+  display: inline-grid;
+  vertical-align: baseline;
+  margin-right: 0.6em;
+  cursor: pointer;
+  transform: translateY(2px);
+}
+.cm-md-cb[data-checked] {
+  color: var(--on-accent);
 }
 .md-cb[role="checkbox"][tabindex] {
   cursor: pointer;

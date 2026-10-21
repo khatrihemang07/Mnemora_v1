@@ -1,7 +1,7 @@
 <!--
   CommentsSection: a Task's Comments in the sheet, oldest first, with a composer under them.
   Comments take inline Markdown marks (bold, italic, code, links). Hover (always on a phone) shows
-  edit and delete; Enter in the edit field saves, Esc cancels, an edited comment says "edited".
+  edit and delete; Enter posts or saves and Shift+Enter adds a line break; Esc cancels an edit, an edited comment says "edited".
   Deleting is at once with Undo. Comments belong to the current occurrence of a repeating Task.
   The list reloads from Rust after every change.
 -->
@@ -14,7 +14,7 @@
   import type { Comment } from '../../lib/ipc/bindings';
   import { IpcError } from '../../lib/ipc/unwrap';
   import IconButton from '../../lib/ui/IconButton.svelte';
-  import Input from '../../lib/ui/Input.svelte';
+  import AutoTextarea from '../../lib/ui/AutoTextarea.svelte';
   import MarkdownInline from '../../lib/ui/MarkdownInline.svelte';
   import { notifyError, notifyUndo } from '../../lib/ui/toast';
   import { stampLabel } from './dates';
@@ -37,7 +37,7 @@
   let draft = $state('');
   let editingId = $state<string | null>(null);
   let editText = $state('');
-  let editField = $state<HTMLInputElement | null>(null);
+  let editField = $state<HTMLTextAreaElement | null>(null);
 
   const reason = (e: unknown, fallback: string) => (e instanceof IpcError ? e.message : fallback);
 
@@ -91,6 +91,9 @@
     });
   }
 
+  /** The frame of a comment field, which grows with its text. */
+  const frame =
+    'rounded-sm border border-line bg-surface px-3 py-1.5 text-sm leading-normal focus:border-accent';
   const reveal = 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 phone:opacity-100';
 </script>
 
@@ -101,14 +104,15 @@
   {#each list as c (c.id)}
     <div class="group grid grid-cols-[1fr_auto] gap-x-2 rounded-sm bg-surface-2 px-2.5 py-1.5 text-[0.84rem] leading-normal">
       {#if editingId === c.id}
-        <Input
+        <AutoTextarea
           bind:ref={editField}
           bind:value={editText}
           label="Edit comment"
-          maxlength={1000}
-          class="col-span-2"
+          maxlength={5000}
+          multiline
+          class="{frame} col-span-2"
           onkeydown={(e) => {
-            if (e.key === 'Enter') {
+            if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
               e.preventDefault();
               void saveEdit();
             } else if (e.key === 'Escape') {
@@ -120,7 +124,7 @@
           onblur={() => void saveEdit()}
         />
       {:else}
-        <div class="min-w-0 [overflow-wrap:anywhere]"><MarkdownInline source={c.body} /></div>
+        <div class="min-w-0 [overflow-wrap:anywhere] whitespace-pre-wrap"><MarkdownInline source={c.body} /></div>
         <div class="row-span-2 col-start-2 row-start-1 flex items-start gap-0.5">
           <IconButton icon={Pencil} label="Edit comment" size="xs" onclick={() => void startEdit(c)} class="{reveal} -mt-0.5" />
           <IconButton icon={Trash2} label="Delete comment" size="xs" onclick={() => void remove(c)} class="{reveal} -mt-0.5" />
@@ -131,13 +135,15 @@
       {/if}
     </div>
   {/each}
-  <Input
+  <AutoTextarea
     bind:value={draft}
     label="Add a comment"
-    placeholder="Add a comment…  (↵ to post)"
-    maxlength={1000}
+    placeholder="Add a comment…  (↵ to post, ⇧↵ for a new line)"
+    maxlength={5000}
+    multiline
+    class={frame}
     onkeydown={(e) => {
-      if (e.key === 'Enter' && !e.isComposing) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         void post();
       }

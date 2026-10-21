@@ -6,7 +6,7 @@ use specta::Type;
 use crate::error::TodoError;
 
 /// Longest Comment, in characters.
-pub const MAX_COMMENT_CHARS: usize = 1000;
+pub const MAX_COMMENT_CHARS: usize = 5000;
 
 /// A note left on a Task. It belongs to the Task row it was written on: for a repeating Task, the
 /// current occurrence (completing moves it to the done copy).
@@ -16,7 +16,7 @@ pub struct Comment {
     pub id: String,
     /// The Task it is on.
     pub task_id: String,
-    /// One line with inline Markdown marks, up to 1000 characters.
+    /// Text with inline Markdown marks (line breaks allowed), up to 5000 characters.
     pub body: String,
     /// Whether it was changed after it was written.
     pub edited: bool,
@@ -28,19 +28,16 @@ pub struct Comment {
     pub updated_at: i64,
 }
 
-/// A body that is allowed: something visible, one line, at most 1000 characters. Returns it
-/// trimmed.
+/// A body that is allowed: something visible, at most 5000 characters; line breaks are fine.
+/// Returns it trimmed.
 pub fn validate_body(body: &str) -> Result<&str, TodoError> {
     let body = body.trim();
     if body.is_empty() {
         return Err(TodoError::Validation("A comment can't be blank"));
     }
-    if body.contains(['\n', '\r']) {
-        return Err(TodoError::Validation("A comment must be a single line"));
-    }
     if body.chars().count() > MAX_COMMENT_CHARS {
         return Err(TodoError::Validation(
-            "A comment can be at most 1000 characters",
+            "A comment can be at most 5000 characters",
         ));
     }
     Ok(body)
@@ -51,12 +48,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bodies_are_trimmed_single_line_and_bounded() {
+    fn bodies_are_trimmed_multi_line_and_bounded() {
         assert_eq!(validate_body("  hi \t").unwrap(), "hi");
-        for bad in ["", "  ", "a\nb", "a\r\nb"] {
+        assert_eq!(validate_body("a\n\nb\n").unwrap(), "a\n\nb");
+        for bad in ["", "  ", "\n\n"] {
             assert!(validate_body(bad).is_err(), "{bad:?}");
         }
-        assert!(validate_body(&"é".repeat(1000)).is_ok());
-        assert!(validate_body(&"é".repeat(1001)).is_err());
+        assert!(validate_body(&"é".repeat(5000)).is_ok());
+        assert!(validate_body(&"é".repeat(5001)).is_err());
     }
 }

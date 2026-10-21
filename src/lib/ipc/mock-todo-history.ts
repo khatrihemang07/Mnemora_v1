@@ -53,6 +53,7 @@ type Line = [HistoryLine['kind'], string];
 /** The lines one record adds to its predecessor, in reading order. */
 function recordLines(
   prev: Record<string, unknown> | null,
+  base: { title: string | null; notes: string | null },
   rec: LogRecord,
   listLabel: (id: string | null) => string,
 ): Line[] {
@@ -128,12 +129,11 @@ function recordLines(
       `Priority P${num(prev, 'priority') ?? 4} → P${num(cur, 'priority') ?? 4}`,
     ]);
   }
-  if (rec.op !== 'tick') {
-    const title = str(prev, 'title') !== str(cur, 'title');
-    const notes = str(prev, 'notes') !== str(cur, 'notes');
-    if (title && notes) out.push(['title', 'Title and notes edited']);
-    else if (title) out.push(['title', 'Title edited']);
-    else if (notes) out.push(['notes', 'Notes edited']);
+  // Only an editing session edits text, and its record can be rewritten after other changes, so
+  // the text is compared with what it was before the session (`base`), not with the neighbour.
+  if (rec.session !== null) {
+    if (str(cur, 'title') !== base.title) out.push(['title', 'Title edited']);
+    if (str(cur, 'notes') !== base.notes) out.push(['notes', 'Notes edited']);
   }
   return out;
 }
@@ -146,10 +146,20 @@ export function historyOf(
   const ordered = [...records].sort((a, b) => a.at - b.at || a.seq - b.seq);
   const batches: HistoryLine[][] = [];
   let prev: Record<string, unknown> | null = null;
+  let base: { title: string | null; notes: string | null } | null = null;
   for (const rec of ordered) {
+    const text = { title: str(rec.snapshot, 'title'), notes: str(rec.snapshot, 'notes') };
     batches.push(
-      recordLines(prev, rec, listLabel).map(([kind, text]) => ({ at: rec.at, kind, text })),
+      recordLines(prev, base ?? text, rec, listLabel).map(([kind, line]) => ({
+        at: rec.at,
+        kind,
+        text: line,
+      })),
     );
+    // A session settles the text; so do creating and a tick (a Checklist reset).
+    if (base === null || rec.session !== null || rec.op === 'create' || rec.op === 'tick') {
+      base = text;
+    }
     prev = rec.snapshot;
   }
   return batches.reverse().flat();

@@ -12,7 +12,7 @@ use crate::error::TodoError;
 use crate::list_repo;
 use crate::repeat::rule_of;
 use crate::service::{ENTITY, record, record_at, record_session};
-use crate::task::{Task, TaskState, validate_priority, validate_title};
+use crate::task::{Task, TaskState, validate_notes, validate_priority, validate_title};
 use crate::{comment_repo, repo};
 
 /// Deleted Tasks, Lists and Comments are erased this long after deletion (30 days).
@@ -34,6 +34,7 @@ pub fn update_task(
     session_id: &str,
 ) -> AppResult<Task> {
     let title = validate_title(title)?;
+    validate_notes(notes)?;
     if session_id.trim().is_empty() {
         return Err(TodoError::Validation("An editing session needs an id").into());
     }

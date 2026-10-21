@@ -242,7 +242,7 @@ pub fn todo_comments(
     mnemora_todo::comments(&lock(&state.db), &task_id)
 }
 
-/// Adds a Comment (one line, up to 1000 characters) to a Task.
+/// Adds a Comment (line breaks allowed, up to 5000 characters) to a Task.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_comment_add(
