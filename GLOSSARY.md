@@ -155,3 +155,15 @@ _Avoid_: Position, rank, priority order
 
 **Done earlier**:
 The fold at the bottom of a List page holding Tasks done before today, "Done earlier · N". Tasks done today sit above it, struck through. A Setting changes this: all folded, all shown or hidden.
+
+**Search**:
+Finding Tasks by words in their title, notes or Comments, with the Journal's matching: word prefixes, case and accents ignored, quoted phrases and a "Similar matches" group for typos. Open Tasks come first, then Done and Won't do ones. The matching lives in `mnemora_core::search` and both Modules use it.
+_Avoid_: Filter, find
+
+**Focus ring**:
+The mark (a ring and a tint) on the one Task row the keyboard is on. ↑ ↓ move it, and the Task keys act on the Task it sits on (or, for the quick ones, the row under the pointer).
+_Avoid_: Selection, cursor
+
+**G chord**:
+Pressing G and then T, U, I, A or D within a moment to go to Today, Upcoming, Inbox, All or Done.
+_Avoid_: Leader key, vim keys

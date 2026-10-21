@@ -21,6 +21,8 @@ mod reorder;
 mod repeat;
 mod repo;
 mod schedule;
+mod search;
+mod search_repo;
 mod service;
 mod task;
 mod task_service;
@@ -58,6 +60,7 @@ pub use schedule::{
     DayCount, DueChange, OverdueMove, TodayView, UpcomingView, day_counts, move_overdue,
     restore_when, set_when, today, upcoming,
 };
+pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
 pub use task_service::{

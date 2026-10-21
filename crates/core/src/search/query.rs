@@ -2,7 +2,7 @@
 //! the expression, each inside double quotes, so no FTS5 syntax (operators, columns, `*`, `-`,
 //! parentheses, `NEAR`) can be injected.
 
-use crate::fold;
+use super::fold;
 
 /// One requirement of a query. Every term must match.
 #[derive(Debug, Clone, PartialEq, Eq)]

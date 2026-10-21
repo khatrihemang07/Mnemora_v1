@@ -8,10 +8,10 @@ use specta::Type;
 
 use crate::entry::validate_page_date;
 use crate::error::JournalError;
-use crate::fuzzy::{near_terms, tolerance};
-use crate::query::{self, Term};
 use crate::repo::{self, SearchRow};
-use crate::snippet::{Matcher, Span, snippet};
+use crate::snippet::snippet;
+use mnemora_core::search::query::{self, Term};
+use mnemora_core::search::{Matcher, Span, near_terms, tolerance};
 
 /// Most exact Hits one search returns (newest first); more sets `truncated`.
 const MAX_EXACT: usize = 500;

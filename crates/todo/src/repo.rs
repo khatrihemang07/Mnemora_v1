@@ -5,13 +5,14 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use crate::task::{Task, TaskState};
 
-const COLUMNS: &str = "id, list_id, title, notes, due_date, due_time, repeat_freq, repeat_every,
+pub(crate) const COLUMNS: &str =
+    "id, list_id, title, notes, due_date, due_time, repeat_freq, repeat_every,
     repeat_days, repeat_mode, priority, state, closed_at, repeat_of, understood, sort_key,
     created_at, updated_at,
     (SELECT COUNT(*) FROM todo_comments c
       WHERE c.task_id = todo_tasks.id AND c.deleted_at IS NULL)";
 
-fn from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
+pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Task> {
     let state: String = r.get(11)?;
     Ok(Task {
         id: r.get(0)?,
@@ -110,7 +111,7 @@ pub fn inbox(conn: &Connection) -> AppResult<Vec<Task>> {
 }
 
 /// An unreadable stored value is the app's fault, not the user's.
-fn corrupt_or_db(e: rusqlite::Error) -> AppError {
+pub(crate) fn corrupt_or_db(e: rusqlite::Error) -> AppError {
     match e {
         rusqlite::Error::FromSqlConversionFailure(..) => {
             AppError::new(ErrorCode::Internal, "Stored Task data is unreadable").with_details(e)

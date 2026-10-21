@@ -6,7 +6,10 @@
   Task sheet. On hover (not on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click,
   long-press on a phone) holds Open, Quick edit (E: the row becomes the capture box), When…, Priority…, Move to list…,
   Won't do (Skip to ‹date› on a repeating Task: it moves on and records nothing) and Delete. The
-  keys 1 to 4 and ⇧Space act on the hovered or focused row. A done occurrence shows "↻ occurrence";
+  keys 1 to 4 and ⇧Space act on the hovered or focused row, and the rest of the key map (Space, ↵, D,
+  T, M, ⌫) on the focused one (see task-keymap.ts). The focus ring (taskFocus) tints and rings the
+  row it is on. In search results `lit` tints the matched words of the title and `snippet` shows the
+  note or Comment line that matched, in place of the first line of the notes. A done occurrence shows "↻ occurrence";
   a Won't do Task shows ⊗ and "Won't do" with the time. `hideDate` leaves the date out where the
   group already says it (Today, an Upcoming day). `list` shows the Task's List at the right, for
   views that mix Lists. A done Task is struck through, shows when it was done, and its diamond
@@ -23,13 +26,14 @@
   import FolderInput from '~icons/lucide/folder-input';
   import ListChecks from '~icons/lucide/list-checks';
   import MessageSquare from '~icons/lucide/message-square';
+  import StickyNote from '~icons/lucide/sticky-note';
   import PencilLine from '~icons/lucide/pencil-line';
   import Repeat from '~icons/lucide/repeat';
   import SkipForward from '~icons/lucide/skip-forward';
   import SquarePen from '~icons/lucide/square-pen';
   import Sun from '~icons/lucide/sun';
   import Trash2 from '~icons/lucide/trash-2';
-  import type { Task, TodoList } from '../../lib/ipc/bindings';
+  import type { SnippetSource, Span, Task, TodoList } from '../../lib/ipc/bindings';
   import { LongPress } from '../../lib/long-press';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import MarkdownInline from '../../lib/ui/MarkdownInline.svelte';
@@ -58,6 +62,7 @@
   } from './task-actions';
   import { quickEditing } from './quick-edit.svelte';
   import { listsQuery } from './queries';
+  import { taskFocus } from './task-focus.svelte';
   import { taskRows } from './task-keys.svelte';
   import { taskSheet } from './task-sheet.svelte';
   import { priorityTone } from './tasks';
@@ -73,8 +78,21 @@
     list?: TodoList | null;
     /** The mouse can pick the row up (an open Task in a view that can be arranged). */
     draggable?: boolean;
+    /** Search results: the matched words of the title, folded. */
+    lit?: ReadonlySet<string>;
+    /** Search results: the note or Comment line that matched, under the title. */
+    snippet?: { spans: Span[]; source: SnippetSource };
   }
-  let { task, ontick, onuntick, hideDate = false, list = null, draggable = false }: Props = $props();
+  let {
+    task,
+    ontick,
+    onuntick,
+    hideDate = false,
+    list = null,
+    draggable = false,
+    lit,
+    snippet,
+  }: Props = $props();
 
   let row = $state<HTMLElement | null>(null);
   let more = $state<HTMLButtonElement | null>(null);
@@ -85,8 +103,20 @@
   let whenOpen = $state(false);
   let priorityOpen = $state(false);
 
-  // The keys 1 to 4 and ⇧Space find this row through the registry.
-  $effect(() => taskRows.register(task));
+  // The Task keys find this row, and the pickers D and M open, through the registry.
+  $effect(() =>
+    taskRows.register(task, {
+      when: () => (whenOpen = true),
+      moveToList: () => (pickerOpen = true),
+    }),
+  );
+  const ringed = $derived(taskFocus.id === task.id);
+
+  /** Focus that arrived by keyboard puts the ring on this row; a click does not. */
+  function onfocusin(e: FocusEvent) {
+    const target = e.target as Element;
+    if (target.matches(':focus-visible')) taskFocus.id = task.id;
+  }
 
   const isOpen = $derived(task.state === 'open');
   const quickEditOpen = $derived(quickEditing.id === task.id && task.state === 'open');
@@ -151,6 +181,7 @@
           {
             label: 'When…',
             icon: Calendar,
+            shortcut: 'D',
             separatorBefore: true,
             onselect: afterMenu(() => (whenOpen = true)),
           },
@@ -165,6 +196,7 @@
     {
       label: 'Move to list…',
       icon: FolderInput,
+      shortcut: 'M',
       separatorBefore: !isOpen,
       onselect: afterMenu(() => (pickerOpen = true)),
     },
@@ -190,13 +222,20 @@
     {
       label: 'Delete',
       icon: Trash2,
+      shortcut: '⌫',
       danger: true,
       separatorBefore: true,
-      onselect: () => void deleteTaskWithUndo(task),
+      onselect: () => void deleteTask(),
     },
   ]);
 
   const openSheet = () => taskSheet.open(task.id);
+
+  /** Deleting hands the ring to the next row, as the Journal does. */
+  async function deleteTask() {
+    const next = ringed ? taskFocus.neighbour(task.id) : null;
+    if ((await deleteTaskWithUndo(task)) && ringed) taskFocus.keepAfter(task.id, next);
+  }
 
   function openMenu(anchor: MenuAnchor) {
     menuAnchor = anchor;
@@ -230,6 +269,7 @@
   role="presentation"
   data-task-row={task.id}
   {oncontextmenu}
+  {onfocusin}
   onpointerenter={(e) => !touchLike(e) && (taskRows.hoveredId = task.id)}
   onpointerleave={() => taskRows.hoveredId === task.id && (taskRows.hoveredId = null)}
   onpointerdown={(e) => {
@@ -241,7 +281,8 @@
   onpointerup={() => press.cancel()}
   onpointercancel={() => press.cancel()}
   class="group grid grid-cols-[26px_1fr_auto] items-start gap-x-2 rounded-sm px-2 py-[7px] transition-colors duration-(--dur) ease-out
-    hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5 {drag.draggedId === task.id ? 'opacity-40' : ''}"
+    hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5 {drag.draggedId === task.id ? 'opacity-40' : ''}
+    {ringed ? 'bg-hover outline-[1.5px] outline-accent shadow-[0_0_0_3px_var(--ring)]' : ''}"
 >
   <TaskCheckbox
     checked={!isOpen}
@@ -251,21 +292,28 @@
     onchange={() => (isOpen ? ontick(task) : onuntick?.(task))}
     class="mt-px"
   />
-  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex -- Enter is handled; the title may hold links, so it is not a button element -->
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex -- Enter is handled by the key map; the title may hold links, so it is not a button element -->
   <div
-    class="min-w-0 cursor-pointer pt-px outline-none focus-visible:rounded-sm focus-visible:shadow-[0_0_0_2px_var(--ring)]"
+    class="min-w-0 cursor-pointer pt-px"
+    data-bare
     role="button"
     tabindex="0"
     aria-label="Open {plainTitle(task.title)}"
     onclick={(e) => !window.getSelection()?.toString() && !(e.target as Element).closest('a') && openSheet()}
-    onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && openSheet()}
   >
     <span
       class="leading-[1.45] [overflow-wrap:anywhere] {isOpen ? '' : wont ? 'text-faint line-through' : 'text-muted line-through'}"
     >
-      <MarkdownInline source={task.title} {marks} />
+      <MarkdownInline source={task.title} {marks} {lit} />
     </span>
-    {#if preview}
+    {#if snippet}
+      <div class="mt-px flex items-center gap-1 truncate text-[0.78rem] leading-[1.4] text-faint">
+        {#if snippet.source === 'comment'}<MessageSquare class="size-3 shrink-0" />{:else}<StickyNote class="size-3 shrink-0" />{/if}
+        <span class="truncate">
+          {#each snippet.spans as span, k (k)}{#if span.matched}<mark class="rounded-[3px] bg-[color-mix(in_oklch,var(--hue-todo)_28%,transparent)] px-px text-inherit">{span.text}</mark>{:else}{span.text}{/if}{/each}
+        </span>
+      </div>
+    {:else if preview}
       <div class="mt-px truncate text-[0.78rem] leading-[1.4] text-faint">{preview}</div>
     {/if}
     {#if showDate || showTime || closed || repeat || occurrence || steps || task.comment_count > 0}
@@ -321,6 +369,7 @@
       <IconButton
         icon={Sun}
         label="Today"
+        shortcut="T"
         size="sm"
         onclick={() => void dateTaskToday(task)}
         class={hover}
@@ -329,6 +378,7 @@
         bind:ref={whenButton}
         icon={Calendar}
         label="When…"
+        shortcut="D"
         size="sm"
         onclick={() => (whenOpen = true)}
         class="{hover} {whenOpen ? 'opacity-100' : ''}"

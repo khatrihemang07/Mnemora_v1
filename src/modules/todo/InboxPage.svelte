@@ -13,7 +13,7 @@
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { canDrag, GROUP_OPTIONS, GROUP_PREF_KEYS, INBOX_SORT_PREF } from './arrange';
   import { todoClock } from './clock.svelte';
-  import NewTaskButton from './NewTaskButton.svelte';
+  import TodoActions from './TodoActions.svelte';
   import { inboxQuery, savePreference } from './queries';
   import { useSidebar } from './sidebar.svelte';
   import TaskGroups from './TaskGroups.svelte';
@@ -32,7 +32,7 @@
 </script>
 
 <PageHeader title="Inbox" icon={VIEW_ICONS.inbox} hue="--hue-todo">
-  {#snippet actions()}<NewTaskButton />{/snippet}
+  {#snippet actions()}<TodoActions />{/snippet}
 </PageHeader>
 <div class="mx-auto max-w-3xl">
   {#if inbox.isPending}

@@ -58,7 +58,9 @@
     untickTask,
     wontDoTask,
   } from './task-actions';
+  import { taskFocus } from './task-focus.svelte';
   import { TaskEditing } from './task-editing';
+  import { IDLE_KEYS, reduceKey } from './task-keymap';
   import { inSheetScope } from './task-keys.svelte';
   import { taskSheet } from './task-sheet.svelte';
   import { nextText } from './dates';
@@ -247,8 +249,7 @@
   // --- Keys: ⌘↑ ⌘↓ move through the list behind the sheet, ⌘↵ closes -----------------------------
   /** The Tasks in the list behind the sheet, as they were when it opened. */
   let order: string[] = [];
-  const domOrder = () =>
-    [...document.querySelectorAll<HTMLElement>('[data-task-row]')].map((el) => el.dataset.taskRow ?? '');
+  const domOrder = () => taskFocus.ids();
 
   function step(delta: number) {
     if (!order.includes(id)) order = domOrder();
@@ -261,18 +262,20 @@
     order = domOrder();
   });
 
+  /** The sheet owns ⌘↑ ⌘↓ ⌘↵ even from inside its editor, so it listens before the editor does. */
   function onkeydown(e: KeyboardEvent) {
-    const mod = e.metaKey || e.ctrlKey;
-    if (!mod || e.altKey || e.shiftKey || !inSheetScope(e.target)) return;
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      e.stopPropagation();
-      step(e.key === 'ArrowUp' ? -1 : 1);
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      e.stopPropagation();
-      taskSheet.close();
-    }
+    if (!inSheetScope(e.target)) return;
+    const { action } = reduceKey(
+      IDLE_KEYS,
+      e,
+      { typing: false, overlay: false, sheet: true, target: 'ring', taskOpen: false, onControl: false },
+      0,
+    );
+    if (action?.type === 'sheet-step') step(action.dir);
+    else if (action?.type === 'sheet-close') taskSheet.close();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   const footerDone = $derived(

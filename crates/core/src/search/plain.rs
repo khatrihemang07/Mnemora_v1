@@ -1,4 +1,4 @@
-//! Word counting that ignores Markdown symbols.
+//! Plain reading text and word counts from Markdown, for search snippets and summaries.
 
 /// Characters that only style text. Replaced by a space so `**bold**word` still splits sensibly.
 const STYLE_MARKS: [char; 5] = ['*', '_', '~', '=', '`'];

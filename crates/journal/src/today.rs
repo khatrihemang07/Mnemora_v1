@@ -7,7 +7,7 @@ use specta::Type;
 
 use crate::entry::validate_page_date;
 use crate::repo;
-use crate::words::plain_text;
+use mnemora_core::search::plain::plain_text;
 
 /// Longest card snippet, in characters (not counting the ellipsis).
 const SNIPPET_CHARS: usize = 140;

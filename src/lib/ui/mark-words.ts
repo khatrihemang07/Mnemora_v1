@@ -61,3 +61,34 @@ export function markPieces(texts: string[], marks: WordMark[]): Piece[][] {
     return out;
   });
 }
+
+/** A stretch of text, tinted when it is a word a search matched. */
+export interface LitPiece {
+  text: string;
+  lit: boolean;
+}
+
+/** Lowercases `s` and strips accents, the way a search sees words. */
+export const foldWord = (s: string): string =>
+  s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+const WORD = /[\p{L}\p{N}\p{M}]+/gu;
+
+/**
+ * Cuts `text` into pieces, lighting every whole word whose folded form is in `lit` (the matched
+ * words a search reports). Joining the pieces gives `text` back.
+ */
+export function litPieces(text: string, lit: ReadonlySet<string>): LitPiece[] {
+  if (lit.size === 0) return [{ text, lit: false }];
+  const out: LitPiece[] = [];
+  let at = 0;
+  for (const m of text.matchAll(WORD)) {
+    if (!lit.has(foldWord(m[0]))) continue;
+    const start = m.index ?? 0;
+    if (start > at) out.push({ text: text.slice(at, start), lit: false });
+    out.push({ text: m[0], lit: true });
+    at = start + m[0].length;
+  }
+  if (at < text.length || out.length === 0) out.push({ text: text.slice(at), lit: false });
+  return out;
+}

@@ -61,5 +61,5 @@
 {#if viewport.isPhone}
   <Sheet {open} {title} onclose={() => (open = false)} closable>{@render body()}</Sheet>
 {:else}
-  <Popover bind:open {anchor} label={title} flush>{@render body()}</Popover>
+  <Popover bind:open {anchor} label={title} flush focus="[role=option]">{@render body()}</Popover>
 {/if}

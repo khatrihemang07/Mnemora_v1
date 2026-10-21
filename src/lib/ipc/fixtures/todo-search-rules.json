@@ -1,0 +1,144 @@
+{
+  "about": "Task search, shared by the Rust command todo_search (src-tauri/src/todo_search_tests.rs) and the browser mock (src/lib/ipc/mock-todo-search.test.ts). A case creates tasks in order: {title, notes?, comments?[], state?: open|done|wont|deleted, deleted_comments?[]} (comments are added, deleted_comments are added then deleted; state is applied last). Each query is checked as {q, exact: [titles], similar: [titles]} in result order (open Tasks first in creation order, then Done and Won't do). marked: {title: [matched title words]}, snippets: {title: {source: notes|comment, marked: [matched words], text: the whole snippet}} are optional extra checks on the exact Hits.",
+  "cases": [
+    {
+      "name": "prefixes ignore case and accents",
+      "tasks": [
+        { "title": "Buy Café beans" },
+        { "title": "Call the plumber" },
+        { "title": "Cafeteria menu" }
+      ],
+      "queries": [
+        { "q": "cafe", "exact": ["Buy Café beans", "Cafeteria menu"], "similar": [] },
+        { "q": "CAFÉ", "exact": ["Buy Café beans", "Cafeteria menu"], "similar": [] },
+        { "q": "cafet", "exact": ["Cafeteria menu"], "similar": ["Buy Café beans"] },
+        { "q": "plum", "exact": ["Call the plumber"], "similar": [] },
+        { "q": "  ", "exact": [], "similar": [] }
+      ],
+      "marked": { "Buy Café beans": { "q": "cafe", "words": ["Café"] } }
+    },
+    {
+      "name": "every word is required, in any order",
+      "tasks": [
+        { "title": "Book flights to Lisbon" },
+        { "title": "Book dentist" },
+        { "title": "Lisbon hotel" }
+      ],
+      "queries": [
+        { "q": "lisbon book", "exact": ["Book flights to Lisbon"], "similar": [] },
+        { "q": "book", "exact": ["Book flights to Lisbon", "Book dentist"], "similar": [] }
+      ]
+    },
+    {
+      "name": "quoted text is a phrase",
+      "tasks": [{ "title": "Fix the red door" }, { "title": "Paint the door red" }],
+      "queries": [
+        { "q": "\"red door\"", "exact": ["Fix the red door"], "similar": [] },
+        { "q": "\"red door", "exact": ["Fix the red door"], "similar": [] },
+        { "q": "red door", "exact": ["Fix the red door", "Paint the door red"], "similar": [] }
+      ]
+    },
+    {
+      "name": "typos give similar matches, never repeating exact ones",
+      "tasks": [
+        { "title": "Write the journal" },
+        { "title": "Journals are great" },
+        { "title": "Call a cat" }
+      ],
+      "queries": [
+        { "q": "jurnal", "exact": [], "similar": ["Write the journal"] },
+        { "q": "journal", "exact": ["Write the journal", "Journals are great"], "similar": [] },
+        { "q": "cot", "exact": [], "similar": [] }
+      ]
+    },
+    {
+      "name": "notes are searched and the matching line is the snippet",
+      "tasks": [
+        {
+          "title": "Plan trip",
+          "notes": "Pack light\n- [ ] Check the passport expiry\nBring snacks"
+        },
+        { "title": "Groceries" }
+      ],
+      "queries": [
+        { "q": "passport", "exact": ["Plan trip"], "similar": [] },
+        { "q": "snacks light", "exact": ["Plan trip"], "similar": [] },
+        { "q": "snacks groceries", "exact": [], "similar": [] }
+      ],
+      "snippets": {
+        "Plan trip": {
+          "q": "passport",
+          "source": "notes",
+          "marked": ["passport"],
+          "text": "Check the passport expiry"
+        }
+      }
+    },
+    {
+      "name": "comments are searched and the comment line is the snippet",
+      "tasks": [
+        {
+          "title": "Renew licence",
+          "comments": ["Office closes at five", "Ask about the Zürich form"]
+        },
+        { "title": "Unrelated" }
+      ],
+      "queries": [
+        { "q": "zurich", "exact": ["Renew licence"], "similar": [] },
+        { "q": "office", "exact": ["Renew licence"], "similar": [] }
+      ],
+      "snippets": {
+        "Renew licence": {
+          "q": "zurich",
+          "source": "comment",
+          "marked": ["Zürich"],
+          "text": "Ask about the Zürich form"
+        }
+      }
+    },
+    {
+      "name": "a title-only match has no snippet",
+      "tasks": [{ "title": "Water plants", "notes": "Every other day" }],
+      "queries": [{ "q": "water", "exact": ["Water plants"], "similar": [] }],
+      "snippets": { "Water plants": { "q": "water", "source": null, "marked": [], "text": "" } }
+    },
+    {
+      "name": "open Tasks come before Done and Won't do (one closed Task per query keeps the order exact)",
+      "tasks": [
+        { "title": "Report old", "state": "done" },
+        { "title": "Report new" },
+        { "title": "Memo dropped", "state": "wont" },
+        { "title": "Memo kept" }
+      ],
+      "queries": [
+        { "q": "report", "exact": ["Report new", "Report old"], "similar": [] },
+        { "q": "memo", "exact": ["Memo kept", "Memo dropped"], "similar": [] }
+      ]
+    },
+    {
+      "name": "deleted Tasks and Comments are never found",
+      "tasks": [
+        { "title": "Gone away", "state": "deleted" },
+        { "title": "Stays", "comments": ["kept words"], "deleted_comments": ["secret words"] }
+      ],
+      "queries": [
+        { "q": "gone", "exact": [], "similar": [] },
+        { "q": "secret", "exact": [], "similar": [] },
+        { "q": "kept", "exact": ["Stays"], "similar": [] }
+      ]
+    },
+    {
+      "name": "FTS syntax in the query is plain text",
+      "tasks": [{ "title": "Fish or chips" }, { "title": "Plain" }],
+      "queries": [
+        { "q": "fish OR chips", "exact": ["Fish or chips"], "similar": [] },
+        { "q": "NEAR(", "exact": [], "similar": [] },
+        { "q": "title:fish", "exact": [], "similar": [] },
+        { "q": "fish*", "exact": ["Fish or chips"], "similar": [] },
+        { "q": "-fish", "exact": ["Fish or chips"], "similar": [] },
+        { "q": "\"", "exact": [], "similar": [] },
+        { "q": "((", "exact": [], "similar": [] }
+      ]
+    }
+  ]
+}

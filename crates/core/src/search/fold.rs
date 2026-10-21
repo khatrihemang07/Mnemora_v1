@@ -3,8 +3,8 @@
 
 use std::ops::Range;
 
-pub use mnemora_core::text::fold;
-use mnemora_core::text::{fold_char, is_combining};
+pub use crate::text::fold;
+use crate::text::{fold_char, is_combining};
 
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || is_combining(c)

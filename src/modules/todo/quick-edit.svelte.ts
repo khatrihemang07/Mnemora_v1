@@ -12,12 +12,3 @@ class QuickEditing {
 }
 
 export const quickEditing = new QuickEditing();
-
-/** Whether `e` is the bare E key that starts a Quick edit. */
-export const quickEditKey = (e: KeyboardEvent): boolean =>
-  (e.key === 'e' || e.key === 'E') &&
-  !e.metaKey &&
-  !e.ctrlKey &&
-  !e.altKey &&
-  !e.shiftKey &&
-  !e.repeat;

@@ -1,4 +1,4 @@
-import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
+import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/svelte-query';
 import {
   type AllView,
   type Comment,
@@ -49,6 +49,7 @@ export const todoKeys = {
   task: (id: string) => ['todo', 'task', id] as const,
   comments: (id: string) => ['todo', 'comments', id] as const,
   history: (id: string) => ['todo', 'history', id] as const,
+  search: (query: string) => ['todo', 'search', query] as const,
 };
 
 /** The Inbox: open Tasks with no List in groups, then undated Tasks in a List. */
@@ -133,6 +134,18 @@ export const historyQuery = (taskId: string) =>
   queryOptions({
     queryKey: todoKeys.history(taskId),
     queryFn: () => unwrap(commands.todoTaskHistory(taskId)),
+  });
+
+/**
+ * Task search results for `query`. The previous results stay on screen while the next ones load,
+ * so typing never flashes empty; `enabled` is the caller's to set. Any change to a Task refreshes
+ * them with the rest of Todo's queries.
+ */
+export const searchQuery = (query: string) =>
+  queryOptions({
+    queryKey: todoKeys.search(query),
+    queryFn: () => unwrap(commands.todoSearch(query)),
+    placeholderData: keepPreviousData,
   });
 
 export function invalidateTodo(): Promise<void> {

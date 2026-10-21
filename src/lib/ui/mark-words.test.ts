@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { markPieces } from './mark-words';
+import { litPieces, markPieces } from './mark-words';
 
 const join = (pieces: { text: string }[]) => pieces.map((p) => p.text).join('');
 
@@ -67,5 +67,33 @@ describe('markPieces', () => {
   it('copes with empty texts and marks', () => {
     expect(markPieces([''], [{ word: 'x', title: 'T' }])).toEqual([[{ text: '' }]]);
     expect(markPieces(['a'], [{ word: '', title: 'T' }])).toEqual([[{ text: 'a' }]]);
+  });
+});
+
+describe('litPieces', () => {
+  const lit = (words: string[]) => new Set(words);
+
+  it('lights whole matched words, ignoring case and accents', () => {
+    expect(litPieces('Buy Café beans', lit(['cafe']))).toEqual([
+      { text: 'Buy ', lit: false },
+      { text: 'Café', lit: true },
+      { text: ' beans', lit: false },
+    ]);
+  });
+
+  it('lights every occurrence and leaves other words alone', () => {
+    const pieces = litPieces('red door, red wall', lit(['red']));
+    expect(pieces.filter((p) => p.lit).length).toBe(2);
+    expect(pieces.map((p) => p.text).join('')).toBe('red door, red wall');
+  });
+
+  it('is one plain piece with nothing to light', () => {
+    expect(litPieces('hello', lit([]))).toEqual([{ text: 'hello', lit: false }]);
+    expect(litPieces('hello', lit(['world']))).toEqual([{ text: 'hello', lit: false }]);
+    expect(litPieces('', lit(['x']))).toEqual([{ text: '', lit: false }]);
+  });
+
+  it('does not light part of a longer word', () => {
+    expect(litPieces('cafeteria', lit(['cafe']))).toEqual([{ text: 'cafeteria', lit: false }]);
   });
 });

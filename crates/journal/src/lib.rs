@@ -5,17 +5,13 @@
 
 mod entry;
 mod error;
-mod fold;
-mod fuzzy;
 mod migrations;
-mod query;
 mod repo;
 mod search;
 mod service;
 mod snippet;
 mod today;
 mod upgrade;
-mod words;
 
 use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::error::AppResult;
@@ -27,12 +23,12 @@ use serde_json::json;
 
 pub use entry::{Entry, NewEntry, Page, PageDirection};
 pub use error::JournalError;
+pub use mnemora_core::search::Span;
 pub use search::{Hit, SearchResults, search};
 pub use service::{
     create_entry, delete_entry, list_pages, month_days, move_entry, purge_deleted, restore_entry,
     toggle_task_line, update_entry,
 };
-pub use snippet::Span;
 pub use today::{TodayLatest, TodaySummary, today};
 
 /// The Journal Module.

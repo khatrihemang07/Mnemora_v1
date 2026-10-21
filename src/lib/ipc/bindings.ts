@@ -136,6 +136,14 @@ export const commands = {
 	/**  One Task in any state, with its Comment count: what the Task sheet opens. */
 	todoTask: (id: string) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task", { id })),
 	/**
+	 *  Searches live Tasks by title, notes and Comments. Every word is required and matches by
+	 *  prefix; quoted text is an exact phrase; case and accents are ignored. Open Tasks come first,
+	 *  then Done and Won't do ones. Each Hit carries the title with its matches marked and the note
+	 *  or Comment line that matched. `similar` holds Tasks that match only with a typo allowed, never
+	 *  repeating `exact`. Deleted Tasks and Comments are never found.
+	 */
+	todoSearch: (query: string) => typedError<TaskSearchResults, AppError>(__TAURI_INVOKE("todo_search", { query })),
+	/**
 	 *  Replaces a Task's title and notes: the Task sheet's autosave. All the saves of one opening of
 	 *  the sheet carry the same `session_id`, so the change log keeps one `update` record for them.
 	 *  A blank, multi-line or over-long title is refused; the same text changes nothing.
@@ -863,6 +871,13 @@ export type SidebarView = {
 	lists_sort: ListSort,
 };
 
+/**  Where a TaskHit's snippet line comes from. */
+export type SnippetSource = 
+/**  A line of the Task's notes. */
+"notes" | 
+/**  A Comment. */
+"comment";
+
 /**  A run of snippet text, either plain or a match. */
 export type Span = {
 	/**  The text, with whitespace collapsed to single spaces. */
@@ -928,6 +943,36 @@ export type TaskGroup = {
 	adopt: GroupKey[],
 	/**  Its Tasks, sorted. */
 	tasks: Task[],
+};
+
+/**  One Task found by a search. */
+export type TaskHit = {
+	/**  The Task, as every list shows it. */
+	task: Task,
+	/**  Its title cut into plain and matched runs, for highlighting. */
+	title: Span[],
+	/**
+	 *  The note or Comment line that matched, with the matches marked; empty when only the title
+	 *  matched.
+	 */
+	snippet: Span[],
+	/**  Where `snippet` came from. */
+	snippet_source: SnippetSource | null,
+};
+
+/**
+ *  The outcome of a search. Within each group open Tasks come first (manual order), then Done and
+ *  Won't do ones (latest closed first); the UI splits on `task.state`.
+ */
+export type TaskSearchResults = {
+	/**  Tasks that match every word and phrase. */
+	exact: TaskHit[],
+	/**  Tasks that match only when a word is allowed a typo; never also in `exact`. */
+	similar: TaskHit[],
+	/**  Whether `exact` was cut short at the limit. */
+	truncated: boolean,
+	/**  Whether `similar` was cut short at the limit. */
+	similar_truncated: boolean,
 };
 
 /**  How the Tasks inside one group are ordered. */

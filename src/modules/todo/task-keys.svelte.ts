@@ -6,39 +6,38 @@ import type { Task } from '../../lib/ipc/bindings';
  * registers its Task while it is mounted; the hovered row is the one under the pointer.
  */
 class TaskRows {
-  #rows = new Map<string, Task>();
+  #rows = new Map<string, { task: Task; pickers: RowPickers }>();
   hoveredId = $state<string | null>(null);
 
-  register(task: Task): () => void {
-    this.#rows.set(task.id, task);
+  /** `pickers` open the row's own pickers, for the keys D and M. */
+  register(task: Task, pickers: RowPickers): () => void {
+    const entry = { task, pickers };
+    this.#rows.set(task.id, entry);
     return () => {
-      if (this.#rows.get(task.id) === task) this.#rows.delete(task.id);
+      if (this.#rows.get(task.id) === entry) this.#rows.delete(task.id);
       if (this.hoveredId === task.id) this.hoveredId = null;
     };
   }
 
   get(id: string | null | undefined): Task | null {
-    return (id ? this.#rows.get(id) : null) ?? null;
+    return (id ? this.#rows.get(id)?.task : null) ?? null;
   }
+
+  pickers(id: string): RowPickers | null {
+    return this.#rows.get(id)?.pickers ?? null;
+  }
+}
+
+/** What a row can open for the keyboard. */
+export interface RowPickers {
+  when: () => void;
+  moveToList: () => void;
 }
 
 export const taskRows = new TaskRows();
 
 /** Whether the key is going into a text field, where Todo's single-key shortcuts must stay out. */
 export const isTyping = isTypingTarget;
-
-/**
- * The Priority a plain 1 to 4 key means, or none: not with a modifier, not while typing, not
- * inside a menu or picker.
- */
-export function priorityKey(e: KeyboardEvent): number | null {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
-  return /^[1-4]$/.test(e.key) ? Number(e.key) : null;
-}
-
-/** ⇧Space: Won't do (Skip on a repeating Task). */
-export const wontKey = (e: KeyboardEvent): boolean =>
-  e.key === ' ' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey;
 
 /**
  * Whether a key aimed at `target` belongs to the open Task sheet: focus is in the sheet, on its
@@ -50,4 +49,16 @@ export function inSheetScope(target: EventTarget | null): boolean {
     '[role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]',
   );
   return !overlay || overlay.querySelector('[data-task-sheet]') !== null;
+}
+
+const OVERLAYS = '[role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]';
+
+/**
+ * Whether a menu, picker or Dialog is open (ADR 0011). With the Task sheet open, the sheet is itself
+ * a dialog and does not count; anything opened over it does.
+ */
+export function overlayOpen(sheetOpen: boolean): boolean {
+  return [...document.querySelectorAll(OVERLAYS)].some(
+    (el) => !(sheetOpen && el.querySelector('[data-task-sheet]')),
+  );
 }
