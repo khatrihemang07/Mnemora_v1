@@ -44,6 +44,7 @@ import type {
   TaskGroup,
   TaskSort,
   TodayView,
+  TodoCounts,
   TodoList,
   UpcomingView,
 } from './bindings';
@@ -794,6 +795,24 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
             total: overdue.length + tasks.length + done.length,
           };
           return copy(result);
+        }
+        case 'todo_counts': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const dated = openDated();
+          const overdue = dated.filter((t) => (t.due_date as string) < local.today).length;
+          const today = dated.filter((t) => t.due_date === local.today);
+          const later = dated
+            .filter((t) => (t.due_date as string) > local.today)
+            .sort(byDateThenDay);
+          const counts: TodoCounts = {
+            due_today: today.length,
+            overdue,
+            card: today.map(wire).sort(inDay).slice(0, 5),
+            next: later[0] ? wire(later[0]) : null,
+            any_tasks: all.length > 0,
+          };
+          return copy(counts);
         }
         case 'todo_upcoming': {
           const local = a.local as LocalNow;

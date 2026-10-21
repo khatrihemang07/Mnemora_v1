@@ -22,6 +22,7 @@ import type {
   Task,
   TaskGroup,
   TodayView,
+  TodoCounts,
   TodoList,
   UpcomingView,
 } from './bindings';
@@ -511,6 +512,41 @@ describe('the Todo mock', () => {
     expect(mock.handle('todo_day_counts', { ...range, exclude: a?.id })).toEqual([
       { date: '2026-10-23', count: 1 },
     ]);
+  });
+
+  it('counts what is due today for the badge and the Home card, five at most', () => {
+    const mock = createTodoMock();
+    const local = { today: '2026-10-21', now: '13:30', offset_min: 0 };
+    const counts = () => mock.handle('todo_counts', { local }) as TodoCounts;
+    expect(counts()).toMatchObject({
+      due_today: 0,
+      overdue: 0,
+      card: [],
+      next: null,
+      any_tasks: false,
+    });
+    const dated = (title: string, date: string, time: string | null = null) => {
+      const t = mock.handle('todo_task_create', { title }) as Task;
+      mock.handle('todo_task_set_when', { id: t.id, date, time, local });
+      return t;
+    };
+    for (let n = 1; n <= 6; n++) dated(`today ${n}`, '2026-10-21');
+    dated('timed', '2026-10-21', '17:00');
+    dated('soon', '2026-10-24');
+    dated('later', '2026-11-02');
+    const c = counts();
+    expect([c.any_tasks, c.due_today, c.overdue]).toEqual([true, 7, 0]);
+    expect(c.card.map((t) => t.title)).toEqual([
+      'timed',
+      'today 1',
+      'today 2',
+      'today 3',
+      'today 4',
+    ]);
+    expect(c.next?.title).toBe('soon');
+    const tomorrow = { ...local, today: '2026-10-25' };
+    const later = mock.handle('todo_counts', { local: tomorrow }) as TodoCounts;
+    expect([later.due_today, later.overdue, later.next?.title]).toEqual([0, 8, 'later']);
   });
 
   it('hands out copies, like real IPC', () => {
