@@ -87,7 +87,7 @@ fn build(app: &TestApp, tasks: &[Value]) {
                     "todo_task_wont_do",
                     json!({ "id": task["id"], "local": local() }),
                 )
-                    .unwrap();
+                .unwrap();
             }
             "deleted" => app
                 .invoke::<()>("todo_task_delete", json!({ "id": task["id"] }))

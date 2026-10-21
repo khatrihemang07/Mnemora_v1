@@ -77,7 +77,8 @@ export async function tickAllAndComplete(task: Task): Promise<void> {
  * `undoNotes` are the notes to put back on Undo, when completing changed them (Tick all).
  */
 export async function completeNow(task: Task, undoNotes?: string): Promise<Task | null> {
-  // A light tick on a phone, at once, while the touch that asked for it still counts.
+  // A light tick on a phone, at once, while the touch that asked for it still counts. It fires on
+  // every completion there, whatever started it (a v1 decision).
   if (viewport.isPhone) lightTick();
   const repeating = task.repeat_freq !== null;
   if (!repeating) removeCachedTask(task.id);

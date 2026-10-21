@@ -50,7 +50,6 @@ pub(crate) fn record_list(
     )
 }
 
-
 /// Live Lists with their open counts, in the order `sort` says.
 pub(crate) fn ordered_lists(conn: &Connection, sort: ListSort) -> AppResult<Vec<ListEntry>> {
     let counts: HashMap<Option<String>, (u32, u32)> = repo::task_counts(conn)?

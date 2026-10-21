@@ -247,7 +247,7 @@ fn wont_do_is_a_tick_that_reopening_undoes() {
         "todo_task_wont_do",
         json!({ "id": a["id"], "local": local(TODAY) }),
     )
-        .unwrap();
+    .unwrap();
     let back: Value = app
         .invoke("todo_task_reopen", json!({ "id": a["id"] }))
         .unwrap();
@@ -281,7 +281,6 @@ fn wont_do_is_refused_for_a_closed_and_an_unknown_task() {
         wont(&json!({ "id": "nope" })).unwrap_err()["code"],
         "not_found"
     );
-
 }
 
 #[test]
@@ -834,7 +833,7 @@ fn history_reads_the_change_log_as_lines_newest_first() {
         "todo_task_wont_do",
         json!({ "id": a["id"], "local": local(TODAY) }),
     )
-        .unwrap();
+    .unwrap();
     app.invoke::<Value>("todo_task_reopen", json!({ "id": a["id"] }))
         .unwrap();
 

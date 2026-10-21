@@ -196,6 +196,7 @@ fn move_comments(conn: &Connection, from: &str, to: &str, now: i64) -> AppResult
 }
 
 /// Moves a repeating Task to its next date without recording anything done: "Skip to ‹date›".
+/// The Checklist keeps its ticks (a v1 decision: only completing resets it).
 /// The change log gets a `tick` marked `skipped` (not an occurrence copy), see `record_skip`.
 pub fn skip_task(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<Task> {
     local.check()?;

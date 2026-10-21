@@ -49,14 +49,14 @@ mod tests {
 
     #[test]
     fn maps_to_the_wire_codes_the_ui_relies_on() {
-        let v: AppError = TodoError::Validation("A Task needs a title").into();
+        let invalid: AppError = TodoError::Validation("A Task needs a title").into();
         assert_eq!(
-            (v.code, v.message.as_str()),
+            (invalid.code, invalid.message.as_str()),
             (ErrorCode::Validation, "A Task needs a title")
         );
-        let t: AppError = TodoError::NameTaken("Work".into()).into();
+        let taken: AppError = TodoError::NameTaken("Work".into()).into();
         assert_eq!(
-            (t.code, t.message.as_str()),
+            (taken.code, taken.message.as_str()),
             (ErrorCode::Validation, "There’s already a List called Work")
         );
         let n: AppError = TodoError::TaskNotFound.into();
