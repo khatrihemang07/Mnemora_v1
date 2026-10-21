@@ -1,7 +1,7 @@
 //! Repeating Tasks: completing one records the occurrence as a done copy and moves the same Task
 //! to its next date; reopening the latest occurrence rewinds the Task; skipping moves it on and
-//! records no occurrence (only a `tick` marked skipped). Also the Done view, which lists those copies with everything else done. Task
-//! text must never reach a log line.
+//! records no occurrence (only a `tick` marked skipped). Also the Done view, which lists those
+//! copies with everything else done. Task text must never reach a log line.
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
 use mnemora_core::error::AppResult;

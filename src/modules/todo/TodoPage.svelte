@@ -4,7 +4,7 @@
   bar's button, ⌘F, or ⌘K) lays its results over the view, which stays mounted underneath. The open
   Task's sheet (`?task=‹id›`) and the "steps still open" question live here too, and so does the
   desktop key map: every key goes through the one reducer in task-keymap.ts, which says what it
-  means for the Task with the focus ring, the one under the pointer or the open sheet's Task; the
+  means for the Task with the focus ring or the open sheet's Task (never the one under the pointer); the
   keys stay out of text fields, menus and Dialogs. Tasks are dragged by their rows (see
   drag.svelte.ts); the layer that floats above the page while one is held lives here.
   On a phone this is also where the chrome lives: the segments pinned under the large title, the
