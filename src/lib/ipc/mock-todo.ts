@@ -346,7 +346,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   const findList = (id: unknown) => lists.find((l) => l.id === id && !l.deleted);
   const nameTaken = (name: string, except?: string) =>
     lists.some((l) => !l.deleted && l.id !== except && foldName(l.name) === foldName(name));
-  const taken = () => fail('validation', 'There’s already a List with that name');
+  const taken = (name: string) => fail('validation', `There’s already a List called ${name}`);
   const openIn = (listId: string | null) =>
     live()
       .filter((t) => t.list_id === listId && t.state === 'open')
@@ -1040,7 +1040,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
         }
         case 'todo_list_create': {
           const name = validateListName(a.name as string);
-          if (nameTaken(name)) throw taken();
+          if (nameTaken(name)) throw taken(name);
           const last = lists.reduce<string | null>(
             (max, l) => (max === null || l.sort_key > max ? l.sort_key : max),
             null,
@@ -1063,7 +1063,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           const name = validateListName(a.name as string);
           const list = findList(a.id);
           if (!list) throw listMissing();
-          if (nameTaken(name, list.id)) throw taken();
+          if (nameTaken(name, list.id)) throw taken(name);
           if (list.name !== name) {
             list.name = name;
             list.updated_at = Date.now();
@@ -1119,7 +1119,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           const list = lists.find((l) => l.id === deletion.list_id);
           if (!list) throw listMissing();
           if (!list.deleted) throw fail('validation', "That List isn't deleted");
-          if (nameTaken(list.name)) throw taken();
+          if (nameTaken(list.name)) throw taken(list.name);
           const now = Date.now();
           list.deleted = false;
           list.updated_at = now;

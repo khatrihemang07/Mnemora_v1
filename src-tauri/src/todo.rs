@@ -825,6 +825,24 @@ mod tests {
     }
 
     #[test]
+    fn a_taken_list_name_is_named_in_the_error_as_typed() {
+        let app = TestApp::new();
+        new_list(&app, "Work");
+        let other = new_list(&app, "Home");
+        let err = app
+            .invoke::<Value>("todo_list_create", json!({ "name": "  work " }))
+            .unwrap_err();
+        assert_eq!(err["message"], "There’s already a List called work");
+        let err = app
+            .invoke::<Value>(
+                "todo_list_rename",
+                json!({ "id": other["id"], "name": "WORK" }),
+            )
+            .unwrap_err();
+        assert_eq!(err["message"], "There’s already a List called WORK");
+    }
+
+    #[test]
     fn rename_and_emoji_are_updates_and_unchanged_values_write_nothing() {
         let app = TestApp::new();
         let list = new_list(&app, "Home");

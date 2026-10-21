@@ -597,6 +597,26 @@ describe('the Todo mock', () => {
     expect([entry?.open_count, entry?.task_count]).toEqual([1, 2]);
   });
 
+  it('names the List in the taken-name error, as typed and trimmed', () => {
+    const mock = createTodoMock();
+    mock.handle('todo_list_create', { name: 'Work' });
+    const other = mock.handle('todo_list_create', { name: 'Home' }) as TodoList;
+    const message = (run: () => unknown) => {
+      try {
+        run();
+      } catch (e) {
+        return (e as AppError).message;
+      }
+      return null;
+    };
+    expect(message(() => mock.handle('todo_list_create', { name: ' work ' }))).toBe(
+      'There’s already a List called work',
+    );
+    expect(message(() => mock.handle('todo_list_rename', { id: other.id, name: 'WORK' }))).toBe(
+      'There’s already a List called WORK',
+    );
+  });
+
   it('validates List names and emoji like Rust', () => {
     expect(validateListName('  Home ')).toBe('Home');
     expect(() => validateListName('é'.repeat(61))).toThrow();
