@@ -35,6 +35,7 @@ export class RowTouch {
   #pointer = -1;
   #sides: SwipeSides = { right: false, left: false };
   #quietUntil = 0;
+  #startedAt = 0;
   readonly #press: LongPress;
 
   constructor(private readonly opts: RowTouchOptions) {
@@ -60,6 +61,7 @@ export class RowTouch {
     if ((e.target as Element).closest(OWN_TAPS)) return;
     this.touching = true;
     this.#from = { x: e.clientX, y: e.clientY };
+    this.#startedAt = performance.now();
     this.#axis = null;
     this.#pointer = e.pointerId;
     this.#last = e;
@@ -89,7 +91,12 @@ export class RowTouch {
 
   up(e: PointerEvent): void {
     if (e.pointerId !== this.#pointer) return;
-    const outcome = this.following ? rowSwipeOutcome(this.dx, this.#sides) : null;
+    // The release's own position, not the last move's: a fast flick may end between move events.
+    const raw = this.#from ? e.clientX - this.#from.x : this.dx;
+    const outcome =
+      this.following || this.#axis === 'x'
+        ? rowSwipeOutcome(raw, this.#sides, performance.now() - this.#startedAt)
+        : null;
     const wasLifted = this.lifted;
     const swiped = this.following;
     this.#reset();

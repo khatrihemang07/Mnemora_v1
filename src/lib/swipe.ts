@@ -39,10 +39,18 @@ export function rowOffset(dx: number, sides: SwipeSides): number {
   return Math.sign(dx) * (ROW_COMMIT_PX + past * 0.35);
 }
 
-/** What releasing a row at `dx` does. */
-export function rowSwipeOutcome(dx: number, sides: SwipeSides): 'right' | 'left' | null {
-  if (dx >= ROW_COMMIT_PX && sides.right) return 'right';
-  if (dx <= -ROW_COMMIT_PX && sides.left) return 'left';
+/** A flick: at least this far, at least this fast (px per ms), commits a row without the full distance. */
+export const FLICK_MIN_PX = 40;
+export const FLICK_PX_PER_MS = 0.6;
+
+/**
+ * What releasing a row at `dx` does. `ms` is how long the gesture lasted: a quick flick counts even
+ * when it falls short of the commit distance.
+ */
+export function rowSwipeOutcome(dx: number, sides: SwipeSides, ms = 0): 'right' | 'left' | null {
+  const flick = ms > 0 && Math.abs(dx) >= FLICK_MIN_PX && Math.abs(dx) / ms >= FLICK_PX_PER_MS;
+  if ((dx >= ROW_COMMIT_PX || (flick && dx > 0)) && sides.right) return 'right';
+  if ((dx <= -ROW_COMMIT_PX || (flick && dx < 0)) && sides.left) return 'left';
   return null;
 }
 

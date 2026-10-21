@@ -94,7 +94,8 @@
         if (e.target instanceof Element && e.target.closest('[data-sonner-toast]')) e.preventDefault();
       }}
       onOpenAutoFocus={(e) => {
-        if (autoFocus) return;
+        // On a phone nothing is focused on open: a ring on the first button helps no one.
+        if (autoFocus && !viewport.isPhone) return;
         e.preventDefault();
         panel?.focus();
       }}
@@ -105,7 +106,7 @@
       }}
       style={sheetStyle}
       class="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto overscroll-contain rounded-t-lg bg-pop shadow-pop outline-none
-        {tall ? 'phone:h-[92dvh] phone:max-h-[92dvh]' : ''}
+        {tall ? 'phone:h-[88dvh] phone:max-h-[88dvh]' : ''}
         {bare
         ? ''
         : 'pt-3 pr-[calc(0.75rem+env(safe-area-inset-right))] pl-[calc(0.75rem+env(safe-area-inset-left))]'}

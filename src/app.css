@@ -255,3 +255,21 @@ textarea,
     transform: translateX(-28px);
   }
 }
+
+/* A phone never selects the words of controls, rows or headers on a long-press (no handles, no Copy bar). */
+:root[data-phone]
+:is(
+  button,
+  nav,
+  h1,
+  h2,
+  summary,
+  [role="option"],
+  [role="tab"],
+  [role="menuitem"],
+  [data-task-row]
+) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}

@@ -37,10 +37,19 @@
   let input = $state<HTMLInputElement | null>(null);
   let saving = false;
 
-  onMount(() => {
-    value = initial;
+  let mountedAt = 0;
+  const selectAll = () => {
     input?.focus();
     input?.select();
+  };
+  onMount(() => {
+    value = initial;
+    mountedAt = performance.now();
+    selectAll();
+    // A touch's own tap lands after mounting and can drop the selection or the focus: take both
+    // again once it has, so typing replaces the name and the keyboard stays up.
+    const t = setTimeout(() => value === initial && selectAll(), 150);
+    return () => clearTimeout(t);
   });
 
   async function submit() {
@@ -93,7 +102,13 @@
     oninput={() => (problem = null)}
     {onkeydown}
     onblur={() => {
-      if (!saving) oncancel();
+      if (saving) return;
+      // Focus handed back to the menu or sheet that opened us in the first moments is not "away".
+      if (performance.now() - mountedAt < 400) {
+        setTimeout(selectAll, 0);
+        return;
+      }
+      oncancel();
     }}
   />
   {#if problem}

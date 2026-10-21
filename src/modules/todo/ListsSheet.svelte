@@ -6,6 +6,7 @@
   right-click; the Inbox, All and Done have none.
 -->
 <script lang="ts">
+  import { flushSync } from 'svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import Check from '~icons/lucide/check';
   import ListPlus from '~icons/lucide/list-plus';
@@ -75,7 +76,16 @@
   const items = $derived<MenuItem[]>(
     menu
       ? [
-          { label: 'Rename', icon: Pencil, onselect: () => (renaming = menu?.entry.list.id ?? null) },
+          {
+            label: 'Rename',
+            icon: Pencil,
+            onselect: () => {
+              renaming = menu?.entry.list.id ?? null;
+              // Inside the tap's own event, so the keyboard comes up on a touch screen.
+              flushSync();
+              document.querySelector<HTMLInputElement>('input[aria-label="List name"]')?.select();
+            },
+          },
           {
             label: 'Emoji…',
             icon: Smile,
@@ -136,7 +146,7 @@
       >
         <span class="grid size-6 shrink-0 place-items-center text-muted"><Icon class="size-5" /></span>
         <span class="flex-1">{id === 'all' ? 'All' : 'Done'}</span>
-        {#if sameView(todoNav.view, smartView(id))}<Check class="size-4 text-accent" />{/if}
+        {#if sameView(todoNav.view, smartView(id))}<Check class="size-4 text-hue-todo" />{/if}
       </button>
     {/each}
 
@@ -173,7 +183,7 @@
         <span class="grid size-6 shrink-0 place-items-center"><ListGlyph emoji={entry.list.emoji} class="[&_span]:text-lg [&_svg]:size-5" /></span>
         <span class="min-w-0 flex-1 truncate">{entry.list.name}</span>
         {#if sameView(todoNav.view, listView(entry.list.id))}
-          <Check class="size-4 text-accent" />
+          <Check class="size-4 text-hue-todo" />
         {:else if entry.open_count > 0}
           <span class="text-xs text-faint tabular-nums">{entry.open_count}</span>
         {/if}

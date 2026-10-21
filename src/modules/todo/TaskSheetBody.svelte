@@ -418,7 +418,7 @@
 
     <div class="flex items-center gap-2.5 border-t border-line pt-2 text-[0.72rem] text-faint phone:mt-auto">
       <span>
-        Created {stampLabel(stored.created_at, todoClock.today, todoPrefs.timeFormat, false)}{#if footerDone} · {footerDone}{/if}
+        Created {stampLabel(stored.created_at, todoClock.today, todoPrefs.timeFormat, false)}{#if footerDone}{' · '}{footerDone}{/if}
       </span>
       <span class="flex-1"></span>
       <IconButton bind:ref={moreButton} icon={Ellipsis} label="Task actions" size="sm" onclick={() => (menuOpen = true)} />

@@ -22,7 +22,7 @@
 <div
   data-view-swipe
   style:touch-action="pan-y"
-  class="sticky top-0 z-20 -mx-(--pad) mb-1 bg-bg px-(--pad) pt-0.5 pb-2"
+  class="sticky -top-(--pad) z-20 -mx-(--pad) -mt-(--pad) mb-1 bg-bg px-(--pad) pt-[calc(var(--pad)+0.125rem)] pb-2"
 >
   <div role="tablist" aria-label="Todo views" class="grid grid-cols-[1fr_1fr_1fr_3rem] gap-0.5 rounded-lg bg-surface-2 p-[3px]">
     {#each PHONE_SEGMENTS as id (id)}

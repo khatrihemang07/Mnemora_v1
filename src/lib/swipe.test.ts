@@ -41,6 +41,19 @@ describe('row swipes', () => {
   });
 });
 
+describe('row flicks', () => {
+  it('commits a fast short swipe both ways', () => {
+    expect(rowSwipeOutcome(50, both, 60)).toBe('right');
+    expect(rowSwipeOutcome(-50, both, 60)).toBe('left');
+    expect(rowSwipeOutcome(350, both, 250)).toBe('right');
+  });
+  it('ignores a slow short one, a tiny one, and a side with no action', () => {
+    expect(rowSwipeOutcome(50, both, 400)).toBeNull();
+    expect(rowSwipeOutcome(20, both, 10)).toBeNull();
+    expect(rowSwipeOutcome(-50, { right: true, left: false }, 60)).toBeNull();
+  });
+});
+
 describe('viewSwipeStep', () => {
   it('goes to the next view on a left swipe and the previous on a right one', () => {
     expect(viewSwipeStep(-80, 5)).toBe(1);

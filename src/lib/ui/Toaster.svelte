@@ -7,7 +7,7 @@
 <script lang="ts">
   import { Toaster } from 'svelte-sonner';
   import { viewport } from '../viewport.svelte';
-  import { openSheets } from './sheet-open.svelte';
+  import { openSheets, phoneFab } from './sheet-open.svelte';
 
   const atTop = $derived(viewport.isPhone && openSheets.count > 0);
 </script>
@@ -18,8 +18,8 @@
   duration={4000}
   offset={16}
   mobileOffset={{
-    top: 'calc(12px + env(safe-area-inset-top))',
-    bottom: viewport.isPhone ? 'calc(72px + env(safe-area-inset-bottom))' : 16,
+    top: 'calc(8px + env(safe-area-inset-top))',
+    bottom: viewport.isPhone ? `calc(${phoneFab.shown ? 144 : 72}px + env(safe-area-inset-bottom))` : 16,
     left: 'calc(16px + env(safe-area-inset-left))',
     right: 'calc(16px + env(safe-area-inset-right))',
   }}
@@ -43,6 +43,13 @@
   }
   /* A modal (the Task sheet) turns pointer events off on the page; a toast with Undo must stay clickable. */
   :global(html [data-sonner-toast]) {
+    pointer-events: auto;
+  }
+  /* On a phone a tap on the toast's body (which would pause and so extend it) goes through; only its button takes taps. */
+  :global(html[data-phone] [data-sonner-toast]) {
+    pointer-events: none;
+  }
+  :global(html[data-phone] [data-sonner-toast] [data-button]) {
     pointer-events: auto;
   }
   :global(html [data-sonner-toast][data-styled='true'] [data-button]) {

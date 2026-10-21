@@ -19,6 +19,7 @@
   import { keyboard } from '../../lib/keyboard.svelte';
   import { viewSwipeStep } from '../../lib/swipe';
   import { addDays } from '../../lib/ui/calendar';
+  import { phoneFab } from '../../lib/ui/sheet-open.svelte';
   import { pageHeader } from '../../lib/ui/page-header.svelte';
   import { viewport } from '../../lib/viewport.svelte';
   import { clock } from '../../lib/time/clock.svelte';
@@ -100,8 +101,16 @@
 
   // The segments sit under each page's large title, so the title row asks for them (see PageHeader).
   $effect(() => {
-    if (!viewport.isPhone) return;
+    if (!viewport.isPhone || todoSearch.active) return;
     return pageHeader.setPhoneBar(segments);
+  });
+
+  // Toasts keep clear of the + button while it shows.
+  $effect(() => {
+    phoneFab.shown = viewport.isPhone && !todoSearch.active && !keyboard.open;
+    return () => {
+      phoneFab.shown = false;
+    };
   });
 
   // The Todo tab tapped again: back to the top (Today was already chosen by `todoNav.home`).
@@ -271,7 +280,7 @@
   <div
     bind:this={scroller}
     data-task-scope="view"
-    class="selectable h-full overflow-y-auto p-(--pad) phone:pb-24"
+    class="selectable h-full overflow-y-auto p-(--pad) phone:pb-24 phone:[scrollbar-width:none]"
     inert={todoSearch.active}
     aria-hidden={todoSearch.active}
     onpointerdown={swipeStart}
