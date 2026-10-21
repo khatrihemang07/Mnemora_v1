@@ -29,4 +29,20 @@ object WidgetRequests {
 
     /** The Lists for the setup screen, with the app's theme. */
     fun lists(): String = JSONObject().put("method", "lists").toString()
+
+    /**
+     * A tick. [tickSteps] answers a Task's open steps: null asks (Rust replies `open_steps` and
+     * changes nothing), true ticks every step first, false completes as it is.
+     */
+    fun complete(id: String, tickSteps: Boolean?, epochMs: Long, zone: ZoneId): String =
+        JSONObject()
+            .put("method", "complete")
+            .put("id", id)
+            .put("tick_steps", tickSteps ?: JSONObject.NULL)
+            .put("local", local(epochMs, zone))
+            .toString()
+
+    /** Undo for a tick, with the opaque token its reply gave. */
+    fun undo(token: String): String =
+        JSONObject().put("method", "undo").put("token", token).toString()
 }

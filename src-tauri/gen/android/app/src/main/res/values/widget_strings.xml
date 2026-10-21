@@ -36,4 +36,11 @@
     <string name="widget_background_solid">Solid</string>
     <string name="widget_background_see_through">See-through</string>
     <string name="widget_background_none">None</string>
+    <string name="widget_undo">Undo</string>
+    <string name="widget_steps_one">1 step is still open</string>
+    <string name="widget_steps_many">%1$d steps are still open</string>
+    <string name="widget_steps_line">\u201C%1$s\u201D has unticked Checklist items.</string>
+    <string name="widget_steps_tick_all">Tick all and complete</string>
+    <string name="widget_steps_complete">Complete</string>
+    <string name="widget_steps_cancel">Cancel</string>
 </resources>

@@ -60,6 +60,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Tick and Undo taps from the Todo widget. Only this app's own PendingIntents reach it. -->
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
+            android:enabled="@bool/todo_widget_enabled"
+            android:exported="false" />
+
+        <!-- The open-steps question over home: translucent, its own task, kept out of Recents, never
+             started by anything but the Todo widget. -->
+        <activity
+            android:name=".widget.StepsDialogActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.widgetdialog"
+            android:theme="@style/Theme.TodoWidgetDialog" />
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"

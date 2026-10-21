@@ -47,6 +47,7 @@ object WidgetRenderer {
         val open = openApp(context)
         views.setOnClickPendingIntent(R.id.root, open)
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
+        undoBar(context, views, palette, config.background, appWidgetId)
         when (reply) {
             is Reply.Ok -> ok(context, views, palette, edge, reply.snapshot, open, previewLines, appWidgetId)
             Reply.NotSetUp -> message(
@@ -82,6 +83,37 @@ object WidgetRenderer {
         }
         return views
     }
+
+    /** The Undo bar after a tick, in the widget's own theme; hidden once its time is up. */
+    private fun undoBar(context: Context, views: RemoteViews, palette: Palette, background: Background, appWidgetId: Int) {
+        // The setup screen's preview is not a real widget: no bar there.
+        val state = if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) null else UndoBar.get(context, System.currentTimeMillis())
+        if (state == null) {
+            views.setViewVisibility(R.id.undo_bar, View.GONE)
+            return
+        }
+        // Over a bare wallpaper the bar is its own light card, whatever the theme.
+        val bare = background == Background.NONE
+        val fill = if (bare) Palette.withAlpha(0xFFFFFFFF.toInt(), 0.92f) else palette.surface2
+        val ink = if (bare) 0xFF1D1712.toInt() else palette.ink
+        views.setViewVisibility(R.id.undo_bar, View.VISIBLE)
+        views.setColorStateList(R.id.undo_bar, "setBackgroundTintList", ColorStateList.valueOf(fill))
+        views.setTextViewText(R.id.undo_text, state.message)
+        views.setTextColor(R.id.undo_text, ink)
+        views.setTextColor(R.id.undo_action, palette.todo)
+        views.setOnClickPendingIntent(R.id.undo_action, actionIntent(context, WidgetActionReceiver.ACTION_UNDO, 2, FLAG_IMMUTABLE_ONLY))
+    }
+
+    /** A broadcast to the receiver that ticks and undoes. Explicit, so it is safe even when mutable. */
+    private fun actionIntent(context: Context, action: String, requestCode: Int, flags: Int): PendingIntent =
+        PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            Intent(context, WidgetActionReceiver::class.java).setAction(action),
+            PendingIntent.FLAG_UPDATE_CURRENT or flags,
+        )
+
+    private const val FLAG_IMMUTABLE_ONLY = PendingIntent.FLAG_IMMUTABLE
 
     /** Makes a gear open this widget's setup; without a real widget (the setup preview) it does nothing. */
     private fun gearClick(context: Context, views: RemoteViews, id: Int, appWidgetId: Int) {
@@ -151,14 +183,16 @@ object WidgetRenderer {
         views.setViewVisibility(R.id.list, View.VISIBLE)
         // New contents start at the top, not where the last draw was scrolled to.
         views.setScrollPosition(R.id.list, 0)
-        views.setPendingIntentTemplate(R.id.list, open)
-        views.setRemoteAdapter(R.id.list, items(context, palette, edge, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
+        // Row taps are broadcasts to the receiver; each row's fill-in says which part was tapped.
+        views.setPendingIntentTemplate(R.id.list, actionIntent(context, WidgetActionReceiver.ACTION_ROW, 3, PendingIntent.FLAG_MUTABLE))
+        views.setRemoteAdapter(R.id.list, items(context, palette, edge, appWidgetId, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
     }
 
     private fun items(
         context: Context,
         palette: Palette,
         edge: TextEdge,
+        appWidgetId: Int,
         lines: List<Item>,
     ): RemoteViews.RemoteCollectionItems {
         val builder = RemoteViews.RemoteCollectionItems.Builder()
@@ -167,7 +201,7 @@ object WidgetRenderer {
         lines.forEachIndexed { index, line ->
             when (line) {
                 is Item.Heading -> builder.addItem(-(index + 1L), heading(context, palette, edge, line))
-                is Item.Task -> builder.addItem(line.row.id.hashCode().toLong(), task(context, palette, edge, line.row))
+                is Item.Task -> builder.addItem(line.row.id.hashCode().toLong(), task(context, palette, edge, appWidgetId, line.row))
             }
         }
         return builder.build()
@@ -180,7 +214,7 @@ object WidgetRenderer {
         return views
     }
 
-    private fun task(context: Context, palette: Palette, edge: TextEdge, row: TaskRow): RemoteViews {
+    private fun task(context: Context, palette: Palette, edge: TextEdge, appWidgetId: Int, row: TaskRow): RemoteViews {
         val views = RemoteViews(context.packageName, edge.row)
         views.setTextViewText(R.id.row_title, row.title)
         views.setTextColor(R.id.row_title, palette.ink)
@@ -209,7 +243,18 @@ object WidgetRenderer {
             views.setTextColor(R.id.row_chip, palette.muted)
             views.setColorStateList(R.id.row_chip, "setBackgroundTintList", ColorStateList.valueOf(palette.surface2))
         }
-        views.setOnClickFillInIntent(R.id.row_root, Intent())
+        views.setOnClickFillInIntent(
+            R.id.row_root,
+            Intent().putExtra(WidgetActionReceiver.EXTRA_KIND, WidgetActionReceiver.KIND_OPEN),
+        )
+        // The diamond ticks.
+        views.setOnClickFillInIntent(
+            R.id.diamond,
+            Intent()
+                .putExtra(WidgetActionReceiver.EXTRA_KIND, WidgetActionReceiver.KIND_TICK)
+                .putExtra(WidgetActionReceiver.EXTRA_TASK_ID, row.id)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId),
+        )
         return views
     }
 

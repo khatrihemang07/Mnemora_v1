@@ -54,4 +54,13 @@
     <color name="widget_you_dark_accent">#FF9499FA</color>
     <color name="widget_you_dark_todo">#FF00A08F</color>
     <color name="widget_you_dark_on_todo">#FF0F101F</color>
+    <!-- The open-steps dialog's window: see-through over home, no title bar; the dialog card is drawn in code in the widget's theme. -->
+    <style name="Theme.TodoWidgetDialog" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
 </resources>

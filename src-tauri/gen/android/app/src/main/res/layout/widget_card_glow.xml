@@ -148,6 +148,43 @@
         android:src="@drawable/widget_gear"
         android:visibility="gone" />
 
+    <!-- The Undo bar after a tick: floats over the bottom of the list for about four seconds. -->
+    <LinearLayout
+        android:id="@+id/undo_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_marginBottom="8dp"
+        android:background="@drawable/widget_undo_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="4dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/undo_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="12.5sp" />
+
+        <TextView
+            android:id="@+id/undo_action"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:padding="8dp"
+            android:text="@string/widget_undo"
+            android:textSize="12.5sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
     <!-- The Sandbox build's amber tab at the top centre of the card. -->
     <TextView
         android:id="@+id/sandbox_tag"

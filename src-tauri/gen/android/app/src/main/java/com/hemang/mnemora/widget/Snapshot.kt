@@ -59,6 +59,18 @@ sealed interface Reply {
     data object Failed : Reply
 }
 
+/** What the bridge answered to a tick. */
+sealed interface TickReply {
+    /** The Task is done (or moved on). [message] is the Undo bar's text, [token] undoes it. */
+    data class Completed(val message: String, val token: String) : TickReply
+
+    /** The Task has unticked steps: ask before doing anything. */
+    data class OpenSteps(val taskId: String, val title: String, val count: Int) : TickReply
+
+    /** Anything else: the Task is gone or closed, the app needs an update, no library. */
+    data object Failed : TickReply
+}
+
 /** Reads the bridge's JSON reply. Never throws: anything unreadable is [Reply.Failed]. */
 object ReplyParser {
     fun parse(json: String?): Reply {
@@ -74,6 +86,31 @@ object ReplyParser {
             }
         } catch (e: Exception) {
             Reply.Failed
+        }
+    }
+
+    /** Reads the reply to a tick. Never throws. */
+    fun parseTick(json: String?): TickReply {
+        if (json == null) return TickReply.Failed
+        return try {
+            val ok = JSONObject(json).optJSONObject("ok") ?: return TickReply.Failed
+            when (ok.optString("kind")) {
+                "completed" -> TickReply.Completed(ok.getString("message"), ok.getString("token"))
+                "open_steps" -> TickReply.OpenSteps(ok.getString("task_id"), ok.getString("title"), ok.getInt("count"))
+                else -> TickReply.Failed
+            }
+        } catch (e: Exception) {
+            TickReply.Failed
+        }
+    }
+
+    /** Whether an Undo worked. */
+    fun parseUndo(json: String?): Boolean {
+        if (json == null) return false
+        return try {
+            JSONObject(json).optJSONObject("ok")?.optBoolean("undone") == true
+        } catch (e: Exception) {
+            false
         }
     }
 

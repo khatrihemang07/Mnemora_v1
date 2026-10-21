@@ -2,6 +2,7 @@ package com.hemang.mnemora.widget
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -32,5 +33,30 @@ class WidgetRequestsTest {
         assertEquals("snapshot", json.getString("method"))
         assertEquals("today", json.getString("view"))
         assertEquals("2026-10-21", json.getJSONObject("local").getString("today"))
+    }
+
+    @Test
+    fun completeAsksFirstWhenNoAnswerToOpenStepsIsGiven() {
+        val json = JSONObject(WidgetRequests.complete("t1", null, ms("2026-10-21T09:00:00Z"), ZoneId.of("UTC")))
+        assertEquals("complete", json.getString("method"))
+        assertEquals("t1", json.getString("id"))
+        assertTrue(json.isNull("tick_steps") || !json.has("tick_steps"))
+        assertEquals("2026-10-21", json.getJSONObject("local").getString("today"))
+    }
+
+    @Test
+    fun completeCarriesTheAnswerToOpenSteps() {
+        val all = JSONObject(WidgetRequests.complete("t1", true, 0L, ZoneId.of("UTC")))
+        assertEquals(true, all.getBoolean("tick_steps"))
+        val asIs = JSONObject(WidgetRequests.complete("t1", false, 0L, ZoneId.of("UTC")))
+        assertEquals(false, asIs.getBoolean("tick_steps"))
+    }
+
+    @Test
+    fun undoCarriesTheTokenUntouched() {
+        val token = """{"reopen":"x","notes":"- [ ] a\n"}"""
+        val json = JSONObject(WidgetRequests.undo(token))
+        assertEquals("undo", json.getString("method"))
+        assertEquals(token, json.getString("token"))
     }
 }
