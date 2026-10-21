@@ -101,6 +101,7 @@
       href={router.href(entry.path)}
       active={inside}
       accentVar={entry.manifest.accentVar}
+      badgeOf={entry.manifest}
       {shortcut}
       rail
       tooltip={false}
@@ -132,6 +133,7 @@
     active={inside && !shell.treeOpen}
     current={inside}
     accentVar={entry.manifest.accentVar}
+    badgeOf={entry.manifest}
     {shortcut}
     rail={false}
     chevron={{

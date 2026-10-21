@@ -2,7 +2,7 @@
   QuickAddHost: the floating Quick add, mounted by the shell for as long as Todo is on. Q opens it
   anywhere outside Todo's own pages (and inside Todo where the page has no "+ New task" row): the
   same capture box as the inline one, in a centred panel (a bottom sheet on a phone), adding to the
-  Inbox unless the text says otherwise. The Task is added and the box closes, and the toast names
+  Inbox unless the text says otherwise; Home's Add opens it due today. The Task is added and the box closes, and the toast names
   the Task and where it went. Esc closes it.
 -->
 <script lang="ts">
@@ -32,7 +32,8 @@
       class="bg-transparent shadow-none"
       bind:guard
       quick
-      placeholder="Quick add to Inbox"
+      date={quickAdd.date}
+      placeholder={quickAdd.date ? 'Quick add, due today' : 'Quick add to Inbox'}
       onclose={() => quickAdd.close()}
       onadded={(task, where) => {
         quickAdd.close();

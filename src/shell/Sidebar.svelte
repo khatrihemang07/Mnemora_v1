@@ -55,6 +55,7 @@
           href={router.href(e.path)}
           active={router.isActive(e.path)}
           accentVar={e.manifest.accentVar}
+          badgeOf={e.manifest}
           shortcut={hint(e.manifest.nav.shortcut)}
           {rail}
         />

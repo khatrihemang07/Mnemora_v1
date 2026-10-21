@@ -1,7 +1,8 @@
 <!--
   CommandPalette: ⌘K list of actions on Bits UI Command. Shows shortcuts (N16-A). Filtering is ours
   (`visibleItems`), so an item with a `queryLabel` can offer to act on what was typed
-  ("Search Journal for 'river'") and `run` receives it.
+  ("Search Journal for 'river'") and `run` receives it. A `queryPreview` adds a muted line after
+  the label saying what it would do (Todo's "Add task": how the date, Priority and List read).
 -->
 <script lang="ts">
   import { Command, Dialog } from 'bits-ui';
@@ -17,6 +18,8 @@
     shortcut?: string;
     /** Makes it a query action: it shows once something is typed, with this label for the text. */
     queryLabel?: (query: string) => string;
+    /** A line for a query action saying what it would do with `query`, shown after its label. */
+    queryPreview?: (query: string) => Promise<string | null>;
     /** `query` is the trimmed text typed in the palette. */
     run: (query: string) => void;
   }
@@ -30,6 +33,32 @@
   let typed = $state('');
   const shown = $derived(visibleItems(items, typed));
   const groups = $derived([...new Set(shown.map((v) => v.item.group))]);
+
+  // A query action's preview ("Tomorrow · 18:00 · P2"): asked as the text settles, the latest
+  // answer wins, and a stale one never shows beside different text.
+  let previews = $state<Record<string, { for: string; line: string }>>({});
+  $effect(() => {
+    const text = typed.trim();
+    if (!open || !text) {
+      previews = {};
+      return;
+    }
+    const asking = items.filter((i) => i.queryPreview);
+    const timer = setTimeout(() => {
+      for (const item of asking) {
+        void item.queryPreview?.(text).then((line) => {
+          if (typed.trim() !== text) return;
+          const { [item.id]: _old, ...rest } = previews;
+          previews = line ? { ...rest, [item.id]: { for: text, line } } : rest;
+        });
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  });
+  const previewOf = (item: PaletteItem) => {
+    const p = previews[item.id];
+    return p && p.for === typed.trim() ? p.line : null;
+  };
 
   // Each opening starts empty.
   $effect(() => {
@@ -69,7 +98,11 @@
                     class="flex h-9 cursor-pointer items-center gap-2.5 rounded-sm px-2.5 text-ink select-none data-selected:bg-hover"
                   >
                     {#if item.icon}<item.icon class="size-4 text-muted" />{/if}
-                    <span class="flex-1">{label}</span>
+                    <span class="min-w-0 truncate">{label}</span>
+                    <span class="flex-1"></span>
+                    {#if previewOf(item)}
+                      <span class="shrink-0 text-xs text-muted" data-preview>{previewOf(item)}</span>
+                    {/if}
                     {#if item.shortcut}<Kbd keys={item.shortcut} />{/if}
                   </Command.Item>
                 {/each}

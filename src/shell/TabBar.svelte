@@ -6,6 +6,7 @@
   import { readCore } from '../lib/settings/core';
   import { settingsQuery } from '../lib/settings/queries';
   import Sheet from '../lib/ui/Sheet.svelte';
+  import ModuleBadge from './ModuleBadge.svelte';
   import { activeModuleId, isMoreActive, visibleTabs } from './phone-tabs';
   import { useEnabledModules } from './enabled.svelte';
   import { router } from './router';
@@ -36,8 +37,9 @@
       aria-current={active ? 'page' : undefined}
       class="{item} {active ? 'font-semibold text-ink' : 'text-muted'}"
     >
-      <span style:color={active ? `var(${e.manifest.accentVar})` : 'inherit'}>
+      <span class="relative" style:color={active ? `var(${e.manifest.accentVar})` : 'inherit'}>
         <e.manifest.icon class="size-5" />
+        {#if e.manifest.useBadge}<ModuleBadge manifest={e.manifest} placement="corner" />{/if}
       </span>
       {e.manifest.name}
     </a>
