@@ -147,7 +147,7 @@ How a view splits its open Tasks into groups: Today by Priority or List, Upcomin
 _Avoid_: Filter, section
 
 **Sort**:
-How Tasks are ordered inside each group on a List page or the Inbox: Manual, Due date, Priority, Title or Recently added. Grouping happens first. Dragging is off while a sort other than Manual is on, and Manual brings back the drag order untouched. The Lists in the sidebar have their own sort: Manual, Name A–Z or Z–A, Most open or Recently created.
+How Tasks are ordered inside each group on a List page or the Inbox: Manual, Due date, Priority, Title or Recently added. Grouping happens first. Dragging is off while a sort other than Manual is on, and Manual brings back the drag order untouched. The Lists in the sidebar have their own sort: Manual, Name A–Z or Z–A, Most open or Oldest first.
 _Avoid_: Order by
 
 **Manual order**:

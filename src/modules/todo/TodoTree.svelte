@@ -3,7 +3,7 @@
   then a "Lists" header with a + and the Lists. The + turns into an inline name field (Enter
   creates the List and opens it). Right-click (long-press on a phone) a List for Rename, Emoji… and
   Delete list…; a List with Tasks asks what becomes of them first. Counts are open Tasks. ⋯ on the
-  Lists header sorts the Lists (Manual, Name A–Z or Z–A, Most open, Recently created); with Manual
+  Lists header sorts the Lists (Manual, Name A–Z or Z–A, Most open, Oldest first); with Manual
   a List can be dragged to a new place, and a dragged Task dropped on a List, Today or the Inbox
   moves there.
 -->
