@@ -29,10 +29,8 @@ pub fn open_existing(path: &Path) -> AppResult<Option<Connection>> {
     if !path.is_file() {
         return Ok(None);
     }
-    let conn = Connection::open_with_flags(
-        path,
-        OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE,
-    )?;
+    let conn =
+        Connection::open_with_flags(path, OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE)?;
     configure(&conn)?;
     Ok(Some(conn))
 }

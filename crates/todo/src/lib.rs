@@ -28,6 +28,8 @@ mod task;
 mod task_service;
 mod upgrade;
 mod when;
+mod widget;
+mod widget_text;
 
 use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::error::AppResult;
@@ -68,6 +70,9 @@ pub use task_service::{
     Purged, delete_task, purge_deleted, restore_task, set_priority, task, update_task, wont_do,
 };
 pub use when::{LocalNow, NewWhen};
+pub use widget::{
+    EmptyState, HeaderCount, Tone, WidgetGroup, WidgetRow, WidgetSnapshot, WidgetView, snapshot,
+};
 
 /// The Todo Module.
 pub struct TodoModule;
