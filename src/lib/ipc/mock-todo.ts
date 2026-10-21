@@ -57,6 +57,7 @@ import {
 import { historyOf, type LogRecord } from './mock-todo-history';
 import { keyAfter, placeKey } from './mock-todo-order';
 import { parseText } from './mock-todo-parse';
+import { searchTasks } from './mock-todo-search';
 
 const MAX_TITLE_CHARS = 500;
 const MAX_LIST_NAME_CHARS = 60;
@@ -1113,6 +1114,12 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
           }
           return copy(wireList(list));
         }
+        case 'todo_search':
+          return searchTasks(
+            live().map(wire),
+            comments.filter((c) => !c.deleted && find(c.task_id)).map(wireComment),
+            a.query as string,
+          );
         case 'todo_task': {
           const task = find(a.id);
           if (!task) throw missing();

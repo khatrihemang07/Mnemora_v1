@@ -1,5 +1,5 @@
 /**
- * Browser-mock Journal search. Follows the rules in crates/journal (case and accents ignored, word
+ * Browser-mock Journal search. Follows the rules in crates/journal and crates/core/src/search (case and accents ignored, word
  * prefixes, every word required, "quoted phrases", typos by word length as a separate group) with
  * plain scans instead of an index, so the search UI can be tried without Rust.
  */
@@ -8,18 +8,18 @@ import { validDate } from './mock-journal-pages';
 
 const MAX_EXACT = 500;
 const MAX_SIMILAR = 100;
-/** Most near words kept per query word (MAX_NEAR_PER_WORD in crates/journal/src/fuzzy.rs). */
+/** Most near words kept per query word (MAX_NEAR_PER_WORD in crates/core/src/search/fuzzy.rs). */
 const MAX_NEAR = 20;
 const SNIPPET_CHARS = 160;
 const LEAD_CHARS = 40;
 const WORD = /[\p{L}\p{N}\p{M}]+/gu;
 
-type Term = { word: string } | { phrase: string[] };
+export type Term = { word: string } | { phrase: string[] };
 
-const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-const words = (s: string) => (s.match(WORD) ?? []).map(fold).filter(Boolean);
+export const fold = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+export const words = (s: string) => (s.match(WORD) ?? []).map(fold).filter(Boolean);
 
-function parse(query: string): Term[] {
+export function parse(query: string): Term[] {
   return query.split('"').flatMap((part, i): Term[] => {
     const ws = words(part);
     if (i % 2 === 1) return ws.length ? [{ phrase: ws }] : [];
@@ -49,14 +49,14 @@ function distance(a: string, b: string, max: number): number {
 }
 
 /** Per term, the words of `vocab` (word -> Entries using it) a bare word may also match whole. */
-type Near = Set<string>[];
+export type Near = Set<string>[];
 
 /**
- * Like `near_terms` in crates/journal/src/fuzzy.rs: per bare word, the vocabulary words within its
+ * Like `near_terms` in crates/core/src/search/fuzzy.rs: per bare word, the vocabulary words within its
  * tolerance (never the word itself), nearest first, then most used, then alphabetical, cut at
  * MAX_NEAR. Phrases and short words get none.
  */
-function nearWords(terms: Term[], vocab: Map<string, number>): Near {
+export function nearWords(terms: Term[], vocab: Map<string, number>): Near {
   return terms.map((t) => {
     if (!('word' in t) || tolerance(t.word.length) === 0) return new Set();
     const max = tolerance(t.word.length);
@@ -76,7 +76,7 @@ function hasPhrase(tokens: string[], phrase: string[]): boolean {
 }
 
 /** Whether `tokens` satisfy every term; a bare word may also match one of its `near` words whole. */
-function matches(tokens: string[], terms: Term[], near: Near): boolean {
+export function matches(tokens: string[], terms: Term[], near: Near): boolean {
   return terms.every((t, i) =>
     'phrase' in t
       ? hasPhrase(tokens, t.phrase)
@@ -84,7 +84,7 @@ function matches(tokens: string[], terms: Term[], near: Near): boolean {
   );
 }
 
-/** Mirrors `plain_text` in crates/journal/src/words.rs: Markdown removed, lines joined with " · ". */
+/** Mirrors `plain_text` in crates/core/src/search/plain.rs: Markdown removed, lines joined with " · ". */
 export function plainText(body: string): string {
   let inFence = false;
   const lines: string[] = [];
@@ -114,17 +114,40 @@ function stripLinePrefix(line: string): string {
 }
 
 function snippet(body: string, terms: Term[], near: Near): Span[] {
-  const text = plainText(body);
-  const found = [...text.matchAll(WORD)].map((m) => ({
-    start: m.index ?? 0,
-    end: (m.index ?? 0) + m[0].length,
-    token: fold(m[0]),
-  }));
+  return windowSpans(plainText(body), terms, near);
+}
+
+/** Which words of `text` match: char ranges plus the folded word. */
+function markedWords(text: string, terms: Term[], near: Near) {
   const hit = (tok: string) =>
     terms.some((t, i) =>
       'phrase' in t ? t.phrase.includes(tok) : tok.startsWith(t.word) || near[i]?.has(tok),
     );
-  const marks = found.filter((f) => hit(f.token));
+  return [...text.matchAll(WORD)]
+    .map((m) => ({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, token: fold(m[0]) }))
+    .filter((f) => hit(f.token));
+}
+
+/** Whether any word of `text` matches (Matcher::matches in crates/core/src/search/mark.rs). */
+export const hasMarks = (text: string, terms: Term[], near: Near) =>
+  markedWords(text, terms, near).length > 0;
+
+/** Every word of `text` that matches, as spans covering all of `text` (a title to highlight). */
+export function highlightSpans(text: string, terms: Term[], near: Near): Span[] {
+  const spans: Span[] = [];
+  let cursor = 0;
+  for (const m of markedWords(text, terms, near)) {
+    if (m.start > cursor) spans.push({ text: text.slice(cursor, m.start), matched: false });
+    spans.push({ text: text.slice(m.start, m.end), matched: true });
+    cursor = m.end;
+  }
+  if (cursor < text.length) spans.push({ text: text.slice(cursor), matched: false });
+  return spans;
+}
+
+/** A window of plain `text` around its first match (`window` in crates/core/src/search/mark.rs). */
+export function windowSpans(text: string, terms: Term[], near: Near): Span[] {
+  const marks = markedWords(text, terms, near);
   const first = marks[0]?.start ?? 0;
   let start = Math.max(0, first - LEAD_CHARS);
   while (start > 0 && start < first && text[start - 1] !== ' ') start++;
