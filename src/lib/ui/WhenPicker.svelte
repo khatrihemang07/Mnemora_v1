@@ -103,7 +103,27 @@
 
   const grid = $derived(buildGrid(today, weekStart, page));
   const quick = $derived(quickDays(today, weekStart));
-  const reading = $derived(typed.trim() ? parse(typed, { today, now, weekStart }) : null);
+  // The reader may be asynchronous (Todo asks Rust): `reading` follows the text, and the message
+  // "Not understood" waits until the answer for this very text is in.
+  let reading = $state<ParsedWhen | null>(null);
+  let readFor = $state('');
+  let readSeq = 0;
+  $effect(() => {
+    const text = typed;
+    const mine = ++readSeq;
+    if (!text.trim()) {
+      [reading, readFor] = [null, text];
+      return;
+    }
+    const answer = parse(text, { today, now, weekStart });
+    if (!(answer instanceof Promise)) {
+      [reading, readFor] = [answer, text];
+      return;
+    }
+    answer
+      .then((r) => mine === readSeq && ([reading, readFor] = [r, text]))
+      .catch(() => mine === readSeq && ([reading, readFor] = [null, text]));
+  });
   const suggestions = $derived(timeSuggestions(timeText));
   const repeat = $derived(value.repeat ?? null);
   // The days a Repeat lands on in the grid get a ring of their own.
@@ -153,8 +173,10 @@
     open = false;
   }
 
-  function applyTyped() {
-    const read: ParsedWhen | null = reading;
+  async function applyTyped() {
+    const read: ParsedWhen | null = typed.trim()
+      ? await Promise.resolve(parse(typed, { today, now, weekStart })).catch(() => null)
+      : null;
     if (!read) return;
     onchange({
       date: read.date ?? value.date,
@@ -167,7 +189,7 @@
   function onTypeKey(e: KeyboardEvent) {
     if (e.isComposing || e.key !== 'Enter') return;
     e.preventDefault();
-    applyTyped();
+    void applyTyped();
   }
 
   async function openTime() {
@@ -259,7 +281,7 @@
         <span class="shrink-0 text-xs font-semibold text-(--wp-hue)" aria-live="polite">
           {summarise({ date: reading.date, time: reading.time })} ↵
         </span>
-      {:else if typed.trim()}
+      {:else if typed.trim() && readFor === typed}
         <span class="shrink-0 text-xs text-faint" aria-live="polite">Not understood</span>
       {/if}
     </div>

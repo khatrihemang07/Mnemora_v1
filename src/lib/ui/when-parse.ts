@@ -26,8 +26,17 @@ export interface ParsedWhen {
   time: string | null;
 }
 
-/** Turns typed text into a When, or null when it cannot. */
-export type WhenParser = (text: string, ctx: WhenContext) => ParsedWhen | null;
+/**
+ * Turns typed text into a When, or null when it cannot. It may answer later (Todo's reader asks
+ * Rust); the field shows the answer for the text as it stands.
+ */
+export type WhenParser = (
+  text: string,
+  ctx: WhenContext,
+) => ParsedWhen | null | Promise<ParsedWhen | null>;
+
+/** The kit's own reader, which answers at once. */
+export type SyncWhenParser = (text: string, ctx: WhenContext) => ParsedWhen | null;
 
 const WEEKDAYS: Record<string, number> = {
   sun: 0,
@@ -165,7 +174,7 @@ function readDate(text: string, ctx: WhenContext): string | null {
 }
 
 /** The default reader. */
-export const simpleWhenParser: WhenParser = (input, ctx) => {
+export const simpleWhenParser: SyncWhenParser = (input, ctx) => {
   const text = input.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!text) return null;
   if (text === 'tonight') return { date: ctx.today, time: '20:00' };
