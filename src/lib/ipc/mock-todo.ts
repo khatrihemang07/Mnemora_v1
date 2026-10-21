@@ -1,21 +1,30 @@
 /**
  * In-memory Todo for the browser-only IPC mock. Mirrors the rules in crates/todo (titles are
  * non-blank, one line and at most 500 characters; new Tasks go last; complete and reopen; Lists
- * with folded-unique names, delete choices with restore, and moving Tasks). Every
+ * with folded-unique names, delete choices with restore, and moving Tasks; Due dates with the
+ * past-date and time-only rules, Today and Upcoming groups, Move all overdue). Every
  * result is a JSON copy, like real IPC: handing out live objects would let the UI mutate the
  * "database". The shared rule fixtures (fixtures/todo-rules.json) keep it in step with Rust.
  */
 
+import { addDays } from '../ui/calendar';
 import type {
   AllView,
   AppError,
+  DayCount,
   DeleteChoice,
+  DueChange,
   InboxView,
   ListDeletion,
   ListView,
+  LocalNow,
+  NewWhen,
+  OverdueMove,
   SidebarView,
   Task,
+  TodayView,
   TodoList,
+  UpcomingView,
 } from './bindings';
 
 const MAX_TITLE_CHARS = 500;
@@ -93,6 +102,57 @@ export function validateEmoji(emoji: string | null): string | null {
   return e;
 }
 
+const DAY_MS = 86_400_000;
+
+/** Mirrors `epoch_day`: days since 1970-01-01 of a real `YYYY-MM-DD` date, else null. */
+export function epochDay(date: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const [y = 0, m = 0, d = 0] = date.split('-').map(Number);
+  const at = new Date(Date.UTC(y, m - 1, d));
+  at.setUTCFullYear(y); // years below 100 would otherwise mean 19xx
+  const real = at.getUTCFullYear() === y && at.getUTCMonth() === m - 1 && at.getUTCDate() === d;
+  return real && y >= 1 ? Math.round(at.getTime() / DAY_MS) : null;
+}
+
+/** Mirrors `is_time`: `HH:MM` on a 24-hour clock. */
+export const isTime = (time: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(time);
+
+const checkClock = (local: LocalNow) => {
+  if (epochDay(local.today) === null) throw fail('validation', 'Not a valid date');
+  if (!isTime(local.now)) throw fail('validation', 'Not a valid time');
+};
+
+/**
+ * Mirrors `resolve_when`: the Due date and time a pick means. A date is taken as given (past
+ * ones are refused); a time without a date means today if still ahead, otherwise tomorrow.
+ */
+export function resolveWhen(
+  date: string | null,
+  time: string | null,
+  local: LocalNow,
+): [string | null, string | null] {
+  checkClock(local);
+  if (time !== null && !isTime(time)) throw fail('validation', 'Not a valid time');
+  if (date !== null) {
+    if (epochDay(date) === null) throw fail('validation', 'Not a valid date');
+    if (date < local.today) throw fail('validation', 'That date is in the past');
+    return [date, time];
+  }
+  if (time === null) return [null, null];
+  return [time >= local.now ? local.today : addDays(local.today, 1), time];
+}
+
+/** Mirrors `in_day`: timed Tasks first by time; ties keep the manual order. */
+function inDay(a: Task, b: Task): number {
+  if (a.due_time !== null && b.due_time !== null && a.due_time !== b.due_time) {
+    return a.due_time < b.due_time ? -1 : 1;
+  }
+  if ((a.due_time === null) !== (b.due_time === null)) return a.due_time === null ? 1 : -1;
+  return byKey(a, b);
+}
+const byDateThenDay = (a: Task, b: Task) =>
+  a.due_date === b.due_date ? inDay(a, b) : (a.due_date ?? '') < (b.due_date ?? '') ? -1 : 1;
+
 /** Plain byte-order comparison of keys (what SQLite's default collation does). */
 const byKey = (a: Task, b: Task) =>
   a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : a.id < b.id ? -1 : 1;
@@ -119,6 +179,17 @@ export function createTodoMock() {
     live()
       .filter((t) => t.list_id === listId && t.state === 'open')
       .sort(byKey);
+  const openDated = () => live().filter((t) => t.state === 'open' && t.due_date !== null);
+  /** Mirrors `apply`: writes a When; no date means no time and no Repeat. */
+  const applyWhen = (task: Stored, date: string | null, time: string | null) => {
+    if (task.due_date === date && task.due_time === time) return;
+    task.due_date = date;
+    task.due_time = time;
+    if (date === null) {
+      task.repeat_freq = task.repeat_every = task.repeat_days = task.repeat_mode = null;
+    }
+    task.updated_at = Date.now();
+  };
   /** A Task without the mock's own flag, like the wire shape. */
   const wire = (t: Stored): Task => {
     const { deleted: _deleted, ...task } = t;
@@ -141,6 +212,10 @@ export function createTodoMock() {
         case 'todo_task_create': {
           const title = validateTitle(a.title as string);
           const listId = (a.listId as string | null | undefined) ?? null;
+          const when = (a.when as NewWhen | null | undefined) ?? null;
+          const [dueDate, dueTime] = when
+            ? resolveWhen(when.date, when.time, when.local)
+            : [null, null];
           if (listId !== null && !findList(listId)) throw listMissing();
           const now = Date.now();
           const last = all.reduce<string | null>(
@@ -152,8 +227,8 @@ export function createTodoMock() {
             list_id: listId,
             title,
             notes: '',
-            due_date: null,
-            due_time: null,
+            due_date: dueDate,
+            due_time: dueTime,
             repeat_freq: null,
             repeat_every: null,
             repeat_days: null,
@@ -197,6 +272,112 @@ export function createTodoMock() {
             task.updated_at = Date.now();
           }
           return copy(wire(task));
+        }
+        case 'todo_task_set_when': {
+          const [date, time] = resolveWhen(
+            (a.date as string | null) ?? null,
+            (a.time as string | null) ?? null,
+            a.local as LocalNow,
+          );
+          const task = find(a.id);
+          if (!task) throw missing();
+          if (task.state !== 'open') throw fail('validation', 'That Task is already closed');
+          applyWhen(task, date, time);
+          return copy(wire(task));
+        }
+        case 'todo_tasks_restore_when': {
+          const changes = a.changes as DueChange[];
+          for (const c of changes) {
+            if (c.due_date !== null && epochDay(c.due_date) === null) {
+              throw fail('validation', 'Not a valid date');
+            }
+            if (c.due_time !== null && !isTime(c.due_time)) {
+              throw fail('validation', 'Not a valid time');
+            }
+            if (c.due_time !== null && c.due_date === null) {
+              throw fail('validation', 'A time needs a date');
+            }
+          }
+          const restored: Task[] = [];
+          for (const c of changes) {
+            const task = find(c.id);
+            if (!task) continue;
+            applyWhen(task, c.due_date, c.due_time);
+            restored.push(wire(task));
+          }
+          return copy(restored);
+        }
+        case 'todo_tasks_move_overdue': {
+          const local = a.local as LocalNow;
+          const date = a.date as string;
+          checkClock(local);
+          if (epochDay(date) === null) throw fail('validation', 'Not a valid date');
+          if (date < local.today) throw fail('validation', 'That date is in the past');
+          const previous: DueChange[] = [];
+          for (const task of openDated().filter((t) => (t.due_date as string) < local.today)) {
+            previous.push({ id: task.id, due_date: task.due_date, due_time: task.due_time });
+            applyWhen(task, date, task.due_time);
+          }
+          const moved: OverdueMove = { to_date: date, previous };
+          return copy(moved);
+        }
+        case 'todo_today': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const dated = openDated();
+          const overdue = dated.filter((t) => (t.due_date as string) < local.today);
+          const tasks = dated.filter((t) => t.due_date === local.today);
+          const start = (epochDay(local.today) as number) * DAY_MS - local.offset_min * 60_000;
+          const done = live()
+            .filter(
+              (t) =>
+                t.state === 'done' &&
+                t.closed_at !== null &&
+                t.closed_at >= start &&
+                t.closed_at < start + DAY_MS,
+            )
+            .sort((x, y) => (x.closed_at as number) - (y.closed_at as number) || byKey(x, y));
+          const view: TodayView = {
+            overdue: overdue.sort(byDateThenDay).map(wire),
+            tasks: tasks.sort(inDay).map(wire),
+            done: done.map(wire),
+            total: overdue.length + tasks.length + done.length,
+          };
+          return copy(view);
+        }
+        case 'todo_upcoming': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const dated = openDated().sort(byDateThenDay);
+          const days: UpcomingView['days'] = [];
+          for (const task of dated.filter((t) => (t.due_date as string) > local.today)) {
+            const last = days[days.length - 1];
+            if (last && last.date === task.due_date) last.tasks.push(wire(task));
+            else days.push({ date: task.due_date as string, tasks: [wire(task)] });
+          }
+          const view: UpcomingView = {
+            overdue: dated.filter((t) => (t.due_date as string) < local.today).map(wire),
+            days,
+          };
+          return copy(view);
+        }
+        case 'todo_day_counts': {
+          const from = a.from as string;
+          const to = a.to as string;
+          if (epochDay(from) === null || epochDay(to) === null) {
+            throw fail('validation', 'Not a valid date');
+          }
+          if (from > to) throw fail('validation', 'The range ends before it starts');
+          const counts = new Map<string, number>();
+          for (const t of openDated()) {
+            const day = t.due_date as string;
+            if (day < from || day > to || t.id === a.exclude) continue;
+            counts.set(day, (counts.get(day) ?? 0) + 1);
+          }
+          const out: DayCount[] = [...counts]
+            .sort(([x], [y]) => (x < y ? -1 : 1))
+            .map(([date, count]) => ({ date, count }));
+          return copy(out);
         }
         case 'todo_lists': {
           const count = (id: string | null) => openIn(id).length;
