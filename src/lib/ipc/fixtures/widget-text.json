@@ -1,43 +1,206 @@
 {
-  "about": "Text rules the Todo widget's Rust code (crates/todo/src/widget_text.rs) shares with the app's TypeScript (src/modules/todo/dates.ts, notes.ts, lib/ui/when-time.ts, when-grid.ts). The same cases run in Rust and in Vitest (widget-text.test.ts). plain_title: a title without its Markdown marks. row_date_label: today, date, label. format_hm: a time as the Setting wants it. row_day_label (Rust only, no TypeScript peer): the day on a widget row for a Task not due today. Known gaps, out of scope here: nested or unbalanced marks, links whose address the app refuses, strikethrough and highlight (kept as text in both).",
+  "about": "Text rules the Todo widget's Rust code (crates/todo/src/widget_text.rs) shares with the app's TypeScript (src/modules/todo/dates.ts, notes.ts, lib/ui/when-time.ts, when-grid.ts). The same cases run in Rust and in Vitest (widget-text.test.ts). plain_title: a title without its Markdown marks. row_date_label: today, date, label. format_hm: a time as the Setting wants it. row_day_label (Rust only, no TypeScript peer): the day on a widget row for a Task not due today. Known gaps, out of scope here: nested or unbalanced marks, links whose address the app refuses, strikethrough and highlight (kept as text in both). completed_message / completed_repeat_message: the toast after a tick, matching tasks.ts completedMessage and dates.ts completedRepeatMessage (the Undo bar on the Todo widget says the same).",
   "plain_title": [
-    { "title": "Call mum", "plain": "Call mum" },
-    { "title": "Pay **rent** at [the bank](https://x.y)", "plain": "Pay rent at the bank" },
-    { "title": "# not a heading", "plain": "# not a heading" },
-    { "title": "*italic* and _also_", "plain": "italic and also" },
-    { "title": "`code` bit", "plain": "code bit" },
-    { "title": "keep snake_case_name whole", "plain": "keep snake_case_name whole" },
-    { "title": "2 * 3 * 4", "plain": "2 * 3 * 4" },
-    { "title": "a ~~struck~~ ==marked== word", "plain": "a ~~struck~~ ==marked== word" },
-    { "title": "**bold and *nested italic***", "plain": "bold and nested italic" },
-    { "title": "escaped \\*star\\*", "plain": "escaped *star*" },
-    { "title": "lonely ** marks", "plain": "lonely ** marks" }
+    {
+      "title": "Call mum",
+      "plain": "Call mum"
+    },
+    {
+      "title": "Pay **rent** at [the bank](https://x.y)",
+      "plain": "Pay rent at the bank"
+    },
+    {
+      "title": "# not a heading",
+      "plain": "# not a heading"
+    },
+    {
+      "title": "*italic* and _also_",
+      "plain": "italic and also"
+    },
+    {
+      "title": "`code` bit",
+      "plain": "code bit"
+    },
+    {
+      "title": "keep snake_case_name whole",
+      "plain": "keep snake_case_name whole"
+    },
+    {
+      "title": "2 * 3 * 4",
+      "plain": "2 * 3 * 4"
+    },
+    {
+      "title": "a ~~struck~~ ==marked== word",
+      "plain": "a ~~struck~~ ==marked== word"
+    },
+    {
+      "title": "**bold and *nested italic***",
+      "plain": "bold and nested italic"
+    },
+    {
+      "title": "escaped \\*star\\*",
+      "plain": "escaped *star*"
+    },
+    {
+      "title": "lonely ** marks",
+      "plain": "lonely ** marks"
+    }
   ],
   "row_date_label": [
-    { "today": "2026-10-21", "date": "2026-10-21", "label": "Today" },
-    { "today": "2026-10-21", "date": "2026-10-22", "label": "Tomorrow" },
-    { "today": "2026-10-21", "date": "2026-10-20", "label": "Yesterday" },
-    { "today": "2026-10-21", "date": "2026-10-23", "label": "Fri" },
-    { "today": "2026-10-21", "date": "2026-10-27", "label": "Tue" },
-    { "today": "2026-10-21", "date": "2026-10-28", "label": "28 Oct" },
-    { "today": "2026-10-21", "date": "2026-10-19", "label": "19 Oct" },
-    { "today": "2026-12-30", "date": "2027-01-04", "label": "Mon" },
-    { "today": "2026-12-30", "date": "2027-01-20", "label": "20 Jan 2027" }
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-21",
+      "label": "Today"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-22",
+      "label": "Tomorrow"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-20",
+      "label": "Yesterday"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-23",
+      "label": "Fri"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-27",
+      "label": "Tue"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-28",
+      "label": "28 Oct"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-19",
+      "label": "19 Oct"
+    },
+    {
+      "today": "2026-12-30",
+      "date": "2027-01-04",
+      "label": "Mon"
+    },
+    {
+      "today": "2026-12-30",
+      "date": "2027-01-20",
+      "label": "20 Jan 2027"
+    }
   ],
   "row_day_label": [
-    { "today": "2026-10-21", "date": "2026-10-22", "label": "Tomorrow" },
-    { "today": "2026-10-21", "date": "2026-10-23", "label": "Fri" },
-    { "today": "2026-10-21", "date": "2026-10-27", "label": "Tue" },
-    { "today": "2026-10-21", "date": "2026-10-28", "label": "Wed 28 Oct" },
-    { "today": "2026-10-21", "date": "2026-11-04", "label": "Wed 4 Nov" },
-    { "today": "2026-12-30", "date": "2027-01-20", "label": "Wed 20 Jan 2027" }
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-22",
+      "label": "Tomorrow"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-23",
+      "label": "Fri"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-27",
+      "label": "Tue"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-10-28",
+      "label": "Wed 28 Oct"
+    },
+    {
+      "today": "2026-10-21",
+      "date": "2026-11-04",
+      "label": "Wed 4 Nov"
+    },
+    {
+      "today": "2026-12-30",
+      "date": "2027-01-20",
+      "label": "Wed 20 Jan 2027"
+    }
   ],
   "format_hm": [
-    { "hm": "09:05", "format": "24h", "text": "09:05" },
-    { "hm": "21:30", "format": "24h", "text": "21:30" },
-    { "hm": "00:00", "format": "12h", "text": "12:00 AM" },
-    { "hm": "09:05", "format": "12h", "text": "9:05 AM" },
-    { "hm": "12:30", "format": "12h", "text": "12:30 PM" },
-    { "hm": "21:30", "format": "12h", "text": "9:30 PM" }
+    {
+      "hm": "09:05",
+      "format": "24h",
+      "text": "09:05"
+    },
+    {
+      "hm": "21:30",
+      "format": "24h",
+      "text": "21:30"
+    },
+    {
+      "hm": "00:00",
+      "format": "12h",
+      "text": "12:00 AM"
+    },
+    {
+      "hm": "09:05",
+      "format": "12h",
+      "text": "9:05 AM"
+    },
+    {
+      "hm": "12:30",
+      "format": "12h",
+      "text": "12:30 PM"
+    },
+    {
+      "hm": "21:30",
+      "format": "12h",
+      "text": "9:30 PM"
+    }
+  ],
+  "completed_message": [
+    {
+      "title": "Buy oat milk",
+      "message": "Completed “Buy oat milk”"
+    },
+    {
+      "title": "Pay **rent** at [the bank](https://x.y)",
+      "message": "Completed “Pay rent at the bank”"
+    },
+    {
+      "title": "Call the plumber about the leaking kitchen tap",
+      "message": "Completed “Call the plumber about the leaking…”"
+    },
+    {
+      "title": "Exactly thirty-four characters ok!",
+      "message": "Completed “Exactly thirty-four characters ok!”"
+    },
+    {
+      "title": "Exactly thirty-four characters ok!!",
+      "message": "Completed “Exactly thirty-four characters ok!…”"
+    },
+    {
+      "title": "Emoji 🎉 title 🎉 that is quite a bit longer",
+      "message": "Completed “Emoji 🎉 title 🎉 that is quite a bi…”"
+    }
+  ],
+  "completed_repeat_message": [
+    {
+      "title": "Water the plants",
+      "next": "2026-10-24",
+      "today": "2026-10-21",
+      "message": "Completed “Water the plants” · next Sat 24 Oct"
+    },
+    {
+      "title": "Call mum",
+      "next": "2026-10-28",
+      "today": "2026-10-21",
+      "message": "Completed “Call mum” · next Wed 28 Oct"
+    },
+    {
+      "title": "Renew **passport**",
+      "next": "2027-01-04",
+      "today": "2026-12-30",
+      "message": "Completed “Renew passport” · next Mon 4 Jan 2027"
+    }
   ]
 }

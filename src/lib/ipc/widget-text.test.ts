@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { rowDateLabel } from '../../modules/todo/dates';
+import { completedRepeatMessage, rowDateLabel } from '../../modules/todo/dates';
 import { plainTitle } from '../../modules/todo/notes';
+import { completedMessage } from '../../modules/todo/tasks';
 import { formatHm } from '../ui/when-time';
 import fixture from './fixtures/widget-text.json';
 
@@ -18,4 +19,15 @@ describe('widget-text fixture, against the app', () => {
   it.each(fixture.format_hm)('time: $hm as $format', ({ hm, format, text }) => {
     expect(formatHm(hm, format as '24h' | '12h')).toBe(text);
   });
+
+  it.each(fixture.completed_message)('completed: $title', ({ title, message }) => {
+    expect(completedMessage(title)).toBe(message);
+  });
+
+  it.each(fixture.completed_repeat_message)(
+    'completed, repeating: $title',
+    ({ title, next, today, message }) => {
+      expect(completedRepeatMessage(title, next, today)).toBe(message);
+    },
+  );
 });

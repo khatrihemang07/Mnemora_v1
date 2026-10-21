@@ -29,6 +29,36 @@ impl TimeFormat {
     }
 }
 
+/// Longest title shown in a toast before it is cut with an ellipsis.
+const TOAST_TITLE_CHARS: usize = 34;
+
+/// A title without its marks in curly quotes, cut at 34 characters: port of `quotedTitle`.
+fn quoted_title(title: &str) -> String {
+    let plain = plain_title(title);
+    let cut: String = plain.chars().take(TOAST_TITLE_CHARS).collect();
+    let more = if plain.chars().count() > TOAST_TITLE_CHARS {
+        "…"
+    } else {
+        ""
+    };
+    format!("“{}{more}”", cut.trim_end())
+}
+
+/// The Undo bar after a tick: `Completed “Buy oat milk”`. Port of `completedMessage`.
+pub fn completed_message(title: &str) -> String {
+    format!("Completed {}", quoted_title(title))
+}
+
+/// The Undo bar after ticking a repeating Task: `Completed “Call mum” · next Wed 28 Oct`. Port of
+/// `completedRepeatMessage`.
+pub fn completed_repeat_message(title: &str, next: &str, today: &str) -> String {
+    format!(
+        "Completed {} · next {}",
+        quoted_title(title),
+        day_text(next, today)
+    )
+}
+
 /// `21:30` as the Setting wants it: `21:30` or `9:30 PM`. A malformed time is returned as given.
 pub fn format_hm(hm: &str, format: TimeFormat) -> String {
     if format == TimeFormat::H24 {
@@ -82,6 +112,14 @@ fn short_date(date: &str, today: &str) -> String {
         format!(" {y}")
     };
     format!("{d} {}{year}", month_short(m))
+}
+
+/// `Fri 23 Oct`, with the year when it is not `today`'s year: port of `dayText`.
+fn day_text(date: &str, today: &str) -> String {
+    match weekday_short(date) {
+        Some(weekday) => format!("{weekday} {}", short_date(date, today)),
+        None => date.to_owned(),
+    }
 }
 
 /// A row's date: Today, Tomorrow, Yesterday, a weekday within the week ahead, then `28 Oct` with
@@ -264,6 +302,28 @@ mod tests {
             assert_eq!(
                 plain_title(text(&case, "title")),
                 text(&case, "plain"),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn completed_messages_match_the_app() {
+        for case in cases("completed_message") {
+            assert_eq!(
+                completed_message(text(&case, "title")),
+                text(&case, "message"),
+                "{case}"
+            );
+        }
+        for case in cases("completed_repeat_message") {
+            assert_eq!(
+                completed_repeat_message(
+                    text(&case, "title"),
+                    text(&case, "next"),
+                    text(&case, "today")
+                ),
+                text(&case, "message"),
                 "{case}"
             );
         }

@@ -24,6 +24,7 @@ mod schedule;
 mod search;
 mod search_repo;
 mod service;
+mod steps;
 mod task;
 mod task_service;
 mod upgrade;
@@ -65,6 +66,7 @@ pub use schedule::{
 };
 pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
+pub use steps::{open_steps, tick_all_steps};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
 pub use task_service::{
     Purged, delete_task, purge_deleted, restore_task, set_priority, task, update_task, wont_do,
@@ -74,6 +76,7 @@ pub use widget::{
     EmptyState, HeaderCount, Tone, WidgetGroup, WidgetList, WidgetLists, WidgetRow, WidgetSnapshot,
     WidgetView, lists as widget_lists, snapshot,
 };
+pub use widget_text::{completed_message, completed_repeat_message, plain_title};
 
 /// The Todo Module.
 pub struct TodoModule;
