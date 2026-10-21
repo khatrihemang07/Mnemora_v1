@@ -152,7 +152,7 @@
 
   let keys = IDLE_KEYS;
 
-  /** The Task a key means, and how it was pointed at: the focus ring, or only the pointer. */
+  /** The Task a key means: the one with the focus ring or focus, else none. */
   function keyTarget(e: KeyboardEvent): { task: Task | null; reach: KeyScene['target'] } {
     // The sheet's own Task, unless focus is in a picker or Dialog opened over it.
     if (taskSheet.id !== null) return { task: taskSheet.task, reach: 'ring' };
@@ -164,8 +164,8 @@
       const ringed = taskRows.get(taskFocus.id);
       if (ringed) return { task: ringed, reach: 'ring' };
     }
-    const hovered = taskRows.get(taskRows.hoveredId);
-    return { task: hovered, reach: hovered ? 'hover' : 'none' };
+    // A row the pointer rests on is not a target (ADR 0013).
+    return { task: null, reach: 'none' };
   }
 
   function sceneFor(e: KeyboardEvent): { scene: KeyScene; task: Task | null } {

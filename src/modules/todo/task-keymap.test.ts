@@ -81,16 +81,17 @@ describe('keys on a focused Task', () => {
 });
 
 describe('who the key is for', () => {
-  const hover = scene({ target: 'hover' });
   const noTarget = scene({ target: 'none' });
 
-  it('the row under the pointer takes the quick keys but not Space, Enter, delete or Esc', () => {
-    for (const k of ['e', 'd', 't', 'm', '3']) expect(action(key(k), hover)).not.toBeNull();
-    expect(action(key(' ', { shiftKey: true }), hover)).toEqual({ type: 'wont' });
-    expect(action(key('ArrowDown', { altKey: true }), hover)).toEqual({ type: 'reorder', dir: 1 });
-    for (const k of [' ', 'Enter', 'Backspace', 'Delete', 'Escape']) {
-      expect(action(key(k), hover)).toBeNull();
+  it('a row the pointer merely rests on takes no key: only the focused one does', () => {
+    // The page reports a hovered row as no target at all.
+    for (const k of ['e', 'd', 't', 'm', '3', ' ', 'Enter', 'Backspace', 'Delete', 'Escape']) {
+      expect(action(key(k), noTarget), k).toBeNull();
     }
+    expect(action(key(' ', { shiftKey: true }), noTarget)).toBeNull();
+    for (const k of ['e', 'd', 't', 'm', '3']) expect(action(key(k), scene())).not.toBeNull();
+    expect(action(key(' ', { shiftKey: true }), scene())).toEqual({ type: 'wont' });
+    expect(action(key('ArrowDown', { altKey: true }), scene())).toEqual({ type: 'reorder', dir: 1 });
   });
 
   it('with no Task, every Task key does nothing and nothing is handled', () => {

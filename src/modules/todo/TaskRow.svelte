@@ -6,8 +6,8 @@
   Task sheet. On hover (not on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click,
   long-press on a phone) holds Open, Quick edit (E: the row becomes the capture box), When…, Priority…, Move to list…,
   Won't do (Skip to ‹date› on a repeating Task: it moves on and records nothing) and Delete. The
-  keys 1 to 4 and ⇧Space act on the hovered or focused row, and the rest of the key map (Space, ↵, D,
-  T, M, ⌫) on the focused one (see task-keymap.ts). The focus ring (taskFocus) tints and rings the
+  keys (E, D, T, M, 1 to 4, Space, ⇧Space, ↵, ⌫) act on the focused row only, never on one the
+  pointer merely rests on (see task-keymap.ts). The focus ring (taskFocus) tints and rings the
   row it is on. In search results `lit` tints the matched words of the title and `snippet` shows the
   note or Comment line that matched, in place of the first line of the notes. A done occurrence shows "↻ occurrence";
   a Won't do Task shows ⊗ and "Won't do" with the time. `hideDate` leaves the date out where the
@@ -301,8 +301,6 @@
     e.stopPropagation();
     e.preventDefault();
   }}
-  onpointerenter={(e) => !touchLike(e) && (taskRows.hoveredId = task.id)}
-  onpointerleave={() => taskRows.hoveredId === task.id && (taskRows.hoveredId = null)}
   onpointerdown={(e) => {
     if (!touchLike(e)) {
       if (draggable && isOpen) drag.pressTask(e, task);

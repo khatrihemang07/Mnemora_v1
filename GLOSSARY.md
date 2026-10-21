@@ -162,7 +162,7 @@ Finding Tasks by words in their title, notes or Comments, with the Journal's mat
 _Avoid_: Filter, find
 
 **Focus ring**:
-The mark (a ring and a tint) on the one Task row the keyboard is on. ↑ ↓ move it, and the Task keys act on the Task it sits on (or, for the quick ones, the row under the pointer).
+The mark (a ring and a tint) on the one Task row the keyboard is on. ↑ ↓ move it, and the Task keys act on the Task it sits on, never on a row the pointer merely rests on.
 _Avoid_: Selection, cursor
 
 **G chord**:

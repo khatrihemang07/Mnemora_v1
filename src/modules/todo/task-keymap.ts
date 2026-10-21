@@ -66,8 +66,8 @@ export interface KeyScene {
   overlay: boolean;
   /** The Task sheet is open and the key belongs to it. */
   sheet: boolean;
-  /** The Task a key would act on: the one with the focus ring, the one under the pointer, or none. */
-  target: 'ring' | 'hover' | 'none';
+  /** The Task a key would act on: the one with the focus ring (or focus), or none. */
+  target: 'ring' | 'none';
   /** That Task is open (not done and not Won't do). */
   taskOpen: boolean;
   /** The key went to a button or link, which presses itself on Space and Enter. */
@@ -128,7 +128,7 @@ export function reduceKey(
   if (e.altKey) {
     if (e.shiftKey || e.repeat) return none();
     if (
-      scene.target !== 'none' &&
+      scene.target === 'ring' &&
       scene.taskOpen &&
       (e.key === 'ArrowUp' || e.key === 'ArrowDown')
     ) {
@@ -149,40 +149,39 @@ export function reduceKey(
     return e.shiftKey ? none() : act({ type: 'ring', dir: e.key === 'ArrowUp' ? 'up' : 'down' });
   }
 
-  if (e.key === ' ' && e.shiftKey) return taskKey(scene, { type: 'wont' }, 'hover', true);
+  if (e.key === ' ' && e.shiftKey) return taskKey(scene, { type: 'wont' }, true);
   if (e.shiftKey) return none();
 
-  if (e.key === ' ') return scene.onControl ? none() : taskKey(scene, { type: 'complete' }, 'ring');
-  if (e.key === 'Enter') return scene.onControl ? none() : taskKey(scene, { type: 'open' }, 'ring');
+  if (e.key === ' ') return scene.onControl ? none() : taskKey(scene, { type: 'complete' });
+  if (e.key === 'Enter') return scene.onControl ? none() : taskKey(scene, { type: 'open' });
   if (e.key === 'Escape') return scene.target === 'ring' ? act({ type: 'clear-ring' }) : none();
   if (e.key === 'Backspace' || e.key === 'Delete') {
-    return taskKey(scene, { type: 'delete' }, 'ring');
+    return taskKey(scene, { type: 'delete' });
   }
   if (e.repeat) return none();
   if (/^[1-4]$/.test(e.key)) {
-    return taskKey(scene, { type: 'priority', value: Number(e.key) }, 'hover', true);
+    return taskKey(scene, { type: 'priority', value: Number(e.key) }, true);
   }
   switch (key) {
     case 'e':
-      return taskKey(scene, { type: 'quick-edit' }, 'hover', true);
+      return taskKey(scene, { type: 'quick-edit' }, true);
     case 'd':
-      return taskKey(scene, { type: 'when' }, 'hover', true);
+      return taskKey(scene, { type: 'when' }, true);
     case 't':
-      return taskKey(scene, { type: 'today' }, 'hover', true);
+      return taskKey(scene, { type: 'today' }, true);
     case 'm':
-      return taskKey(scene, { type: 'move-list' }, 'hover');
+      return taskKey(scene, { type: 'move-list' });
     default:
       return none();
   }
 }
 
 /**
- * An action on the Task in `scene`. `reach` says how it was pointed at: 'ring' needs the focus
- * ring (Space, Enter and delete are too easy to hit while the pointer rests on a row), 'hover'
- * also accepts the row under the pointer. `openOnly` actions mean nothing for a done Task.
+ * An action on the Task in `scene`: only the one with the focus ring (or focus) takes a key; a row
+ * the pointer merely rests on does not (ADR 0013). `openOnly` actions mean nothing for a done Task.
  */
-function taskKey(scene: KeyScene, action: KeyAction, reach: 'ring' | 'hover', openOnly = false) {
-  if (scene.target === 'none' || (reach === 'ring' && scene.target !== 'ring')) return none();
+function taskKey(scene: KeyScene, action: KeyAction, openOnly = false) {
+  if (scene.target !== 'ring') return none();
   if (openOnly && !scene.taskOpen) return none();
   return act(action);
 }

@@ -38,7 +38,7 @@ export const SHORTCUT_LIST = [
   { label: 'Todo: complete or reopen the focused Task', keys: 'Space' },
   { label: 'Todo: Won\u2019t do the Task (Skip a repeating one)', keys: '⇧Space' },
   { label: 'Todo: open the focused Task', keys: 'Enter' },
-  { label: 'Todo: quick edit the focused or hovered Task', keys: 'E' },
+  { label: 'Todo: quick edit the focused Task', keys: 'E' },
   { label: 'Todo: pick a date (When) for the Task', keys: 'D' },
   { label: 'Todo: set the Task due today', keys: 'T' },
   { label: 'Todo: move the Task to a List', keys: 'M' },
