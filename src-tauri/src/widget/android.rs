@@ -74,6 +74,7 @@ fn start_logging(data_dir: &str) {
     if let Ok(log) = logging::init(&paths.log_dir, "info") {
         let _ = LOG.set(log);
     }
+    tracing::info!("todo widget bridge started without the app");
 }
 
 fn read(env: &mut JNIEnv, text: &JString) -> Option<String> {

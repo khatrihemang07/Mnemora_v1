@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_bg">#191511</color>
+    <color name="widget_surface2">#221D19</color>
+    <color name="widget_ink">#EEEBE5</color>
+    <color name="widget_muted">#9E9790</color>
+    <color name="widget_faint">#7F7973</color>
+    <color name="widget_danger">#F66D62</color>
+    <color name="widget_warning">#E48E26</color>
+    <color name="widget_accent">#9499FA</color>
+    <color name="widget_todo">#00A08F</color>
+    <color name="widget_on_todo">#0F101F</color>
+    <color name="widget_sandbox_tag_text">#1D1712</color>
+</resources>

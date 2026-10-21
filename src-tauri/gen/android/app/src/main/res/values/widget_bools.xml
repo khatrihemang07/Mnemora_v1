@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Todo widget is Android 12+ only (ADR 0015): off here, on in values-v31. -->
+<resources>
+    <bool name="todo_widget_enabled">false</bool>
+</resources>
