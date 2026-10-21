@@ -23,7 +23,7 @@
   }
   let { open = $bindable(), anchor, current, onpick, title = 'Move to list' }: Props = $props();
 
-  const sidebar = createQuery(() => ({ ...listsQuery, enabled: open }));
+  const sidebar = createQuery(() => ({ ...listsQuery(), enabled: open }));
   const Inbox = VIEW_ICONS.inbox;
 
   function pick(list: TodoList | null) {

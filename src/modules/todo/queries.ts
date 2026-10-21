@@ -22,7 +22,8 @@ export const todoKeys = {
   all: ['todo'] as const,
   inbox: ['todo', 'inbox'] as const,
   allView: ['todo', 'all'] as const,
-  lists: ['todo', 'lists'] as const,
+  /** Keyed by the day: Today's count in the sidebar rolls over at midnight. */
+  lists: (day: string) => ['todo', 'lists', day] as const,
   list: (id: string) => ['todo', 'list', id] as const,
   /** Keyed by the day, so the view fetches afresh when midnight passes. */
   today: (day: string) => ['todo', 'today', day] as const,
@@ -37,11 +38,12 @@ export const inboxQuery = queryOptions({
   queryFn: () => unwrap(commands.todoInbox()),
 });
 
-/** The sidebar: the Inbox count and every List with its counts. */
-export const listsQuery = queryOptions({
-  queryKey: todoKeys.lists,
-  queryFn: () => unwrap(commands.todoLists()),
-});
+/** The sidebar: the Inbox and Today counts and every List with its counts. */
+export const listsQuery = () =>
+  queryOptions({
+    queryKey: todoKeys.lists(todoClock.today),
+    queryFn: () => unwrap(commands.todoLists(todoClock.local())),
+  });
 
 /** All open Tasks grouped by List, the Inbox first. */
 export const allQuery = queryOptions({

@@ -6,6 +6,7 @@ import {
   sameView,
   smartView,
   viewAfterListGone,
+  viewCount,
   viewLabel,
 } from './views';
 
@@ -31,5 +32,23 @@ describe('views', () => {
     expect(viewAfterListGone(listView('a'), 'a')).toEqual(smartView('inbox'));
     expect(viewAfterListGone(listView('a'), 'b')).toEqual(listView('a'));
     expect(viewAfterListGone(smartView('all'), 'a')).toEqual(smartView('all'));
+  });
+});
+
+describe('viewCount', () => {
+  const sidebar = { inbox_count: 4, today_count: 3, overdue_count: 1 };
+
+  it('counts the Inbox plainly and Today in red while anything is Overdue', () => {
+    expect(viewCount(sidebar, 'inbox')).toEqual({ count: 4, alert: false });
+    expect(viewCount(sidebar, 'today')).toEqual({ count: 3, alert: true });
+    expect(viewCount({ ...sidebar, overdue_count: 0 }, 'today')).toEqual({
+      count: 3,
+      alert: false,
+    });
+  });
+
+  it('has no count for the other views or before the sidebar loads', () => {
+    expect(viewCount(sidebar, 'upcoming')).toEqual({ count: 0, alert: false });
+    expect(viewCount(undefined, 'today')).toEqual({ count: 0, alert: false });
   });
 });

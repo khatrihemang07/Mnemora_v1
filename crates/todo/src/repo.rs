@@ -223,6 +223,17 @@ pub fn open_dated(conn: &Connection) -> AppResult<Vec<Task>> {
         .map_err(corrupt_or_db)
 }
 
+/// Open, live Task counts `(due before today, due today)`.
+pub fn due_counts(conn: &Connection, today: &str) -> AppResult<(u32, u32)> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FILTER (WHERE due_date < ?1), COUNT(*) FILTER (WHERE due_date = ?1)
+         FROM todo_tasks
+         WHERE due_date IS NOT NULL AND state = 'open' AND deleted_at IS NULL",
+        [today],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?)
+}
+
 /// Open, live Tasks due before `today`.
 pub fn overdue(conn: &Connection, today: &str) -> AppResult<Vec<Task>> {
     let mut stmt = conn.prepare(&format!(

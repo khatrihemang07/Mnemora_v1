@@ -48,6 +48,10 @@ pub struct ListEntry {
 pub struct SidebarView {
     /// Open Tasks with no List.
     pub inbox_count: u32,
+    /// Open Tasks due today, plus every Overdue one: Today's count.
+    pub today_count: u32,
+    /// Open Tasks due before today: the Today count turns red while this is above zero.
+    pub overdue_count: u32,
     /// Lists in their order.
     pub lists: Vec<ListEntry>,
 }

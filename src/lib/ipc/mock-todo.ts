@@ -380,9 +380,16 @@ export function createTodoMock() {
           return copy(out);
         }
         case 'todo_lists': {
+          const local = a.local as LocalNow;
+          checkClock(local);
+          const dated = openDated();
+          const overdue = dated.filter((t) => (t.due_date as string) < local.today).length;
+          const dueToday = dated.filter((t) => t.due_date === local.today).length;
           const count = (id: string | null) => openIn(id).length;
           const view: SidebarView = {
             inbox_count: count(null),
+            today_count: overdue + dueToday,
+            overdue_count: overdue,
             lists: liveLists().map((l) => ({
               list: wireList(l),
               open_count: count(l.id),

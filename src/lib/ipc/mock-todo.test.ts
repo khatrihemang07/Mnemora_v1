@@ -152,7 +152,7 @@ function run(c: Case) {
     }
   }
   const inbox = mock.handle('todo_inbox', {}) as { tasks: Task[] };
-  const sidebar = mock.handle('todo_lists', {}) as SidebarView;
+  const sidebar = mock.handle('todo_lists', { local: clock() }) as SidebarView;
   const all = mock.handle('todo_all', {}) as AllView;
   const view = clock();
   const titles = (ts: Task[]) => ts.map((t) => t.title);
@@ -175,6 +175,7 @@ function run(c: Case) {
     inbox: inbox.tasks.map((t) => t.title),
     lists: sidebar.lists.map((e) => e.list.name),
     emojis: sidebar.lists.map((e) => e.list.emoji),
+    sidebar_today: [sidebar.today_count, sidebar.overdue_count],
     counts: [sidebar.inbox_count, ...sidebar.lists.map((e) => e.open_count)],
     all: all.groups.map((g) => [g.list?.name ?? 'Inbox', g.tasks.map((t) => t.title)]),
   };
@@ -280,7 +281,11 @@ describe('the Todo mock', () => {
     const a = mock.handle('todo_task_create', { title: 'a', listId: list.id }) as Task;
     mock.handle('todo_task_create', { title: 'b', listId: list.id });
     mock.handle('todo_task_complete', { id: a.id });
-    const entry = (mock.handle('todo_lists', {}) as SidebarView).lists[0];
+    const entry = (
+      mock.handle('todo_lists', {
+        local: { today: DEFAULT_TODAY, now: DEFAULT_NOW, offset_min: 0 },
+      }) as SidebarView
+    ).lists[0];
     expect([entry?.open_count, entry?.task_count]).toEqual([1, 2]);
   });
 

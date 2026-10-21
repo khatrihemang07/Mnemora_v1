@@ -136,11 +136,12 @@ pub fn todo_task_move(
     mnemora_todo::move_task(&mut lock(&state.db), &id, list_id.as_deref())
 }
 
-/// The sidebar's data: the Inbox's open count and every List, in order, with its open count.
+/// The sidebar's data: the Inbox's open count, Today's count (due today plus Overdue, with the
+/// Overdue part apart) and every List, in order, with its open count.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_lists(state: State<'_, AppState>) -> Result<SidebarView, AppError> {
-    mnemora_todo::sidebar(&lock(&state.db))
+pub fn todo_lists(state: State<'_, AppState>, local: LocalNow) -> Result<SidebarView, AppError> {
+    mnemora_todo::sidebar(&lock(&state.db), &local)
 }
 
 /// One List and its open Tasks in manual order.
@@ -535,7 +536,12 @@ mod tests {
             )
             .unwrap();
         }
-        let sidebar: Value = app.invoke("todo_lists", json!({})).unwrap();
+        let sidebar: Value = app
+            .invoke(
+                "todo_lists",
+                json!({ "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap();
         assert_eq!(sidebar["inbox_count"], 1);
         let names: Vec<_> = sidebar["lists"]
             .as_array()
@@ -665,11 +671,21 @@ mod tests {
             )
             .unwrap();
         assert_eq!(deletion["moved_task_ids"], json!([id_of(&a)]));
-        let sidebar: Value = app.invoke("todo_lists", json!({})).unwrap();
+        let sidebar: Value = app
+            .invoke(
+                "todo_lists",
+                json!({ "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap();
         assert_eq!(sidebar["lists"][0]["open_count"], 1);
         app.invoke::<Value>("todo_list_restore", json!({ "deletion": deletion }))
             .unwrap();
-        let sidebar: Value = app.invoke("todo_lists", json!({})).unwrap();
+        let sidebar: Value = app
+            .invoke(
+                "todo_lists",
+                json!({ "local": local(DEFAULT_TODAY, DEFAULT_NOW) }),
+            )
+            .unwrap();
         assert_eq!(sidebar["lists"][0]["open_count"], 1);
         assert_eq!(sidebar["lists"][1]["open_count"], 0);
         assert_eq!(
@@ -964,6 +980,51 @@ mod tests {
     }
 
     #[test]
+    fn the_sidebar_counts_today_as_due_today_plus_overdue_and_the_inbox_apart() {
+        let app = TestApp::new();
+        let (late, due, future) = (
+            create(&app, "late").unwrap(),
+            create(&app, "due").unwrap(),
+            create(&app, "future").unwrap(),
+        );
+        create(&app, "undated").unwrap();
+        set_when(&app, &late, json!("2026-10-21"), Value::Null, "2026-10-21");
+        backdate(&app, &late, "2026-10-19");
+        set_when(
+            &app,
+            &due,
+            json!("2026-10-21"),
+            json!("09:00"),
+            "2026-10-21",
+        );
+        set_when(
+            &app,
+            &future,
+            json!("2026-10-22"),
+            Value::Null,
+            "2026-10-21",
+        );
+        let sidebar = |today: &str| -> Value {
+            app.invoke("todo_lists", json!({ "local": local(today, "14:05") }))
+                .unwrap()
+        };
+        let s = sidebar("2026-10-21");
+        assert_eq!(
+            (&s["today_count"], &s["overdue_count"], &s["inbox_count"]),
+            (&json!(2), &json!(1), &json!(4))
+        );
+        // A day later the same Tasks are all Overdue.
+        let s = sidebar("2026-10-22");
+        assert_eq!(
+            (&s["today_count"], &s["overdue_count"]),
+            (&json!(3), &json!(2))
+        );
+        app.invoke::<Value>("todo_task_complete", json!({ "id": id_of(&due) }))
+            .unwrap();
+        assert_eq!(sidebar("2026-10-21")["today_count"], 1);
+    }
+
+    #[test]
     fn a_malformed_clock_is_refused_by_every_date_command() {
         let app = TestApp::new();
         let a = create(&app, "a").unwrap();
@@ -1165,7 +1226,9 @@ mod tests {
 
     /// Everything a fixture case can expect, read from the app after its steps ran.
     fn rule_outputs(app: &TestApp, results: Vec<Value>, view_clock: &Value) -> Value {
-        let sidebar: Value = app.invoke("todo_lists", json!({})).unwrap();
+        let sidebar: Value = app
+            .invoke("todo_lists", json!({ "local": view_clock }))
+            .unwrap();
         let entries = sidebar["lists"].as_array().unwrap();
         let mut counts = vec![sidebar["inbox_count"].clone()];
         counts.extend(entries.iter().map(|e| e["open_count"].clone()));
@@ -1179,6 +1242,7 @@ mod tests {
             "lists": entries.iter().map(|e| e["list"]["name"].clone()).collect::<Vec<_>>(),
             "emojis": entries.iter().map(|e| e["list"]["emoji"].clone()).collect::<Vec<_>>(),
             "counts": counts,
+            "sidebar_today": [sidebar["today_count"], sidebar["overdue_count"]],
             "all": all_groups(app),
         })
     }

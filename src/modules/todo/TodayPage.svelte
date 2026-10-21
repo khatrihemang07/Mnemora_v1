@@ -22,7 +22,7 @@
   import WhenHost from './WhenHost.svelte';
 
   const today = createQuery(() => todayQuery(todoClock.today));
-  const sidebar = createQuery(() => listsQuery);
+  const sidebar = createQuery(() => listsQuery());
   const lists = $derived(new Map((sidebar.data?.lists ?? []).map((e) => [e.list.id, e.list])));
 
   const view = $derived(today.data);
@@ -46,12 +46,17 @@
   {:else if today.isError}
     <ErrorBanner message="Today couldn't load." error={today.error} onretry={() => today.refetch()} />
   {:else if view}
-    <div class="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 px-2">
-      <p class="font-display text-base text-muted" style="font-weight: var(--display-weight)">
-        {longDate(todoClock.today)}
-      </p>
+    <div class="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 px-2">
+      <!-- On a phone the page header already shows the large "Today". -->
+      <h1
+        class="font-display text-[1.7rem] leading-[1.15] phone:hidden"
+        style="font-weight: var(--display-weight); letter-spacing: var(--display-track)"
+      >
+        Today
+      </h1>
+      <p class="text-sm text-faint">{longDate(todoClock.today)}</p>
       {#if view.total > 0}
-        <div class="ml-auto flex items-center gap-2 text-xs text-muted">
+        <div class="ml-auto flex items-center gap-2 self-center text-xs text-muted">
           <div
             class="h-1.5 w-24 overflow-hidden rounded-full bg-line"
             role="progressbar"

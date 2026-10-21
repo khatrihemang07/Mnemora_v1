@@ -1,5 +1,5 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027.",
+  "about": "Rules shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). See ADR 0009. steps run in order. Tasks and Lists are referenced by the index of the n-th successfully created one (`task`, `list`; a literal string is used as an id, null is the Inbox). ops: create{title,list?}, complete, reopen, move{task,list}, list_create{name}, list_rename{list,name}, list_emoji{list,emoji}, list_delete{list,choice: 'delete'|'inbox'|{list: n}} (the n-th deletion is kept for list_restore{deletion}). results: 'ok' or the error code of each step. inbox: titles in the Inbox. lists: List names in order. emojis: their emoji. counts: [Inbox open count, then each List's]. all: the All view as [[group name, [titles]]] (Inbox first, empty groups left out). expect lists just the keys to check. Dates: a case may pin `today` and `now` (default 2026-10-21 14:05, a Wednesday); a step may pin its own, which is how Overdue Tasks are made (set a past date while 'today' is in the past). create{title,list?,date?,time?}, set_when{task,date?,time?}, move_overdue{date} (the n-th is kept for undo_move{move}). dues: every open Task as [title, due date, due time] in the All view's order. today: {overdue, tasks} titles (Tasks done today depend on the real clock, so Rust and Vitest test those apart). upcoming: {overdue, days: [[date, titles]]}. day_counts: [[date, open Tasks]] from today to the end of 2027. sidebar_today: [Today's count (open Tasks due today plus Overdue), the Overdue part].",
   "cases": [
     {
       "rule": "title.blank",
@@ -2140,6 +2140,89 @@
       ],
       "expect": {
         "day_counts": [["2026-10-22", 2], ["2026-10-23", 1]]
+      }
+    },
+    {
+      "rule": "sidebar.today",
+      "name": "Today's count is due today plus Overdue, the Overdue part apart",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Due",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Due 2",
+          "date": "2026-10-21",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Future",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "create",
+          "title": "Undated"
+        }
+      ],
+      "expect": {
+        "sidebar_today": [3, 1]
+      }
+    },
+    {
+      "rule": "sidebar.today",
+      "name": "done Tasks do not count, and nothing due gives zero",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Done",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "create",
+          "title": "Undated"
+        }
+      ],
+      "expect": {
+        "sidebar_today": [0, 0]
+      }
+    },
+    {
+      "rule": "sidebar.today",
+      "name": "Move all turns the Overdue part to zero without changing the total",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-19",
+          "today": "2026-10-10",
+          "now": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "Due",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "move_overdue",
+          "date": "2026-10-21"
+        }
+      ],
+      "expect": {
+        "sidebar_today": [2, 0]
       }
     }
   ]

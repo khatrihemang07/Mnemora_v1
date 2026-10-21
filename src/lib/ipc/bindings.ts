@@ -115,8 +115,11 @@ export const commands = {
 	 *  out the Task `exclude`: the dots in the When picker.
 	 */
 	todoDayCounts: (from: string, to: string, exclude: string | null) => typedError<DayCount[], AppError>(__TAURI_INVOKE("todo_day_counts", { from, to, exclude })),
-	/**  The sidebar's data: the Inbox's open count and every List, in order, with its open count. */
-	todoLists: () => typedError<SidebarView, AppError>(__TAURI_INVOKE("todo_lists")),
+	/**
+	 *  The sidebar's data: the Inbox's open count, Today's count (due today plus Overdue, with the
+	 *  Overdue part apart) and every List, in order, with its open count.
+	 */
+	todoLists: (local: LocalNow) => typedError<SidebarView, AppError>(__TAURI_INVOKE("todo_lists", { local })),
 	/**  One List and its open Tasks in manual order. */
 	todoList: (id: string) => typedError<ListView, AppError>(__TAURI_INVOKE("todo_list", { id })),
 	/**  Open Tasks grouped by List, the Inbox first. Empty groups are left out. */
@@ -457,6 +460,10 @@ export type SidebarState = {
 export type SidebarView = {
 	/**  Open Tasks with no List. */
 	inbox_count: number,
+	/**  Open Tasks due today, plus every Overdue one: Today's count. */
+	today_count: number,
+	/**  Open Tasks due before today: the Today count turns red while this is above zero. */
+	overdue_count: number,
 	/**  Lists in their order. */
 	lists: ListEntry[],
 };

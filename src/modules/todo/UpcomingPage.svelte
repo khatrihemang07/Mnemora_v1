@@ -24,7 +24,7 @@
   import WhenHost from './WhenHost.svelte';
 
   const upcoming = createQuery(() => upcomingQuery(todoClock.today));
-  const sidebar = createQuery(() => listsQuery);
+  const sidebar = createQuery(() => listsQuery());
   const lists = $derived(new Map((sidebar.data?.lists ?? []).map((e) => [e.list.id, e.list])));
   const listOf = (id: string | null) => (id ? (lists.get(id) ?? null) : null);
 
