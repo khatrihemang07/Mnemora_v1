@@ -98,7 +98,7 @@
 
   function onCloseAutoFocus(e: Event) {
     e.preventDefault();
-    if (!picked) (anchor instanceof HTMLElement ? anchor : returnFocus)?.focus();
+    if (!picked && !viewport.isPhone) (anchor instanceof HTMLElement ? anchor : returnFocus)?.focus();
     picked = false;
   }
 </script>

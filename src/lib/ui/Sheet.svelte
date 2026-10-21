@@ -100,7 +100,12 @@
         panel?.focus();
       }}
       onCloseAutoFocus={(e) => {
-        if (!restoreFocus) return;
+        // On a phone focus is not handed back to the trigger: a touch user has no use for it, and
+        // it would show a keyboard focus ring there.
+        if (!restoreFocus) {
+          if (viewport.isPhone) e.preventDefault();
+          return;
+        }
         e.preventDefault();
         restoreFocus();
       }}
