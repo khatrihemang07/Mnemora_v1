@@ -1,7 +1,7 @@
 //! Typo tolerance: bounded edit distance and the choice of near words from the index vocabulary.
 
-use crate::fold;
-use crate::query::Term;
+use super::fold;
+use super::query::Term;
 
 /// Words shorter than this must match exactly.
 const MIN_FUZZY_LEN: usize = 4;
@@ -96,7 +96,7 @@ pub fn near_terms(terms: &[Term], vocab: impl Iterator<Item = (String, u32)>) ->
 #[cfg(test)]
 mod tests {
     use super::{bounded_distance, near_terms, tolerance};
-    use crate::query::Term;
+    use crate::search::query::Term;
 
     fn d(a: &str, b: &str, max: usize) -> Option<usize> {
         let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());

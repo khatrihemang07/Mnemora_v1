@@ -5,10 +5,7 @@
 
 mod entry;
 mod error;
-mod fold;
-mod fuzzy;
 mod migrations;
-mod query;
 mod repo;
 mod search;
 mod service;
@@ -32,7 +29,7 @@ pub use service::{
     create_entry, delete_entry, list_pages, month_days, move_entry, purge_deleted, restore_entry,
     toggle_task_line, update_entry,
 };
-pub use snippet::Span;
+pub use mnemora_core::search::Span;
 pub use today::{TodayLatest, TodaySummary, today};
 
 /// The Journal Module.
