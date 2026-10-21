@@ -3,12 +3,15 @@
   then "New list", which turns into a name field (Enter creates the List and opens it). The row of
   the view on show is ticked. Picking a row opens that view and closes the sheet. Long-pressing a
   List opens its menu (Rename in place, Emoji… in a bottom sheet, Delete list…), the phone's
-  right-click; the Inbox, All and Done have none.
+  right-click; the Inbox, All and Done have none. ⋯ on the Lists heading sorts the Lists, as the
+  sidebar's does.
 -->
 <script lang="ts">
   import { flushSync, tick } from 'svelte';
   import { createQuery } from '@tanstack/svelte-query';
+  import ArrowDownWideNarrow from '~icons/lucide/arrow-down-wide-narrow';
   import Check from '~icons/lucide/check';
+  import Ellipsis from '~icons/lucide/ellipsis';
   import ListPlus from '~icons/lucide/list-plus';
   import Pencil from '~icons/lucide/pencil';
   import Smile from '~icons/lucide/smile';
@@ -17,12 +20,13 @@
   import { lightTick } from '../../lib/haptic';
   import { LongPress } from '../../lib/long-press';
   import EmojiPicker from '../../lib/ui/EmojiPicker.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import DeleteListDialog from './DeleteListDialog.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import ListGlyph from './ListGlyph.svelte';
-  import { createListAndOpen, deleteListWithUndo } from './list-actions';
+  import { createListAndOpen, deleteListWithUndo, listSortItems } from './list-actions';
   import ListNameField from './ListNameField.svelte';
   import { todoNav } from './nav.svelte';
   import { invalidateTodo, listsQuery, renameList, setListEmoji } from './queries';
@@ -33,6 +37,12 @@
 
   const sidebar = createQuery(() => ({ ...listsQuery(), enabled: open }));
   const lists = $derived(sidebar.data?.lists ?? []);
+  const sortedBy = $derived(sidebar.data?.lists_sort ?? 'manual');
+
+  // The Lists sort, the same choice menu as the sidebar's.
+  let sortOpen = $state(false);
+  let sortButton = $state<HTMLButtonElement | null>(null);
+  const sortItems = $derived(listSortItems(sortedBy, false));
 
   let creating = $state(false);
   $effect(() => {
@@ -153,7 +163,16 @@
       </button>
     {/each}
 
-    <div class="px-3 pt-3 pb-1 text-xs font-medium text-faint">Lists</div>
+    <div class="flex items-center justify-between pt-1 pr-1 pl-3">
+      <span class="text-xs font-medium text-faint">Lists</span>
+      <IconButton
+        bind:ref={sortButton}
+        icon={sortedBy === 'manual' ? Ellipsis : ArrowDownWideNarrow}
+        label="Sort Lists"
+        onclick={() => (sortOpen = true)}
+        class={sortedBy === 'manual' ? '' : 'text-hue-todo!'}
+      />
+    </div>
     {#each lists as entry (entry.list.id)}
       {#if renaming === entry.list.id}
         <div class="flex min-h-12 items-start gap-3 rounded-sm bg-surface px-3 py-2.5">
@@ -215,6 +234,7 @@
 </Sheet>
 
 <Menu bind:open={menuOpen} anchor={menu?.anchor ?? null} {items} label="List actions" />
+<Menu bind:open={sortOpen} anchor={sortButton} items={sortItems} label="Sort Lists" heading="Sort Lists by" />
 <EmojiPicker
   bind:open={emojiOpen}
   anchor={null}
