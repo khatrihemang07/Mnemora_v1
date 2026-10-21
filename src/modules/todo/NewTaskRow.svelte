@@ -2,7 +2,8 @@
   NewTaskRow: "+ New task" at the end of the list. Click (or Enter) turns it into an inline field in
   place. Enter adds the Task and keeps the field open for the next; Esc or clicking away closes it
   (what was typed is dropped). Rust validates the title; a rejected one stays in the field with the
-  reason in a toast. With a `listId` the Task is added to that List instead of the Inbox.
+  reason in a toast. With a `listId` the Task is added to that List instead of the Inbox; with a
+  `date` it is due that day (Today and each Upcoming day add this way). `label` renames the row.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -13,7 +14,13 @@
   import { notifyError } from '../../lib/ui/toast';
   import { createTask, invalidateTodo } from './queries';
 
-  let { listId = null }: { listId?: string | null } = $props();
+  interface Props {
+    listId?: string | null;
+    /** `YYYY-MM-DD`: the day a Task added here is due. */
+    date?: string | null;
+    label?: string;
+  }
+  let { listId = null, date = null, label = 'New task' }: Props = $props();
 
   /** Longest title; Rust enforces it too. */
   const MAX_TITLE = 500;
@@ -40,7 +47,7 @@
     if (!title.trim()) return;
     value = '';
     try {
-      await createTask(title, listId);
+      await createTask(title, listId, date);
     } catch (e) {
       // Put the text back unless the user already started the next one.
       if (!value) value = title;
@@ -95,6 +102,6 @@
       transition-colors duration-(--dur) ease-out hover:bg-hover hover:text-muted phone:grid-cols-[30px_1fr] phone:px-1.5 phone:py-2.5"
   >
     <Plus class="size-4 justify-self-center" />
-    <span>New task</span>
+    <span>{label}</span>
   </button>
 {/if}

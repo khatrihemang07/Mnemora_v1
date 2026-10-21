@@ -1,4 +1,4 @@
-import type { AllView, Task } from '../../lib/ipc/bindings';
+import type { AllView, Task, TodayView, UpcomingView } from '../../lib/ipc/bindings';
 
 /** Longest title shown in a toast before it is cut with an ellipsis. */
 const TOAST_TITLE_CHARS = 34;
@@ -24,5 +24,22 @@ export function withoutTaskInAll(view: AllView, id: string): AllView {
     groups: view.groups
       .map((g) => ({ ...g, tasks: g.tasks.filter((t) => t.id !== id) }))
       .filter((g) => g.tasks.length > 0),
+  };
+}
+
+/** Today without one Task: what it shows the instant that Task is ticked. */
+export function withoutTaskInToday(view: TodayView, id: string): TodayView {
+  const keep = (t: Task) => t.id !== id;
+  return { ...view, overdue: view.overdue.filter(keep), tasks: view.tasks.filter(keep) };
+}
+
+/** Upcoming without one Task; a day left empty goes with it. */
+export function withoutTaskInUpcoming(view: UpcomingView, id: string): UpcomingView {
+  const keep = (t: Task) => t.id !== id;
+  return {
+    overdue: view.overdue.filter(keep),
+    days: view.days
+      .map((d) => ({ ...d, tasks: d.tasks.filter(keep) }))
+      .filter((d) => d.tasks.length > 0),
   };
 }

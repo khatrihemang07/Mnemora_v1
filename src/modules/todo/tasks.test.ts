@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { AllView, InboxView, Task } from '../../lib/ipc/bindings';
-import { completedMessage, quoted, withoutTask, withoutTaskInAll } from './tasks';
+import type { AllView, InboxView, Task, TodayView, UpcomingView } from '../../lib/ipc/bindings';
+import {
+  completedMessage,
+  quoted,
+  withoutTask,
+  withoutTaskInAll,
+  withoutTaskInToday,
+  withoutTaskInUpcoming,
+} from './tasks';
 
 const task = (id: string): Task => ({ id, title: id }) as Task;
 
@@ -49,5 +56,37 @@ describe('withoutTaskInAll', () => {
     ]);
     expect(withoutTaskInAll(view, 'a').groups.map((g) => g.list?.id)).toEqual(['l1']);
     expect(view.groups).toHaveLength(2);
+  });
+});
+
+describe('withoutTaskInToday', () => {
+  it('drops the Task from Overdue or the day and leaves the rest alone', () => {
+    const view: TodayView = {
+      overdue: [task('a'), task('b')],
+      tasks: [task('c')],
+      done: [task('d')],
+      total: 4,
+    };
+    expect(withoutTaskInToday(view, 'a').overdue.map((t) => t.id)).toEqual(['b']);
+    const without = withoutTaskInToday(view, 'c');
+    expect(without.tasks).toEqual([]);
+    expect(without.done).toHaveLength(1);
+    expect(view.tasks).toHaveLength(1);
+  });
+});
+
+describe('withoutTaskInUpcoming', () => {
+  it('drops the Task and a day it leaves empty, keeping the order', () => {
+    const view: UpcomingView = {
+      overdue: [task('a')],
+      days: [
+        { date: '2026-10-22', tasks: [task('b')] },
+        { date: '2026-10-23', tasks: [task('c'), task('d')] },
+      ],
+    };
+    expect(withoutTaskInUpcoming(view, 'b').days.map((d) => d.date)).toEqual(['2026-10-23']);
+    expect(withoutTaskInUpcoming(view, 'c').days[1]?.tasks.map((t) => t.id)).toEqual(['d']);
+    expect(withoutTaskInUpcoming(view, 'a').overdue).toEqual([]);
+    expect(view.days).toHaveLength(2);
   });
 });
