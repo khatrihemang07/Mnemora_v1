@@ -3,6 +3,7 @@
   Component for both, controlled: the caller owns `open` and says where with `anchor` (an element or
   a screen point). Bits UI gives arrow keys, typeahead, Esc and outside-click. Dismissing returns
   focus to the anchor element (or `returnFocus`); picking an item leaves focus to whatever the action opens.
+  An optional `heading` names a choice menu ("Sort Lists by"); `checked` ticks the current choice.
 -->
 <script lang="ts" module>
   import type { Component } from 'svelte';
@@ -41,6 +42,8 @@
     items: MenuItem[];
     /** Names the menu for screen readers. */
     label: string;
+    /** A small title above the items, for a menu that picks one of several. */
+    heading?: string;
     side?: 'top' | 'bottom';
     /** Where focus goes on dismissal when the anchor is a point rather than an element. */
     returnFocus?: HTMLElement | null;
@@ -50,6 +53,7 @@
     anchor,
     items,
     label,
+    heading,
     side = 'bottom',
     returnFocus = null,
   }: Props = $props();
@@ -89,6 +93,9 @@
       {onCloseAutoFocus}
       class="z-50 min-w-48 rounded-md bg-pop p-1.25 text-sm leading-normal shadow-pop outline-none"
     >
+      {#if heading}
+        <div class="px-2.5 pt-1 pb-1.5 text-xs font-medium text-faint">{heading}</div>
+      {/if}
       {#each items as item (item.label)}
         {#if item.separatorBefore}
           <!-- --line nearly matches --pop in dark themes, so the divider is drawn from the ink colour. -->

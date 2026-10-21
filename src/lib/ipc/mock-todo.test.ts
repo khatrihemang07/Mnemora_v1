@@ -11,21 +11,25 @@ import type {
   Completion,
   DayCount,
   DoneView,
+  GroupKey,
   HistoryLine,
+  InboxView,
   ListDeletion,
+  ListView,
   LocalNow,
   OverdueMove,
   SidebarView,
   Task,
+  TaskGroup,
   TodayView,
   TodoList,
   UpcomingView,
 } from './bindings';
+import orderRules from './fixtures/todo-order-rules.json';
 import rules from './fixtures/todo-rules.json';
 import {
   createTodoMock,
   foldName,
-  keyAfter,
   resetChecklist,
   validateEmoji,
   validateListName,
@@ -56,7 +60,19 @@ interface Step {
     | 'comment_add'
     | 'comment_edit'
     | 'comment_delete'
-    | 'comment_restore';
+    | 'comment_restore'
+    | 'pref'
+    | 'reorder'
+    | 'list_reorder'
+    | 'list_sort'
+    | 'list_group';
+  key?: string;
+  value?: string;
+  before?: number | string | null;
+  after?: number | string | null;
+  target?: { kind: string; list?: number | null; [k: string]: unknown }[];
+  sort?: string;
+  group_by?: string;
   priority?: number;
   notes?: string;
   session?: string;
@@ -99,6 +115,28 @@ interface Case {
 const pick = <T>(v: number | string | null | undefined, made: T[]) =>
   typeof v === 'number' ? made[v] : (v ?? null);
 
+/** Mirrors `group_label` in the Rust runner: a group's name in the fixtures. */
+function groupLabel(key: GroupKey, listNames: Map<string, string>): string {
+  switch (key.kind) {
+    case 'priority':
+      return `p${key.priority}`;
+    case 'list':
+      return `list:${key.list_id === null ? 'Inbox' : (listNames.get(key.list_id) ?? '?')}`;
+    case 'day':
+      return `day:${key.date}`;
+    case 'due':
+      return `due:${key.bucket}`;
+    default:
+      return key.kind;
+  }
+}
+
+/** The Tasks of a view's groups, Overdue left out; and the Overdue ones. */
+const tasksOf = (v: { groups: TaskGroup[] }) =>
+  v.groups.filter((g) => g.key.kind !== 'overdue').flatMap((g) => g.tasks);
+const overdueOf = (v: { groups: TaskGroup[] }) =>
+  v.groups.filter((g) => g.key.kind === 'overdue').flatMap((g) => g.tasks);
+
 /** A fixture's Repeat (`weekdays` or `anchor` instead of the wire's `days`) as the wire shape. */
 const wireRepeat = (r: FixtureRepeat | null | undefined) =>
   r
@@ -118,7 +156,10 @@ const DEFAULT_NOW = '14:05';
 const LOCAL: LocalNow = { today: DEFAULT_TODAY, now: DEFAULT_NOW, offset_min: 0 };
 
 function run(c: Case) {
-  const mock = createTodoMock();
+  // The cases predate grouping: they read Today flat unless they choose otherwise.
+  const prefs = new Map<string, unknown>([['todo.group_today', 'none']]);
+  const mock = createTodoMock((key) => prefs.get(key));
+  const reorderOps: string[][] = [];
   const tasks: string[] = [];
   const lists: string[] = [];
   const deletions: ListDeletion[] = [];
@@ -227,6 +268,40 @@ function run(c: Case) {
         case 'list_restore':
           mock.handle('todo_list_restore', { deletion: deletions[step.deletion ?? 0] });
           break;
+        case 'pref':
+          prefs.set(`todo.${step.key}`, step.value);
+          break;
+        case 'reorder': {
+          const logged = mock.ops().length;
+          const target = (step.target ?? []).map((k) =>
+            k.kind === 'list' ? { kind: 'list', list_id: pick(k.list, lists) } : k,
+          );
+          try {
+            mock.handle('todo_task_reorder', {
+              id,
+              before: pick(step.before, tasks),
+              after: pick(step.after, tasks),
+              target,
+              local: clock(step),
+            });
+          } finally {
+            reorderOps.push(mock.ops().slice(logged));
+          }
+          break;
+        }
+        case 'list_reorder':
+          mock.handle('todo_list_reorder', {
+            id: list,
+            before: pick(step.before, lists),
+            after: pick(step.after, lists),
+          });
+          break;
+        case 'list_sort':
+          mock.handle('todo_list_set_sort', { id: list, sort: step.sort });
+          break;
+        case 'list_group':
+          mock.handle('todo_list_set_group', { id: list, groupBy: step.group_by });
+          break;
         default:
           mock.handle(`todo_task_${step.op}`, { id });
       }
@@ -235,10 +310,26 @@ function run(c: Case) {
       results.push((e as AppError).code);
     }
   }
-  const inbox = mock.handle('todo_inbox', {}) as { tasks: Task[] };
-  const sidebar = mock.handle('todo_lists', { local: clock() }) as SidebarView;
-  const all = mock.handle('todo_all', {}) as AllView;
   const view = clock();
+  const inbox = mock.handle('todo_inbox', { local: view }) as InboxView;
+  const sidebar = mock.handle('todo_lists', { local: view }) as SidebarView;
+  const all = mock.handle('todo_all', { local: view }) as AllView;
+  const listNames = new Map(sidebar.lists.map((e) => [e.list.id, e.list.name]));
+  const shape = (v: { groups: TaskGroup[] }) =>
+    v.groups.map((g) => [groupLabel(g.key, listNames), g.tasks.map((t) => t.title)]);
+  const views: Record<string, unknown> = {
+    today: shape(mock.handle('todo_today', { local: view }) as TodayView),
+    upcoming: shape(mock.handle('todo_upcoming', { local: view }) as UpcomingView),
+    inbox: shape(inbox),
+    all: shape(all),
+  };
+  lists.forEach((id, i) => {
+    try {
+      views[`list${i}`] = shape(mock.handle('todo_list', { id, local: view }) as ListView);
+    } catch {
+      // A deleted List has no page.
+    }
+  });
   const titles = (ts: Task[]) => ts.map((t) => t.title);
   const todayView = mock.handle('todo_today', { local: view }) as TodayView;
   const upcoming = mock.handle('todo_upcoming', { local: view }) as UpcomingView;
@@ -278,18 +369,27 @@ function run(c: Case) {
     ),
     priorities: all.groups.flatMap((g) => g.tasks.map((t) => [t.title, t.priority])),
     dues: all.groups.flatMap((g) => g.tasks.map((t) => [t.title, t.due_date, t.due_time])),
-    today: { overdue: titles(todayView.overdue), tasks: titles(todayView.tasks) },
+    today: { overdue: titles(overdueOf(todayView)), tasks: titles(tasksOf(todayView)) },
     upcoming: {
-      overdue: titles(upcoming.overdue),
-      days: upcoming.days.map((d) => [d.date, titles(d.tasks)]),
+      overdue: titles(overdueOf(upcoming)),
+      days: upcoming.groups
+        .filter((g) => g.key.kind === 'day')
+        .map((g) => [g.key.kind === 'day' ? g.key.date : '', titles(g.tasks)]),
     },
+    views,
+    reorder_ops: reorderOps,
     day_counts: counts.map((d) => [d.date, d.count]),
-    inbox: inbox.tasks.map((t) => t.title),
+    inbox: inbox.groups
+      .filter((g) => g.key.kind !== 'no_date_in_list')
+      .flatMap((g) => g.tasks.map((t) => t.title)),
     lists: sidebar.lists.map((e) => e.list.name),
     emojis: sidebar.lists.map((e) => e.list.emoji),
     sidebar_today: [sidebar.today_count, sidebar.overdue_count],
     counts: [sidebar.inbox_count, ...sidebar.lists.map((e) => e.open_count)],
-    all: all.groups.map((g) => [g.list?.name ?? 'Inbox', g.tasks.map((t) => t.title)]),
+    all: all.groups.map((g) => [
+      g.key.kind === 'list' && g.key.list_id ? (listNames.get(g.key.list_id) ?? '?') : 'Inbox',
+      g.tasks.map((t) => t.title),
+    ]),
     repeats: all.groups.flatMap((g) =>
       g.tasks
         .filter((t) => t.repeat_freq !== null)
@@ -300,11 +400,19 @@ function run(c: Case) {
 }
 
 describe('the Todo mock follows the shared rule fixtures', () => {
-  for (const c of rules.cases as Case[]) {
+  for (const c of [...rules.cases, ...orderRules.cases] as Case[]) {
     it(`${c.rule}: ${c.name}`, () => {
       const actual = run(c);
       const picked = Object.fromEntries(
-        Object.keys(c.expect).map((k) => [k, actual[k as keyof typeof actual]]),
+        Object.keys(c.expect).map((k) => [
+          k,
+          // `views` holds one entry per view: a case names only the ones it checks.
+          k === 'views'
+            ? Object.fromEntries(
+                Object.keys(c.expect.views as object).map((v) => [v, actual.views[v]]),
+              )
+            : actual[k as keyof typeof actual],
+        ]),
       );
       expect(picked).toEqual(c.expect);
     });
@@ -382,7 +490,7 @@ describe('the Todo mock', () => {
       mock.handle('todo_task_complete', { id: b.id, local });
       const view = mock.handle('todo_today', { local }) as TodayView;
       expect(view.done.map((t) => t.title)).toEqual(['a']);
-      expect(view.tasks.map((t) => t.title)).toEqual(['c']);
+      expect(tasksOf(view).map((t) => t.title)).toEqual(['c']);
       expect(view.total).toBe(2);
     } finally {
       vi.useRealTimers();
@@ -409,8 +517,8 @@ describe('the Todo mock', () => {
     const mock = createTodoMock();
     const task = mock.handle('todo_task_create', { title: 'a' }) as Task;
     task.title = 'changed';
-    const view = mock.handle('todo_inbox', {}) as { tasks: Task[] };
-    expect(view.tasks[0]?.title).toBe('a');
+    const view = mock.handle('todo_inbox', { local: LOCAL }) as InboxView;
+    expect(view.groups[0]?.tasks[0]?.title).toBe('a');
   });
 
   it('sets and clears the done time', () => {
@@ -430,18 +538,6 @@ describe('the Todo mock', () => {
   it('counts characters, not UTF-16 units, for the length limit', () => {
     expect(validateTitle('😀'.repeat(500))).toHaveLength(1000);
     expect(() => validateTitle('😀'.repeat(501))).toThrow();
-  });
-
-  it('makes sort keys that always sort later, in step with Rust', () => {
-    expect(keyAfter(null)).toBe('V0000000');
-    expect(keyAfter('0000000z')).toBe('00000010');
-    expect(keyAfter('zzzzzzzz') > 'zzzzzzzz').toBe(true);
-    let key = keyAfter(null);
-    for (let i = 0; i < 200; i++) {
-      const next = keyAfter(key);
-      expect(next > key).toBe(true);
-      key = next;
-    }
   });
 
   it('folds names like core: case and accents, plus letters that do not decompose', () => {
@@ -568,7 +664,9 @@ describe('capture in the browser mock', () => {
         'validation',
       );
     }
-    expect((mock.handle('todo_inbox', {}) as { tasks: Task[] }).tasks).toHaveLength(0);
+    expect(
+      (mock.handle('todo_inbox', { local: LOCAL }) as InboxView).groups[0]?.tasks,
+    ).toHaveLength(0);
   });
 
   it('saves a Quick edit in one update and does nothing when nothing changed', () => {

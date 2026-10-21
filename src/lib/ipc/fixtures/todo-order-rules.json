@@ -1,0 +1,5086 @@
+{
+  "about": "Ordering, Group by and sorts, shared by the Rust commands (src-tauri/src/todo.rs) and the browser mock (src/lib/ipc/mock-todo.test.ts). Same step language as todo-rules.json, plus: pref{key,value} saves a Todo Preference (group_today, group_upcoming, group_inbox, group_all, inbox_sort, lists_sort, done_in_lists); the runners start every case with group_today = none, like the older cases. reorder{task,before?,after?,target?} moves a Task between its neighbours (before is directly above its new place, after directly below; Tasks by index, a literal string is an id) into the group whose adopted properties are target: [{kind: day, date}, {kind: priority, priority}, {kind: list, list: n or null}]. list_reorder{list,before?,after?}, list_sort{list,sort}, list_group{list,group_by}. Expectations: views.<name> is [[group name, [titles]]] for today, upcoming, inbox, all and list0, list1, ... (the created Lists); group names are plain, overdue, p1..p4, list:<name or Inbox>, day:<date>, due:<overdue|today|tomorrow|week|later|no_date> and no_date_in_list. reorder_ops: the change-log ops each reorder step recorded. Other keys are as in todo-rules.json.",
+  "cases": [
+    {
+      "rule": "order.between",
+      "name": "a Task moves between two neighbours",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "create",
+          "title": "C"
+        },
+        {
+          "op": "reorder",
+          "task": 2,
+          "before": 0,
+          "after": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["A", "C", "B"],
+        "views": {
+          "inbox": [["plain", ["A", "C", "B"]]]
+        },
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "order.to_the_top",
+      "name": "a Task moves before the first",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "create",
+          "title": "C"
+        },
+        {
+          "op": "reorder",
+          "task": 2,
+          "after": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["C", "A", "B"],
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "order.to_the_bottom",
+      "name": "a Task moves after the last",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "create",
+          "title": "C"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "before": 2
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["B", "C", "A"],
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "order.no_neighbours",
+      "name": "moving with no neighbours and no group changes and logs nothing",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "create",
+          "title": "C"
+        },
+        {
+          "op": "reorder",
+          "task": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["A", "B", "C"],
+        "reorder_ops": [[]]
+      }
+    },
+    {
+      "rule": "order.new_tasks_last",
+      "name": "a new Task still goes last after Tasks were moved",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "reorder",
+          "task": 1,
+          "after": 0
+        },
+        {
+          "op": "create",
+          "title": "C"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "inbox": ["B", "A", "C"]
+      }
+    },
+    {
+      "rule": "order.many_inserts",
+      "name": "many Tasks can be put into the same gap",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "create",
+          "title": "X1"
+        },
+        {
+          "op": "create",
+          "title": "X2"
+        },
+        {
+          "op": "create",
+          "title": "X3"
+        },
+        {
+          "op": "create",
+          "title": "X4"
+        },
+        {
+          "op": "create",
+          "title": "X5"
+        },
+        {
+          "op": "create",
+          "title": "X6"
+        },
+        {
+          "op": "create",
+          "title": "X7"
+        },
+        {
+          "op": "create",
+          "title": "X8"
+        },
+        {
+          "op": "reorder",
+          "task": 2,
+          "before": 0,
+          "after": 1
+        },
+        {
+          "op": "reorder",
+          "task": 3,
+          "before": 0,
+          "after": 2
+        },
+        {
+          "op": "reorder",
+          "task": 4,
+          "before": 0,
+          "after": 3
+        },
+        {
+          "op": "reorder",
+          "task": 5,
+          "before": 0,
+          "after": 4
+        },
+        {
+          "op": "reorder",
+          "task": 6,
+          "before": 0,
+          "after": 5
+        },
+        {
+          "op": "reorder",
+          "task": 7,
+          "before": 0,
+          "after": 6
+        },
+        {
+          "op": "reorder",
+          "task": 8,
+          "before": 0,
+          "after": 7
+        },
+        {
+          "op": "reorder",
+          "task": 9,
+          "before": 0,
+          "after": 8
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "inbox": ["A", "X8", "X7", "X6", "X5", "X4", "X3", "X2", "X1", "B"]
+      }
+    },
+    {
+      "rule": "order.shared",
+      "name": "one manual order serves every view",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "A",
+          "list": 0,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "list": 0,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "C",
+          "list": 0,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "reorder",
+          "task": 2,
+          "after": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "today": [["day:2026-10-21", ["C", "A", "B"]]],
+          "list0": [["plain", ["C", "A", "B"]]],
+          "all": [["list:Home", ["C", "A", "B"]]]
+        }
+      }
+    },
+    {
+      "rule": "order.unknown_neighbour",
+      "name": "a neighbour that is gone is refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "before": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "not_found"],
+        "reorder_ops": [[]]
+      }
+    },
+    {
+      "rule": "order.closed",
+      "name": "a done Task cannot be moved",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "complete",
+          "task": 0
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "after": 1
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "validation"]
+      }
+    },
+    {
+      "rule": "order.lists_by_drag",
+      "name": "a List is dragged above another",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Play"
+        },
+        {
+          "op": "list_reorder",
+          "list": 2,
+          "after": 0
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "lists": ["Play", "Home", "Work"]
+      }
+    },
+    {
+      "rule": "order.lists_between",
+      "name": "a List is dragged between two",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Play"
+        },
+        {
+          "op": "list_reorder",
+          "list": 0,
+          "before": 1,
+          "after": 2
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "lists": ["Work", "Home", "Play"]
+      }
+    },
+    {
+      "rule": "order.lists_new_last",
+      "name": "a new List goes last after Lists were dragged",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_reorder",
+          "list": 1,
+          "after": 0
+        },
+        {
+          "op": "list_create",
+          "name": "Play"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "lists": ["Work", "Home", "Play"]
+      }
+    },
+    {
+      "rule": "order.list_unknown_neighbour",
+      "name": "a List neighbour that is gone is refused",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_reorder",
+          "list": 0,
+          "before": "nope"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "not_found"]
+      }
+    },
+    {
+      "rule": "reorder.day",
+      "name": "dragging into an Upcoming day sets that date and keeps the time",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-22",
+          "time": "09:00"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-24"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "day",
+              "date": "2026-10-24"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["A", "2026-10-24", "09:00"], ["B", "2026-10-24", null]],
+        "views": {
+          "upcoming": [["day:2026-10-24", ["A", "B"]]]
+        },
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "reorder.day_and_place",
+      "name": "dragging into a day also places the Task among its neighbours",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-24"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-24"
+        },
+        {
+          "op": "create",
+          "title": "C",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "reorder",
+          "task": 2,
+          "before": 1,
+          "target": [
+            {
+              "kind": "day",
+              "date": "2026-10-24"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "views": {
+          "upcoming": [["day:2026-10-24", ["A", "B", "C"]]]
+        }
+      }
+    },
+    {
+      "rule": "reorder.overdue_to_today",
+      "name": "dragging Overdue into Today sets today",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "create",
+          "title": "P",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "day",
+              "date": "2026-10-21"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["Late", "2026-10-21", null], ["P", "2026-10-21", null]],
+        "views": {
+          "today": [["day:2026-10-21", ["Late", "P"]]]
+        },
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "reorder.overdue_only_reorders",
+      "name": "dragging among Overdue only reorders",
+      "steps": [
+        {
+          "op": "create",
+          "title": "L1",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "create",
+          "title": "L2",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "reorder",
+          "task": 1,
+          "after": 0,
+          "target": []
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["L2", "2026-10-20", null], ["L1", "2026-10-20", null]],
+        "views": {
+          "today": [["overdue", ["L2", "L1"]], ["day:2026-10-21", []]]
+        },
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "reorder.never_past",
+      "name": "a past date is never set by a drop",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "day",
+              "date": "2026-10-20"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "dues": [["A", "2026-10-22", null]],
+        "reorder_ops": [[]]
+      }
+    },
+    {
+      "rule": "reorder.priority",
+      "name": "dragging into a priority group sets the Priority",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "create",
+          "title": "B"
+        },
+        {
+          "op": "reorder",
+          "task": 1,
+          "after": 0,
+          "target": [
+            {
+              "kind": "priority",
+              "priority": 1
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "priorities": [["B", 1], ["A", 4]],
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "reorder.priority_range",
+      "name": "a Priority outside 1 to 4 is refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "priority",
+              "priority": 5
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation"],
+        "priorities": [["A", 4]]
+      }
+    },
+    {
+      "rule": "reorder.list",
+      "name": "dragging into a List group moves the Task there and back",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "list",
+              "list": 0
+            }
+          ]
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "list",
+              "list": null
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok"],
+        "counts": [1, 0],
+        "reorder_ops": [["move"], ["move"]]
+      }
+    },
+    {
+      "rule": "reorder.list_gone",
+      "name": "dragging into a List that is gone is refused",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "list",
+              "list": "nope"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "not_found"],
+        "reorder_ops": [[]]
+      }
+    },
+    {
+      "rule": "reorder.today_priority_group",
+      "name": "a Today priority group adopts today and the Priority in one change",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Late",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "day",
+              "date": "2026-10-21"
+            },
+            {
+              "kind": "priority",
+              "priority": 2
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok"],
+        "dues": [["Late", "2026-10-21", null]],
+        "priorities": [["Late", 2]],
+        "reorder_ops": [["update"]]
+      }
+    },
+    {
+      "rule": "reorder.repeat_moves_with_the_date",
+      "name": "dragging a repeating Task to another day moves its Repeat anchor",
+      "steps": [
+        {
+          "op": "create",
+          "title": "R",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "set_when",
+          "task": 0,
+          "date": "2026-10-22",
+          "repeat": {
+            "freq": "week",
+            "every": 1,
+            "weekdays": [4],
+            "mode": "fixed"
+          }
+        },
+        {
+          "op": "reorder",
+          "task": 0,
+          "target": [
+            {
+              "kind": "day",
+              "date": "2026-10-23"
+            }
+          ]
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "dues": [["R", "2026-10-23", null]]
+      }
+    },
+    {
+      "rule": "lists.sort",
+      "name": "Lists sort by manual",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "list_create",
+          "name": "École"
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h3",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "a2",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "e1",
+          "list": 3
+        },
+        {
+          "op": "create",
+          "title": "e2",
+          "list": 3
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Work", "Home", "Away", "École"],
+        "counts": [0, 1, 3, 2, 2]
+      }
+    },
+    {
+      "rule": "lists.sort",
+      "name": "Lists sort by name_asc",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "list_create",
+          "name": "École"
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h3",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "a2",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "e1",
+          "list": 3
+        },
+        {
+          "op": "create",
+          "title": "e2",
+          "list": 3
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "name_asc"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Away", "École", "Home", "Work"],
+        "counts": [0, 2, 2, 3, 1]
+      }
+    },
+    {
+      "rule": "lists.sort",
+      "name": "Lists sort by name_desc",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "list_create",
+          "name": "École"
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h3",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "a2",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "e1",
+          "list": 3
+        },
+        {
+          "op": "create",
+          "title": "e2",
+          "list": 3
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "name_desc"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Work", "Home", "École", "Away"],
+        "counts": [0, 1, 3, 2, 2]
+      }
+    },
+    {
+      "rule": "lists.sort",
+      "name": "Lists sort by most_open",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "list_create",
+          "name": "École"
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h3",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "a2",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "e1",
+          "list": 3
+        },
+        {
+          "op": "create",
+          "title": "e2",
+          "list": 3
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "most_open"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Home", "Away", "École", "Work"],
+        "counts": [0, 3, 2, 2, 1]
+      }
+    },
+    {
+      "rule": "lists.sort",
+      "name": "Lists sort by created",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "list_create",
+          "name": "École"
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h3",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "a2",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "e1",
+          "list": 3
+        },
+        {
+          "op": "create",
+          "title": "e2",
+          "list": 3
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "created"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Work", "Home", "Away", "École"],
+        "counts": [0, 1, 3, 2, 2]
+      }
+    },
+    {
+      "rule": "lists.sort_manual_restores",
+      "name": "Manual brings the drag order back untouched",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "list_create",
+          "name": "École"
+        },
+        {
+          "op": "create",
+          "title": "w1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "h1",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h2",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "h3",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "a2",
+          "list": 2
+        },
+        {
+          "op": "create",
+          "title": "e1",
+          "list": 3
+        },
+        {
+          "op": "create",
+          "title": "e2",
+          "list": 3
+        },
+        {
+          "op": "list_reorder",
+          "list": 3,
+          "after": 0
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "name_asc"
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "manual"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "lists": ["École", "Work", "Home", "Away"]
+      }
+    },
+    {
+      "rule": "lists.sort_persists",
+      "name": "a List sort stays applied as Lists are added",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "name_asc"
+        },
+        {
+          "op": "list_create",
+          "name": "Bravo"
+        },
+        {
+          "op": "list_create",
+          "name": "Zulu"
+        },
+        {
+          "op": "list_create",
+          "name": "Alpha"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok"],
+        "lists": ["Alpha", "Bravo", "Home", "Work", "Zulu"]
+      }
+    },
+    {
+      "rule": "lists.sort_most_open_ties",
+      "name": "equal counts keep the drag order",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "B"
+        },
+        {
+          "op": "list_create",
+          "name": "A"
+        },
+        {
+          "op": "create",
+          "title": "b1",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "a1",
+          "list": 1
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "most_open"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "lists": ["B", "A"]
+      }
+    },
+    {
+      "rule": "lists.sort_all_follows",
+      "name": "the All view's List groups follow the Lists sort",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "list_create",
+          "name": "Away"
+        },
+        {
+          "op": "create",
+          "title": "w",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 1
+        },
+        {
+          "op": "pref",
+          "key": "lists_sort",
+          "value": "name_asc"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "all": [["list:Away", ["a"]], ["list:Work", ["w"]]]
+        }
+      }
+    },
+    {
+      "rule": "today.group_none",
+      "name": "Today ungrouped: Overdue on top, priority orders the day",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_today",
+          "value": "none"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "today": [["overdue", ["Late fee"]], ["day:2026-10-21", ["Report", "Call mum"]]]
+        }
+      }
+    },
+    {
+      "rule": "today.group_priority",
+      "name": "Today by Priority: Overdue on top, then the Priorities that exist",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_today",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "today": [["overdue", ["Late fee"]], ["p2", ["Report"]], ["p4", ["Call mum"]]]
+        }
+      }
+    },
+    {
+      "rule": "today.group_list",
+      "name": "Today by List: the Inbox first",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_today",
+          "value": "list"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "today": [
+            ["overdue", ["Late fee"]],
+            ["list:Inbox", ["Call mum"]],
+            ["list:Work", ["Report"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "today.priority_without_priorities",
+      "name": "Today by Priority shows one plain day when no Task has a Priority",
+      "steps": [
+        {
+          "op": "create",
+          "title": "A",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "B",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "pref",
+          "key": "group_today",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok"],
+        "views": {
+          "today": [["day:2026-10-21", ["A", "B"]]]
+        }
+      }
+    },
+    {
+      "rule": "upcoming.group_day",
+      "name": "Upcoming by day (the default)",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "upcoming": [
+            ["overdue", ["Late fee"]],
+            ["day:2026-10-22", ["Pay rent"]],
+            ["day:2026-10-25", ["Dentist"]],
+            ["day:2026-11-15", ["Archive"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "upcoming.group_priority",
+      "name": "Upcoming by Priority",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_upcoming",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "upcoming": [
+            ["overdue", ["Late fee"]],
+            ["p1", ["Pay rent"]],
+            ["p3", ["Dentist"]],
+            ["p4", ["Archive"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "upcoming.group_list",
+      "name": "Upcoming by List, each in date order",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_upcoming",
+          "value": "list"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "upcoming": [
+            ["overdue", ["Late fee"]],
+            ["list:Inbox", ["Pay rent", "Archive"]],
+            ["list:Home", ["Dentist"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_none",
+      "name": "the Inbox: Tasks with no List, then undated Tasks in a List",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["plain", ["Buy milk", "Call mum", "Pay rent", "Archive", "Late fee"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        },
+        "counts": [5, 2, 1],
+        "inbox": ["Buy milk", "Call mum", "Pay rent", "Archive", "Late fee"]
+      }
+    },
+    {
+      "rule": "inbox.group_priority",
+      "name": "the Inbox by Priority keeps the extra group at the bottom",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["p1", ["Pay rent"]],
+            ["p3", ["Late fee"]],
+            ["p4", ["Buy milk", "Call mum", "Archive"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_due",
+      "name": "the Inbox by Due date",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["due:overdue", ["Late fee"]],
+            ["due:today", ["Call mum"]],
+            ["due:tomorrow", ["Pay rent"]],
+            ["due:later", ["Archive"]],
+            ["due:no_date", ["Buy milk"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.sort",
+      "name": "the Inbox sorts by due",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "due"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["plain", ["Late fee", "Call mum", "Pay rent", "Archive", "Buy milk"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.sort",
+      "name": "the Inbox sorts by priority",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["plain", ["Pay rent", "Late fee", "Buy milk", "Call mum", "Archive"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.sort",
+      "name": "the Inbox sorts by title",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "title"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["plain", ["Archive", "Buy milk", "Call mum", "Late fee", "Pay rent"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.sort",
+      "name": "the Inbox sorts by added",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "added"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "inbox": [
+            ["plain", ["Late fee", "Archive", "Pay rent", "Call mum", "Buy milk"]],
+            ["no_date_in_list", ["Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.undated_in_a_list_is_not_counted",
+      "name": "undated Tasks in a List do not count toward the Inbox",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Loose"
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bread",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Dated",
+          "list": 0,
+          "date": "2026-10-22"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok"],
+        "counts": [1, 3],
+        "views": {
+          "inbox": [["plain", ["Loose"]], ["no_date_in_list", ["Eggs", "Bread"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.zero",
+      "name": "an empty Inbox has its plain group and no extra one",
+      "steps": [],
+      "expect": {
+        "results": [],
+        "views": {
+          "inbox": [["plain", []]]
+        }
+      }
+    },
+    {
+      "rule": "all.group_list",
+      "name": "All by List (the default): the Inbox first",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "all": [
+            ["list:Inbox", ["Buy milk", "Call mum", "Pay rent", "Archive", "Late fee"]],
+            ["list:Home", ["Eggs", "Dentist"]],
+            ["list:Work", ["Report"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "all.group_priority",
+      "name": "All by Priority",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_all",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "all": [
+            ["p1", ["Pay rent"]],
+            ["p2", ["Report"]],
+            ["p3", ["Dentist", "Late fee"]],
+            ["p4", ["Buy milk", "Call mum", "Eggs", "Archive"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "all.group_due",
+      "name": "All by Due date",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_all",
+          "value": "due"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "all": [
+            ["due:overdue", ["Late fee"]],
+            ["due:today", ["Call mum", "Report"]],
+            ["due:tomorrow", ["Pay rent"]],
+            ["due:week", ["Dentist"]],
+            ["due:later", ["Archive"]],
+            ["due:no_date", ["Buy milk", "Eggs"]]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "all.group_none",
+      "name": "All ungrouped, in the shared manual order",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_all",
+          "value": "none"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "all": [
+            [
+              "plain",
+              [
+                "Buy milk",
+                "Call mum",
+                "Pay rent",
+                "Eggs",
+                "Report",
+                "Dentist",
+                "Archive",
+                "Late fee"
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "views.each_remembers_its_own",
+      "name": "each view keeps its own grouping",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_create",
+          "name": "Work"
+        },
+        {
+          "op": "create",
+          "title": "Buy milk"
+        },
+        {
+          "op": "create",
+          "title": "Call mum",
+          "date": "2026-10-21"
+        },
+        {
+          "op": "create",
+          "title": "Pay rent",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 1
+        },
+        {
+          "op": "create",
+          "title": "Eggs",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Report",
+          "list": 1,
+          "date": "2026-10-21"
+        },
+        {
+          "op": "priority",
+          "task": 4,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Dentist",
+          "list": 0,
+          "date": "2026-10-25"
+        },
+        {
+          "op": "priority",
+          "task": 5,
+          "priority": 3
+        },
+        {
+          "op": "create",
+          "title": "Archive",
+          "date": "2026-11-15"
+        },
+        {
+          "op": "create",
+          "title": "Late fee",
+          "date": "2026-10-20",
+          "today": "2026-10-19"
+        },
+        {
+          "op": "priority",
+          "task": 7,
+          "priority": 3
+        },
+        {
+          "op": "pref",
+          "key": "group_today",
+          "value": "list"
+        },
+        {
+          "op": "pref",
+          "key": "group_upcoming",
+          "value": "priority"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        },
+        {
+          "op": "pref",
+          "key": "group_all",
+          "value": "none"
+        }
+      ],
+      "expect": {
+        "results": [
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok",
+          "ok"
+        ],
+        "views": {
+          "today": [
+            ["overdue", ["Late fee"]],
+            ["list:Inbox", ["Call mum"]],
+            ["list:Work", ["Report"]]
+          ],
+          "upcoming": [
+            ["overdue", ["Late fee"]],
+            ["p1", ["Pay rent"]],
+            ["p3", ["Dentist"]],
+            ["p4", ["Archive"]]
+          ],
+          "all": [
+            [
+              "plain",
+              [
+                "Buy milk",
+                "Call mum",
+                "Pay rent",
+                "Eggs",
+                "Report",
+                "Dentist",
+                "Archive",
+                "Late fee"
+              ]
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by none and sorted by manual",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "none"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["plain", ["Zed", "Amy", "Bob", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by none and sorted by manual",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "none"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["plain", ["Zed", "Amy", "Bob", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by none and sorted by due",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "none"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["plain", ["Zed", "Cy", "Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by none and sorted by due",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "none"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["plain", ["Zed", "Cy", "Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by none and sorted by priority",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "none"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["plain", ["Zed", "Bob", "Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by none and sorted by priority",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "none"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["plain", ["Zed", "Bob", "Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by none and sorted by title",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "none"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "title"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["plain", ["Amy", "Bob", "Cy", "Zed"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by none and sorted by title",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "none"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "title"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["plain", ["Amy", "Bob", "Cy", "Zed"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by none and sorted by added",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "none"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "added"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["plain", ["Cy", "Bob", "Amy", "Zed"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by none and sorted by added",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "none"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "added"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["plain", ["Cy", "Bob", "Amy", "Zed"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by priority and sorted by manual",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "priority"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["p2", ["Zed", "Bob"]], ["p4", ["Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by priority and sorted by manual",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "priority"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["p2", ["Zed", "Bob"]], ["p4", ["Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by priority and sorted by due",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "priority"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["p2", ["Zed", "Bob"]], ["p4", ["Cy", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by priority and sorted by due",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "priority"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["p2", ["Zed", "Bob"]], ["p4", ["Cy", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by priority and sorted by priority",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "priority"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["p2", ["Zed", "Bob"]], ["p4", ["Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by priority and sorted by priority",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "priority"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["p2", ["Zed", "Bob"]], ["p4", ["Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by priority and sorted by title",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "priority"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "title"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["p2", ["Bob", "Zed"]], ["p4", ["Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by priority and sorted by title",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "priority"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "title"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["p2", ["Bob", "Zed"]], ["p4", ["Amy", "Cy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by priority and sorted by added",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "priority"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "added"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["p2", ["Bob", "Zed"]], ["p4", ["Cy", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by priority and sorted by added",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "priority"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "added"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["p2", ["Bob", "Zed"]], ["p4", ["Cy", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by due and sorted by manual",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["due:tomorrow", ["Zed", "Cy"]], ["due:no_date", ["Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by due and sorted by manual",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "due"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "manual"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["due:tomorrow", ["Zed", "Cy"]], ["due:no_date", ["Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by due and sorted by due",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["due:tomorrow", ["Zed", "Cy"]], ["due:no_date", ["Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by due and sorted by due",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "due"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["due:tomorrow", ["Zed", "Cy"]], ["due:no_date", ["Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by due and sorted by priority",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["due:tomorrow", ["Zed", "Cy"]], ["due:no_date", ["Bob", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by due and sorted by priority",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "due"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "priority"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["due:tomorrow", ["Zed", "Cy"]], ["due:no_date", ["Bob", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by due and sorted by title",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "title"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["due:tomorrow", ["Cy", "Zed"]], ["due:no_date", ["Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by due and sorted by title",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "due"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "title"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["due:tomorrow", ["Cy", "Zed"]], ["due:no_date", ["Amy", "Bob"]]]
+        }
+      }
+    },
+    {
+      "rule": "inbox.group_x_sort",
+      "name": "Inbox grouped by due and sorted by added",
+      "steps": [
+        {
+          "op": "create",
+          "title": "Zed",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy"
+        },
+        {
+          "op": "create",
+          "title": "Bob"
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "date": "2026-10-22"
+        },
+        {
+          "op": "pref",
+          "key": "group_inbox",
+          "value": "due"
+        },
+        {
+          "op": "pref",
+          "key": "inbox_sort",
+          "value": "added"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "inbox": [["due:tomorrow", ["Cy", "Zed"]], ["due:no_date", ["Bob", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_x_sort",
+      "name": "a List grouped by due and sorted by added",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "create",
+          "title": "Zed",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "priority",
+          "task": 0,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Amy",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "Bob",
+          "list": 0
+        },
+        {
+          "op": "priority",
+          "task": 2,
+          "priority": 2
+        },
+        {
+          "op": "create",
+          "title": "Cy",
+          "list": 0,
+          "date": "2026-10-22"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "due"
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "added"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["due:tomorrow", ["Cy", "Zed"]], ["due:no_date", ["Bob", "Amy"]]]
+        }
+      }
+    },
+    {
+      "rule": "list.group_rejects_list",
+      "name": "a List groups only by Priority or Due date",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "Home"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "list"
+        },
+        {
+          "op": "list_group",
+          "list": 0,
+          "group_by": "day"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "validation", "validation"]
+      }
+    },
+    {
+      "rule": "list.arrangement_is_per_list",
+      "name": "each List remembers its own sort and grouping",
+      "steps": [
+        {
+          "op": "list_create",
+          "name": "A"
+        },
+        {
+          "op": "list_create",
+          "name": "B"
+        },
+        {
+          "op": "create",
+          "title": "z",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 0
+        },
+        {
+          "op": "create",
+          "title": "z",
+          "list": 1
+        },
+        {
+          "op": "create",
+          "title": "a",
+          "list": 1
+        },
+        {
+          "op": "list_sort",
+          "list": 0,
+          "sort": "title"
+        },
+        {
+          "op": "list_group",
+          "list": 1,
+          "group_by": "due"
+        }
+      ],
+      "expect": {
+        "results": ["ok", "ok", "ok", "ok", "ok", "ok", "ok", "ok"],
+        "views": {
+          "list0": [["plain", ["a", "z"]]],
+          "list1": [["due:no_date", ["z", "a"]]]
+        }
+      }
+    }
+  ]
+}

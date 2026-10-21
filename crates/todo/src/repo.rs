@@ -427,3 +427,43 @@ pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
     conn.execute("DELETE FROM todo_tasks WHERE id = ?1", [id])?;
     Ok(())
 }
+
+/// The greatest sort key below `key`, deleted Tasks included: the neighbour a move goes after.
+pub fn key_before(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn.query_row(
+        "SELECT MAX(sort_key) FROM todo_tasks WHERE sort_key < ?1",
+        [key],
+        |r| r.get(0),
+    )?)
+}
+
+/// The least sort key above `key`, deleted Tasks included: the neighbour a move goes before.
+pub fn key_following(conn: &Connection, key: &str) -> AppResult<Option<String>> {
+    Ok(conn.query_row(
+        "SELECT MIN(sort_key) FROM todo_tasks WHERE sort_key > ?1",
+        [key],
+        |r| r.get(0),
+    )?)
+}
+
+/// Writes the sort key, and stamps `updated_at`.
+pub fn update_sort_key(conn: &Connection, t: &Task) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_tasks SET sort_key = ?2, updated_at = ?3 WHERE id = ?1",
+        params![t.id, t.sort_key, t.updated_at],
+    )?;
+    Ok(())
+}
+
+/// Live Tasks of one List that were done or marked Won't do, newest first.
+pub fn closed_in_list(conn: &Connection, list_id: &str) -> AppResult<Vec<Task>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM todo_tasks
+         WHERE list_id = ?1 AND state IN ('done', 'wont') AND closed_at IS NOT NULL
+           AND deleted_at IS NULL
+         ORDER BY closed_at DESC, sort_key DESC, id DESC"
+    ))?;
+    stmt.query_map([list_id], from_row)?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}

@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use crate::test_support::TestApp;
+use crate::test_support::{TestApp, tasks_of};
 
 const TODAY: &str = "2026-10-21";
 
@@ -208,8 +208,13 @@ fn capture_details_are_validated() {
     )
     .unwrap_err();
     assert_eq!(err["code"], "validation");
-    let inbox: Value = app.invoke("todo_inbox", json!({})).unwrap();
-    assert!(inbox["tasks"].as_array().unwrap().is_empty());
+    let inbox: Value = app
+        .invoke(
+            "todo_inbox",
+            json!({ "local": { "today": "2026-10-21", "now": "14:05", "offset_min": 0 } }),
+        )
+        .unwrap();
+    assert!(tasks_of(&inbox).as_array().unwrap().is_empty());
 }
 
 #[test]

@@ -68,6 +68,10 @@ macro_rules! specta_builder_for {
                 todo::todo_list_set_emoji,
                 todo::todo_list_delete,
                 todo::todo_list_restore,
+                todo::todo_task_reorder,
+                todo::todo_list_reorder,
+                todo::todo_list_set_sort,
+                todo::todo_list_set_group,
             ])
             .events(tauri_specta::collect_events![SettingsChangedEvent])
     };
@@ -83,6 +87,8 @@ mod theme_inject;
 mod todo;
 #[cfg(test)]
 mod todo_capture_tests;
+#[cfg(test)]
+mod todo_order_tests;
 #[cfg(test)]
 mod todo_sheet_tests;
 #[cfg(desktop)]
@@ -339,6 +345,10 @@ mod tests {
             "todoListSetEmoji",
             "todoListDelete",
             "todoListRestore",
+            "todoTaskReorder",
+            "todoListReorder",
+            "todoListSetSort",
+            "todoListSetGroup",
             "deviceSetSpellcheck",
             "settingsChangedEvent",
         ] {

@@ -140,3 +140,18 @@ _Avoid_: Instance, run, completion
 **Skip**:
 Moving a repeating Task to its next Due date without recording an occurrence. It is what Won't do means on a repeating Task.
 _Avoid_: Snooze, postpone
+
+**Group by**:
+How a view splits its open Tasks into groups: Today by Priority or List, Upcoming by day, Priority or List, the Inbox and a List by Priority or Due date, All by List, Priority or Due date, or no groups at all. Each view remembers its own choice. Overdue always stays on top, and Done is always by day.
+_Avoid_: Filter, section
+
+**Sort**:
+How Tasks are ordered inside each group on a List page or the Inbox: Manual, Due date, Priority, Title or Recently added. Grouping happens first. Dragging is off while a sort other than Manual is on, and Manual brings back the drag order untouched. The Lists in the sidebar have their own sort: Manual, Name A–Z or Z–A, Most open or Recently created.
+_Avoid_: Order by
+
+**Manual order**:
+The order Tasks (and Lists) were dragged into, stored as one fractional-index key per Task and one per List. It is shared by every view, so reordering in Today also reorders the List.
+_Avoid_: Position, rank, priority order
+
+**Done earlier**:
+The fold at the bottom of a List page holding Tasks done before today, "Done earlier · N". Tasks done today sit above it, struck through. A Setting changes this: all folded, all shown or hidden.

@@ -10,7 +10,8 @@
   a Won't do Task shows ⊗ and "Won't do" with the time. `hideDate` leaves the date out where the
   group already says it (Today, an Upcoming day). `list` shows the Task's List at the right, for
   views that mix Lists. A done Task is struck through, shows when it was done, and its diamond
-  brings it back.
+  brings it back. An open row of a view that can be arranged (`draggable`) is dragged by its whole
+  body with the mouse, to reorder it, to another group or onto the sidebar (see drag.svelte.ts).
 -->
 <script lang="ts">
   import Calendar from '~icons/lucide/calendar';
@@ -42,6 +43,7 @@
   import { closedTime, isOverdue, nextText, rowDateLabel, taskRepeat, timePassed } from './dates';
   import ListGlyph from './ListGlyph.svelte';
   import ListPicker from './ListPicker.svelte';
+  import { drag } from './drag.svelte';
   import { checklistProgress, notePreview, plainTitle } from './notes';
   import PriorityMenu from './PriorityMenu.svelte';
   import { todoPrefs } from './prefs.svelte';
@@ -69,8 +71,10 @@
     onuntick?: (task: Task) => void;
     hideDate?: boolean;
     list?: TodoList | null;
+    /** The mouse can pick the row up (an open Task in a view that can be arranged). */
+    draggable?: boolean;
   }
-  let { task, ontick, onuntick, hideDate = false, list = null }: Props = $props();
+  let { task, ontick, onuntick, hideDate = false, list = null, draggable = false }: Props = $props();
 
   let row = $state<HTMLElement | null>(null);
   let more = $state<HTMLButtonElement | null>(null);
@@ -228,12 +232,16 @@
   {oncontextmenu}
   onpointerenter={(e) => !touchLike(e) && (taskRows.hoveredId = task.id)}
   onpointerleave={() => taskRows.hoveredId === task.id && (taskRows.hoveredId = null)}
-  onpointerdown={(e) => touchLike(e) && !(e.target as Element).closest('button, a') && press.start(e.clientX, e.clientY)}
+  onpointerdown={(e) => {
+    if (!touchLike(e)) {
+      if (draggable && isOpen) drag.pressTask(e, task);
+    } else if (!(e.target as Element).closest('button, a')) press.start(e.clientX, e.clientY);
+  }}
   onpointermove={(e) => touchLike(e) && press.move(e.clientX, e.clientY)}
   onpointerup={() => press.cancel()}
   onpointercancel={() => press.cancel()}
   class="group grid grid-cols-[26px_1fr_auto] items-start gap-x-2 rounded-sm px-2 py-[7px] transition-colors duration-(--dur) ease-out
-    hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5"
+    hover:bg-hover phone:grid-cols-[30px_1fr_auto] phone:px-1.5 phone:py-2.5 {drag.draggedId === task.id ? 'opacity-40' : ''}"
 >
   <TaskCheckbox
     checked={!isOpen}

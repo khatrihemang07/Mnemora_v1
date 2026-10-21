@@ -9,13 +9,17 @@ use mnemora_core::util::{new_id, now_ms};
 use rusqlite::Connection;
 
 use crate::MODULE_ID;
+use crate::arrange::{
+    DoneInLists, GroupBy, GroupContext, GroupKey, ListSort, TaskSort, ViewPrefs, compare,
+    group_tasks, sort_lists,
+};
 use crate::error::TodoError;
 use crate::list::{
-    AllGroup, AllView, DeleteChoice, ListDeletion, ListEntry, ListView, SidebarView, TodoList,
+    AllView, DeleteChoice, ListDeletion, ListDone, ListEntry, ListView, SidebarView, TodoList,
     name_key, validate_emoji, validate_list_name,
 };
+use crate::order::key_after;
 use crate::service::record_at;
-use crate::task::key_after;
 use crate::when::LocalNow;
 use crate::{list_repo, repo};
 
@@ -23,7 +27,7 @@ use crate::{list_repo, repo};
 pub(crate) const ENTITY: &str = "todo_list";
 
 /// Writes a change-log record for a List; the snapshot carries `deleted_at` like Task ones do.
-fn record(
+pub(crate) fn record_list(
     conn: &Connection,
     list: &TodoList,
     op: ChangeOp,
@@ -48,16 +52,13 @@ fn record(
 
 const NAME_TAKEN: TodoError = TodoError::Validation("There’s already a List with that name");
 
-/// The sidebar's data: the Inbox count, Today's count (due today plus Overdue) and every List
-/// with its open count.
-pub fn sidebar(conn: &Connection, local: &LocalNow) -> AppResult<SidebarView> {
-    local.check()?;
-    let (overdue_count, due_today) = repo::due_counts(conn, &local.today)?;
+/// Live Lists with their open counts, in the order `sort` says.
+pub(crate) fn ordered_lists(conn: &Connection, sort: ListSort) -> AppResult<Vec<ListEntry>> {
     let counts: HashMap<Option<String>, (u32, u32)> = repo::task_counts(conn)?
         .into_iter()
         .map(|(list, open, all)| (list, (open, all)))
         .collect();
-    let lists = list_repo::all(conn)?
+    let mut entries: Vec<ListEntry> = list_repo::all(conn)?
         .into_iter()
         .map(|list| {
             let (open_count, task_count) = counts
@@ -71,44 +72,108 @@ pub fn sidebar(conn: &Connection, local: &LocalNow) -> AppResult<SidebarView> {
             }
         })
         .collect();
+    sort_lists(&mut entries, sort);
+    Ok(entries)
+}
+
+/// The sidebar's data: the Inbox count, Today's count (due today plus Overdue) and every List
+/// with its open count, in the order the Lists sort says.
+pub fn sidebar(conn: &Connection, local: &LocalNow) -> AppResult<SidebarView> {
+    local.check()?;
+    let prefs = ViewPrefs::read(conn)?;
+    let (overdue_count, due_today) = repo::due_counts(conn, &local.today)?;
+    let inbox_count = repo::task_counts(conn)?
+        .into_iter()
+        .find(|(list, ..)| list.is_none())
+        .map_or(0, |(_, open, _)| open);
     Ok(SidebarView {
-        inbox_count: counts.get(&None).map_or(0, |c| c.0),
+        inbox_count,
         today_count: overdue_count + due_today,
         overdue_count,
-        lists,
+        lists: ordered_lists(conn, prefs.lists_sort)?,
+        lists_sort: prefs.lists_sort,
     })
 }
 
-/// One List and its open Tasks.
-pub fn list_view(conn: &Connection, id: &str) -> AppResult<ListView> {
+/// One List's page: its open Tasks grouped and sorted as the List says, and its Done Tasks as the
+/// Done-in-Lists Preference says.
+pub fn list_view(conn: &Connection, id: &str, local: &LocalNow) -> AppResult<ListView> {
+    local.check()?;
     let list = list_repo::get(conn, id)?.ok_or(TodoError::ListNotFound)?;
-    Ok(ListView {
-        tasks: repo::open_in_list(conn, id)?,
-        list,
+    let prefs = ViewPrefs::read(conn)?;
+    let ctx = GroupContext {
+        lists: &[],
+        today: &local.today,
+    };
+    let mut groups = group_tasks(
+        repo::open_in_list(conn, id)?,
+        list.group_by,
+        &ctx,
+        &compare(list.task_sort),
+    );
+    // Adding inside a List group keeps the Task in this List.
+    for group in &mut groups {
+        group.adopt.insert(
+            0,
+            GroupKey::List {
+                list_id: Some(id.to_owned()),
+            },
+        );
+    }
+    let done = list_done(conn, id, prefs.done_in_lists, local)?;
+    Ok(ListView { list, groups, done })
+}
+
+/// A List's closed Tasks split the way the Preference says.
+fn list_done(
+    conn: &Connection,
+    id: &str,
+    mode: DoneInLists,
+    local: &LocalNow,
+) -> AppResult<ListDone> {
+    let closed = match mode {
+        DoneInLists::Hidden => Vec::new(),
+        _ => repo::closed_in_list(conn, id)?,
+    };
+    let (shown, folded) = match mode {
+        DoneInLists::Hidden => (Vec::new(), Vec::new()),
+        DoneInLists::Shown => (closed, Vec::new()),
+        DoneInLists::Folded => (Vec::new(), closed),
+        DoneInLists::TodayShown => {
+            let (start, end) = local.today_range_ms()?;
+            closed
+                .into_iter()
+                .partition(|t| t.closed_at.is_some_and(|at| at >= start && at < end))
+        }
+    };
+    Ok(ListDone {
+        mode,
+        shown,
+        folded,
     })
 }
 
-/// Open Tasks grouped by List: the Inbox first, then Lists in order. Empty groups are left out.
-pub fn all(conn: &Connection) -> AppResult<AllView> {
-    let mut by_list: HashMap<String, Vec<_>> = HashMap::new();
-    for task in repo::open_in_lists(conn)? {
-        if let Some(id) = task.list_id.clone() {
-            by_list.entry(id).or_default().push(task);
-        }
-    }
-    let mut groups = vec![AllGroup {
-        list: None,
-        tasks: repo::inbox(conn)?,
-    }];
-    for list in list_repo::all(conn)? {
-        let tasks = by_list.remove(&list.id).unwrap_or_default();
-        groups.push(AllGroup {
-            list: Some(list),
-            tasks,
-        });
-    }
+/// Open Tasks, grouped as the Preference says (by List unless changed): with List groups the
+/// Inbox first, then Lists in the sidebar's order. Empty groups are left out.
+pub fn all(conn: &Connection, local: &LocalNow) -> AppResult<AllView> {
+    local.check()?;
+    let prefs = ViewPrefs::read(conn)?;
+    let lists: Vec<TodoList> = ordered_lists(conn, prefs.lists_sort)?
+        .into_iter()
+        .map(|e| e.list)
+        .collect();
+    let ctx = GroupContext {
+        lists: &lists,
+        today: &local.today,
+    };
+    let mut tasks = repo::inbox(conn)?;
+    tasks.extend(repo::open_in_lists(conn)?);
+    let mut groups = group_tasks(tasks, prefs.group_all, &ctx, &compare(TaskSort::Manual));
     groups.retain(|g| !g.tasks.is_empty());
-    Ok(AllView { groups })
+    Ok(AllView {
+        group_by: prefs.group_all,
+        groups,
+    })
 }
 
 /// Adds a List at the bottom of the order.
@@ -125,11 +190,13 @@ pub fn create_list(conn: &mut Connection, name: &str) -> AppResult<TodoList> {
         name: name.to_owned(),
         emoji: None,
         sort_key: key_after(list_repo::last_sort_key(&tx)?.as_deref()),
+        task_sort: TaskSort::Manual,
+        group_by: GroupBy::None,
         created_at: now,
         updated_at: now,
     };
     list_repo::insert(&tx, &list, &key)?;
-    record(&tx, &list, ChangeOp::Create, None)?;
+    record_list(&tx, &list, ChangeOp::Create, None)?;
     tx.commit()?;
     Ok(list)
 }
@@ -149,7 +216,7 @@ pub fn rename_list(conn: &mut Connection, id: &str, name: &str) -> AppResult<Tod
     name.clone_into(&mut list.name);
     list.updated_at = now_ms();
     list_repo::update_name(&tx, &list, &key)?;
-    record(&tx, &list, ChangeOp::Update, None)?;
+    record_list(&tx, &list, ChangeOp::Update, None)?;
     tx.commit()?;
     Ok(list)
 }
@@ -165,7 +232,7 @@ pub fn set_list_emoji(conn: &mut Connection, id: &str, emoji: Option<&str>) -> A
     list.emoji = emoji.map(str::to_owned);
     list.updated_at = now_ms();
     list_repo::update_emoji(&tx, &list)?;
-    record(&tx, &list, ChangeOp::Update, None)?;
+    record_list(&tx, &list, ChangeOp::Update, None)?;
     tx.commit()?;
     Ok(list)
 }
@@ -212,7 +279,7 @@ pub fn delete_list(
         }
     }
     list_repo::set_deleted(&tx, id, Some(now), now)?;
-    record(&tx, &list, ChangeOp::Delete, Some(now))?;
+    record_list(&tx, &list, ChangeOp::Delete, Some(now))?;
     tx.commit()?;
     Ok(deletion)
 }
@@ -232,7 +299,7 @@ pub fn restore_list(conn: &mut Connection, deletion: &ListDeletion) -> AppResult
     let now = now_ms();
     list.updated_at = now;
     list_repo::set_deleted(&tx, &list.id, None, now)?;
-    record(&tx, &list, ChangeOp::Restore, None)?;
+    record_list(&tx, &list, ChangeOp::Restore, None)?;
     for id in &deletion.deleted_task_ids {
         if let Some(task) = repo::get_any(&tx, id)? {
             repo::set_deleted(&tx, id, None, now)?;
@@ -246,6 +313,37 @@ pub fn restore_list(conn: &mut Connection, deletion: &ListDeletion) -> AppResult
             repo::update_list(&tx, &task)?;
             record_at(&tx, &task, ChangeOp::Move, None)?;
         }
+    }
+    tx.commit()?;
+    Ok(list)
+}
+
+/// Sets how a List's page sorts the Tasks inside each group. Records an `update` change.
+pub fn set_list_sort(conn: &mut Connection, id: &str, sort: TaskSort) -> AppResult<TodoList> {
+    let tx = conn.transaction()?;
+    let mut list = list_repo::get(&tx, id)?.ok_or(TodoError::ListNotFound)?;
+    if list.task_sort != sort {
+        list.task_sort = sort;
+        list.updated_at = now_ms();
+        list_repo::update_arrangement(&tx, &list)?;
+        record_list(&tx, &list, ChangeOp::Update, None)?;
+    }
+    tx.commit()?;
+    Ok(list)
+}
+
+/// Sets how a List's page groups its Tasks: None, Priority or Due date. Records an `update`.
+pub fn set_list_group(conn: &mut Connection, id: &str, group_by: GroupBy) -> AppResult<TodoList> {
+    if !matches!(group_by, GroupBy::None | GroupBy::Priority | GroupBy::Due) {
+        return Err(TodoError::Validation("A List groups by Priority or Due date").into());
+    }
+    let tx = conn.transaction()?;
+    let mut list = list_repo::get(&tx, id)?.ok_or(TodoError::ListNotFound)?;
+    if list.group_by != group_by {
+        list.group_by = group_by;
+        list.updated_at = now_ms();
+        list_repo::update_arrangement(&tx, &list)?;
+        record_list(&tx, &list, ChangeOp::Update, None)?;
     }
     tx.commit()?;
     Ok(list)

@@ -1,4 +1,4 @@
-import type { AllView, Task, TodayView, UpcomingView } from '../../lib/ipc/bindings';
+import type { TaskGroup } from '../../lib/ipc/bindings';
 import { plainTitle } from './notes';
 
 /** Longest title shown in a toast before it is cut with an ellipsis. */
@@ -17,35 +17,16 @@ export const quotedTitle = (title: string): string => quoted(plainTitle(title));
 /** The Undo toast after a tick: names the Task, e.g. `Completed “Buy oat milk”`. */
 export const completedMessage = (title: string): string => `Completed ${quotedTitle(title)}`;
 
-/** A page of Tasks (the Inbox, a List) without one Task: what it shows the instant it is ticked. */
-export function withoutTask<V extends { tasks: Task[] }>(view: V, id: string): V {
-  return { ...view, tasks: view.tasks.filter((t) => t.id !== id) };
-}
-
-/** The All view without one Task; a group left empty goes with it. */
-export function withoutTaskInAll(view: AllView, id: string): AllView {
-  return {
-    groups: view.groups
-      .map((g) => ({ ...g, tasks: g.tasks.filter((t) => t.id !== id) }))
-      .filter((g) => g.tasks.length > 0),
-  };
-}
-
-/** Today without one Task: what it shows the instant that Task is ticked. */
-export function withoutTaskInToday(view: TodayView, id: string): TodayView {
-  const keep = (t: Task) => t.id !== id;
-  return { ...view, overdue: view.overdue.filter(keep), tasks: view.tasks.filter(keep) };
-}
-
-/** Upcoming without one Task; a day left empty goes with it. */
-export function withoutTaskInUpcoming(view: UpcomingView, id: string): UpcomingView {
-  const keep = (t: Task) => t.id !== id;
-  return {
-    overdue: view.overdue.filter(keep),
-    days: view.days
-      .map((d) => ({ ...d, tasks: d.tasks.filter(keep) }))
-      .filter((d) => d.tasks.length > 0),
-  };
+/**
+ * A grouped page (the Inbox, a List, All, Today, Upcoming) without one Task: what it shows the
+ * instant that Task is ticked, moved or deleted. A group left empty goes with it, except the plain
+ * group, which is where "+ New task" lives.
+ */
+export function withoutTaskInGroups<V extends { groups: TaskGroup[] }>(view: V, id: string): V {
+  const groups = view.groups
+    .map((g) => ({ ...g, tasks: g.tasks.filter((t) => t.id !== id) }))
+    .filter((g) => g.tasks.length > 0 || g.key.kind === 'plain');
+  return { ...view, groups };
 }
 
 /** The Undo toast after a Quick edit: names the Task. */

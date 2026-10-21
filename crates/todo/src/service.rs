@@ -7,12 +7,14 @@ use mnemora_core::util::{new_id, now_ms};
 use rusqlite::Connection;
 
 use crate::MODULE_ID;
+use crate::arrange::{GroupContext, GroupKey, TaskGroup, ViewPrefs, compare, group_tasks};
 use crate::error::TodoError;
+use crate::order::key_after;
 use crate::repeat::{self, Completion};
 use crate::schedule::{assign_when, settle_when};
 use crate::task::{
-    InboxView, NewTaskDetails, Task, TaskState, key_after, validate_notes, validate_priority,
-    validate_title, validate_understood,
+    InboxView, NewTaskDetails, Task, TaskState, validate_notes, validate_priority, validate_title,
+    validate_understood,
 };
 use crate::when::{LocalNow, NewWhen};
 use crate::{list_repo, repo};
@@ -71,10 +73,35 @@ fn record_in(
     )
 }
 
-/// The Inbox: open Tasks with no List, in manual order (new Tasks last).
-pub fn inbox(conn: &Connection) -> AppResult<InboxView> {
+/// The Inbox: open Tasks with no List, grouped as the Preference says and sorted inside each
+/// group, then "No date, in a List" for the undated Tasks that sit in a List. Those do not count
+/// toward the Inbox badge.
+pub fn inbox(conn: &Connection, local: &LocalNow) -> AppResult<InboxView> {
+    local.check()?;
+    let prefs = ViewPrefs::read(conn)?;
+    let lists = list_repo::all(conn)?;
+    let ctx = GroupContext {
+        lists: &lists,
+        today: &local.today,
+    };
+    let cmp = compare(prefs.inbox_sort);
+    let mut groups = group_tasks(repo::inbox(conn)?, prefs.group_inbox, &ctx, &cmp);
+    let mut undated: Vec<Task> = repo::open_in_lists(conn)?
+        .into_iter()
+        .filter(|t| t.due_date.is_none())
+        .collect();
+    if !undated.is_empty() {
+        undated.sort_by(cmp);
+        groups.push(TaskGroup {
+            key: GroupKey::NoDateInList,
+            adopt: Vec::new(),
+            tasks: undated,
+        });
+    }
     Ok(InboxView {
-        tasks: repo::inbox(conn)?,
+        group_by: prefs.group_inbox,
+        sort: prefs.inbox_sort,
+        groups,
     })
 }
 

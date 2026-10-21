@@ -1,15 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { AllView, InboxView, Task, TodayView, UpcomingView } from '../../lib/ipc/bindings';
+import type { Task, TaskGroup } from '../../lib/ipc/bindings';
 import {
   completedMessage,
   deletedMessage,
   priorityMessage,
   priorityTone,
   quoted,
-  withoutTask,
-  withoutTaskInAll,
-  withoutTaskInToday,
-  withoutTaskInUpcoming,
+  withoutTaskInGroups,
   wontMessage,
 } from './tasks';
 
@@ -31,14 +28,6 @@ describe('completedMessage', () => {
   });
 });
 
-describe('withoutTask', () => {
-  it('drops only that Task and keeps the order', () => {
-    const view: InboxView = { tasks: [task('a'), task('b'), task('c')] };
-    expect(withoutTask(view, 'b').tasks.map((t) => t.id)).toEqual(['a', 'c']);
-    expect(view.tasks).toHaveLength(3);
-  });
-});
-
 describe('quoted', () => {
   it('cuts a long name the same way', () => {
     expect(quoted('Home')).toBe('“Home”');
@@ -46,52 +35,28 @@ describe('quoted', () => {
   });
 });
 
-describe('withoutTaskInAll', () => {
-  it('drops the Task and a group it leaves empty, keeping the order', () => {
-    const view: AllView = {
-      groups: [
-        { list: null, tasks: [task('a')] },
-        { list: { id: 'l1' } as never, tasks: [task('b'), task('c')] },
-      ],
-    };
-    expect(withoutTaskInAll(view, 'b').groups.map((g) => g.tasks.map((t) => t.id))).toEqual([
-      ['a'],
-      ['c'],
-    ]);
-    expect(withoutTaskInAll(view, 'a').groups.map((g) => g.list?.id)).toEqual(['l1']);
-    expect(view.groups).toHaveLength(2);
-  });
-});
+describe('withoutTaskInGroups', () => {
+  const group = (kind: 'plain' | 'overdue', ...ids: string[]) =>
+    ({ key: { kind }, adopt: [], tasks: ids.map(task) }) as TaskGroup;
+  const ids = (view: { groups: TaskGroup[] }) => view.groups.map((g) => g.tasks.map((t) => t.id));
 
-describe('withoutTaskInToday', () => {
-  it('drops the Task from Overdue or the day and leaves the rest alone', () => {
-    const view: TodayView = {
-      overdue: [task('a'), task('b')],
-      tasks: [task('c')],
-      done: [task('d')],
-      total: 4,
-    };
-    expect(withoutTaskInToday(view, 'a').overdue.map((t) => t.id)).toEqual(['b']);
-    const without = withoutTaskInToday(view, 'c');
-    expect(without.tasks).toEqual([]);
-    expect(without.done).toHaveLength(1);
-    expect(view.tasks).toHaveLength(1);
+  it('drops only that Task and keeps the order', () => {
+    const view = { groups: [group('plain', 'a', 'b', 'c')] };
+    expect(ids(withoutTaskInGroups(view, 'b'))).toEqual([['a', 'c']]);
+    expect(view.groups[0]?.tasks).toHaveLength(3);
   });
-});
 
-describe('withoutTaskInUpcoming', () => {
-  it('drops the Task and a day it leaves empty, keeping the order', () => {
-    const view: UpcomingView = {
-      overdue: [task('a')],
-      days: [
-        { date: '2026-10-22', tasks: [task('b')] },
-        { date: '2026-10-23', tasks: [task('c'), task('d')] },
-      ],
-    };
-    expect(withoutTaskInUpcoming(view, 'b').days.map((d) => d.date)).toEqual(['2026-10-23']);
-    expect(withoutTaskInUpcoming(view, 'c').days[1]?.tasks.map((t) => t.id)).toEqual(['d']);
-    expect(withoutTaskInUpcoming(view, 'a').overdue).toEqual([]);
-    expect(view.days).toHaveLength(2);
+  it('drops a group it leaves empty, but never the plain group', () => {
+    const view = { groups: [group('overdue', 'a'), group('plain', 'b', 'c')] };
+    expect(ids(withoutTaskInGroups(view, 'a'))).toEqual([['b', 'c']]);
+    const only = { groups: [group('plain', 'a')] };
+    expect(ids(withoutTaskInGroups(only, 'a'))).toEqual([[]]);
+  });
+
+  it('leaves the rest of the view alone', () => {
+    const view = { groups: [group('plain', 'a')], done: [task('d')], total: 2 };
+    expect(withoutTaskInGroups(view, 'a').done).toHaveLength(1);
+    expect(withoutTaskInGroups(view, 'a').total).toBe(2);
   });
 });
 

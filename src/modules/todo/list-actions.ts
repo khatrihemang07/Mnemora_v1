@@ -3,7 +3,14 @@ import { queryClient } from '../../lib/ipc/query-client';
 import { notifyError, notifyUndo } from '../../lib/ui/toast';
 import { deletedListMessage } from './lists';
 import { todoNav } from './nav.svelte';
-import { createList, deleteList, invalidateTodo, restoreList, todoKeys } from './queries';
+import {
+  createList,
+  deleteList,
+  invalidateTodo,
+  reorderList,
+  restoreList,
+  todoKeys,
+} from './queries';
 import { listView, sameView, viewAfterListGone } from './views';
 
 /** Creates a List and opens it. Throws Rust's refusal (a taken or invalid name) for the field to show. */
@@ -29,7 +36,7 @@ export async function deleteListWithUndo(
     const deletion = await deleteList(list.id, choice);
     todoNav.go(viewAfterListGone(todoNav.view, list.id));
     // Forget the List's page, so its "gone" error cannot greet it when Undo reopens it.
-    queryClient.removeQueries({ queryKey: todoKeys.list(list.id) });
+    queryClient.removeQueries({ queryKey: todoKeys.listPages(list.id) });
     void invalidateTodo();
     notifyUndo(deletedListMessage(list, entry.task_count, choice, targetName), () => {
       restoreList(deletion)
@@ -42,5 +49,20 @@ export async function deleteListWithUndo(
   } catch {
     void invalidateTodo();
     notifyError("Couldn't delete the List");
+  }
+}
+
+/** Drags a List to a new place in the sidebar, between two neighbours. */
+export async function placeList(
+  id: string,
+  before: string | null,
+  after: string | null,
+): Promise<void> {
+  try {
+    await reorderList(id, before, after);
+  } catch {
+    notifyError("Couldn't move the List");
+  } finally {
+    void invalidateTodo();
   }
 }
