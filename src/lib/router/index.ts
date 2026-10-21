@@ -2,6 +2,7 @@ export { blockNavigation } from 'sv-router';
 export { closeOnBack, installBackButton, interceptBack } from './back-button.svelte';
 export { createAppRouter } from './create';
 export type {
+  BareKey,
   HomeCardLoader,
   HomeCardProps,
   ModuleAction,

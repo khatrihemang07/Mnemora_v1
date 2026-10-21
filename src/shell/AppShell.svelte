@@ -7,6 +7,8 @@
   import PanelLeft from '~icons/lucide/panel-left';
   import Search from '~icons/lucide/search';
   import { RouterOutlet } from '../lib/router';
+  import { moduleContext } from './module-context';
+  import { bareKeyFires, overlayOpenIn } from '../lib/bare-key';
   import { isMac, shortcutLabel } from '../lib/platform';
   import { appInfoQuery } from '../lib/settings/queries';
   import CommandPalette from '../lib/ui/CommandPalette.svelte';
@@ -19,8 +21,9 @@
   import { keyboard } from '../lib/keyboard.svelte';
   import { viewport } from '../lib/viewport.svelte';
   import { useAppearance } from './appearance.svelte';
-  import { redirectForDisabled } from './enabled-modules';
+  import { bareKeyFor, redirectForDisabled } from './enabled-modules';
   import { useEnabledModules } from './enabled.svelte';
+  import ModuleOverlays from './ModuleOverlays.svelte';
   import { modules } from './registry';
   import { router } from './router';
   import Sidebar from './Sidebar.svelte';
@@ -49,9 +52,17 @@
 
   function onKeydown(e: KeyboardEvent) {
     const action = resolveShortcut(e, isMac);
-    if (!action) return;
-    e.preventDefault();
-    runShortcut(action, enabled.list);
+    if (action) {
+      e.preventDefault();
+      runShortcut(action, enabled.list);
+      return;
+    }
+    // A bare letter (Q) is a shortcut only when nothing is being typed into and nothing is open.
+    const bare = bareKeyFor(enabled.list, e.key);
+    if (bare && bareKeyFires(e, bare.key, { target: e.target, overlayOpen: overlayOpenIn(document) })) {
+      e.preventDefault();
+      bare.run(moduleContext);
+    }
   }
 </script>
 
@@ -134,5 +145,6 @@
     {/if}
   </div>
   <CommandPalette open={shell.paletteOpen} items={paletteItems} onclose={() => (shell.paletteOpen = false)} />
+  <ModuleOverlays enabled={enabled.list} />
   <Toaster />
 </TooltipProvider>

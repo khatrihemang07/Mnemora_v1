@@ -32,6 +32,8 @@ export const SHORTCUT_LIST = [
   { label: 'Toggle sidebar', keys: shortcutLabel('\\') },
   { label: 'New', keys: shortcutLabel('N') },
   { label: 'Go to Module 1 to 9', keys: shortcutLabel('1–9') },
+  { label: 'Todo: quick add a Task (anywhere, when not typing)', keys: 'Q' },
+  { label: 'Todo: quick edit the focused or hovered Task', keys: 'E' },
   { label: 'Journal: search', keys: shortcutLabel('F') },
   { label: 'Journal: go to date', keys: shortcutLabel('G') },
   { label: 'Journal: finish writing (either key)', keys: [shortcutLabel('↵'), 'Esc'] },
