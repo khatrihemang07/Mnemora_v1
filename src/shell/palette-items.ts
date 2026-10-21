@@ -5,7 +5,7 @@ import MoonStar from '~icons/lucide/moon-star';
 import PanelLeft from '~icons/lucide/panel-left';
 import Sun from '~icons/lucide/sun';
 import { shortcutLabel } from '../lib/platform';
-import { type ModuleManifest, navEntries } from '../lib/router';
+import { dynamicActions, type ModuleManifest, navEntries } from '../lib/router';
 import type { ThemePref } from '../lib/theme/resolve';
 import type { PaletteItem } from '../lib/ui/CommandPalette.svelte';
 import { moduleContext } from './module-context';
@@ -39,13 +39,14 @@ export function buildPaletteItems({ setTheme, toggleSidebar, enabled }: Actions)
     run: () => void router.navigate(e.path),
   }));
   const moduleActions: PaletteItem[] = enabled.flatMap((m) =>
-    (m.paletteActions ?? []).map((a) => ({
+    [...(m.paletteActions ?? []), ...dynamicActions.of(m.id)].map((a) => ({
       id: `${m.id}-${a.id}`,
       label: a.label,
       group: m.name,
       icon: a.icon ?? m.icon,
       shortcut: a.shortcut,
       queryLabel: a.queryLabel,
+      queryPreview: a.queryPreview,
       run: (query: string) => a.run(moduleContext, query),
     })),
   );

@@ -140,6 +140,9 @@ impl SettingsStore {
                 def.key.as_str(),
                 change.value.to_string(),
             ));
+            if change.key == "core.phone_tabs" {
+                rows.push(("core", "phone_tabs_edited", "true".to_owned()));
+            }
         }
 
         let now = now_ms();
@@ -222,11 +225,12 @@ mod tests {
             "core.time_format": "24h",
             "core.date_format": "long",
             "core.week_start": "mon",
-            "core.phone_tabs": ["home", "journal"],
+            "core.phone_tabs": ["home", "journal", "todo"],
+            "core.phone_tabs_edited": false,
             "core.disabled_modules": []
         });
         assert_eq!(serde_json::to_value(&snap.values).unwrap(), expected);
-        assert_eq!(snap.schema.len(), 10);
+        assert_eq!(snap.schema.len(), 11);
     }
 
     #[test]

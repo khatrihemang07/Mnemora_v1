@@ -10,6 +10,7 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
+  import Kbd from '../../lib/ui/Kbd.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import TodoActions from './TodoActions.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
@@ -18,7 +19,7 @@
   import { GROUP_OPTIONS, GROUP_PREF_KEYS, groupTakesTasks } from './arrange';
   import GroupHeader from './GroupHeader.svelte';
   import NewTaskRow from './NewTaskRow.svelte';
-  import { savePreference, todayQuery } from './queries';
+  import { countsQuery, savePreference, todayQuery } from './queries';
   import { useSidebar } from './sidebar.svelte';
   import { moveAllOverdue, tickTask, untickTask } from './task-actions';
   import TaskGroups from './TaskGroups.svelte';
@@ -28,6 +29,9 @@
   import WhenHost from './WhenHost.svelte';
 
   const today = createQuery(() => todayQuery(todoClock.today));
+  // Whether any Task exists at all: with none, the empty page hints at how to start.
+  const counts = createQuery(() => countsQuery());
+  const firstRun = $derived(counts.data?.any_tasks === false);
   const sidebar = useSidebar();
   const lists = $derived(sidebar.lists);
 
@@ -116,6 +120,11 @@
         Nothing due today.
         {done > 0 ? `You finished ${done} today.` : 'Enjoy the space, or plan something.'}
       </p>
+      {#if firstRun}
+        <p class="px-2 pb-1 text-sm text-faint" data-first-run>
+          Try: <span class="text-muted">Call mum tomorrow 6pm p2</span>. Press <Kbd keys="Q" /> to add a Task from anywhere.
+        </p>
+      {/if}
     {/if}
 
     {#if view.done.length > 0}

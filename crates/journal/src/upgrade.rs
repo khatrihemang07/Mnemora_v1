@@ -53,11 +53,11 @@ mod tests {
     }
 
     #[test]
-    fn fresh_install_gets_home_and_journal() {
+    fn fresh_install_gets_the_core_default() {
         let dir = tempfile::tempdir().unwrap();
         let mut conn = db::open_in_memory().unwrap();
         start(&mut conn, dir.path(), &[&CoreModule, &JournalModule]);
-        assert_eq!(tabs(&conn), json!(["home", "journal"]));
+        assert_eq!(tabs(&conn), json!(["home", "journal", "todo"]));
     }
 
     #[test]

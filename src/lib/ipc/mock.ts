@@ -38,7 +38,8 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'core.time_format': { default: '24h', validate: oneOf('24h', '12h') },
   'core.date_format': { default: 'long', validate: oneOf('long', 'short', 'iso') },
   'core.week_start': { default: 'mon', validate: oneOf('mon', 'sun') },
-  'core.phone_tabs': { default: ['home', 'journal'], validate: list(4) },
+  'core.phone_tabs': { default: ['home', 'journal', 'todo'], validate: list(4) },
+  'core.phone_tabs_edited': { default: false, validate: bool },
   'core.disabled_modules': { default: [], validate: list(64) },
   'journal.font': { default: 'serif', validate: oneOf('serif', 'sans') },
   'journal.width': { default: 'default', validate: oneOf('narrow', 'default', 'wide') },
@@ -106,6 +107,9 @@ export async function installMock() {
             if (problem) throw err('validation', `${c.key} ${problem}`);
           }
           for (const c of changes) values[c.key] = JSON.parse(JSON.stringify(c.value));
+          // Saving the tabs marks them as edited, like Rust.
+          if (changes.some((c) => c.key === 'core.phone_tabs'))
+            values['core.phone_tabs_edited'] = true;
           // Same shape the Rust side emits: one event per module, keys without the module prefix.
           for (const module of new Set(changes.map((c) => c.key.split('.')[0] as string))) {
             void events.settingsChangedEvent.emit({

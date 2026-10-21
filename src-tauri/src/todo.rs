@@ -5,7 +5,7 @@ use mnemora_todo::{
     AllView, Comment, Completion, DayCount, DeleteChoice, DoneView, DueChange, GroupBy, GroupKey,
     HistoryLine, InboxView, ListDeletion, ListView, LocalNow, NewTaskDetails, NewWhen, OverdueMove,
     ParseRequest, Parsed, QuickEdit, RepeatRule, SidebarView, Task, TaskSearchResults, TaskSort,
-    TodayView, TodoList, UpcomingView,
+    TodayView, TodoCounts, TodoList, UpcomingView,
 };
 use tauri::State;
 
@@ -132,6 +132,15 @@ pub fn todo_tasks_move_overdue(
 #[specta::specta]
 pub fn todo_today(state: State<'_, AppState>, local: LocalNow) -> Result<TodayView, AppError> {
     mnemora_todo::today(&lock(&state.db), &local)
+}
+
+/// What Todo's badge and the Home card show: the counts due today and Overdue, up to five of
+/// today's open Tasks, the soonest Task after today and whether any Task exists. `local` is the
+/// device's today and now.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_counts(state: State<'_, AppState>, local: LocalNow) -> Result<TodoCounts, AppError> {
+    mnemora_todo::counts(&lock(&state.db), &local)
 }
 
 /// Upcoming: Overdue on top, then each day after today that has Tasks.
@@ -1064,6 +1073,80 @@ mod tests {
             )
             .unwrap();
         });
+    }
+
+    #[test]
+    fn counts_give_the_badge_the_card_and_the_next_task() {
+        let app = TestApp::new();
+        let counts = |today: &str| -> Value {
+            app.invoke("todo_counts", json!({ "local": local(today, "14:05") }))
+                .unwrap()
+        };
+        let first = counts("2026-10-21");
+        assert_eq!(first["any_tasks"], false, "a first run has no Tasks");
+        assert_eq!(first["due_today"], 0);
+        assert_eq!(first["next"], Value::Null);
+
+        let late = create(&app, "late").unwrap();
+        backdate(&app, &late, "2026-10-20");
+        for n in 1..=6 {
+            let t = create(&app, &format!("today {n}")).unwrap();
+            set_when(&app, &t, json!("2026-10-21"), Value::Null, "2026-10-21");
+        }
+        let timed = create(&app, "timed").unwrap();
+        set_when(
+            &app,
+            &timed,
+            json!("2026-10-21"),
+            json!("17:00"),
+            "2026-10-21",
+        );
+        let soon = create(&app, "soon").unwrap();
+        set_when(&app, &soon, json!("2026-10-24"), Value::Null, "2026-10-21");
+        let later = create(&app, "later").unwrap();
+        set_when(&app, &later, json!("2026-11-02"), Value::Null, "2026-10-21");
+
+        let c = counts("2026-10-21");
+        assert_eq!(c["any_tasks"], true);
+        assert_eq!(c["due_today"], 7);
+        assert_eq!(c["overdue"], 1);
+        let titles: Vec<_> = c["card"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["title"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            titles,
+            ["timed", "today 1", "today 2", "today 3", "today 4"]
+        );
+        assert_eq!(c["next"]["title"], "soon");
+
+        // The same Tasks on another day: nothing is due and the next one moves on.
+        let c = counts("2026-10-25");
+        assert_eq!(
+            (c["due_today"].clone(), c["overdue"].clone()),
+            (json!(0), json!(9))
+        );
+        assert_eq!(c["card"], json!([]));
+        assert_eq!(c["next"]["title"], "later");
+
+        // A ticked Task leaves the counts but a first run is over for good.
+        app.invoke::<Value>(
+            "todo_task_complete",
+            json!({ "id": id_of(&timed), "local": local("2026-10-21", "14:05") }),
+        )
+        .unwrap();
+        assert_eq!(counts("2026-10-21")["due_today"], 6);
+    }
+
+    #[test]
+    fn counts_refuse_a_malformed_clock() {
+        let app = TestApp::new();
+        let err = app
+            .invoke::<Value>("todo_counts", json!({ "local": local("soon", "14:05") }))
+            .unwrap_err();
+        assert_eq!(err["code"], "validation");
     }
 
     #[test]

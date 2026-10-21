@@ -26,6 +26,7 @@ mod search_repo;
 mod service;
 mod task;
 mod task_service;
+mod upgrade;
 mod when;
 
 use mnemora_core::db::migrate::MigrationReport;
@@ -57,8 +58,8 @@ pub use recurrence::{MAX_EVERY, RepeatRule};
 pub use reorder::{reorder_list, reorder_task};
 pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};
 pub use schedule::{
-    DayCount, DueChange, OverdueMove, TodayView, UpcomingView, day_counts, move_overdue,
-    restore_when, set_when, today, upcoming,
+    DayCount, DueChange, OverdueMove, TodayView, TodoCounts, UpcomingView, counts, day_counts,
+    move_overdue, restore_when, set_when, today, upcoming,
 };
 pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
@@ -101,7 +102,8 @@ impl Module for TodoModule {
         }
     }
 
-    fn on_startup(&self, conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {
+    fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
+        upgrade::append_todo_tab(conn, report)?;
         let purged = purge_deleted(conn)?;
         if purged.tasks + purged.lists + purged.comments > 0 {
             tracing::info!(

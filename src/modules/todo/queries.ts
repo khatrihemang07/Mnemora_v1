@@ -36,6 +36,8 @@ export const todoKeys = {
   allView: (day: string) => ['todo', 'all', day] as const,
   /** Keyed by the day: Today's count in the sidebar rolls over at midnight. */
   lists: (day: string) => ['todo', 'lists', day] as const,
+  /** Keyed by the day: the badge and the Home card roll over at midnight. */
+  counts: (day: string) => ['todo', 'counts', day] as const,
   list: (id: string, day: string) => ['todo', 'list', id, day] as const,
   /** Every cached page of one List, whatever the day. */
   listPages: (id: string) => ['todo', 'list', id] as const,
@@ -64,6 +66,13 @@ export const listsQuery = () =>
   queryOptions({
     queryKey: todoKeys.lists(todoClock.today),
     queryFn: () => unwrap(commands.todoLists(todoClock.local())),
+  });
+
+/** The badge and the Home card: what is due today, what is Overdue, and the next Task. */
+export const countsQuery = () =>
+  queryOptions({
+    queryKey: todoKeys.counts(todoClock.today),
+    queryFn: () => unwrap(commands.todoCounts(todoClock.local())),
   });
 
 /** All open Tasks, grouped by List (the Inbox first) unless the Preference says otherwise. */

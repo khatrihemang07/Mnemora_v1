@@ -169,6 +169,13 @@ fn os_first_name() -> String {
 mod tests {
     use serde_json::{Value, json};
 
+    use mnemora_core::db::{self, Connection};
+    use mnemora_core::events::EventBus;
+    use mnemora_core::module::{CoreModule, Module};
+    use mnemora_core::settings::SettingsChange;
+    use mnemora_journal::JournalModule;
+    use mnemora_todo::TodoModule;
+
     use super::sanitize_first_name;
     use crate::test_support::TestApp;
 
@@ -248,25 +255,138 @@ mod tests {
     }
 
     #[test]
-    fn phone_tabs_default_to_home_and_journal() {
+    fn phone_tabs_default_to_home_journal_and_todo() {
         let app = TestApp::new();
         let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
         assert_eq!(
             snapshot["values"]["core.phone_tabs"],
-            json!(["home", "journal"])
+            json!(["home", "journal", "todo"])
         );
     }
 
+    /// Migrates like app start does with the given Modules, then runs their startup hooks.
+    fn start(conn: &mut Connection, dir: &std::path::Path, modules: &[&dyn Module]) {
+        let report = db::migrate::run(conn, modules, dir).unwrap();
+        for m in modules {
+            m.on_startup(conn, &report).unwrap();
+        }
+    }
+
+    fn tabs(conn: &Connection) -> Value {
+        let store = crate::settings_store(&crate::modules(), &EventBus::new());
+        store.get_all(conn).unwrap().values["core.phone_tabs"].clone()
+    }
+
+    /// The user saves tabs in Settings ▸ Navigation.
+    fn edit_tabs(conn: &mut Connection, value: Value) {
+        let store = crate::settings_store(&crate::modules(), &EventBus::new());
+        store
+            .save_batch(
+                conn,
+                &[SettingsChange {
+                    key: "core.phone_tabs".into(),
+                    value,
+                }],
+            )
+            .unwrap();
+    }
+
+    /// A database from before Todo: Core, and the Journal when `journal` (which pins Home only,
+    /// as it does for an install that never chose).
+    fn before_todo(journal: bool) -> (Connection, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = db::open_in_memory().unwrap();
+        start(&mut conn, dir.path(), &[&CoreModule]);
+        if journal {
+            start(&mut conn, dir.path(), &[&CoreModule, &JournalModule]);
+        }
+        (conn, dir)
+    }
+
+    fn with_todo(conn: &mut Connection, dir: &std::path::Path) {
+        start(conn, dir, &[&CoreModule, &JournalModule, &TodoModule]);
+    }
+
     #[test]
-    fn a_saved_phone_tabs_choice_is_kept() {
-        let app = TestApp::new();
-        app.invoke::<()>(
-            "settings_save",
-            json!({ "changes": [{ "key": "core.phone_tabs", "value": ["home"] }] }),
+    fn an_upgrade_from_before_both_modules_gets_home_and_todo() {
+        // The Journal's upgrade pins Home only (an install that never chose has no Journal tab);
+        // the pin is not an edit, so Todo is appended to it.
+        let (mut conn, dir) = before_todo(false);
+        start(
+            &mut conn,
+            dir.path(),
+            &[&CoreModule, &JournalModule, &TodoModule],
+        );
+        assert_eq!(tabs(&conn), json!(["home", "todo"]));
+    }
+
+    #[test]
+    fn the_journals_pin_gets_todo_appended_once() {
+        let (mut conn, dir) = before_todo(true);
+        assert_eq!(tabs(&conn), json!(["home"]));
+        with_todo(&mut conn, dir.path());
+        assert_eq!(tabs(&conn), json!(["home", "todo"]));
+        // Later starts change nothing.
+        with_todo(&mut conn, dir.path());
+        assert_eq!(tabs(&conn), json!(["home", "todo"]));
+    }
+
+    #[test]
+    fn removing_todo_afterwards_sticks() {
+        let (mut conn, dir) = before_todo(true);
+        with_todo(&mut conn, dir.path());
+        edit_tabs(&mut conn, json!(["home"]));
+        with_todo(&mut conn, dir.path());
+        assert_eq!(tabs(&conn), json!(["home"]));
+    }
+
+    #[test]
+    fn tabs_the_user_edited_are_left_alone() {
+        for edited in [json!(["home", "settings"]), json!(["home"])] {
+            let (mut conn, dir) = before_todo(true);
+            edit_tabs(&mut conn, edited.clone());
+            with_todo(&mut conn, dir.path());
+            assert_eq!(tabs(&conn), edited);
+        }
+    }
+
+    #[test]
+    fn four_tabs_get_no_fifth() {
+        let (mut conn, dir) = before_todo(true);
+        let four = json!(["home", "journal", "settings", "a"]);
+        conn.execute(
+            "UPDATE settings SET value = ?1 WHERE module = 'core' AND key = 'phone_tabs'",
+            [four.to_string()],
         )
         .unwrap();
+        with_todo(&mut conn, dir.path());
+        assert_eq!(tabs(&conn), four);
+    }
+
+    #[test]
+    fn todo_switched_off_is_not_added() {
+        let (mut conn, dir) = before_todo(true);
+        conn.execute(
+            "INSERT INTO settings(module, key, value, updated_at) VALUES ('core', 'disabled_modules', '[\"todo\"]', 0)",
+            [],
+        )
+        .unwrap();
+        with_todo(&mut conn, dir.path());
+        assert_eq!(tabs(&conn), json!(["home"]));
+    }
+
+    #[test]
+    fn an_install_that_never_saved_its_tabs_reads_the_new_default() {
+        let (mut conn, dir) = before_todo(false);
+        with_todo(&mut conn, dir.path());
+        // The Journal arrived in the same start and pinned Home; Todo was appended to it.
+        assert_eq!(tabs(&conn), json!(["home", "todo"]));
+        let app = TestApp::new();
         let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
-        assert_eq!(snapshot["values"]["core.phone_tabs"], json!(["home"]));
+        assert_eq!(
+            snapshot["values"]["core.phone_tabs"],
+            json!(["home", "journal", "todo"])
+        );
     }
 
     #[test]

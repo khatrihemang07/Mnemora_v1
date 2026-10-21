@@ -6,8 +6,10 @@
 <script lang="ts">
   import type { Component } from 'svelte';
   import ChevronRight from '~icons/lucide/chevron-right';
+  import type { ModuleManifest } from '../lib/router';
   import Kbd from '../lib/ui/Kbd.svelte';
   import Tooltip from '../lib/ui/Tooltip.svelte';
+  import ModuleBadge from './ModuleBadge.svelte';
 
   interface Props {
     label: string;
@@ -18,6 +20,8 @@
     shortcut?: string;
     current?: boolean;
     accentVar?: string;
+    /** The Module whose badge (a count) the row shows, if it has one. */
+    badgeOf?: ModuleManifest;
     tooltip?: boolean;
     chevron?: { open: boolean; label: string; onclick: () => void };
     onclick?: (e: MouseEvent) => void;
@@ -32,6 +36,7 @@
     shortcut,
     current = false,
     accentVar,
+    badgeOf,
     tooltip = true,
     chevron,
     onclick,
@@ -65,11 +70,13 @@
 {/snippet}
 
 {#snippet inner()}
-  <span style:color={accentVar ? `var(${accentVar})` : 'var(--muted)'} class="grid shrink-0 place-items-center">
+  <span style:color={accentVar ? `var(${accentVar})` : 'var(--muted)'} class="relative grid shrink-0 place-items-center">
     <Icon class="size-[1.15rem]" />
+    {#if rail && badgeOf?.useBadge}<ModuleBadge manifest={badgeOf} placement="corner" />{/if}
   </span>
   {#if !rail}
     <span class="min-w-0 flex-1 truncate">{label}</span>
+    {#if badgeOf?.useBadge}<ModuleBadge manifest={badgeOf} placement="inline" />{/if}
     {#if shortcut}<Kbd keys={shortcut} />{/if}
   {/if}
 {/snippet}

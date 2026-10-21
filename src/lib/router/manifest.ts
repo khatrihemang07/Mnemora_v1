@@ -9,6 +9,12 @@ export interface HomeCardProps {
 }
 export type HomeCardLoader = () => Promise<{ default: Component<HomeCardProps> }>;
 
+/** A count beside a Module's name in the sidebar and the phone tab bar; red when `alert`. */
+export interface ModuleBadge {
+  count: number;
+  alert: boolean;
+}
+
 /** What the shell hands to a Module's actions, so Modules never import the shell. */
 export interface ModuleContext {
   navigate: (path: RoutePath) => void;
@@ -58,6 +64,11 @@ export interface ModuleAction {
    * that text ("Search Journal for 'river'"), and `run` receives it.
    */
   queryLabel?: (query: string) => string;
+  /**
+   * For a query action: a short line saying what `run` would do with the text (Todo's "Add task"
+   * shows how it read the date, Priority and List). Asked as the text changes; none shows nothing.
+   */
+  queryPreview?: (query: string) => Promise<string | null>;
   run: (ctx: ModuleContext, query: string) => void;
 }
 
@@ -75,6 +86,11 @@ export interface ModuleManifest {
   navTree?: NavTree;
   /** Home and Settings: always on, no switch in Settings ▸ Modules. */
   required?: true;
+  /**
+   * The Module's badge. Called while a sidebar row or tab renders (it may create queries), and
+   * read reactively; none means nothing to show.
+   */
+  useBadge?: () => { readonly badge: ModuleBadge | null };
   /** A card on Home, loaded only when Home renders it. */
   homeCard?: HomeCardLoader;
   /** The Module's own Settings section, appended after the core sections. */

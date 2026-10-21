@@ -122,7 +122,7 @@ A recognised word the user turned back into plain text (× on its chip, ⌫ righ
 _Avoid_: Ignored, escaped, dismissed
 
 **Quick add**:
-Adding a Task with the Q key. Inside Todo it opens the capture box in place on the page showing (so the Task inherits Today, a List or an Upcoming day); anywhere else it opens a floating box that adds to the Inbox and says where the Task went.
+Adding a Task with the Q key. Inside Todo it opens the capture box in place on the page showing (so the Task inherits Today, a List or an Upcoming day); anywhere else it opens a floating box that adds to the Inbox and says where the Task went. The Add button on Todo's Home card opens the same box with the Task due today.
 _Avoid_: Quick capture, global add
 
 **Quick edit**:
@@ -167,3 +167,7 @@ _Avoid_: Selection, cursor
 **G chord**:
 Pressing G and then T, U, I, A or D within a moment to go to Today, Upcoming, Inbox, All or Done.
 _Avoid_: Leader key, vim keys
+
+**Todo badge**:
+The count beside Todo in the sidebar and on the phone tab bar: Tasks due today plus Overdue ones, red while anything is Overdue, hidden at zero. The Inbox and Today counts under Todo are separate.
+_Avoid_: Notification count, unread

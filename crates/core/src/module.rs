@@ -108,13 +108,18 @@ impl Module for CoreModule {
             json!("mon"),
             validate::one_of(&["mon", "sun"]),
         );
-        // New installs get Home + Journal; a saved choice always wins over this default.
+        // New installs get Home + Journal + Todo; a saved choice always wins over this default.
+        // An install that never saved its tabs gets Todo appended by this default alone; one that
+        // did (the Journal pins ["home"] for those that never chose) keeps what it has.
         reg.register(
             m,
             "phone_tabs",
-            json!(["home", "journal"]),
+            json!(["home", "journal", "todo"]),
             validate::string_list(4),
         );
+        // Set when the tabs are saved from Settings: a saved value without it was only ever
+        // pinned by an upgrade, so a Module arriving later may still add its tab.
+        reg.register(m, "phone_tabs_edited", json!(false), validate::boolean());
         // Ids of Modules switched off. A list of the exceptions, so a new Module is on by default.
         reg.register(m, "disabled_modules", json!([]), validate::string_list(64));
     }

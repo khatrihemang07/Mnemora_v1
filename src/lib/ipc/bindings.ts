@@ -223,6 +223,12 @@ export const commands = {
 	 */
 	todoDayCounts: (from: string, to: string, exclude: string | null) => typedError<DayCount[], AppError>(__TAURI_INVOKE("todo_day_counts", { from, to, exclude })),
 	/**
+	 *  What Todo's badge and the Home card show: the counts due today and Overdue, up to five of
+	 *  today's open Tasks, the soonest Task after today and whether any Task exists. `local` is the
+	 *  device's today and now.
+	 */
+	todoCounts: (local: LocalNow) => typedError<TodoCounts, AppError>(__TAURI_INVOKE("todo_counts", { local })),
+	/**
 	 *  The sidebar's data: the Inbox's open count, Today's count (due today plus Overdue, with the
 	 *  Overdue part apart) and every List, in order, with its open count.
 	 */
@@ -1042,6 +1048,20 @@ export type TodayView = {
 	done: Task[],
 	/**  Overdue, due and done today together: the "of M" in "N of M done". */
 	total: number,
+};
+
+/**  What the badge and the Home card show, in one read. */
+export type TodoCounts = {
+	/**  Open Tasks due today. */
+	due_today: number,
+	/**  Open Tasks due before today: the badge turns red while this is above zero. */
+	overdue: number,
+	/**  Up to five of the open Tasks due today, in Today's order (timed ones first). */
+	card: Task[],
+	/**  The soonest open Task due after today, for "Nothing due today · next: ...". */
+	next: Task | null,
+	/**  Whether any Task exists, done or not: false only on a first run. */
+	any_tasks: boolean,
 };
 
 /**  A flat group of Tasks. Tasks with no List are in the Inbox, which is not a List. */

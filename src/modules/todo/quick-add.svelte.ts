@@ -8,6 +8,8 @@ import { todoSearch } from './search.svelte';
 class QuickAdd {
   /** The floating box is open. */
   floating = $state(false);
+  /** The day a Task added in the floating box is due: Home's Add button opens it on today. */
+  date = $state<string | null>(null);
 
   /** `inTodo`: the shell says Todo is the page on screen. */
   request(inTodo: boolean): void {
@@ -24,11 +26,18 @@ class QuickAdd {
         return;
       }
     }
+    this.openFloating(null);
+  }
+
+  /** Opens the floating box, optionally with a day its Tasks are due (Home's Add: today). */
+  openFloating(date: string | null): void {
+    this.date = date;
     this.floating = true;
   }
 
   close(): void {
     this.floating = false;
+    this.date = null;
   }
 }
 
