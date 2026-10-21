@@ -60,7 +60,7 @@ Add a new value by adding a semantic token (with light, dark and OLED values), t
 ## Themes
 
 - `data-theme` on `<html>` is `light`, `dark` or `oled`; `data-theme-pref` keeps the choice (including `system`). `data-density`, `data-text-size` and `data-reduce-motion` carry the other appearance Settings, and `data-env` carries the Environment.
-- **No flash**: Rust injects the attributes with the window initialization script before first paint (`src-tauri/src/theme_inject.rs`). On load, `applyAppearance` (`src/lib/theme/apply.ts`) keeps the same logic in sync; `system` is re-resolved when the OS theme changes.
+- **No flash**: Rust injects the attributes with the window initialization script before first paint (`src-tauri/src/theme_inject.rs`); an inline `<style>` in `index.html` turns them into the page background before `app.css` loads. On load, `applyAppearance` (`src/lib/theme/apply.ts`) keeps the same logic in sync; `system` is re-resolved when the OS theme changes.
 - Dark uses lighter surfaces for elevation, not shadows. True black sets `--bg` and `--side` to pure black and barely lifts surfaces.
 
 ## Density and text size
