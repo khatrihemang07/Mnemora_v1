@@ -9,6 +9,7 @@ use rusqlite::Connection;
 use crate::MODULE_ID;
 use crate::error::TodoError;
 use crate::task::{InboxView, Task, TaskState, key_after, validate_title};
+use crate::when::{NewWhen, resolve_when};
 use crate::{list_repo, repo};
 
 /// Change-log entity name for Tasks.
@@ -51,9 +52,19 @@ pub fn inbox(conn: &Connection) -> AppResult<InboxView> {
     })
 }
 
-/// Adds an open Task at the bottom of the order, in a List or (with none) the Inbox.
-pub fn create_task(conn: &mut Connection, title: &str, list_id: Option<&str>) -> AppResult<Task> {
+/// Adds an open Task at the bottom of the order, in a List or (with none) the Inbox. `when`
+/// gives it a Due date and time under the same rules as `set_when`.
+pub fn create_task(
+    conn: &mut Connection,
+    title: &str,
+    list_id: Option<&str>,
+    when: Option<&NewWhen>,
+) -> AppResult<Task> {
     let title = validate_title(title)?;
+    let (due_date, due_time) = match when {
+        Some(w) => resolve_when(w.date.as_deref(), w.time.as_deref(), &w.local)?,
+        None => (None, None),
+    };
     let tx = conn.transaction()?;
     if let Some(list_id) = list_id {
         list_repo::get(&tx, list_id)?.ok_or(TodoError::ListNotFound)?;
@@ -64,8 +75,8 @@ pub fn create_task(conn: &mut Connection, title: &str, list_id: Option<&str>) ->
         list_id: list_id.map(str::to_owned),
         title: title.to_owned(),
         notes: String::new(),
-        due_date: None,
-        due_time: None,
+        due_date,
+        due_time,
         repeat_freq: None,
         repeat_every: None,
         repeat_days: None,

@@ -2,7 +2,8 @@
 
 use mnemora_core::error::AppError;
 use mnemora_todo::{
-    AllView, DeleteChoice, InboxView, ListDeletion, ListView, SidebarView, Task, TodoList,
+    AllView, DayCount, DeleteChoice, DueChange, InboxView, ListDeletion, ListView, LocalNow,
+    NewWhen, OverdueMove, SidebarView, Task, TodayView, TodoList, UpcomingView,
 };
 use tauri::State;
 
@@ -16,15 +17,97 @@ pub fn todo_inbox(state: State<'_, AppState>) -> Result<InboxView, AppError> {
 }
 
 /// Adds a Task to the bottom of a List, or of the Inbox when `list_id` is none. Rejects a blank
-/// title, one over 500 characters and one with a line break.
+/// title, one over 500 characters and one with a line break. `when` gives it a Due date and time
+/// under the rules of `todo_task_set_when`.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_create(
     state: State<'_, AppState>,
     title: String,
     list_id: Option<String>,
+    when: Option<NewWhen>,
 ) -> Result<Task, AppError> {
-    mnemora_todo::create_task(&mut lock(&state.db), &title, list_id.as_deref())
+    mnemora_todo::create_task(
+        &mut lock(&state.db),
+        &title,
+        list_id.as_deref(),
+        when.as_ref(),
+    )
+}
+
+/// Sets an open Task's Due date and time, or clears them when both are none. A time without a
+/// date means today if it is still ahead and tomorrow otherwise. Past dates are refused. `local`
+/// is the device's today and now. Records an `update` change.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_task_set_when(
+    state: State<'_, AppState>,
+    id: String,
+    date: Option<String>,
+    time: Option<String>,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::set_when(
+        &mut lock(&state.db),
+        &id,
+        date.as_deref(),
+        time.as_deref(),
+        &local,
+    )
+}
+
+/// Puts Due dates and times back as they were: Undo for a When change, past dates included.
+/// Tasks that no longer exist are skipped. Records an `update` change for each Task changed.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_tasks_restore_when(
+    state: State<'_, AppState>,
+    changes: Vec<DueChange>,
+) -> Result<Vec<Task>, AppError> {
+    mnemora_todo::restore_when(&mut lock(&state.db), &changes)
+}
+
+/// Moves every Overdue Task to `date` (today or later), keeping times. Returns what
+/// `todo_tasks_restore_when` needs to undo it. Records an `update` change for each Task.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_tasks_move_overdue(
+    state: State<'_, AppState>,
+    date: String,
+    local: LocalNow,
+) -> Result<OverdueMove, AppError> {
+    mnemora_todo::move_overdue(&mut lock(&state.db), &date, &local)
+}
+
+/// Today: Overdue first, then today's Tasks (timed by time, then manual order), then the Tasks
+/// done today.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_today(state: State<'_, AppState>, local: LocalNow) -> Result<TodayView, AppError> {
+    mnemora_todo::today(&lock(&state.db), &local)
+}
+
+/// Upcoming: Overdue on top, then each day after today that has Tasks.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_upcoming(
+    state: State<'_, AppState>,
+    local: LocalNow,
+) -> Result<UpcomingView, AppError> {
+    mnemora_todo::upcoming(&lock(&state.db), &local)
+}
+
+/// Open Tasks per date from `from` to `to`, both included (only dates that have any), leaving
+/// out the Task `exclude`: the dots in the When picker.
+#[tauri::command]
+#[specta::specta]
+pub fn todo_day_counts(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+    exclude: Option<String>,
+) -> Result<Vec<DayCount>, AppError> {
+    mnemora_todo::day_counts(&lock(&state.db), &from, &to, exclude.as_deref())
 }
 
 /// Marks an open Task done, now.
@@ -363,7 +446,7 @@ mod tests {
                 .unwrap();
         assert_eq!(pages.len(), 1);
         assert_eq!(pages[0].entries[0].body, "Written before Todo existed");
-        mnemora_todo::create_task(&mut conn, "Works after the upgrade", None).unwrap();
+        mnemora_todo::create_task(&mut conn, "Works after the upgrade", None, None).unwrap();
         assert_eq!(mnemora_todo::inbox(&conn).unwrap().tasks.len(), 1);
 
         let again = db::migrate::run(&mut conn, &after, &backups).unwrap();
@@ -626,6 +709,282 @@ mod tests {
         assert_eq!(err["code"], "not_found");
     }
 
+    fn local(today: &str, now: &str) -> Value {
+        json!({ "today": today, "now": now, "offset_min": 0 })
+    }
+
+    fn set_when(app: &TestApp, task: &Value, date: Value, time: Value, today: &str) -> Value {
+        app.invoke(
+            "todo_task_set_when",
+            json!({ "id": id_of(task), "date": date, "time": time, "local": local(today, "14:05") }),
+        )
+        .unwrap()
+    }
+
+    /// Dates a Task directly in the database: the only way to make one Overdue is time passing.
+    fn backdate(app: &TestApp, task: &Value, date: &str) {
+        app.with_db(|c| {
+            let id = task["id"].as_str().unwrap();
+            c.execute(
+                &format!("UPDATE todo_tasks SET due_date = '{date}' WHERE id = '{id}'"),
+                [],
+            )
+            .unwrap();
+        });
+    }
+
+    #[test]
+    fn dating_a_task_records_one_update_and_an_unchanged_when_records_nothing() {
+        let app = TestApp::new();
+        let a = create(&app, "a").unwrap();
+        let before = ops_since(&app, 0).len();
+        let dated = set_when(&app, &a, json!("2026-10-23"), json!("09:00"), "2026-10-21");
+        assert_eq!(dated["due_date"], "2026-10-23");
+        assert_eq!(dated["due_time"], "09:00");
+        set_when(&app, &a, json!("2026-10-23"), json!("09:00"), "2026-10-21");
+        set_when(&app, &a, Value::Null, Value::Null, "2026-10-21");
+        assert_eq!(
+            ops_since(&app, before),
+            [pair("update", "todo_task"), pair("update", "todo_task")]
+        );
+        let err = app
+            .invoke::<Value>(
+                "todo_task_set_when",
+                json!({ "id": id_of(&a), "date": "2026-10-20", "time": null,
+                        "local": local("2026-10-21", "14:05") }),
+            )
+            .unwrap_err();
+        assert_eq!(err["code"], "validation");
+        assert_eq!(
+            ops_since(&app, before).len(),
+            2,
+            "a refused write logs nothing"
+        );
+    }
+
+    #[test]
+    fn removing_the_date_removes_the_time_and_any_repeat() {
+        let app = TestApp::new();
+        let a = create(&app, "a").unwrap();
+        set_when(&app, &a, json!("2026-10-23"), json!("09:00"), "2026-10-21");
+        app.with_db(|c| {
+            c.execute(
+                "UPDATE todo_tasks SET repeat_freq = 'week', repeat_every = 1, repeat_mode = 'fixed'",
+                [],
+            )
+            .unwrap();
+        });
+        let cleared = set_when(&app, &a, Value::Null, Value::Null, "2026-10-21");
+        for field in [
+            "due_date",
+            "due_time",
+            "repeat_freq",
+            "repeat_every",
+            "repeat_mode",
+        ] {
+            assert_eq!(cleared[field], Value::Null, "{field}");
+        }
+    }
+
+    #[test]
+    fn today_lists_what_was_done_today_in_the_devices_day_and_counts_progress() {
+        let app = TestApp::new();
+        let (a, b, c) = (
+            create(&app, "a").unwrap(),
+            create(&app, "b").unwrap(),
+            create(&app, "c").unwrap(),
+        );
+        for t in [&a, &b, &c] {
+            set_when(&app, t, json!("2026-10-21"), Value::Null, "2026-10-21");
+        }
+        for t in [&a, &b] {
+            app.invoke::<Value>("todo_task_complete", json!({ "id": id_of(t) }))
+                .unwrap();
+        }
+        // 2026-10-21 in Kolkata (+05:30) starts at 2026-10-20 18:30 UTC.
+        let day_start_utc: i64 = 1_792_521_000_000;
+        assert_eq!(day_start_utc % 86_400_000, 66_600_000, "18:30 UTC");
+        let set_closed = |t: &Value, at: i64| {
+            app.with_db(|conn| {
+                let id = t["id"].as_str().unwrap();
+                conn.execute(
+                    &format!("UPDATE todo_tasks SET closed_at = {at} WHERE id = '{id}'"),
+                    [],
+                )
+                .unwrap();
+            });
+        };
+        set_closed(&a, day_start_utc + 1);
+        set_closed(&b, day_start_utc - 1);
+        let kolkata = json!({ "today": "2026-10-21", "now": "14:05", "offset_min": 330 });
+        let view: Value = app
+            .invoke("todo_today", json!({ "local": kolkata }))
+            .unwrap();
+        assert_eq!(titles(&view["done"]), json!(["a"]));
+        assert_eq!(titles(&view["tasks"]), json!(["c"]));
+        assert_eq!(
+            view["total"], 2,
+            "one open and one done today; b was done yesterday"
+        );
+
+        let utc = local("2026-10-21", "14:05");
+        let view: Value = app.invoke("todo_today", json!({ "local": utc })).unwrap();
+        assert_eq!(
+            view["done"],
+            json!([]),
+            "both were closed before this UTC day began"
+        );
+        assert_eq!(view["total"], 1);
+    }
+
+    #[test]
+    fn a_task_wont_do_today_is_not_counted_as_done() {
+        let app = TestApp::new();
+        let a = create(&app, "a").unwrap();
+        set_when(&app, &a, json!("2026-10-21"), Value::Null, "2026-10-21");
+        app.with_db(|c| {
+            c.execute(
+                "UPDATE todo_tasks SET state = 'wont', closed_at = 1792521000000 + 5",
+                [],
+            )
+            .unwrap();
+        });
+        let kolkata = json!({ "today": "2026-10-21", "now": "14:05", "offset_min": 330 });
+        let view: Value = app
+            .invoke("todo_today", json!({ "local": kolkata }))
+            .unwrap();
+        assert_eq!(view["done"], json!([]));
+        assert_eq!(view["total"], 0);
+    }
+
+    #[test]
+    fn move_all_logs_each_change_and_undo_logs_them_again() {
+        let app = TestApp::new();
+        let (a, b) = (create(&app, "a").unwrap(), create(&app, "b").unwrap());
+        for (t, d) in [(&a, "2026-10-19"), (&b, "2026-10-20")] {
+            set_when(&app, t, json!("2026-10-21"), Value::Null, "2026-10-21");
+            backdate(&app, t, d);
+        }
+        let before = ops_since(&app, 0).len();
+        let moved: Value = app
+            .invoke(
+                "todo_tasks_move_overdue",
+                json!({ "date": "2026-10-21", "local": local("2026-10-21", "14:05") }),
+            )
+            .unwrap();
+        assert_eq!(moved["to_date"], "2026-10-21");
+        assert_eq!(moved["previous"].as_array().unwrap().len(), 2);
+        let restored: Value = app
+            .invoke(
+                "todo_tasks_restore_when",
+                json!({ "changes": moved["previous"] }),
+            )
+            .unwrap();
+        assert_eq!(restored.as_array().unwrap().len(), 2);
+        assert_eq!(restored[0]["due_date"], "2026-10-19");
+        assert_eq!(ops_since(&app, before).len(), 4, "two moves and two undos");
+        // Nothing is left to undo the second time.
+        app.invoke::<Value>(
+            "todo_tasks_restore_when",
+            json!({ "changes": moved["previous"] }),
+        )
+        .unwrap();
+        assert_eq!(
+            ops_since(&app, before).len(),
+            4,
+            "an unchanged restore logs nothing"
+        );
+    }
+
+    #[test]
+    fn restoring_skips_deleted_tasks_and_refuses_malformed_input() {
+        let app = TestApp::new();
+        let home = new_list(&app, "Home");
+        let a = app
+            .invoke::<Value>(
+                "todo_task_create",
+                json!({ "title": "a", "listId": id_of(&home) }),
+            )
+            .unwrap();
+        app.invoke::<Value>(
+            "todo_list_delete",
+            json!({ "id": id_of(&home), "choice": { "kind": "delete_tasks" } }),
+        )
+        .unwrap();
+        let skipped: Value = app
+            .invoke(
+                "todo_tasks_restore_when",
+                json!({ "changes": [{ "id": id_of(&a), "due_date": "2026-10-01", "due_time": null }] }),
+            )
+            .unwrap();
+        assert_eq!(skipped, json!([]));
+        for bad in [
+            json!({ "id": "x", "due_date": "2026-02-30", "due_time": null }),
+            json!({ "id": "x", "due_date": null, "due_time": "09:00" }),
+            json!({ "id": "x", "due_date": "2026-10-01", "due_time": "9am" }),
+        ] {
+            let err = app
+                .invoke::<Value>("todo_tasks_restore_when", json!({ "changes": [bad] }))
+                .unwrap_err();
+            assert_eq!(err["code"], "validation");
+        }
+    }
+
+    #[test]
+    fn day_counts_leave_out_the_excluded_task_and_refuse_bad_ranges() {
+        let app = TestApp::new();
+        let (a, b) = (create(&app, "a").unwrap(), create(&app, "b").unwrap());
+        for t in [&a, &b] {
+            set_when(&app, t, json!("2026-10-23"), Value::Null, "2026-10-21");
+        }
+        let counts = |exclude: Value| -> Value {
+            app.invoke(
+                "todo_day_counts",
+                json!({ "from": "2026-10-21", "to": "2026-10-30", "exclude": exclude }),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            counts(Value::Null),
+            json!([{ "date": "2026-10-23", "count": 2 }])
+        );
+        assert_eq!(
+            counts(id_of(&a)),
+            json!([{ "date": "2026-10-23", "count": 1 }])
+        );
+        for (from, to) in [("2026-10-30", "2026-10-21"), ("2026-10-21", "nope")] {
+            let err = app
+                .invoke::<Value>(
+                    "todo_day_counts",
+                    json!({ "from": from, "to": to, "exclude": null }),
+                )
+                .unwrap_err();
+            assert_eq!(err["code"], "validation");
+        }
+    }
+
+    #[test]
+    fn a_malformed_clock_is_refused_by_every_date_command() {
+        let app = TestApp::new();
+        let a = create(&app, "a").unwrap();
+        let bad = json!({ "today": "21/10/2026", "now": "14:05", "offset_min": 0 });
+        for (cmd, args) in [
+            ("todo_today", json!({ "local": bad })),
+            ("todo_upcoming", json!({ "local": bad })),
+            (
+                "todo_tasks_move_overdue",
+                json!({ "date": "2026-10-21", "local": bad }),
+            ),
+            (
+                "todo_task_set_when",
+                json!({ "id": id_of(&a), "date": null, "time": null, "local": bad }),
+            ),
+        ] {
+            let err = app.invoke::<Value>(cmd, args).unwrap_err();
+            assert_eq!(err["code"], "validation", "{cmd}");
+        }
+    }
+
     // Shared rule fixtures: the same file runs against the browser mock in
     // src/lib/ipc/mock-todo.test.ts (ADR 0009). Keep `run_rule_case` in step with `run` there.
     const RULES: &str = include_str!("../../src/lib/ipc/fixtures/todo-rules.json");
@@ -646,11 +1005,83 @@ mod tests {
         Value::Array(groups.collect())
     }
 
+    const DEFAULT_TODAY: &str = "2026-10-21";
+    const DEFAULT_NOW: &str = "14:05";
+
+    fn titles(tasks: &Value) -> Value {
+        Value::Array(
+            tasks
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| t["title"].clone())
+                .collect(),
+        )
+    }
+
+    /// Every open Task as `[title, due date, due time]`, in the All view's order.
+    fn dues(app: &TestApp) -> Value {
+        let view: Value = app.invoke("todo_all", json!({})).unwrap();
+        let rows = view["groups"].as_array().unwrap().iter().flat_map(|g| {
+            g["tasks"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|t| json!([t["title"], t["due_date"], t["due_time"]]))
+        });
+        Value::Array(rows.collect())
+    }
+
+    /// Today as `{ overdue, tasks }` titles; what was done today depends on the real clock.
+    fn today_groups(app: &TestApp, local: &Value) -> Value {
+        let view: Value = app.invoke("todo_today", json!({ "local": local })).unwrap();
+        json!({ "overdue": titles(&view["overdue"]), "tasks": titles(&view["tasks"]) })
+    }
+
+    /// Upcoming as `{ overdue, days: [[date, titles]] }`.
+    fn upcoming_groups(app: &TestApp, local: &Value) -> Value {
+        let view: Value = app
+            .invoke("todo_upcoming", json!({ "local": local }))
+            .unwrap();
+        let days = view["days"].as_array().unwrap().iter();
+        json!({
+            "overdue": titles(&view["overdue"]),
+            "days": days.map(|d| json!([d["date"], titles(&d["tasks"])])).collect::<Vec<_>>(),
+        })
+    }
+
+    /// `[[date, open Tasks]]` from the case's today to the end of 2027.
+    fn day_counts(app: &TestApp, local: &Value) -> Value {
+        let counts: Value = app
+            .invoke(
+                "todo_day_counts",
+                json!({ "from": local["today"], "to": "2027-12-31", "exclude": null }),
+            )
+            .unwrap();
+        Value::Array(
+            counts
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|d| json!([d["date"], d["count"]]))
+                .collect(),
+        )
+    }
+
     fn run_rule_case(c: &Value) -> Value {
         let app = TestApp::new();
         let mut tasks: Vec<Value> = Vec::new();
         let mut lists: Vec<Value> = Vec::new();
         let mut deletions: Vec<Value> = Vec::new();
+        let mut moves: Vec<Value> = Vec::new();
+        // The clock steps run against: the case's, unless a step pins its own.
+        let clock = |step: &Value| {
+            json!({
+                "today": step["today"].as_str().or(c["today"].as_str()).unwrap_or(DEFAULT_TODAY),
+                "now": step["now"].as_str().or(c["now"].as_str()).unwrap_or(DEFAULT_NOW),
+                "offset_min": 0,
+            })
+        };
         // A number picks the n-th created item, null stays null, a string is used as an id.
         let pick = |v: &Value, made: &[Value]| match v {
             Value::Number(n) => made[usize::try_from(n.as_u64().unwrap()).unwrap()].clone(),
@@ -662,9 +1093,32 @@ mod tests {
             let task = pick(&step["task"], &tasks);
             let list = pick(&step["list"], &lists);
             let outcome: Result<Value, Value> = match op {
-                "create" => app.invoke(
-                    "todo_task_create",
-                    json!({ "title": step["title"], "listId": list }),
+                "create" => {
+                    let dated = !step["date"].is_null() || !step["time"].is_null();
+                    let when = if dated {
+                        json!({ "date": step["date"], "time": step["time"], "local": clock(step) })
+                    } else {
+                        Value::Null
+                    };
+                    app.invoke(
+                        "todo_task_create",
+                        json!({ "title": step["title"], "listId": list, "when": when }),
+                    )
+                }
+                "set_when" => app.invoke(
+                    "todo_task_set_when",
+                    json!({
+                        "id": task, "date": step["date"], "time": step["time"],
+                        "local": clock(step)
+                    }),
+                ),
+                "move_overdue" => app.invoke(
+                    "todo_tasks_move_overdue",
+                    json!({ "date": step["date"], "local": clock(step) }),
+                ),
+                "undo_move" => app.invoke(
+                    "todo_tasks_restore_when",
+                    json!({ "changes": moves[usize::try_from(step["move"].as_u64().unwrap()).unwrap()]["previous"] }),
                 ),
                 "move" => app.invoke("todo_task_move", json!({ "id": task, "listId": list })),
                 "list_create" => app.invoke("todo_list_create", json!({ "name": step["name"] })),
@@ -698,6 +1152,7 @@ mod tests {
                         "create" => tasks.push(out["id"].clone()),
                         "list_create" => lists.push(out["id"].clone()),
                         "list_delete" => deletions.push(out),
+                        "move_overdue" => moves.push(out),
                         _ => {}
                     }
                     results.push(json!("ok"));
@@ -705,17 +1160,26 @@ mod tests {
                 Err(e) => results.push(e["code"].clone()),
             }
         }
+        rule_outputs(&app, results, &clock(&Value::Null))
+    }
+
+    /// Everything a fixture case can expect, read from the app after its steps ran.
+    fn rule_outputs(app: &TestApp, results: Vec<Value>, view_clock: &Value) -> Value {
         let sidebar: Value = app.invoke("todo_lists", json!({})).unwrap();
         let entries = sidebar["lists"].as_array().unwrap();
         let mut counts = vec![sidebar["inbox_count"].clone()];
         counts.extend(entries.iter().map(|e| e["open_count"].clone()));
         json!({
             "results": results,
-            "inbox": inbox_titles(&app),
+            "dues": dues(app),
+            "today": today_groups(app, view_clock),
+            "upcoming": upcoming_groups(app, view_clock),
+            "day_counts": day_counts(app, view_clock),
+            "inbox": inbox_titles(app),
             "lists": entries.iter().map(|e| e["list"]["name"].clone()).collect::<Vec<_>>(),
             "emojis": entries.iter().map(|e| e["list"]["emoji"].clone()).collect::<Vec<_>>(),
             "counts": counts,
-            "all": all_groups(&app),
+            "all": all_groups(app),
         })
     }
 
