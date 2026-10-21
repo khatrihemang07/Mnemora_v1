@@ -3,7 +3,7 @@ import { LongPress } from '../../lib/long-press';
 import { lockAxis, rowOffset, rowSwipeOutcome, type SwipeSides } from '../../lib/swipe';
 
 /** Controls inside a row that keep their own taps: a touch that starts on one is not a gesture. */
-const OWN_TAPS = 'button, a, input, textarea, [data-no-drag]';
+const OWN_TAPS = 'button:not([role="checkbox"]), a, input, textarea, [data-no-drag]';
 /** The click a finished gesture would leave behind is swallowed for this long. */
 const CLICK_GUARD_MS = 350;
 

@@ -273,3 +273,19 @@ textarea,
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+
+/* Home on a phone: labels, headings and card text are chrome, not content; only user content (data-user-text) selects. */
+:root[data-phone] [data-home] :where(*):not([data-user-text], [data-user-text] *) {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Phone scrollbars overlay and never take width: nothing may shift when a page starts to overflow. */
+:root[data-phone] * {
+  scrollbar-width: none;
+}
+:root[data-phone] *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

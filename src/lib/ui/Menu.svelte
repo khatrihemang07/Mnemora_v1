@@ -35,6 +35,9 @@
   import Check from '~icons/lucide/check';
   import { closeOnBack } from '../router/back-button.svelte';
   import Kbd from './Kbd.svelte';
+  import { untrack } from 'svelte';
+  import { viewport } from '../viewport.svelte';
+  import { openSheets } from './sheet-open.svelte';
   import { afterRelease } from './pointer-held';
 
   interface Props {
@@ -60,6 +63,15 @@
   }: Props = $props();
 
   closeOnBack(() => open, () => (open = false));
+
+  // On a phone a menu covers the bottom where toasts sit: they move to the top while it is open.
+  $effect(() => {
+    if (!open || !viewport.isPhone) return;
+    untrack(() => (openSheets.count += 1));
+    return () => {
+      openSheets.count -= 1;
+    };
+  });
 
   let picked = false;
 

@@ -6,7 +6,7 @@
   right-click; the Inbox, All and Done have none.
 -->
 <script lang="ts">
-  import { flushSync } from 'svelte';
+  import { flushSync, tick } from 'svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import Check from '~icons/lucide/check';
   import ListPlus from '~icons/lucide/list-plus';
@@ -116,6 +116,9 @@
     await renameList(id, name);
     await invalidateTodo();
     renaming = null;
+    // Touch: no visible focus ring should land on the sheet's ✕ afterwards.
+    await tick();
+    (document.activeElement as HTMLElement | null)?.blur();
   }
 
   async function pickEmoji(emoji: string | null) {

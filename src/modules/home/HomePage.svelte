@@ -26,7 +26,7 @@
   const cards = $derived(homeCards(enabled.list));
 </script>
 
-<div class="selectable h-full overflow-y-auto p-(--pad)">
+<div data-home class="selectable h-full overflow-y-auto p-(--pad)">
   <PageHeader title="Home" />
   <div class="mx-auto flex max-w-3xl flex-col gap-(--gap)">
     <div class="grid grid-cols-1 items-stretch gap-(--gap) min-[720px]:grid-cols-[1.4fr_1fr]">
