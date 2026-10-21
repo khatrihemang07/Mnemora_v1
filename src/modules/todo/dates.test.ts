@@ -7,7 +7,9 @@ import {
   longDate,
   movedAllMessage,
   rowDateLabel,
+  stampLabel,
   timePassed,
+  whenChipLabel,
   whenMessage,
 } from './dates';
 
@@ -107,5 +109,57 @@ describe('messages', () => {
     const at = new Date(2026, 9, 21, 9, 12).getTime();
     expect(closedTime(at, '24h')).toBe('09:12');
     expect(closedTime(at, '12h')).toBe('9:12 AM');
+  });
+});
+
+describe('stampLabel', () => {
+  // Built from local parts, so the test holds in any time zone.
+  const at = (y: number, m: number, d: number, h = 9, min = 12) =>
+    new Date(y, m - 1, d, h, min).getTime();
+
+  it('says Today and Yesterday with the time', () => {
+    expect(stampLabel(at(2026, 10, 21), TODAY, '24h')).toBe('Today 09:12');
+    expect(stampLabel(at(2026, 10, 20, 18, 40), TODAY, '24h')).toBe('Yesterday 18:40');
+    expect(stampLabel(at(2026, 10, 21, 18, 40), TODAY, '12h')).toBe('Today 6:40 PM');
+  });
+
+  it('names a weekday inside the last week, then the date', () => {
+    expect(stampLabel(at(2026, 10, 19, 8, 0), TODAY, '24h')).toBe('Mon 08:00');
+    expect(stampLabel(at(2026, 10, 14, 8, 0), TODAY, '24h')).toBe('14 Oct 08:00');
+    expect(stampLabel(at(2025, 12, 31, 8, 0), TODAY, '24h')).toBe('31 Dec 2025 08:00');
+  });
+
+  it('can leave the time out', () => {
+    expect(stampLabel(at(2026, 10, 14), TODAY, '24h', false)).toBe('14 Oct');
+  });
+});
+
+describe('whenChipLabel', () => {
+  const none = {
+    due_date: null,
+    due_time: null,
+    repeat_freq: null,
+    repeat_every: null,
+    repeat_days: null,
+    repeat_mode: null,
+  };
+
+  it('is When while the Task has no date', () => {
+    expect(whenChipLabel(none, TODAY, '24h')).toBe('When');
+  });
+
+  it('joins the day, the time and the Repeat', () => {
+    expect(
+      whenChipLabel({ ...none, due_date: '2026-10-22', due_time: '09:00' }, TODAY, '24h'),
+    ).toBe('Tomorrow · 09:00');
+    const repeating = {
+      ...none,
+      due_date: '2026-10-21',
+      repeat_freq: 'month',
+      repeat_every: 1,
+      repeat_days: 21,
+      repeat_mode: 'fixed',
+    };
+    expect(whenChipLabel(repeating, TODAY, '24h')).toBe('Today · Every month');
   });
 });

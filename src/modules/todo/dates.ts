@@ -3,7 +3,7 @@ import type { TimeFormat } from '../../lib/time/format';
 import { daysBetween, dayText, monthShort, weekdayShort } from '../../lib/ui/when-grid';
 import { type RepeatRule, repeatLabel } from '../../lib/ui/when-repeat';
 import { formatHm } from '../../lib/ui/when-time';
-import { quoted } from './tasks';
+import { quotedTitle } from './tasks';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -120,7 +120,7 @@ export function whenMessage(
   const at = time === null ? null : formatHm(time, format);
   const rule = repeat ? repeatLabel(repeat) : date !== null && hadRepeat ? 'No repeat' : null;
   const when = [day, at, rule].filter((p) => p !== null).join(' · ');
-  return `${quoted(title)} → ${when || 'No date'}`;
+  return `${quotedTitle(title)} → ${when || 'No date'}`;
 }
 
 /** "Sat 24 Oct": a date named in a toast or menu, with the year when it is not this year's. */
@@ -128,11 +128,11 @@ export const nextText = (date: string, today: string): string => dayText(date, t
 
 /** The toast after ticking a repeating Task: `Completed “Water the plants” · next Sat 24 Oct`. */
 export const completedRepeatMessage = (title: string, next: string, today: string): string =>
-  `Completed ${quoted(title)} · next ${nextText(next, today)}`;
+  `Completed ${quotedTitle(title)} · next ${nextText(next, today)}`;
 
 /** The toast after skipping: `Skipped “Water the plants” · next Sat 24 Oct`. */
 export const skippedMessage = (title: string, next: string, today: string): string =>
-  `Skipped ${quoted(title)} · next ${nextText(next, today)}`;
+  `Skipped ${quotedTitle(title)} · next ${nextText(next, today)}`;
 
 /** A heading of Done: `Today`, `Yesterday`, then the weekday, with the small date beside it. */
 export function doneHeading(date: string, today: string): DayHeading {
@@ -147,4 +147,44 @@ export function doneHeading(date: string, today: string): DayHeading {
 export function movedAllMessage(count: number, date: string, today: string): string {
   const where = date === today ? 'Today' : rowDateLabel(date, today);
   return `Moved ${count} ${count === 1 ? 'Task' : 'Tasks'} to ${where}`;
+}
+
+/**
+ * When something happened, for the sheet's footer and History: `Today 09:12`, `Yesterday 18:40`,
+ * a weekday inside the last week (`Mon 08:00`), then `14 Oct 08:00`, with the year when it is not
+ * this year. `time` leaves the time out.
+ */
+export function stampLabel(at: number, today: string, format: TimeFormat, time = true): string {
+  const when = new Date(at);
+  const date = localDate(when);
+  const n = daysBetween(date, today);
+  const [y = 0, , d = 1] = date.split('-').map(Number);
+  const year = y === Number(today.slice(0, 4)) ? '' : ` ${y}`;
+  const day =
+    n === 0
+      ? 'Today'
+      : n === 1
+        ? 'Yesterday'
+        : n > 1 && n < 7
+          ? weekdayShort(date)
+          : `${d} ${monthShort(date)}${year}`;
+  return time ? `${day} ${formatHm(localTime(when), format)}` : day;
+}
+
+/** The When chip in the sheet: `Tomorrow · 09:00 · Every month`, or `When` while the Task has none. */
+export function whenChipLabel(
+  task: Pick<
+    Task,
+    'due_date' | 'due_time' | 'repeat_freq' | 'repeat_every' | 'repeat_days' | 'repeat_mode'
+  >,
+  today: string,
+  format: TimeFormat,
+): string {
+  const rule = taskRepeat(task as Task);
+  const parts = [
+    task.due_date === null ? null : rowDateLabel(task.due_date, today),
+    task.due_time === null ? null : formatHm(task.due_time, format),
+    rule ? repeatLabel(rule) : null,
+  ].filter((p) => p !== null);
+  return parts.join(' · ') || 'When';
 }

@@ -8,6 +8,8 @@ import type { WeekStart } from '../../lib/ui/calendar';
 class TodoPrefs {
   weekStart = $state<WeekStart>('mon');
   timeFormat = $state<TimeFormat>('24h');
+  /** The font of a Task's notes: the Journal's Writing font Setting, so there is one choice. */
+  notesFont = $state<'serif' | 'sans'>('serif');
 }
 
 export const todoPrefs = new TodoPrefs();
@@ -19,5 +21,7 @@ export function followCoreSettings() {
     const core = readCore(settings.data?.values);
     todoPrefs.weekStart = core.weekStart;
     todoPrefs.timeFormat = core.timeFormat;
+    // Read as plain Setting data: Todo never imports the Journal.
+    todoPrefs.notesFont = settings.data?.values['journal.font'] === 'sans' ? 'sans' : 'serif';
   });
 }

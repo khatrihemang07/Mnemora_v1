@@ -1,26 +1,37 @@
 <!--
-  TaskRow: one Task in a list: the diamond to tick it, then its title (wrapping, never cut) and,
-  under it, its date and time (Today teal, Overdue red; a time already behind us red). On hover (not
-  on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click, long-press on a phone)
-  holds "When…", which opens the When picker, "Skip to ‹date›" on a repeating Task (it moves on and
-  records nothing) and "Move to list…". A repeating Task shows its rule ("↻ Every 3 days after
-  done") under the title; a done occurrence shows "↻ occurrence". `hideDate` leaves the date out
-  where the group already says it (Today, an Upcoming day). `list` shows the Task's List at the
-  right, for views that mix Lists. A done Task (Completed today) is struck through, shows when it
-  was done, and its diamond brings it back.
+  TaskRow: one Task in a list: the diamond to tick it (its ring shows the Priority), then its title
+  (inline Markdown, wrapping, never cut) and, under it, the first line of its notes, then a meta line
+  with its date and time (Today teal, Overdue red; a time already behind us red), its Repeat, the
+  Checklist progress "1/3" and the number of comments. Clicking the title (or Enter on it) opens the
+  Task sheet. On hover (not on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click,
+  long-press on a phone) holds Open, Quick edit (not built yet), When…, Priority…, Move to list…,
+  Won't do (Skip to ‹date› on a repeating Task: it moves on and records nothing) and Delete. The
+  keys 1 to 4 and ⇧Space act on the hovered or focused row. A done occurrence shows "↻ occurrence";
+  a Won't do Task shows ⊗ and "Won't do" with the time. `hideDate` leaves the date out where the
+  group already says it (Today, an Upcoming day). `list` shows the Task's List at the right, for
+  views that mix Lists. A done Task is struck through, shows when it was done, and its diamond
+  brings it back.
 -->
 <script lang="ts">
   import Calendar from '~icons/lucide/calendar';
   import Check from '~icons/lucide/check';
+  import CircleX from '~icons/lucide/circle-x';
   import Clock from '~icons/lucide/clock';
   import Ellipsis from '~icons/lucide/ellipsis';
+  import Flag from '~icons/lucide/flag';
   import FolderInput from '~icons/lucide/folder-input';
+  import ListChecks from '~icons/lucide/list-checks';
+  import MessageSquare from '~icons/lucide/message-square';
+  import PencilLine from '~icons/lucide/pencil-line';
   import Repeat from '~icons/lucide/repeat';
   import SkipForward from '~icons/lucide/skip-forward';
+  import SquarePen from '~icons/lucide/square-pen';
   import Sun from '~icons/lucide/sun';
+  import Trash2 from '~icons/lucide/trash-2';
   import type { Task, TodoList } from '../../lib/ipc/bindings';
   import { LongPress } from '../../lib/long-press';
   import IconButton from '../../lib/ui/IconButton.svelte';
+  import MarkdownInline from '../../lib/ui/MarkdownInline.svelte';
   import Menu, { type MenuAnchor, type MenuItem } from '../../lib/ui/Menu.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
   import { formatHm } from '../../lib/ui/when-time';
@@ -29,8 +40,21 @@
   import { closedTime, isOverdue, nextText, rowDateLabel, taskRepeat, timePassed } from './dates';
   import ListGlyph from './ListGlyph.svelte';
   import ListPicker from './ListPicker.svelte';
+  import { checklistProgress, notePreview, plainTitle } from './notes';
+  import PriorityMenu from './PriorityMenu.svelte';
   import { todoPrefs } from './prefs.svelte';
-  import { dateTaskToday, moveTaskTo, setTaskWhen, skipRepeating } from './task-actions';
+  import {
+    dateTaskToday,
+    deleteTaskWithUndo,
+    moveTaskTo,
+    setTaskPriority,
+    setTaskWhen,
+    skipRepeating,
+    wontDoTask,
+  } from './task-actions';
+  import { taskRows } from './task-keys.svelte';
+  import { taskSheet } from './task-sheet.svelte';
+  import { priorityTone } from './tasks';
   import WhenHost from './WhenHost.svelte';
 
   interface Props {
@@ -50,10 +74,20 @@
   let menuAnchor = $state.raw<MenuAnchor | null>(null);
   let pickerOpen = $state(false);
   let whenOpen = $state(false);
+  let priorityOpen = $state(false);
+
+  // The keys 1 to 4 and ⇧Space find this row through the registry.
+  $effect(() => taskRows.register(task));
 
   const isOpen = $derived(task.state === 'open');
+  const wont = $derived(task.state === 'wont');
+  const preview = $derived(notePreview(task.notes));
+  const steps = $derived(checklistProgress(task.notes));
   const overdue = $derived(isOverdue(task, todoClock.today));
   const late = $derived(timePassed(task, todoClock.today, todoClock.hm));
+  const tone = $derived(
+    isOpen && task.priority < 4 ? priorityTone(task.priority) : overdue ? 'overdue' : 'plain',
+  );
   const showDate = $derived(isOpen && task.due_date !== null && !hideDate);
   const showTime = $derived(isOpen && task.due_time !== null);
   const repeat = $derived(isOpen ? taskRepeat(task) : null);
@@ -63,7 +97,7 @@
     repeat && task.due_date ? nextDue(repeat, task.due_date, todoClock.today) : null,
   );
   const closed = $derived(
-    task.state === 'done' && task.closed_at !== null
+    task.state !== 'open' && task.closed_at !== null
       ? closedTime(task.closed_at, todoPrefs.timeFormat)
       : null,
   );
@@ -72,30 +106,65 @@
   const afterMenu = (open: () => void) => () => void Promise.resolve().then(open);
 
   const items = $derived<MenuItem[]>([
+    {
+      label: 'Open',
+      icon: SquarePen,
+      shortcut: '↵',
+      onselect: () => taskSheet.open(task.id),
+    },
+    // Quick edit arrives with the capture box; until then it is shown but not available.
+    ...(isOpen ? [{ label: 'Quick edit', icon: PencilLine, disabled: true, onselect: () => {} }] : []),
     ...(isOpen
       ? [
           {
             label: 'When…',
             icon: Calendar,
+            separatorBefore: true,
             onselect: afterMenu(() => (whenOpen = true)),
           },
-        ]
-      : []),
-    ...(skipTo
-      ? [
           {
-            label: `Skip to ${nextText(skipTo, todoClock.today)}`,
-            icon: SkipForward,
-            onselect: () => void skipRepeating(task),
+            label: 'Priority…',
+            icon: Flag,
+            shortcut: '1–4',
+            onselect: afterMenu(() => (priorityOpen = true)),
           },
         ]
       : []),
     {
       label: 'Move to list…',
       icon: FolderInput,
+      separatorBefore: !isOpen,
       onselect: afterMenu(() => (pickerOpen = true)),
     },
+    ...(skipTo
+      ? [
+          {
+            label: `Skip to ${nextText(skipTo, todoClock.today)}`,
+            icon: SkipForward,
+            shortcut: '⇧Space',
+            onselect: () => void skipRepeating(task),
+          },
+        ]
+      : isOpen
+        ? [
+            {
+              label: 'Won’t do',
+              icon: CircleX,
+              shortcut: '⇧Space',
+              onselect: () => void wontDoTask(task),
+            },
+          ]
+        : []),
+    {
+      label: 'Delete',
+      icon: Trash2,
+      danger: true,
+      separatorBefore: true,
+      onselect: () => void deleteTaskWithUndo(task),
+    },
   ]);
+
+  const openSheet = () => taskSheet.open(task.id);
 
   function openMenu(anchor: MenuAnchor) {
     menuAnchor = anchor;
@@ -118,8 +187,11 @@
 <div
   bind:this={row}
   role="presentation"
+  data-task-row={task.id}
   {oncontextmenu}
-  onpointerdown={(e) => touchLike(e) && !(e.target as Element).closest('button') && press.start(e.clientX, e.clientY)}
+  onpointerenter={(e) => !touchLike(e) && (taskRows.hoveredId = task.id)}
+  onpointerleave={() => taskRows.hoveredId === task.id && (taskRows.hoveredId = null)}
+  onpointerdown={(e) => touchLike(e) && !(e.target as Element).closest('button, a') && press.start(e.clientX, e.clientY)}
   onpointermove={(e) => touchLike(e) && press.move(e.clientX, e.clientY)}
   onpointerup={() => press.cancel()}
   onpointercancel={() => press.cancel()}
@@ -128,16 +200,30 @@
 >
   <TaskCheckbox
     checked={!isOpen}
-    label={isOpen ? `Complete ${task.title}` : `Reopen ${task.title}`}
-    tone={overdue ? 'overdue' : 'plain'}
+    {wont}
+    label={isOpen ? `Complete ${plainTitle(task.title)}` : `Reopen ${plainTitle(task.title)}`}
+    {tone}
     onchange={() => (isOpen ? ontick(task) : onuntick?.(task))}
     class="mt-px"
   />
-  <div class="min-w-0 pt-px">
-    <span class="leading-[1.45] [overflow-wrap:anywhere] {isOpen ? '' : 'text-muted line-through'}">
-      {task.title}
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_tabindex -- Enter is handled; the title may hold links, so it is not a button element -->
+  <div
+    class="min-w-0 cursor-pointer pt-px outline-none focus-visible:rounded-sm focus-visible:shadow-[0_0_0_2px_var(--ring)]"
+    role="button"
+    tabindex="0"
+    aria-label="Open {plainTitle(task.title)}"
+    onclick={(e) => !window.getSelection()?.toString() && !(e.target as Element).closest('a') && openSheet()}
+    onkeydown={(e) => e.key === 'Enter' && e.target === e.currentTarget && openSheet()}
+  >
+    <span
+      class="leading-[1.45] [overflow-wrap:anywhere] {isOpen ? '' : wont ? 'text-faint line-through' : 'text-muted line-through'}"
+    >
+      <MarkdownInline source={task.title} />
     </span>
-    {#if showDate || showTime || closed || repeat || occurrence}
+    {#if preview}
+      <div class="mt-px truncate text-[0.78rem] leading-[1.4] text-faint">{preview}</div>
+    {/if}
+    {#if showDate || showTime || closed || repeat || occurrence || steps || task.comment_count > 0}
       <div class="mt-px flex flex-wrap items-center gap-x-2.5 text-xs text-faint">
         {#if showDate && task.due_date}
           <span
@@ -159,10 +245,22 @@
           <span class="inline-flex items-center gap-1"><Repeat class="size-3" />{repeatLabel(repeat)}</span>
         {/if}
         {#if closed}
-          <span class="inline-flex items-center gap-1"><Check class="size-3" />{closed}</span>
+          <span class="inline-flex items-center gap-1">
+            {#if wont}<CircleX class="size-3" />Won’t do · {closed}{:else}<Check class="size-3" />{closed}{/if}
+          </span>
         {/if}
         {#if occurrence}
           <span class="inline-flex items-center gap-1"><Repeat class="size-3" />occurrence</span>
+        {/if}
+        {#if steps}
+          <span class="inline-flex items-center gap-1 tabular-nums" title="Checklist">
+            <ListChecks class="size-3" />{steps.done}/{steps.total}
+          </span>
+        {/if}
+        {#if task.comment_count > 0}
+          <span class="inline-flex items-center gap-1 tabular-nums" title="Comments">
+            <MessageSquare class="size-3" />{task.comment_count}
+          </span>
         {/if}
       </div>
     {/if}
@@ -203,6 +301,14 @@
 </div>
 
 <Menu bind:open={menuOpen} anchor={menuAnchor} {items} label="Task actions" returnFocus={row} />
+
+<PriorityMenu
+  bind:open={priorityOpen}
+  anchor={more ?? row}
+  current={task.priority}
+  returnFocus={row}
+  onpick={(p) => void setTaskPriority(task, p)}
+/>
 
 <ListPicker
   bind:open={pickerOpen}
