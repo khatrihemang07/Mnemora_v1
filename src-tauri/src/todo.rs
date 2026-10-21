@@ -272,12 +272,17 @@ pub fn todo_task_set_priority(
     mnemora_todo::set_priority(&mut lock(&state.db), &id, priority)
 }
 
-/// Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. A repeating Task
-/// is refused (it is skipped instead). Undo is `todo_task_reopen`. Records a `tick` change.
+/// Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. On a repeating
+/// Task it is a Skip instead (the next date, Undo is `todo_tasks_restore_when`). Undo of a plain
+/// Won't do is `todo_task_reopen`. Records a `tick` change either way.
 #[tauri::command]
 #[specta::specta]
-pub fn todo_task_wont_do(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
-    mnemora_todo::wont_do(&mut lock(&state.db), &id)
+pub fn todo_task_wont_do(
+    state: State<'_, AppState>,
+    id: String,
+    local: LocalNow,
+) -> Result<Task, AppError> {
+    mnemora_todo::wont_do(&mut lock(&state.db), &id, &local)
 }
 
 /// Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task

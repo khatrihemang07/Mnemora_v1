@@ -304,7 +304,7 @@ function run(c: Case) {
           mock.handle('todo_list_set_group', { id: list, groupBy: step.group_by });
           break;
         default:
-          mock.handle(`todo_task_${step.op}`, { id });
+          mock.handle(`todo_task_${step.op}`, { id, local: clock(step) });
       }
       results.push('ok');
     } catch (e) {

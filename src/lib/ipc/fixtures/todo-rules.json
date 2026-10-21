@@ -2997,7 +2997,7 @@
     },
     {
       "rule": "wont.refused",
-      "name": "Won't do needs an open, non-repeating Task",
+      "name": "Won't do needs an open Task, and on a repeating Task it skips to the next date",
       "steps": [
         {
           "op": "create",
@@ -3036,7 +3036,8 @@
         }
       ],
       "expect": {
-        "results": ["ok", "ok", "validation", "ok", "ok", "validation", "not_found"],
+        "results": ["ok", "ok", "validation", "ok", "ok", "ok", "not_found"],
+        "dues": [["r", "2026-10-22", null]],
         "wont": []
       }
     },

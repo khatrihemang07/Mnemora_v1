@@ -189,8 +189,15 @@ export async function setTaskWhen(
 export const dateTaskToday = (task: Task): Promise<void> =>
   setTaskWhen(task, todoClock.today, task.due_time, taskRepeat(task));
 
-/** "Skip to ‹date›": a repeating Task moves to its next date and records no occurrence. Undo moves it back. */
-export async function skipRepeating(task: Task): Promise<void> {
+/**
+ * "Skip to ‹date›": a repeating Task moves to its next date and records no occurrence. Undo moves
+ * it back. `run` is the command that does it: Skip itself, or Won't do (which Rust turns into a
+ * Skip for a repeating Task).
+ */
+export async function skipRepeating(
+  task: Task,
+  run: (id: string) => Promise<Task> = skipTask,
+): Promise<void> {
   const before: DueChange = {
     id: task.id,
     due_date: task.due_date,
@@ -199,7 +206,7 @@ export async function skipRepeating(task: Task): Promise<void> {
   };
   let after: Task;
   try {
-    after = await skipTask(task.id);
+    after = await run(task.id);
   } catch (e) {
     notifyError(e instanceof IpcError ? e.message : "Couldn't skip the Task");
     return;
@@ -256,13 +263,14 @@ export async function setTaskPriority(task: Task, priority: number): Promise<voi
 }
 
 /**
- * Won't do: the Task joins Done with a ⊗ and Undo reopens it. On a repeating Task it is Skip
- * (the next date, no occurrence recorded).
+ * Won't do: the Task joins Done with a ⊗ and Undo reopens it. Rust owns the rule: on a repeating
+ * Task the same command is a Skip (the next date, no occurrence recorded), so the toast and its
+ * Undo follow `repeat_freq` only to say and undo what happened.
  */
 export async function wontDoTask(task: Task): Promise<void> {
   if (task.state !== 'open') return;
   if (task.repeat_freq !== null) {
-    await skipRepeating(task);
+    await skipRepeating(task, wontDo);
     return;
   }
   removeCachedTask(task.id);

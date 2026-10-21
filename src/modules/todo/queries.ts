@@ -281,9 +281,9 @@ export function setPriority(id: string, priority: number): Promise<Task> {
   return unwrap(commands.todoTaskSetPriority(id, priority));
 }
 
-/** Marks an open, non-repeating Task Won't do. */
+/** Marks an open Task Won't do; on a repeating Task Rust skips it to the next date instead. */
 export function wontDo(id: string): Promise<Task> {
-  return unwrap(commands.todoTaskWontDo(id));
+  return unwrap(commands.todoTaskWontDo(id, todoClock.local()));
 }
 
 /** Deletes a Task; `restoreTask` is Undo. */

@@ -195,7 +195,10 @@ fn wont_do_closes_the_task_into_done_without_counting_as_done() {
     let a = dated(&app, "a", TODAY, None);
     let b = dated(&app, "b", TODAY, None);
     let wont: Value = app
-        .invoke("todo_task_wont_do", json!({ "id": a["id"] }))
+        .invoke(
+            "todo_task_wont_do",
+            json!({ "id": a["id"], "local": local(TODAY) }),
+        )
         .unwrap();
     assert_eq!(wont["state"], "wont");
     assert!(wont["closed_at"].as_i64().is_some());
@@ -240,7 +243,10 @@ fn wont_do_is_a_tick_that_reopening_undoes() {
     let app = TestApp::new();
     let a = create(&app, "a");
     let before = log_len(&app);
-    app.invoke::<Value>("todo_task_wont_do", json!({ "id": a["id"] }))
+    app.invoke::<Value>(
+        "todo_task_wont_do",
+        json!({ "id": a["id"], "local": local(TODAY) }),
+    )
         .unwrap();
     let back: Value = app
         .invoke("todo_task_reopen", json!({ "id": a["id"] }))
@@ -260,30 +266,50 @@ fn wont_do_is_a_tick_that_reopening_undoes() {
 }
 
 #[test]
-fn wont_do_is_refused_for_a_closed_a_repeating_and_an_unknown_task() {
+fn wont_do_is_refused_for_a_closed_and_an_unknown_task() {
     let app = TestApp::new();
     let a = create(&app, "a");
     complete(&app, &a).unwrap();
-    let wont = |task: &Value| app.invoke::<Value>("todo_task_wont_do", json!({ "id": task["id"] }));
+    let wont = |task: &Value| {
+        app.invoke::<Value>(
+            "todo_task_wont_do",
+            json!({ "id": task["id"], "local": local(TODAY) }),
+        )
+    };
     assert_eq!(wont(&a).unwrap_err()["code"], "validation");
     assert_eq!(
         wont(&json!({ "id": "nope" })).unwrap_err()["code"],
         "not_found"
     );
 
+}
+
+#[test]
+fn wont_do_on_a_repeating_task_skips_it_in_rust() {
+    let app = TestApp::new();
     let r = dated(&app, "r", TODAY, None);
     app.invoke::<Value>(
         "todo_task_set_when",
         json!({ "id": r["id"], "date": TODAY, "time": null, "local": local(TODAY),
-                "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" } }),
+                "repeat": { "freq": "day", "every": 3, "days": null, "mode": "fixed" } }),
     )
     .unwrap();
+    let before = log_len(&app);
+    let skipped: Value = app
+        .invoke(
+            "todo_task_wont_do",
+            json!({ "id": r["id"], "local": local(TODAY) }),
+        )
+        .unwrap();
+    assert_eq!(skipped["state"], "open");
+    assert_eq!(skipped["due_date"], "2026-10-24");
+    assert_eq!(get(&app, &r)["due_date"], "2026-10-24");
     assert_eq!(
-        wont(&r).unwrap_err()["code"],
-        "validation",
-        "a repeating Task is skipped"
+        log(&app)[before..],
+        [("tick".to_owned(), "todo_task".to_owned())],
+        "the same record a skip writes"
     );
-    assert_eq!(get(&app, &r)["state"], "open");
+    assert_eq!(history(&app, &r)[0], "Skipped (Wed → Sat)");
 }
 
 // ---------------------------------------------------------------- Open steps
@@ -804,7 +830,10 @@ fn history_reads_the_change_log_as_lines_newest_first() {
     .unwrap();
     update(&app, &a, "Secret plan 2", "", "sheet-1");
     update(&app, &a, "Secret plan 2", "details", "sheet-1");
-    app.invoke::<Value>("todo_task_wont_do", json!({ "id": a["id"] }))
+    app.invoke::<Value>(
+        "todo_task_wont_do",
+        json!({ "id": a["id"], "local": local(TODAY) }),
+    )
         .unwrap();
     app.invoke::<Value>("todo_task_reopen", json!({ "id": a["id"] }))
         .unwrap();
