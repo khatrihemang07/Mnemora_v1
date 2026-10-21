@@ -11,6 +11,11 @@ const TRIM_KEY_ZEROS: &str = "UPDATE todo_tasks SET sort_key = rtrim(sort_key, '
      UPDATE todo_lists SET sort_key = rtrim(sort_key, '0')
          WHERE sort_key LIKE '%0' AND rtrim(sort_key, '0') <> '';";
 
+/// The distinct indexed words of both search indexes, for typo-tolerant search.
+const SEARCH_VOCABULARY: &str =
+    "CREATE VIRTUAL TABLE todo_tasks_fts_vocab USING fts5vocab('todo_tasks_fts', 'row');
+     CREATE VIRTUAL TABLE todo_comments_fts_vocab USING fts5vocab('todo_comments_fts', 'row');";
+
 pub fn all() -> Migrations<'static> {
     Migrations::new(vec![
         // Dates are `YYYY-MM-DD` and times `HH:MM`, both floating local. `sort_key` is text that
@@ -118,11 +123,6 @@ pub fn all() -> Migrations<'static> {
              END;",
         ),
         M::up(TRIM_KEY_ZEROS),
-        // The distinct indexed words, for typo-tolerant search.
-        M::up(
-            "CREATE VIRTUAL TABLE todo_tasks_fts_vocab USING fts5vocab('todo_tasks_fts', 'row');
-             CREATE VIRTUAL TABLE todo_comments_fts_vocab
-                 USING fts5vocab('todo_comments_fts', 'row');",
-        ),
+        M::up(SEARCH_VOCABULARY),
     ])
 }

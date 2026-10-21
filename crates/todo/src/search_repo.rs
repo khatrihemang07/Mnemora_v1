@@ -31,7 +31,8 @@ pub fn search(
         HIT.replace("{}", "?1")
     );
     if excluding.is_some() {
-        sql.push_str(&format!(" AND NOT {}", HIT.replace("{}", "?2")));
+        sql.push_str(" AND NOT ");
+        sql.push_str(&HIT.replace("{}", "?2"));
     }
     sql.push_str(
         " ORDER BY (state <> 'open'), CASE WHEN state = 'open' THEN sort_key END,

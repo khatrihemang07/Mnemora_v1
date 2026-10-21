@@ -21,7 +21,7 @@ const MAX_SIMILAR: usize = 100;
 /// tolerance, so far-off lengths are never fetched.
 const MAX_TOLERANCE: usize = 2;
 
-/// Where a TaskHit's snippet line comes from.
+/// Where a `TaskHit`'s snippet line comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum SnippetSource {
@@ -66,15 +66,14 @@ fn hit(conn: &Connection, task: Task, matcher: &Matcher) -> AppResult<TaskHit> {
         .lines()
         .map(plain_text)
         .find(|line| matcher.matches(line));
-    let (line, snippet_source) = match from_notes {
-        Some(line) => (Some(line), Some(SnippetSource::Notes)),
-        None => {
-            let comment = comment_repo::for_task(conn, &task.id)?
-                .into_iter()
-                .map(|c| plain_text(&c.body))
-                .find(|body| matcher.matches(body));
-            (comment, Some(SnippetSource::Comment))
-        }
+    let (line, snippet_source) = if let Some(line) = from_notes {
+        (Some(line), Some(SnippetSource::Notes))
+    } else {
+        let comment = comment_repo::for_task(conn, &task.id)?
+            .into_iter()
+            .map(|c| plain_text(&c.body))
+            .find(|body| matcher.matches(body));
+        (comment, Some(SnippetSource::Comment))
     };
     let (snippet, snippet_source) = match line {
         Some(line) => (window(&line, matcher), snippet_source),
