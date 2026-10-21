@@ -28,6 +28,7 @@ use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tempfile::TempDir;
 
 use crate::state::{AppState, DeviceStore, lock};
+use crate::widget::signal::WidgetSignal;
 use crate::{SettingsChangedEvent, commands, journal, modules, settings_store, todo};
 
 /// A mock Tauri app with every registered command, on an in-memory database migrated with every
@@ -61,6 +62,7 @@ impl TestApp {
             )),
             paths,
             log: LogHandle::detached(),
+            widgets: WidgetSignal::silent(),
         };
 
         let app = mock_builder()
@@ -109,6 +111,16 @@ impl TestApp {
             serde_json::json!({ "changes": [{ "key": key, "value": value }] }),
         )
         .unwrap();
+    }
+
+    /// The app's handle: what the Todo widget's bridge uses when the app is alive.
+    pub fn handle(&self) -> tauri::AppHandle<MockRuntime> {
+        self.app.handle().clone()
+    }
+
+    /// How many times the Todo widget has been told that Todo changed.
+    pub fn widget_signals(&self) -> u32 {
+        self.app.state::<AppState>().widgets.sent()
     }
 
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).

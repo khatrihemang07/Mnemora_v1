@@ -95,6 +95,9 @@ mod todo_order_tests;
 mod todo_search_tests;
 #[cfg(test)]
 mod todo_sheet_tests;
+mod widget;
+#[cfg(test)]
+mod widget_tests;
 #[cfg(desktop)]
 mod window_state;
 
@@ -223,8 +226,11 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         device: Arc::new(DeviceStore::new(paths.device_file(), device.clone())),
         paths,
         log,
+        widgets: widget::signal::WidgetSignal::platform(),
     };
     app.manage(state);
+    #[cfg(target_os = "android")]
+    widget::register_app(app.handle().clone());
 
     create_main_window(app, &snapshot.values, &device)?;
     Ok(())

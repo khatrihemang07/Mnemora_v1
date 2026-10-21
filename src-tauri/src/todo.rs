@@ -9,7 +9,23 @@ use mnemora_todo::{
 };
 use tauri::State;
 
+use mnemora_core::db::Connection;
+
 use crate::state::{AppState, lock};
+
+/// Runs a Todo write on the database and, if it succeeded, tells the Todo widget to redraw. Every
+/// Todo write command (Tasks and Lists, not Comments or Settings) goes through here, so the widget
+/// cannot be forgotten by the next command someone adds.
+fn write<T>(
+    state: &AppState,
+    job: impl FnOnce(&mut Connection) -> Result<T, AppError>,
+) -> Result<T, AppError> {
+    let result = job(&mut lock(&state.db));
+    if result.is_ok() {
+        state.widgets.todo_changed();
+    }
+    result
+}
 
 /// The Inbox: open Tasks that belong to no List, grouped and sorted as the Preferences say, then
 /// "No date, in a List" for the undated Tasks that sit in a List (not counted in the badge).
@@ -33,13 +49,15 @@ pub fn todo_task_create(
     when: Option<NewWhen>,
     details: Option<NewTaskDetails>,
 ) -> Result<Task, AppError> {
-    mnemora_todo::create_task(
-        &mut lock(&state.db),
-        &title,
-        list_id.as_deref(),
-        when.as_ref(),
-        details.as_ref(),
-    )
+    write(&state, |db| {
+        mnemora_todo::create_task(
+            db,
+            &title,
+            list_id.as_deref(),
+            when.as_ref(),
+            details.as_ref(),
+        )
+    })
 }
 
 /// Reads typed text as the capture box does: dates, times, Repeats, `#List` and `p1`-`p4`, with
@@ -62,7 +80,9 @@ pub fn todo_task_quick_edit(
     edit: QuickEdit,
     local: LocalNow,
 ) -> Result<Task, AppError> {
-    mnemora_todo::quick_edit(&mut lock(&state.db), &id, &edit, &local, false)
+    write(&state, |db| {
+        mnemora_todo::quick_edit(db, &id, &edit, &local, false)
+    })
 }
 
 /// Undo for a Quick edit: puts the old values back, a past date included.
@@ -74,7 +94,9 @@ pub fn todo_task_quick_edit_undo(
     edit: QuickEdit,
     local: LocalNow,
 ) -> Result<Task, AppError> {
-    mnemora_todo::quick_edit(&mut lock(&state.db), &id, &edit, &local, true)
+    write(&state, |db| {
+        mnemora_todo::quick_edit(db, &id, &edit, &local, true)
+    })
 }
 
 /// Sets an open Task's Due date, time and Repeat, or clears them when all are none. A time
@@ -93,14 +115,16 @@ pub fn todo_task_set_when(
     repeat: Option<RepeatRule>,
     local: LocalNow,
 ) -> Result<Task, AppError> {
-    mnemora_todo::set_when(
-        &mut lock(&state.db),
-        &id,
-        date.as_deref(),
-        time.as_deref(),
-        repeat.as_ref(),
-        &local,
-    )
+    write(&state, |db| {
+        mnemora_todo::set_when(
+            db,
+            &id,
+            date.as_deref(),
+            time.as_deref(),
+            repeat.as_ref(),
+            &local,
+        )
+    })
 }
 
 /// Puts Due dates and times back as they were: Undo for a When change, past dates included.
@@ -111,7 +135,7 @@ pub fn todo_tasks_restore_when(
     state: State<'_, AppState>,
     changes: Vec<DueChange>,
 ) -> Result<Vec<Task>, AppError> {
-    mnemora_todo::restore_when(&mut lock(&state.db), &changes)
+    write(&state, |db| mnemora_todo::restore_when(db, &changes))
 }
 
 /// Moves every Overdue Task to `date` (today or later), keeping times. Returns what
@@ -123,7 +147,7 @@ pub fn todo_tasks_move_overdue(
     date: String,
     local: LocalNow,
 ) -> Result<OverdueMove, AppError> {
-    mnemora_todo::move_overdue(&mut lock(&state.db), &date, &local)
+    write(&state, |db| mnemora_todo::move_overdue(db, &date, &local))
 }
 
 /// Today: Overdue first, then today's Tasks (timed by time, then manual order), then the Tasks
@@ -177,7 +201,7 @@ pub fn todo_task_complete(
     id: String,
     local: LocalNow,
 ) -> Result<Completion, AppError> {
-    mnemora_todo::complete_task(&mut lock(&state.db), &id, &local)
+    write(&state, |db| mnemora_todo::complete_task(db, &id, &local))
 }
 
 /// Moves a repeating Task to its next date without recording anything done. Undo is
@@ -189,7 +213,7 @@ pub fn todo_task_skip(
     id: String,
     local: LocalNow,
 ) -> Result<Task, AppError> {
-    mnemora_todo::skip_task(&mut lock(&state.db), &id, &local)
+    write(&state, |db| mnemora_todo::skip_task(db, &id, &local))
 }
 
 /// What has been done, a page of days at a time, newest day first. Pass the `next_cursor` of the
@@ -210,7 +234,7 @@ pub fn todo_done(
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_reopen(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
-    mnemora_todo::reopen_task(&mut lock(&state.db), &id)
+    write(&state, |db| mnemora_todo::reopen_task(db, &id))
 }
 
 /// Puts a Task in a List, or in the Inbox when `list_id` is none. Undo moves it back. Records
@@ -222,7 +246,9 @@ pub fn todo_task_move(
     id: String,
     list_id: Option<String>,
 ) -> Result<Task, AppError> {
-    mnemora_todo::move_task(&mut lock(&state.db), &id, list_id.as_deref())
+    write(&state, |db| {
+        mnemora_todo::move_task(db, &id, list_id.as_deref())
+    })
 }
 
 /// One Task in any state, with its Comment count: what the Task sheet opens.
@@ -258,7 +284,9 @@ pub fn todo_task_update(
     notes: String,
     session_id: String,
 ) -> Result<Task, AppError> {
-    mnemora_todo::update_task(&mut lock(&state.db), &id, &title, &notes, &session_id)
+    write(&state, |db| {
+        mnemora_todo::update_task(db, &id, &title, &notes, &session_id)
+    })
 }
 
 /// Sets an open Task's Priority: 1 (highest) to 4 (none, the default). Records an `update` change.
@@ -269,7 +297,7 @@ pub fn todo_task_set_priority(
     id: String,
     priority: u32,
 ) -> Result<Task, AppError> {
-    mnemora_todo::set_priority(&mut lock(&state.db), &id, priority)
+    write(&state, |db| mnemora_todo::set_priority(db, &id, priority))
 }
 
 /// Marks an open Task Won't do: it joins Done with a ⊗ and never counts as done. On a repeating
@@ -282,7 +310,7 @@ pub fn todo_task_wont_do(
     id: String,
     local: LocalNow,
 ) -> Result<Task, AppError> {
-    mnemora_todo::wont_do(&mut lock(&state.db), &id, &local)
+    write(&state, |db| mnemora_todo::wont_do(db, &id, &local))
 }
 
 /// Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
@@ -290,7 +318,7 @@ pub fn todo_task_wont_do(
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
-    mnemora_todo::delete_task(&mut lock(&state.db), &id)
+    write(&state, |db| mnemora_todo::delete_task(db, &id))
 }
 
 /// Undoes `todo_task_delete`. A Task whose List was deleted meanwhile returns to the Inbox.
@@ -298,7 +326,7 @@ pub fn todo_task_delete(state: State<'_, AppState>, id: String) -> Result<(), Ap
 #[tauri::command]
 #[specta::specta]
 pub fn todo_task_restore(state: State<'_, AppState>, id: String) -> Result<Task, AppError> {
-    mnemora_todo::restore_task(&mut lock(&state.db), &id)
+    write(&state, |db| mnemora_todo::restore_task(db, &id))
 }
 
 /// A Task's Comments, oldest first.
@@ -401,14 +429,16 @@ pub fn todo_task_reorder(
     target: Vec<GroupKey>,
     local: LocalNow,
 ) -> Result<Task, AppError> {
-    mnemora_todo::reorder_task(
-        &mut lock(&state.db),
-        &id,
-        before.as_deref(),
-        after.as_deref(),
-        &target,
-        &local,
-    )
+    write(&state, |db| {
+        mnemora_todo::reorder_task(
+            db,
+            &id,
+            before.as_deref(),
+            after.as_deref(),
+            &target,
+            &local,
+        )
+    })
 }
 
 /// Moves a List between two neighbours of the manual List order (`before` above, `after` below).
@@ -420,12 +450,9 @@ pub fn todo_list_reorder(
     before: Option<String>,
     after: Option<String>,
 ) -> Result<TodoList, AppError> {
-    mnemora_todo::reorder_list(
-        &mut lock(&state.db),
-        &id,
-        before.as_deref(),
-        after.as_deref(),
-    )
+    write(&state, |db| {
+        mnemora_todo::reorder_list(db, &id, before.as_deref(), after.as_deref())
+    })
 }
 
 /// Sets how a List's page sorts the Tasks inside each group.
@@ -436,7 +463,7 @@ pub fn todo_list_set_sort(
     id: String,
     sort: TaskSort,
 ) -> Result<TodoList, AppError> {
-    mnemora_todo::set_list_sort(&mut lock(&state.db), &id, sort)
+    write(&state, |db| mnemora_todo::set_list_sort(db, &id, sort))
 }
 
 /// Sets how a List's page groups its Tasks: none, priority or due.
@@ -447,7 +474,7 @@ pub fn todo_list_set_group(
     id: String,
     group_by: GroupBy,
 ) -> Result<TodoList, AppError> {
-    mnemora_todo::set_list_group(&mut lock(&state.db), &id, group_by)
+    write(&state, |db| mnemora_todo::set_list_group(db, &id, group_by))
 }
 
 /// Adds a List at the bottom. Names are unique ignoring case and accents, and at most 60
@@ -455,7 +482,7 @@ pub fn todo_list_set_group(
 #[tauri::command]
 #[specta::specta]
 pub fn todo_list_create(state: State<'_, AppState>, name: String) -> Result<TodoList, AppError> {
-    mnemora_todo::create_list(&mut lock(&state.db), &name)
+    write(&state, |db| mnemora_todo::create_list(db, &name))
 }
 
 /// Renames a List, under the same rules as creating one.
@@ -466,7 +493,7 @@ pub fn todo_list_rename(
     id: String,
     name: String,
 ) -> Result<TodoList, AppError> {
-    mnemora_todo::rename_list(&mut lock(&state.db), &id, &name)
+    write(&state, |db| mnemora_todo::rename_list(db, &id, &name))
 }
 
 /// Sets a List's emoji; none or blank goes back to the neutral icon.
@@ -477,7 +504,9 @@ pub fn todo_list_set_emoji(
     id: String,
     emoji: Option<String>,
 ) -> Result<TodoList, AppError> {
-    mnemora_todo::set_list_emoji(&mut lock(&state.db), &id, emoji.as_deref())
+    write(&state, |db| {
+        mnemora_todo::set_list_emoji(db, &id, emoji.as_deref())
+    })
 }
 
 /// Deletes a List. Its Tasks are deleted too or moved to the Inbox or another List, as `choice`
@@ -489,7 +518,7 @@ pub fn todo_list_delete(
     id: String,
     choice: DeleteChoice,
 ) -> Result<ListDeletion, AppError> {
-    mnemora_todo::delete_list(&mut lock(&state.db), &id, &choice)
+    write(&state, |db| mnemora_todo::delete_list(db, &id, &choice))
 }
 
 /// Undoes `todo_list_delete`: the List, its deleted Tasks and its moved Tasks all return.
@@ -499,7 +528,7 @@ pub fn todo_list_restore(
     state: State<'_, AppState>,
     deletion: ListDeletion,
 ) -> Result<TodoList, AppError> {
-    mnemora_todo::restore_list(&mut lock(&state.db), &deletion)
+    write(&state, |db| mnemora_todo::restore_list(db, &deletion))
 }
 
 #[cfg(test)]
