@@ -1,13 +1,16 @@
-import { queryOptions } from '@tanstack/svelte-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
 import {
   type AllView,
+  type Completion,
   commands,
   type DeleteChoice,
+  type DoneView,
   type DueChange,
   type InboxView,
   type ListDeletion,
   type ListView,
   type OverdueMove,
+  type RepeatRule,
   type Task,
   type TodayView,
   type TodoList,
@@ -28,6 +31,8 @@ export const todoKeys = {
   /** Keyed by the day, so the view fetches afresh when midnight passes. */
   today: (day: string) => ['todo', 'today', day] as const,
   upcoming: (day: string) => ['todo', 'upcoming', day] as const,
+  /** Keyed by the day, so a Task done after midnight lands under the right heading. */
+  done: (day: string) => ['todo', 'done', day] as const,
   dayCounts: (from: string, to: string, exclude: string | null) =>
     ['todo', 'day-counts', from, to, exclude] as const,
 };
@@ -72,6 +77,19 @@ export const upcomingQuery = (day: string) =>
     queryFn: () => unwrap(commands.todoUpcoming(todoClock.local())),
   });
 
+/** Days of Done fetched per page. */
+const DONE_PAGE_DAYS = 14;
+
+/** Done: whole days, newest first, a page at a time as you scroll (`before` is the last day seen). */
+export const doneQuery = (day: string) =>
+  infiniteQueryOptions({
+    queryKey: todoKeys.done(day),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }): Promise<DoneView> =>
+      unwrap(commands.todoDone(pageParam, DONE_PAGE_DAYS, todoClock.local())),
+    getNextPageParam: (last) => last.next_cursor,
+  });
+
 /** Open Tasks per date from `from` to `to`, leaving out `exclude`: the When picker's dots. */
 export const dayCountsQuery = (from: string, to: string, exclude: string | null) =>
   queryOptions({
@@ -96,9 +114,22 @@ export function createTask(
   return unwrap(commands.todoTaskCreate(title, listId, when));
 }
 
-/** Sets a Task's date and time, or clears them. Rust refuses past dates. */
-export function setWhen(id: string, date: string | null, time: string | null): Promise<Task> {
-  return unwrap(commands.todoTaskSetWhen(id, date, time, todoClock.local()));
+/**
+ * Sets a Task's date, time and Repeat, or clears them. Rust refuses past dates and dates a
+ * Repeat-only pick (no date) to the first matching day.
+ */
+export function setWhen(
+  id: string,
+  date: string | null,
+  time: string | null,
+  repeat: RepeatRule | null,
+): Promise<Task> {
+  return unwrap(commands.todoTaskSetWhen(id, date, time, repeat, todoClock.local()));
+}
+
+/** Moves a repeating Task to its next date without recording anything done. */
+export function skipTask(id: string): Promise<Task> {
+  return unwrap(commands.todoTaskSkip(id, todoClock.local()));
 }
 
 /** Puts dates and times back as they were (Undo), past dates included. */
@@ -111,8 +142,9 @@ export function moveOverdue(date: string): Promise<OverdueMove> {
   return unwrap(commands.todoTasksMoveOverdue(date, todoClock.local()));
 }
 
-export function completeTask(id: string): Promise<Task> {
-  return unwrap(commands.todoTaskComplete(id));
+/** Ticks a Task. A repeating one stays open on its next date and the result holds its copy. */
+export function completeTask(id: string): Promise<Completion> {
+  return unwrap(commands.todoTaskComplete(id, todoClock.local()));
 }
 
 export function reopenTask(id: string): Promise<Task> {

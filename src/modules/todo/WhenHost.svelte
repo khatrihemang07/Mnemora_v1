@@ -26,7 +26,7 @@
   let {
     open = $bindable(),
     anchor,
-    value = { date: null, time: null },
+    value = { date: null, time: null, repeat: null },
     exclude = null,
     title = 'When',
     dateOnly = false,
@@ -53,6 +53,7 @@
   timeFormat={todoPrefs.timeFormat}
   counts={dots}
   showTime={!dateOnly}
+  showRepeat={!dateOnly}
   allowClear={!dateOnly}
   {restoreFocus}
   {onchange}
