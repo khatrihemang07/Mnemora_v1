@@ -63,6 +63,7 @@
   import { taskSheet } from './task-sheet.svelte';
   import { nextText } from './dates';
   import { priorityTone, PRIORITY_NAMES } from './tasks';
+  import { understoodMarks } from './understood';
   import WhenHost from './WhenHost.svelte';
 
   let { id }: { id: string } = $props();
@@ -70,6 +71,16 @@
   const query = createQuery(() => taskQuery(id));
   const sidebar = createQuery(() => listsQuery());
   const stored = $derived(query.data);
+  // The words capture understood in the title are underlined while the fields still match them.
+  const marks = $derived(
+    stored?.understood
+      ? understoodMarks(stored, {
+          today: todoClock.today,
+          timeFormat: todoPrefs.timeFormat,
+          listName: (lid) => sidebar.data?.lists.find((e) => e.list.id === lid)?.list.name ?? null,
+        })
+      : [],
+  );
   const list = $derived(
     stored?.list_id ? (sidebar.data?.lists.find((e) => e.list.id === stored.list_id)?.list ?? null) : null,
   );
@@ -328,7 +339,7 @@
             }
           }}
         >
-          <MarkdownInline source={title} />
+          <MarkdownInline source={title} {marks} />
         </div>
       {/if}
       <IconButton icon={X} label="Close" size="sm" onclick={() => taskSheet.close()} class="-mr-1" />

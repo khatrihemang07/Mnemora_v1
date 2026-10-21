@@ -11,8 +11,11 @@ import {
   type ListDeletion,
   type ListView,
   type OverdueMove,
+  type Parsed,
+  type QuickEdit,
   type RepeatRule,
   type Task,
+  type TextRange,
   type TodayView,
   type TodoList,
   type UpcomingView,
@@ -20,6 +23,7 @@ import {
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
 import { todoClock } from './clock.svelte';
+import { todoPrefs } from './prefs.svelte';
 import { withoutTask, withoutTaskInAll, withoutTaskInToday, withoutTaskInUpcoming } from './tasks';
 
 export const todoKeys = {
@@ -127,17 +131,77 @@ export function invalidateTodo(): Promise<void> {
   return queryClient.invalidateQueries({ queryKey: todoKeys.all });
 }
 
+/** What capture gives a new Task besides its title. */
+export interface NewTask {
+  title: string;
+  /** The List, or none for the Inbox. */
+  listId?: string | null;
+  /** Due date, `YYYY-MM-DD`. */
+  date?: string | null;
+  /** Due time, `HH:MM`. */
+  time?: string | null;
+  repeat?: RepeatRule | null;
+  /** 1 to 4; none or 4 is no Priority. */
+  priority?: number | null;
+  notes?: string;
+  /** The record of understood words, as JSON. */
+  understood?: string | null;
+}
+
 /**
- * Adds a Task at the bottom of a List, or of the Inbox when `listId` is null. With `date` it is
- * due that day (Today and an Upcoming day add this way).
+ * Adds a Task at the bottom of a List, or of the Inbox when there is no `listId`. With a date it
+ * is due that day (Today and an Upcoming day add this way); a time alone or a Repeat alone is
+ * settled by Rust.
  */
-export function createTask(
-  title: string,
-  listId: string | null = null,
-  date: string | null = null,
-): Promise<Task> {
-  const when = date === null ? null : { date, time: null, local: todoClock.local() };
-  return unwrap(commands.todoTaskCreate(title, listId, when));
+export function createTask(task: NewTask): Promise<Task> {
+  const repeat = task.repeat ?? null;
+  const date = task.date ?? null;
+  const time = task.time ?? null;
+  const when =
+    date === null && time === null && repeat === null
+      ? null
+      : { date, time, local: todoClock.local() };
+  const priority = task.priority ?? null;
+  const details = {
+    notes: task.notes ?? '',
+    priority: priority !== null && priority < 4 ? priority : null,
+    repeat,
+    understood: task.understood ?? null,
+  };
+  return unwrap(commands.todoTaskCreate(task.title, task.listId ?? null, when, details));
+}
+
+/**
+ * Reads typed text for the capture box. `frozen` are stretches of an old title that must not be
+ * read again (Quick edit); `ignored` and `prefer` are the user's decisions about words.
+ */
+export function parseCapture(
+  text: string,
+  words: { ignored: string[]; prefer: Record<string, string> },
+  frozen: TextRange[] = [],
+  at?: { today: string; now: string; weekStart: string },
+): Promise<Parsed> {
+  const local = todoClock.local();
+  return unwrap(
+    commands.todoParse({
+      text,
+      ignored: words.ignored,
+      prefer: words.prefer,
+      frozen,
+      today: at?.today ?? local.today,
+      now: at?.now ?? local.now,
+      week_start: at?.weekStart ?? todoPrefs.weekStart,
+    }),
+  );
+}
+
+/** Saves a Quick edit; `quickEditUndo` puts the old values back. */
+export function quickEdit(id: string, edit: QuickEdit): Promise<Task> {
+  return unwrap(commands.todoTaskQuickEdit(id, edit, todoClock.local()));
+}
+
+export function quickEditUndo(id: string, edit: QuickEdit): Promise<Task> {
+  return unwrap(commands.todoTaskQuickEditUndo(id, edit, todoClock.local()));
 }
 
 /**

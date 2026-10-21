@@ -4,7 +4,7 @@
   with its date and time (Today teal, Overdue red; a time already behind us red), its Repeat, the
   Checklist progress "1/3" and the number of comments. Clicking the title (or Enter on it) opens the
   Task sheet. On hover (not on a phone) ☀ Today and 📅 When… sit beside ⋯. The menu (⋯, right-click,
-  long-press on a phone) holds Open, Quick edit (not built yet), When…, Priority…, Move to list…,
+  long-press on a phone) holds Open, Quick edit (E: the row becomes the capture box), When…, Priority…, Move to list…,
   Won't do (Skip to ‹date› on a repeating Task: it moves on and records nothing) and Delete. The
   keys 1 to 4 and ⇧Space act on the hovered or focused row. A done occurrence shows "↻ occurrence";
   a Won't do Task shows ⊗ and "Won't do" with the time. `hideDate` leaves the date out where the
@@ -36,6 +36,8 @@
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
   import { formatHm } from '../../lib/ui/when-time';
   import { nextDue, repeatLabel } from '../../lib/ui/when-repeat';
+  import { createQuery } from '@tanstack/svelte-query';
+  import CaptureBox from './CaptureBox.svelte';
   import { todoClock } from './clock.svelte';
   import { closedTime, isOverdue, nextText, rowDateLabel, taskRepeat, timePassed } from './dates';
   import ListGlyph from './ListGlyph.svelte';
@@ -52,9 +54,12 @@
     skipRepeating,
     wontDoTask,
   } from './task-actions';
+  import { quickEditing } from './quick-edit.svelte';
+  import { listsQuery } from './queries';
   import { taskRows } from './task-keys.svelte';
   import { taskSheet } from './task-sheet.svelte';
   import { priorityTone } from './tasks';
+  import { understoodMarks } from './understood';
   import WhenHost from './WhenHost.svelte';
 
   interface Props {
@@ -80,6 +85,21 @@
   $effect(() => taskRows.register(task));
 
   const isOpen = $derived(task.state === 'open');
+  const quickEditOpen = $derived(quickEditing.id === task.id && task.state === 'open');
+  // The words capture understood in the title are underlined while the fields still match them.
+  const sidebar = createQuery(() => ({
+    ...listsQuery(),
+    enabled: task.understood !== null && task.understood.includes('"list"'),
+  }));
+  const marks = $derived(
+    task.understood === null
+      ? []
+      : understoodMarks(task, {
+          today: todoClock.today,
+          timeFormat: todoPrefs.timeFormat,
+          listName: (id) => sidebar.data?.lists.find((e) => e.list.id === id)?.list.name ?? null,
+        }),
+  );
   const wont = $derived(task.state === 'wont');
   const preview = $derived(notePreview(task.notes));
   const steps = $derived(checklistProgress(task.notes));
@@ -112,8 +132,16 @@
       shortcut: '↵',
       onselect: () => taskSheet.open(task.id),
     },
-    // Quick edit arrives with the capture box; until then it is shown but not available.
-    ...(isOpen ? [{ label: 'Quick edit', icon: PencilLine, disabled: true, onselect: () => {} }] : []),
+    ...(isOpen
+      ? [
+          {
+            label: 'Quick edit',
+            icon: PencilLine,
+            shortcut: 'E',
+            onselect: afterMenu(() => quickEditing.start(task.id)),
+          },
+        ]
+      : []),
     ...(isOpen
       ? [
           {
@@ -184,6 +212,15 @@
     'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 phone:hidden -my-0.5';
 </script>
 
+{#if quickEditOpen}
+  <CaptureBox
+    mode="edit"
+    {task}
+    class="-mx-0.5 my-1"
+    onclose={() => quickEditing.stop()}
+    onsaved={() => quickEditing.stop()}
+  />
+{:else}
 <div
   bind:this={row}
   role="presentation"
@@ -218,7 +255,7 @@
     <span
       class="leading-[1.45] [overflow-wrap:anywhere] {isOpen ? '' : wont ? 'text-faint line-through' : 'text-muted line-through'}"
     >
-      <MarkdownInline source={task.title} />
+      <MarkdownInline source={task.title} {marks} />
     </span>
     {#if preview}
       <div class="mt-px truncate text-[0.78rem] leading-[1.4] text-faint">{preview}</div>
@@ -299,6 +336,7 @@
     />
   </div>
 </div>
+{/if}
 
 <Menu bind:open={menuOpen} anchor={menuAnchor} {items} label="Task actions" returnFocus={row} />
 

@@ -1,8 +1,8 @@
 <!--
   TodoPage: Todo's single route. The view (Inbox, Today, Upcoming, All, Done or a List) is held in
   Todo's own state, set from the sidebar tree; this shows the one that is current. The open Task's
-  sheet (`?task=‹id›`), the "steps still open" question and the Task keys live here too: 1 to 4 set
-  the Priority and ⇧Space marks Won't do (or skips a repeating Task) on the row under the pointer,
+  sheet (`?task=‹id›`), the "steps still open" question and the Task keys live here too: E starts a
+  Quick edit, 1 to 4 set the Priority and ⇧Space marks Won't do (or skips a repeating Task) on the row under the pointer,
   the focused row, or the open sheet's Task; they stay out of text fields, menus and Dialogs.
 -->
 <script lang="ts">
@@ -16,6 +16,7 @@
   import { todoNav } from './nav.svelte';
   import OpenStepsDialog from './OpenStepsDialog.svelte';
   import { followCoreSettings } from './prefs.svelte';
+  import { quickEditing, quickEditKey } from './quick-edit.svelte';
   import { setTaskPriority, wontDoTask } from './task-actions';
   import { inSheetScope, isTyping, priorityKey, taskRows, wontKey } from './task-keys.svelte';
   import TaskSheet from './TaskSheet.svelte';
@@ -42,6 +43,14 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (e.defaultPrevented) return;
+    if (quickEditKey(e) && taskSheet.id === null) {
+      const row = keyTarget(e);
+      if (row?.state === 'open') {
+        e.preventDefault();
+        quickEditing.start(row.id);
+      }
+      return;
+    }
     const priority = priorityKey(e);
     const wont = wontKey(e);
     if (priority === null && !wont) return;

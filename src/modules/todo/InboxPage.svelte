@@ -6,6 +6,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import NewTaskButton from './NewTaskButton.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { inboxQuery } from './queries';
   import TaskRows from './TaskRows.svelte';
@@ -14,7 +15,9 @@
   const inbox = createQuery(() => inboxQuery);
 </script>
 
-<PageHeader title="Inbox" icon={VIEW_ICONS.inbox} hue="--hue-todo" />
+<PageHeader title="Inbox" icon={VIEW_ICONS.inbox} hue="--hue-todo">
+  {#snippet actions()}<NewTaskButton />{/snippet}
+</PageHeader>
 <div class="mx-auto max-w-3xl">
   {#if inbox.isPending}
     <div class="flex flex-col gap-3 py-2">

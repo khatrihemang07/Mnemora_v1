@@ -1,3 +1,4 @@
+import { isTypingTarget } from '../../lib/bare-key';
 import type { Task } from '../../lib/ipc/bindings';
 
 /**
@@ -24,12 +25,7 @@ class TaskRows {
 export const taskRows = new TaskRows();
 
 /** Whether the key is going into a text field, where Todo's single-key shortcuts must stay out. */
-export function isTyping(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element &&
-    target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]') !== null
-  );
-}
+export const isTyping = isTypingTarget;
 
 /**
  * The Priority a plain 1 to 4 key means, or none: not with a modifier, not while typing, not

@@ -1,6 +1,6 @@
 <!--
   WhenHost: the When picker wired to Todo: today and the clock, the Week start and time format
-  Settings, and the dots, loaded for the weeks on show (leaving out `exclude`, the Task being
+  Settings, Rust's parser for the "Type a date" field, and the dots, loaded for the weeks on show (leaving out `exclude`, the Task being
   dated). The row hover icon, the row menu and Move all use it, so the picker works the same
   everywhere. `onchange` gets the next date and time.
 -->
@@ -10,6 +10,7 @@
   import { todoClock } from './clock.svelte';
   import { todoPrefs } from './prefs.svelte';
   import { dayCountsQuery } from './queries';
+  import { typedWhen } from './when-typed';
 
   interface Props {
     open: boolean;
@@ -51,6 +52,7 @@
   now={todoClock.hm}
   weekStart={todoPrefs.weekStart}
   timeFormat={todoPrefs.timeFormat}
+  parse={typedWhen}
   counts={dots}
   showTime={!dateOnly}
   showRepeat={!dateOnly}

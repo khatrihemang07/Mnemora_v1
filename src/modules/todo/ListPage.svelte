@@ -8,6 +8,7 @@
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import EmojiPicker from '../../lib/ui/EmojiPicker.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import NewTaskButton from './NewTaskButton.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import ListGlyph from './ListGlyph.svelte';
@@ -91,7 +92,9 @@
   {/if}
 {/snippet}
 
-<PageHeader title={list?.name ?? 'List'} {heading} />
+<PageHeader title={list?.name ?? 'List'} {heading}>
+  {#snippet actions()}<NewTaskButton />{/snippet}
+</PageHeader>
 <EmojiPicker bind:open={emojiOpen} anchor={emojiButton} value={list?.emoji ?? null} onpick={pickEmoji} />
 <div class="mx-auto max-w-3xl">
   {#if page.isPending}

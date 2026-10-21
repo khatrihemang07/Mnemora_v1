@@ -10,6 +10,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import NewTaskButton from './NewTaskButton.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { todoClock } from './clock.svelte';
   import { longDate } from './dates';
@@ -36,7 +37,9 @@
     'cursor-pointer rounded-sm px-1.5 py-0.5 text-xs font-semibold text-hue-todo transition-colors duration-(--dur) ease-out hover:bg-hover';
 </script>
 
-<PageHeader title="Today" icon={VIEW_ICONS.today} hue="--hue-todo" />
+<PageHeader title="Today" icon={VIEW_ICONS.today} hue="--hue-todo">
+  {#snippet actions()}<NewTaskButton />{/snippet}
+</PageHeader>
 <div class="mx-auto max-w-3xl">
   {#if today.isPending}
     <div class="flex flex-col gap-3 py-2">

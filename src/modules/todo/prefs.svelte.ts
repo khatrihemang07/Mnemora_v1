@@ -10,6 +10,8 @@ class TodoPrefs {
   timeFormat = $state<TimeFormat>('24h');
   /** The font of a Task's notes: the Journal's Writing font Setting, so there is one choice. */
   notesFont = $state<'serif' | 'sans'>('serif');
+  /** "Recognise dates in titles": whether the capture box reads typed words. On by default. */
+  parseDates = $state(true);
 }
 
 export const todoPrefs = new TodoPrefs();
@@ -23,5 +25,6 @@ export function followCoreSettings() {
     todoPrefs.timeFormat = core.timeFormat;
     // Read as plain Setting data: Todo never imports the Journal.
     todoPrefs.notesFont = settings.data?.values['journal.font'] === 'sans' ? 'sans' : 'serif';
+    todoPrefs.parseDates = settings.data?.values['todo.parse_dates'] !== false;
   });
 }

@@ -5,6 +5,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
+  import NewTaskButton from './NewTaskButton.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import ListGlyph from './ListGlyph.svelte';
   import { todoNav } from './nav.svelte';
@@ -18,7 +19,9 @@
   const InboxIcon = VIEW_ICONS.inbox;
 </script>
 
-<PageHeader title="All" icon={VIEW_ICONS.all} hue="--hue-todo" />
+<PageHeader title="All" icon={VIEW_ICONS.all} hue="--hue-todo">
+  {#snippet actions()}<NewTaskButton />{/snippet}
+</PageHeader>
 <div class="mx-auto max-w-3xl">
   {#if all.isPending}
     <div class="flex flex-col gap-3 py-2">
