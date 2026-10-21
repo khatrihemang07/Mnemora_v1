@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="widget_bg">#191511</color>
-    <color name="widget_surface2">#221D19</color>
-    <color name="widget_ink">#EEEBE5</color>
-    <color name="widget_muted">#9E9790</color>
-    <color name="widget_faint">#7F7973</color>
-    <color name="widget_danger">#F66D62</color>
-    <color name="widget_warning">#E48E26</color>
-    <color name="widget_accent">#9499FA</color>
-    <color name="widget_todo">#00A08F</color>
-    <color name="widget_on_todo">#0F101F</color>
-    <color name="widget_sandbox_tag_text">#1D1712</color>
+    <color name="widget_bg">@color/widget_dark_bg</color>
+    <color name="widget_surface2">@color/widget_dark_surface2</color>
+    <color name="widget_ink">@color/widget_dark_ink</color>
+    <color name="widget_muted">@color/widget_dark_muted</color>
+    <color name="widget_faint">@color/widget_dark_faint</color>
+    <color name="widget_danger">@color/widget_dark_danger</color>
+    <color name="widget_warning">@color/widget_dark_warning</color>
+    <color name="widget_accent">@color/widget_dark_accent</color>
+    <color name="widget_todo">@color/widget_dark_todo</color>
+    <color name="widget_on_todo">@color/widget_dark_on_todo</color>
+    <color name="widget_sandbox_tag_text">#FF1D1712</color>
 </resources>

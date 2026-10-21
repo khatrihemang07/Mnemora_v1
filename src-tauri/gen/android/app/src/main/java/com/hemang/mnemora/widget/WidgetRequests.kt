@@ -26,4 +26,7 @@ object WidgetRequests {
             .put("view", view)
             .put("local", local(epochMs, zone))
             .toString()
+
+    /** The Lists for the setup screen, with the app's theme. */
+    fun lists(): String = JSONObject().put("method", "lists").toString()
 }

@@ -19,9 +19,6 @@ object WidgetUpdater {
     private const val ACTION_TODO_CHANGED = "com.hemang.mnemora.widget.TODO_CHANGED"
     private const val ACTION_MIDNIGHT = "com.hemang.mnemora.widget.MIDNIGHT"
 
-    /** The one view a widget shows until setup lets each one choose. */
-    private const val DEFAULT_VIEW = "today"
-
     private val executor = Executors.newSingleThreadExecutor()
     private val queued = AtomicBoolean(false)
 
@@ -71,11 +68,17 @@ object WidgetUpdater {
         }
         if (Build.VERSION.SDK_INT < 31) return
         val zone = ZoneId.systemDefault()
-        val reply = ReplyParser.parse(
-            WidgetBridge.call(context, WidgetRequests.snapshot(DEFAULT_VIEW, System.currentTimeMillis(), zone)),
-        )
-        val views = WidgetRenderer.render(context, reply)
-        manager.updateAppWidget(ids, views)
+        val now = System.currentTimeMillis()
+        // Widgets showing the same view share one read.
+        val replies = HashMap<String, Reply>()
+        for (id in ids) {
+            val config = WidgetConfigStore.get(context, id)
+            val reply = replies.getOrPut(config.view) {
+                ReplyParser.parse(WidgetBridge.call(context, WidgetRequests.snapshot(config.view, now, zone)))
+            }
+            (reply as? Reply.Ok)?.let { WidgetConfigStore.rememberAppTheme(context, it.snapshot.appTheme) }
+            manager.updateAppWidget(id, WidgetRenderer.render(context, reply, config, id))
+        }
         armMidnight(context, zone)
     }
 

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same as widget_row.xml, plus a soft dark shadow on the text: used when the widget has no background and a dark theme, so
+     text stays readable on any wallpaper (RemoteViews cannot set a shadow at draw time). Keep both in step. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/row_root"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="top"
+    android:orientation="horizontal"
+    android:paddingStart="6dp"
+    android:paddingTop="5dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="5dp">
+
+    <FrameLayout
+        android:id="@+id/diamond"
+        android:layout_width="30sp"
+        android:layout_height="30sp">
+
+        <ImageView
+            android:id="@+id/diamond_fill"
+            android:layout_width="22sp"
+            android:layout_height="22sp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/widget_diamond_fill" />
+
+        <ImageView
+            android:id="@+id/diamond_edge"
+            android:layout_width="22sp"
+            android:layout_height="22sp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/widget_diamond_edge" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/row_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:paddingTop="5dp"
+        android:shadowColor="#E6000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/row_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/widget_pill"
+        android:maxLines="1"
+        android:maxWidth="96dp"
+        android:ellipsize="end"
+        android:paddingStart="6dp"
+        android:paddingTop="1dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="1dp"
+        android:shadowColor="#E6000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/row_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:maxLines="1"
+        android:paddingTop="6dp"
+        android:shadowColor="#E6000000"
+        android:shadowDx="0"
+        android:shadowDy="1"
+        android:shadowRadius="4"
+        android:textSize="12sp" />
+</LinearLayout>

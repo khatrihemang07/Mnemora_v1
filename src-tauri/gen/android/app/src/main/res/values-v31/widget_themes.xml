@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material You: the system's dynamic colours (the wallpaper's palette). Only the Priority ring
+     colours stay fixed. -->
+<resources>
+    <color name="widget_you_bg">@android:color/system_accent2_50</color>
+    <color name="widget_you_surface2">@android:color/system_accent2_100</color>
+    <color name="widget_you_ink">@android:color/system_neutral1_900</color>
+    <color name="widget_you_muted">@android:color/system_neutral2_700</color>
+    <color name="widget_you_faint">@android:color/system_neutral2_500</color>
+    <color name="widget_you_danger">@color/widget_light_danger</color>
+    <color name="widget_you_warning">@color/widget_light_warning</color>
+    <color name="widget_you_accent">@color/widget_light_accent</color>
+    <color name="widget_you_todo">@android:color/system_accent1_600</color>
+    <color name="widget_you_on_todo">@android:color/system_accent1_0</color>
+    <color name="widget_you_dark_bg">@android:color/system_accent2_800</color>
+    <color name="widget_you_dark_surface2">@android:color/system_accent2_700</color>
+    <color name="widget_you_dark_ink">@android:color/system_neutral1_50</color>
+    <color name="widget_you_dark_muted">@android:color/system_neutral2_200</color>
+    <color name="widget_you_dark_faint">@android:color/system_neutral2_400</color>
+    <color name="widget_you_dark_danger">@color/widget_dark_danger</color>
+    <color name="widget_you_dark_warning">@color/widget_dark_warning</color>
+    <color name="widget_you_dark_accent">@color/widget_dark_accent</color>
+    <color name="widget_you_dark_todo">@android:color/system_accent1_200</color>
+    <color name="widget_you_dark_on_todo">@android:color/system_accent1_800</color>
+</resources>

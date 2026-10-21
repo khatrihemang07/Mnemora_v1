@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget picker's preview (Android 12+ shows this static layout, never the user's data): the
+     Today view with built-in sample Tasks, in the phone's light or dark colours. Mirrors SampleSnapshot. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_card_bg"
+    android:backgroundTint="@color/widget_bg"
+    android:orientation="vertical"
+    android:paddingStart="6dp"
+    android:paddingEnd="6dp"
+    android:paddingBottom="6dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="2dp">
+
+        <FrameLayout
+            android:layout_width="26dp"
+            android:layout_height="26dp"
+            android:background="@drawable/widget_circle"
+            android:backgroundTint="#2900A08F">
+
+            <ImageView
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:layout_gravity="center"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_check"
+                android:tint="@color/widget_todo" />
+        </FrameLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/widget_view_today"
+            android:textColor="@color/widget_ink"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="1 overdue"
+            android:textColor="@color/widget_danger"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="14dp" android:paddingTop="6dp"
+        android:letterSpacing="0.04" android:text="OVERDUE" android:textColor="@color/widget_danger" android:textSize="11sp" android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:paddingStart="6dp" android:paddingTop="4dp" android:paddingEnd="6dp" android:paddingBottom="4dp">
+        <FrameLayout android:layout_width="30sp" android:layout_height="30sp">
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:alpha="0.14" android:importantForAccessibility="no" android:src="@drawable/widget_diamond_fill" android:tint="@color/widget_warning" />
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:importantForAccessibility="no" android:src="@drawable/widget_diamond_edge" android:tint="@color/widget_warning" />
+        </FrameLayout>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1"
+            android:maxLines="1" android:ellipsize="end" android:paddingTop="5dp" android:text="Renew passport photos" android:textColor="@color/widget_ink" android:textSize="14sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:paddingTop="6dp"
+            android:text="Mon" android:textColor="@color/widget_danger" android:textSize="12sp" />
+    </LinearLayout>
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingStart="14dp" android:paddingTop="6dp"
+        android:letterSpacing="0.04" android:text="TODAY" android:textColor="@color/widget_faint" android:textSize="11sp" android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:paddingStart="6dp" android:paddingTop="4dp" android:paddingEnd="6dp" android:paddingBottom="4dp">
+        <FrameLayout android:layout_width="30sp" android:layout_height="30sp">
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:importantForAccessibility="no" android:src="@drawable/widget_diamond_edge" android:tint="@color/widget_faint" />
+        </FrameLayout>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1"
+            android:maxLines="1" android:ellipsize="end" android:paddingTop="5dp" android:text="Stand-up notes" android:textColor="@color/widget_ink" android:textSize="14sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:paddingTop="6dp"
+            android:text="09:30" android:textColor="@color/widget_faint" android:textSize="12sp" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:paddingStart="6dp" android:paddingTop="4dp" android:paddingEnd="6dp" android:paddingBottom="4dp">
+        <FrameLayout android:layout_width="30sp" android:layout_height="30sp">
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:alpha="0.12" android:importantForAccessibility="no" android:src="@drawable/widget_diamond_fill" android:tint="@color/widget_danger" />
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:importantForAccessibility="no" android:src="@drawable/widget_diamond_edge" android:tint="@color/widget_danger" />
+        </FrameLayout>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1"
+            android:maxLines="1" android:ellipsize="end" android:paddingTop="5dp" android:text="Pay electricity bill" android:textColor="@color/widget_ink" android:textSize="14sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_marginTop="5dp"
+            android:background="@drawable/widget_pill" android:backgroundTint="@color/widget_surface2" android:paddingStart="6dp" android:paddingEnd="6dp"
+            android:text="Home" android:textColor="@color/widget_muted" android:textSize="11sp" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:paddingStart="6dp" android:paddingTop="4dp" android:paddingEnd="6dp" android:paddingBottom="4dp">
+        <FrameLayout android:layout_width="30sp" android:layout_height="30sp">
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:alpha="0.14" android:importantForAccessibility="no" android:src="@drawable/widget_diamond_fill" android:tint="@color/widget_accent" />
+            <ImageView android:layout_width="22sp" android:layout_height="22sp" android:layout_gravity="center"
+                android:importantForAccessibility="no" android:src="@drawable/widget_diamond_edge" android:tint="@color/widget_accent" />
+        </FrameLayout>
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1"
+            android:maxLines="1" android:ellipsize="end" android:paddingTop="5dp" android:text="Call mum" android:textColor="@color/widget_ink" android:textSize="14sp" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:paddingTop="6dp"
+            android:text="18:00" android:textColor="@color/widget_faint" android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>

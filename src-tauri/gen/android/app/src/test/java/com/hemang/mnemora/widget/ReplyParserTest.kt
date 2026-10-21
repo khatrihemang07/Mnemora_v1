@@ -52,6 +52,49 @@ class ReplyParserTest {
     }
 
     @Test
+    fun readsTheAppsThemeFromASnapshot() {
+        val json = """{"ok":{"view":"all","app_theme":"oled","title":"All","count":null,"groups":[],
+            "empty":{"title":"No open Tasks","line":"Everything is done"}}}"""
+        assertEquals("oled", (ReplyParser.parse(json) as Reply.Ok).snapshot.appTheme)
+        assertNull((ReplyParser.parse(ok) as Reply.Ok).snapshot.appTheme)
+    }
+
+    @Test
+    fun aGroupWithoutAHeadingHasNoHeadingText() {
+        val json = """{"ok":{"view":"inbox","title":"Inbox","count":{"text":"1","tone":"normal"},"app_theme":null,
+            "groups":[{"heading":null,"tone":"normal","rows":[
+              {"id":"a","title":"Idea","ring":"none","overdue":false,"time":null,"day":null,"list":null}]}],
+            "empty":null}}"""
+        val snapshot = (ReplyParser.parse(json) as Reply.Ok).snapshot
+        assertNull(snapshot.groups[0].heading)
+        assertNull(snapshot.appTheme)
+        assertEquals(listOf<Item>(Item.Task(snapshot.groups[0].rows[0])), RowItems.flatten(snapshot.groups))
+    }
+
+    @Test
+    fun aDeletedListIsReportedAsSuch() {
+        val err = """{"err":{"code":"not_found","message":"That List no longer exists"}}"""
+        assertEquals(Reply.ListMissing, ReplyParser.parse(err))
+    }
+
+    @Test
+    fun readsTheListsForSetup() {
+        val json = """{"ok":{"app_theme":"dark","lists":[
+            {"id":"a","name":"Home","emoji":"🏠","label":"🏠 Home"},
+            {"id":"b","name":"Work","emoji":null,"label":"Work"}]}}"""
+        val choices = ReplyParser.parseLists(json)!!
+        assertEquals("dark", choices.appTheme)
+        assertEquals(listOf(ListChoice("a", "Home", "🏠", "🏠 Home"), ListChoice("b", "Work", null, "Work")), choices.lists)
+    }
+
+    @Test
+    fun noListsWhenTheBridgeCannotAnswer() {
+        for (bad in listOf(null, "", "not json", """{"status":"not_set_up"}""", """{"err":{"code":"x"}}""", """{"ok":{}}""")) {
+            assertNull("$bad", ReplyParser.parseLists(bad))
+        }
+    }
+
+    @Test
     fun anythingElseIsFailed() {
         val err = """{"err":{"code":"database","message":"Database error"}}"""
         for (bad in listOf(err, "", "not json", "[]", "{}", """{"ok":{"view":"today"}}""", null)) {

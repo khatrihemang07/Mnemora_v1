@@ -32,7 +32,15 @@ data class Snapshot(
     val count: HeaderCount?,
     val groups: List<Group>,
     val empty: EmptyState?,
+    /** Settings ▸ Theme in the app (`system`, `light`, `dark`, `oled`): what "Same as app" follows. */
+    val appTheme: String? = null,
 )
+
+/** A List the setup screen offers. */
+data class ListChoice(val id: String, val name: String, val emoji: String?, val label: String)
+
+/** The Lists to pick from and the app's theme, for the setup screen. */
+data class ListChoices(val appTheme: String?, val lists: List<ListChoice>)
 
 /** What the bridge answered. */
 sealed interface Reply {
@@ -43,6 +51,9 @@ sealed interface Reply {
 
     /** The app was updated and its migrations have not run yet. */
     data object NeedsUpdate : Reply
+
+    /** The widget shows a List that was deleted. */
+    data object ListMissing : Reply
 
     /** Anything else: a bridge error, an unreadable reply, no library. */
     data object Failed : Reply
@@ -58,10 +69,32 @@ object ReplyParser {
                 root.has("ok") -> Reply.Ok(snapshot(root.getJSONObject("ok")))
                 root.optString("status") == "not_set_up" -> Reply.NotSetUp
                 root.optString("status") == "needs_update" -> Reply.NeedsUpdate
+                root.optJSONObject("err")?.optString("code") == "not_found" -> Reply.ListMissing
                 else -> Reply.Failed
             }
         } catch (e: Exception) {
             Reply.Failed
+        }
+    }
+
+    /** Reads the `lists` reply; null when there are no Lists to show (not set up, an error). */
+    fun parseLists(json: String?): ListChoices? {
+        if (json == null) return null
+        return try {
+            val ok = JSONObject(json).optJSONObject("ok") ?: return null
+            ListChoices(
+                appTheme = text(ok, "app_theme")?.ifEmpty { null },
+                lists = list(ok.getJSONArray("lists")) {
+                    ListChoice(
+                        id = it.getString("id"),
+                        name = it.getString("name"),
+                        emoji = text(it, "emoji"),
+                        label = it.getString("label"),
+                    )
+                },
+            )
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -75,10 +108,12 @@ object ReplyParser {
         empty = o.optJSONObject("empty")?.let {
             EmptyState(it.getString("title"), it.getString("line"))
         },
+        appTheme = text(o, "app_theme")?.ifEmpty { null },
     )
 
     private fun group(o: JSONObject) = Group(
-        heading = o.optString("heading").ifEmpty { null },
+        // Inbox and Lists have a group with no heading: JSON null, which optString would read as "null".
+        heading = text(o, "heading")?.ifEmpty { null },
         tone = tone(o.getString("tone")),
         rows = list(o.getJSONArray("rows")) { row(it) },
     )

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Same as widget_group.xml, plus a soft light glow on the text: used when the widget has no background and a light theme, so
+     text stays readable on any wallpaper (RemoteViews cannot set a shadow at draw time). Keep both in step. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/group_title"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:letterSpacing="0.04"
+    android:maxLines="1"
+    android:paddingStart="8dp"
+    android:paddingTop="8dp"
+    android:paddingEnd="8dp"
+    android:paddingBottom="2dp"
+    android:shadowColor="#F2FFFFFF"
+    android:shadowDx="0"
+    android:shadowDy="1"
+    android:shadowRadius="4"
+    android:textSize="11sp"
+    android:textStyle="bold" />

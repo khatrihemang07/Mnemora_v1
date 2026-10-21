@@ -28,6 +28,16 @@ class TodoWidgetProvider : AppWidgetProvider() {
         WidgetUpdater.redrawAsync(context, goAsync())
     }
 
+    /** A removed widget takes its settings with it. */
+    override fun onDeleted(context: Context, ids: IntArray) {
+        WidgetConfigStore.remove(context, ids)
+    }
+
+    /** After a backup restore the widgets come back under new ids. */
+    override fun onRestored(context: Context, oldIds: IntArray, newIds: IntArray) {
+        WidgetConfigStore.move(context, oldIds, newIds)
+    }
+
     override fun onDisabled(context: Context) {
         WidgetUpdater.cancelMidnight(context)
     }
