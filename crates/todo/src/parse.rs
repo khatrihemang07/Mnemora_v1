@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::list::MAX_LIST_NAME_CHARS;
-use crate::recurrence::RepeatRule;
+use crate::recurrence::{RepeatRule, Rule};
 use crate::when::{add_days, epoch_day};
 
 /// Weekday bits for "every weekday": Monday to Friday, Sunday being bit 0.
@@ -328,15 +328,13 @@ impl Context<'_> {
             let date = format!("{y:04}-{month:02}-{day:02}");
             epoch_day(&date).map(|_| date)
         };
-        match year {
-            Some(y) => make(y).filter(|d| d.as_str() >= self.today),
-            None => {
-                let (this_year, ..) = ymd(self.today);
-                (this_year..this_year + 8)
-                    .filter_map(make)
-                    .find(|d| d.as_str() >= self.today)
-            }
+        if let Some(year) = year {
+            return make(year).filter(|d| d.as_str() >= self.today);
         }
+        let (this_year, ..) = ymd(self.today);
+        (this_year..this_year + 8)
+            .filter_map(make)
+            .find(|d| d.as_str() >= self.today)
     }
 
     fn next_month(&self) -> String {
@@ -356,7 +354,7 @@ fn rule(freq: &str, every: u32, days: u32, after: bool) -> Option<RepeatRule> {
         days: (days != 0).then_some(days),
         mode: if after { "after" } else { "fixed" }.into(),
     };
-    rule.check().ok().map(|r| r.to_wire())
+    rule.check().ok().map(Rule::to_wire)
 }
 
 fn unit_of(word: &str) -> Option<&'static str> {
@@ -367,6 +365,30 @@ fn unit_of(word: &str) -> Option<&'static str> {
         "year" => "year",
         _ => return None,
     })
+}
+
+/// The weekdays listed from token `from`: "mon", "mon and thu", "mon, wed and fri". Returns how many
+/// tokens they take and their weekday bits.
+fn weekday_list(t: &[Token], from: usize) -> Option<(usize, u32)> {
+    let name_at = |n: usize| t.get(n).and_then(|x| weekday_name(&x.low));
+    let mut mask = 1u32 << name_at(from)?;
+    let mut last = from;
+    loop {
+        let mut next = last + 1;
+        let mut separated = t[last].comma;
+        if matches!(t.get(next).map(|x| x.low.as_str()), Some("and" | "&")) {
+            next += 1;
+            separated = true;
+        }
+        match name_at(next) {
+            Some(day) if separated => {
+                mask |= 1 << day;
+                last = next;
+            }
+            _ => break,
+        }
+    }
+    Some((last + 1 - from, mask))
 }
 
 /// "daily", "every 2 weeks", "every mon and thu", "every weekday", each optionally "after done".
@@ -384,25 +406,9 @@ fn read_repeat(t: &[Token], i: usize) -> Option<Match> {
             (unit, _) if unit_of(unit).is_some() && !unit.ends_with('s') => {
                 (2, (unit_of(unit)?, 1, 0))
             }
-            (first, _) => {
-                let mut mask = 1u32 << weekday_name(first)?;
-                let mut k = i + 1;
-                loop {
-                    let mut n = k + 1;
-                    let mut separated = t[k].comma;
-                    if matches!(at(n), Some("and" | "&")) {
-                        n += 1;
-                        separated = true;
-                    }
-                    match at(n).and_then(weekday_name) {
-                        Some(w) if separated => {
-                            mask |= 1 << w;
-                            k = n;
-                        }
-                        _ => break,
-                    }
-                }
-                (k + 1 - i, ("week", 1, mask))
+            (_, _) => {
+                let (words, mask) = weekday_list(t, i + 1)?;
+                (1 + words, ("week", 1, mask))
             }
         },
         _ => return None,

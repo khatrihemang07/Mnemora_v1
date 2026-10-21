@@ -475,3 +475,173 @@ describe('the Todo mock', () => {
     expect(() => validateEmoji('🏠'.repeat(17))).toThrow();
   });
 });
+
+// Capture: the same cases as src-tauri/src/todo_capture_tests.rs, against the mock.
+describe('capture in the browser mock', () => {
+  const clock = { today: '2026-10-21', now: '14:05', offset_min: 0 };
+  const monthly = { freq: 'month', every: 1, days: null, mode: 'fixed' };
+  const parse = (mock: ReturnType<typeof createTodoMock>, text: string) =>
+    mock.handle('todo_parse', {
+      request: {
+        text,
+        ignored: [],
+        prefer: {},
+        frozen: [],
+        today: '2026-10-21',
+        now: '14:05',
+        week_start: 'mon',
+      },
+    }) as import('./bindings').Parsed;
+  const editOf = (t: Task) => ({
+    title: t.title,
+    understood: t.understood,
+    due_date: t.due_date,
+    due_time: t.due_time,
+    repeat: null,
+    priority: t.priority,
+    list_id: t.list_id,
+  });
+  const quick = (mock: ReturnType<typeof createTodoMock>, t: Task, edit: unknown) =>
+    mock.handle('todo_task_quick_edit', { id: t.id, edit, local: clock }) as Task;
+  const code = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      return (e as AppError).code;
+    }
+    return null;
+  };
+
+  it('parses #Name against the live Lists, and offers a new one without making it', () => {
+    const mock = createTodoMock();
+    const home = mock.handle('todo_list_create', { name: 'Home' }) as TodoList;
+    expect(parse(mock, 'Fix tap #ho tomorrow')).toMatchObject({
+      list_id: home.id,
+      date: '2026-10-22',
+      new_list: null,
+    });
+    expect(parse(mock, 'Buy paint #Garage').new_list).toBe('Garage');
+    const sidebar = mock.handle('todo_lists', { local: clock }) as SidebarView;
+    expect(sidebar.lists).toHaveLength(1);
+  });
+
+  it('creates a Task with notes, Priority, Repeat and the understood record', () => {
+    const mock = createTodoMock();
+    const understood = '[{"word":"tomorrow","kind":"date","value":"2026-10-22"}]';
+    const task = mock.handle('todo_task_create', {
+      title: 'Pay rent tomorrow',
+      when: { date: '2026-10-22', time: '09:00', local: clock },
+      details: { notes: '- [ ] transfer', priority: 1, repeat: monthly, understood },
+    }) as Task;
+    expect(task).toMatchObject({
+      notes: '- [ ] transfer',
+      priority: 1,
+      due_date: '2026-10-22',
+      due_time: '09:00',
+      repeat_freq: 'month',
+      repeat_days: 22,
+      understood,
+    });
+  });
+
+  it('gives a Repeat with no date its first day, and refuses one with no clock', () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', {
+      title: 'Gym',
+      when: { date: null, time: null, local: clock },
+      details: { repeat: { freq: 'week', every: 1, days: 18, mode: 'fixed' } },
+    }) as Task;
+    expect(task.due_date).toBe('2026-10-22');
+    expect(
+      code(() => mock.handle('todo_task_create', { title: 'Gym', details: { repeat: monthly } })),
+    ).toBe('validation');
+  });
+
+  it('validates the details', () => {
+    const mock = createTodoMock();
+    for (const details of [
+      { priority: 5 },
+      { understood: 'not json' },
+      { understood: '{"a":1}' },
+    ]) {
+      expect(code(() => mock.handle('todo_task_create', { title: 'x', details }))).toBe(
+        'validation',
+      );
+    }
+    expect((mock.handle('todo_inbox', {}) as { tasks: Task[] }).tasks).toHaveLength(0);
+  });
+
+  it('saves a Quick edit in one update and does nothing when nothing changed', () => {
+    const mock = createTodoMock();
+    const work = mock.handle('todo_list_create', { name: 'Work' }) as TodoList;
+    const task = mock.handle('todo_task_create', { title: 'Pay rent' }) as Task;
+    const same = quick(mock, task, editOf(task));
+    expect(same.updated_at).toBe(task.updated_at);
+    const saved = quick(mock, task, {
+      ...editOf(task),
+      title: 'Pay rent tomorrow p1 #work',
+      due_date: '2026-10-22',
+      priority: 1,
+      list_id: work.id,
+    });
+    expect(saved).toMatchObject({
+      title: 'Pay rent tomorrow p1 #work',
+      due_date: '2026-10-22',
+      priority: 1,
+      list_id: work.id,
+    });
+  });
+
+  it('refuses a past date in a Quick edit, but Undo may put one back', () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', { title: 'Old' }) as Task;
+    const past = { ...editOf(task), due_date: '2026-10-20' };
+    expect(code(() => quick(mock, task, past))).toBe('validation');
+    const undone = mock.handle('todo_task_quick_edit_undo', {
+      id: task.id,
+      edit: past,
+      local: clock,
+    }) as Task;
+    expect(undone.due_date).toBe('2026-10-20');
+    // An edit that leaves the date alone keeps the Overdue one.
+    const kept = quick(mock, undone, { ...editOf(undone), title: 'Old, renamed' });
+    expect([kept.title, kept.due_date]).toEqual(['Old, renamed', '2026-10-20']);
+  });
+
+  it('validates a Quick edit and needs an open Task for anything but the title', () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', { title: 'Pay rent' }) as Task;
+    for (const bad of [
+      { title: '  ' },
+      { title: 'two\nlines' },
+      { priority: 7 },
+      { list_id: 'nope' },
+      { understood: 'nope' },
+    ]) {
+      expect(code(() => quick(mock, task, { ...editOf(task), ...bad }))).not.toBeNull();
+    }
+    mock.handle('todo_task_complete', { id: task.id, local: LOCAL });
+    expect(code(() => quick(mock, task, { ...editOf(task), priority: 1 }))).toBe('validation');
+    const done = mock.handle('todo_task', { id: task.id }) as Task;
+    expect(quick(mock, done, { ...editOf(done), title: 'Paid rent' }).title).toBe('Paid rent');
+  });
+
+  it('keeps a Repeat when a Quick edit moves its date', () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', {
+      title: 'Pay rent',
+      when: { date: '2026-10-25', time: null, local: clock },
+      details: { repeat: monthly },
+    }) as Task;
+    const saved = quick(mock, task, {
+      ...editOf(task),
+      repeat: { ...monthly, days: 25 },
+      due_date: '2026-10-28',
+    });
+    expect([saved.due_date, saved.repeat_freq, saved.repeat_days]).toEqual([
+      '2026-10-28',
+      'month',
+      28,
+    ]);
+  });
+});

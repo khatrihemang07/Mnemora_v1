@@ -27,13 +27,7 @@
       "name": "today",
       "text": "Call mum today",
       "expect": {
-        "spans": [
-          [
-            "today",
-            "date",
-            "2026-10-21"
-          ]
-        ],
+        "spans": [["today", "date", "2026-10-21"]],
         "date": "2026-10-21",
         "time": null
       }
@@ -42,13 +36,7 @@
       "name": "tomorrow",
       "text": "Call mum tomorrow",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ],
+        "spans": [["tomorrow", "date", "2026-10-22"]],
         "date": "2026-10-22"
       }
     },
@@ -56,13 +44,7 @@
       "name": "tmr is tomorrow",
       "text": "Call mum tmr",
       "expect": {
-        "spans": [
-          [
-            "tmr",
-            "date",
-            "2026-10-22"
-          ]
-        ],
+        "spans": [["tmr", "date", "2026-10-22"]],
         "date": "2026-10-22"
       }
     },
@@ -70,18 +52,7 @@
       "name": "tonight is today at 20:00",
       "text": "Dinner tonight",
       "expect": {
-        "spans": [
-          [
-            "tonight",
-            "date",
-            "2026-10-21"
-          ],
-          [
-            "tonight",
-            "time",
-            "20:00"
-          ]
-        ],
+        "spans": [["tonight", "date", "2026-10-21"], ["tonight", "time", "20:00"]],
         "date": "2026-10-21",
         "time": "20:00"
       }
@@ -90,41 +61,17 @@
       "name": "an explicit time beats tonight's",
       "text": "Dinner tonight at 9pm",
       "expect": {
-        "spans": [
-          [
-            "tonight",
-            "date",
-            "2026-10-21"
-          ],
-          [
-            "at 9pm",
-            "time",
-            "21:00"
-          ]
-        ],
+        "spans": [["tonight", "date", "2026-10-21"], ["at 9pm", "time", "21:00"]],
         "date": "2026-10-21",
         "time": "21:00",
-        "alternatives": [
-          [
-            "tonight",
-            "time",
-            "20:00",
-            "conflict"
-          ]
-        ]
+        "alternatives": [["tonight", "time", "20:00", "conflict"]]
       }
     },
     {
       "name": "a weekday",
       "text": "Gym fri",
       "expect": {
-        "spans": [
-          [
-            "fri",
-            "date",
-            "2026-10-23"
-          ]
-        ],
+        "spans": [["fri", "date", "2026-10-23"]],
         "date": "2026-10-23"
       }
     },
@@ -132,13 +79,7 @@
       "name": "on a weekday",
       "text": "Gym on friday",
       "expect": {
-        "spans": [
-          [
-            "on friday",
-            "date",
-            "2026-10-23"
-          ]
-        ],
+        "spans": [["on friday", "date", "2026-10-23"]],
         "date": "2026-10-23"
       }
     },
@@ -146,13 +87,7 @@
       "name": "the same weekday is today",
       "text": "Gym wed",
       "expect": {
-        "spans": [
-          [
-            "wed",
-            "date",
-            "2026-10-21"
-          ]
-        ],
+        "spans": [["wed", "date", "2026-10-21"]],
         "date": "2026-10-21"
       }
     },
@@ -160,13 +95,7 @@
       "name": "an earlier weekday is next week",
       "text": "Gym on mon",
       "expect": {
-        "spans": [
-          [
-            "on mon",
-            "date",
-            "2026-10-26"
-          ]
-        ],
+        "spans": [["on mon", "date", "2026-10-26"]],
         "date": "2026-10-26"
       }
     },
@@ -174,13 +103,7 @@
       "name": "next fri is the Friday of next week",
       "text": "Gym next fri",
       "expect": {
-        "spans": [
-          [
-            "next fri",
-            "date",
-            "2026-10-30"
-          ]
-        ],
+        "spans": [["next fri", "date", "2026-10-30"]],
         "date": "2026-10-30"
       }
     },
@@ -188,26 +111,14 @@
       "name": "next sun ends next week when weeks start on Monday",
       "text": "Gym next sun",
       "expect": {
-        "spans": [
-          [
-            "next sun",
-            "date",
-            "2026-11-01"
-          ]
-        ]
+        "spans": [["next sun", "date", "2026-11-01"]]
       }
     },
     {
       "name": "next sun starts next week when weeks start on Sunday",
       "text": "Gym next sun",
       "expect": {
-        "spans": [
-          [
-            "next sun",
-            "date",
-            "2026-10-25"
-          ]
-        ]
+        "spans": [["next sun", "date", "2026-10-25"]]
       },
       "week_start": "sun"
     },
@@ -215,104 +126,56 @@
       "name": "next wed is a week on",
       "text": "Gym next wed",
       "expect": {
-        "spans": [
-          [
-            "next wed",
-            "date",
-            "2026-10-28"
-          ]
-        ]
+        "spans": [["next wed", "date", "2026-10-28"]]
       }
     },
     {
       "name": "21 oct on the 21st is today",
       "text": "Pay 21 oct",
       "expect": {
-        "spans": [
-          [
-            "21 oct",
-            "date",
-            "2026-10-21"
-          ]
-        ]
+        "spans": [["21 oct", "date", "2026-10-21"]]
       }
     },
     {
       "name": "oct 25",
       "text": "Pay oct 25",
       "expect": {
-        "spans": [
-          [
-            "oct 25",
-            "date",
-            "2026-10-25"
-          ]
-        ]
+        "spans": [["oct 25", "date", "2026-10-25"]]
       }
     },
     {
       "name": "3 nov",
       "text": "Pay 3 nov",
       "expect": {
-        "spans": [
-          [
-            "3 nov",
-            "date",
-            "2026-11-03"
-          ]
-        ]
+        "spans": [["3 nov", "date", "2026-11-03"]]
       }
     },
     {
       "name": "a past day rolls to next year",
       "text": "Pay 20 oct",
       "expect": {
-        "spans": [
-          [
-            "20 oct",
-            "date",
-            "2027-10-20"
-          ]
-        ]
+        "spans": [["20 oct", "date", "2027-10-20"]]
       }
     },
     {
       "name": "ordinals and long names",
       "text": "Pay 1st january",
       "expect": {
-        "spans": [
-          [
-            "1st january",
-            "date",
-            "2027-01-01"
-          ]
-        ]
+        "spans": [["1st january", "date", "2027-01-01"]]
       }
     },
     {
       "name": "month first with an ordinal",
       "text": "Pay march 5th",
       "expect": {
-        "spans": [
-          [
-            "march 5th",
-            "date",
-            "2027-03-05"
-          ]
-        ]
+        "spans": [["march 5th", "date", "2027-03-05"]]
       }
     },
     {
       "name": "an explicit year",
       "text": "Pay 3 nov 2028",
       "expect": {
-        "spans": [
-          [
-            "3 nov 2028",
-            "date",
-            "2028-11-03"
-          ]
-        ]
+        "spans": [["3 nov 2028", "date", "2028-11-03"]]
       }
     },
     {
@@ -333,39 +196,21 @@
       "name": "29 feb waits for a leap year",
       "text": "Pay 29 feb",
       "expect": {
-        "spans": [
-          [
-            "29 feb",
-            "date",
-            "2028-02-29"
-          ]
-        ]
+        "spans": [["29 feb", "date", "2028-02-29"]]
       }
     },
     {
       "name": "in 3 days",
       "text": "Pay in 3 days",
       "expect": {
-        "spans": [
-          [
-            "in 3 days",
-            "date",
-            "2026-10-24"
-          ]
-        ]
+        "spans": [["in 3 days", "date", "2026-10-24"]]
       }
     },
     {
       "name": "in 2 weeks",
       "text": "Pay in 2 weeks",
       "expect": {
-        "spans": [
-          [
-            "in 2 weeks",
-            "date",
-            "2026-11-04"
-          ]
-        ]
+        "spans": [["in 2 weeks", "date", "2026-11-04"]]
       }
     },
     {
@@ -379,26 +224,14 @@
       "name": "next week is the first day of next week",
       "text": "Plan next week",
       "expect": {
-        "spans": [
-          [
-            "next week",
-            "date",
-            "2026-10-26"
-          ]
-        ]
+        "spans": [["next week", "date", "2026-10-26"]]
       }
     },
     {
       "name": "next week starts on Sunday for a Sunday week",
       "text": "Plan next week",
       "expect": {
-        "spans": [
-          [
-            "next week",
-            "date",
-            "2026-10-25"
-          ]
-        ]
+        "spans": [["next week", "date", "2026-10-25"]]
       },
       "week_start": "sun"
     },
@@ -406,26 +239,14 @@
       "name": "this weekend is Saturday",
       "text": "Hike this weekend",
       "expect": {
-        "spans": [
-          [
-            "this weekend",
-            "date",
-            "2026-10-24"
-          ]
-        ]
+        "spans": [["this weekend", "date", "2026-10-24"]]
       }
     },
     {
       "name": "this weekend on a Sunday is today",
       "text": "Hike this weekend",
       "expect": {
-        "spans": [
-          [
-            "this weekend",
-            "date",
-            "2026-10-25"
-          ]
-        ]
+        "spans": [["this weekend", "date", "2026-10-25"]]
       },
       "today": "2026-10-25"
     },
@@ -433,26 +254,14 @@
       "name": "next month is the 1st",
       "text": "Review next month",
       "expect": {
-        "spans": [
-          [
-            "next month",
-            "date",
-            "2026-11-01"
-          ]
-        ]
+        "spans": [["next month", "date", "2026-11-01"]]
       }
     },
     {
       "name": "next month in December crosses the year",
       "text": "Review next month",
       "expect": {
-        "spans": [
-          [
-            "next month",
-            "date",
-            "2027-01-01"
-          ]
-        ]
+        "spans": [["next month", "date", "2027-01-01"]]
       },
       "today": "2026-12-15"
     },
@@ -460,13 +269,7 @@
       "name": "time 9am",
       "text": "Call 9am",
       "expect": {
-        "spans": [
-          [
-            "9am",
-            "time",
-            "09:00"
-          ]
-        ],
+        "spans": [["9am", "time", "09:00"]],
         "time": "09:00"
       }
     },
@@ -474,13 +277,7 @@
       "name": "time 9:30pm",
       "text": "Call 9:30pm",
       "expect": {
-        "spans": [
-          [
-            "9:30pm",
-            "time",
-            "21:30"
-          ]
-        ],
+        "spans": [["9:30pm", "time", "21:30"]],
         "time": "21:30"
       }
     },
@@ -488,13 +285,7 @@
       "name": "time 12am",
       "text": "Call 12am",
       "expect": {
-        "spans": [
-          [
-            "12am",
-            "time",
-            "00:00"
-          ]
-        ],
+        "spans": [["12am", "time", "00:00"]],
         "time": "00:00"
       }
     },
@@ -502,13 +293,7 @@
       "name": "time 12pm",
       "text": "Call 12pm",
       "expect": {
-        "spans": [
-          [
-            "12pm",
-            "time",
-            "12:00"
-          ]
-        ],
+        "spans": [["12pm", "time", "12:00"]],
         "time": "12:00"
       }
     },
@@ -516,13 +301,7 @@
       "name": "time 9 pm",
       "text": "Call 9 pm",
       "expect": {
-        "spans": [
-          [
-            "9 pm",
-            "time",
-            "21:00"
-          ]
-        ],
+        "spans": [["9 pm", "time", "21:00"]],
         "time": "21:00"
       }
     },
@@ -530,13 +309,7 @@
       "name": "time 21:30",
       "text": "Call 21:30",
       "expect": {
-        "spans": [
-          [
-            "21:30",
-            "time",
-            "21:30"
-          ]
-        ],
+        "spans": [["21:30", "time", "21:30"]],
         "time": "21:30"
       }
     },
@@ -544,13 +317,7 @@
       "name": "time noon",
       "text": "Call noon",
       "expect": {
-        "spans": [
-          [
-            "noon",
-            "time",
-            "12:00"
-          ]
-        ],
+        "spans": [["noon", "time", "12:00"]],
         "time": "12:00"
       }
     },
@@ -558,13 +325,7 @@
       "name": "time midnight",
       "text": "Call midnight",
       "expect": {
-        "spans": [
-          [
-            "midnight",
-            "time",
-            "00:00"
-          ]
-        ],
+        "spans": [["midnight", "time", "00:00"]],
         "time": "00:00"
       }
     },
@@ -572,13 +333,7 @@
       "name": "time at 9",
       "text": "Call at 9",
       "expect": {
-        "spans": [
-          [
-            "at 9",
-            "time",
-            "09:00"
-          ]
-        ],
+        "spans": [["at 9", "time", "09:00"]],
         "time": "09:00"
       }
     },
@@ -586,13 +341,7 @@
       "name": "time at 9:15",
       "text": "Call at 9:15",
       "expect": {
-        "spans": [
-          [
-            "at 9:15",
-            "time",
-            "09:15"
-          ]
-        ],
+        "spans": [["at 9:15", "time", "09:15"]],
         "time": "09:15"
       }
     },
@@ -600,13 +349,7 @@
       "name": "time at 5pm",
       "text": "Call at 5pm",
       "expect": {
-        "spans": [
-          [
-            "at 5pm",
-            "time",
-            "17:00"
-          ]
-        ],
+        "spans": [["at 5pm", "time", "17:00"]],
         "time": "17:00"
       }
     },
@@ -614,13 +357,7 @@
       "name": "a time ahead today means today",
       "text": "Call 3pm",
       "expect": {
-        "spans": [
-          [
-            "3pm",
-            "time",
-            "15:00"
-          ]
-        ],
+        "spans": [["3pm", "time", "15:00"]],
         "date": "2026-10-21",
         "time": "15:00"
       }
@@ -629,13 +366,7 @@
       "name": "a time already gone means tomorrow",
       "text": "Call 9am",
       "expect": {
-        "spans": [
-          [
-            "9am",
-            "time",
-            "09:00"
-          ]
-        ],
+        "spans": [["9am", "time", "09:00"]],
         "date": "2026-10-22",
         "time": "09:00"
       }
@@ -644,13 +375,7 @@
       "name": "the minute we are in is still ahead",
       "text": "Call 14:05",
       "expect": {
-        "spans": [
-          [
-            "14:05",
-            "time",
-            "14:05"
-          ]
-        ],
+        "spans": [["14:05", "time", "14:05"]],
         "date": "2026-10-21"
       }
     },
@@ -658,18 +383,7 @@
       "name": "a date word and a time",
       "text": "Pay rent tomorrow 9am",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ],
-          [
-            "9am",
-            "time",
-            "09:00"
-          ]
-        ],
+        "spans": [["tomorrow", "date", "2026-10-22"], ["9am", "time", "09:00"]],
         "date": "2026-10-22",
         "time": "09:00"
       }
@@ -678,13 +392,7 @@
       "name": "at before a month is not a time",
       "text": "Meet at 21 oct",
       "expect": {
-        "spans": [
-          [
-            "21 oct",
-            "date",
-            "2026-10-21"
-          ]
-        ],
+        "spans": [["21 oct", "date", "2026-10-21"]],
         "time": null
       }
     },
@@ -693,11 +401,7 @@
       "text": "Water plants daily",
       "expect": {
         "spans": [
-          [
-            "daily",
-            "repeat",
-            "{\"freq\":\"day\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
-          ]
+          ["daily", "repeat", "{\"freq\":\"day\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"]
         ],
         "date": null
       }
@@ -707,11 +411,7 @@
       "text": "Report weekly",
       "expect": {
         "spans": [
-          [
-            "weekly",
-            "repeat",
-            "{\"freq\":\"week\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
-          ]
+          ["weekly", "repeat", "{\"freq\":\"week\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"]
         ],
         "date": null
       }
@@ -721,11 +421,7 @@
       "text": "Rent monthly",
       "expect": {
         "spans": [
-          [
-            "monthly",
-            "repeat",
-            "{\"freq\":\"month\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
-          ]
+          ["monthly", "repeat", "{\"freq\":\"month\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"]
         ],
         "date": null
       }
@@ -735,11 +431,7 @@
       "text": "Tax yearly",
       "expect": {
         "spans": [
-          [
-            "yearly",
-            "repeat",
-            "{\"freq\":\"year\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
-          ]
+          ["yearly", "repeat", "{\"freq\":\"year\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"]
         ],
         "date": null
       }
@@ -819,11 +511,7 @@
       "text": "Gym every mon",
       "expect": {
         "spans": [
-          [
-            "every mon",
-            "repeat",
-            "{\"freq\":\"week\",\"every\":1,\"days\":2,\"mode\":\"fixed\"}"
-          ]
+          ["every mon", "repeat", "{\"freq\":\"week\",\"every\":1,\"days\":2,\"mode\":\"fixed\"}"]
         ],
         "date": null
       }
@@ -889,11 +577,7 @@
       "text": "Gym every mon after done",
       "expect": {
         "spans": [
-          [
-            "every mon",
-            "repeat",
-            "{\"freq\":\"week\",\"every\":1,\"days\":2,\"mode\":\"fixed\"}"
-          ]
+          ["every mon", "repeat", "{\"freq\":\"week\",\"every\":1,\"days\":2,\"mode\":\"fixed\"}"]
         ]
       }
     },
@@ -902,16 +586,8 @@
       "text": "Stand-up daily 9am",
       "expect": {
         "spans": [
-          [
-            "daily",
-            "repeat",
-            "{\"freq\":\"day\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
-          ],
-          [
-            "9am",
-            "time",
-            "09:00"
-          ]
+          ["daily", "repeat", "{\"freq\":\"day\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"],
+          ["9am", "time", "09:00"]
         ],
         "date": null,
         "time": "09:00"
@@ -921,13 +597,7 @@
       "name": "a List by folded prefix",
       "text": "Fix tap #ho",
       "expect": {
-        "spans": [
-          [
-            "#ho",
-            "list",
-            "Home"
-          ]
-        ],
+        "spans": [["#ho", "list", "Home"]],
         "list_id": "l-home",
         "new_list": null
       }
@@ -936,13 +606,7 @@
       "name": "a List ignores case",
       "text": "Fix tap #WORK",
       "expect": {
-        "spans": [
-          [
-            "#WORK",
-            "list",
-            "Work"
-          ]
-        ],
+        "spans": [["#WORK", "list", "Work"]],
         "list_id": "l-work"
       }
     },
@@ -950,13 +614,7 @@
       "name": "a List with a space is spelled without it",
       "text": "Fix tap #sideprojects",
       "expect": {
-        "spans": [
-          [
-            "#sideprojects",
-            "list",
-            "Side projects"
-          ]
-        ],
+        "spans": [["#sideprojects", "list", "Side projects"]],
         "list_id": "l-side"
       }
     },
@@ -964,13 +622,7 @@
       "name": "an accented List is found without the accent",
       "text": "Fix tap #cafe",
       "expect": {
-        "spans": [
-          [
-            "#cafe",
-            "list",
-            "Café"
-          ]
-        ],
+        "spans": [["#cafe", "list", "Café"]],
         "list_id": "l-cafe"
       },
       "lists": [
@@ -984,13 +636,7 @@
       "name": "an exact name beats an earlier prefix",
       "text": "x #home",
       "expect": {
-        "spans": [
-          [
-            "#home",
-            "list",
-            "Home"
-          ]
-        ],
+        "spans": [["#home", "list", "Home"]],
         "list_id": "l-2"
       },
       "lists": [
@@ -1008,13 +654,7 @@
       "name": "an unknown List is offered as new",
       "text": "Buy paint #Garage",
       "expect": {
-        "spans": [
-          [
-            "#Garage",
-            "list",
-            "Garage"
-          ]
-        ],
+        "spans": [["#Garage", "list", "Garage"]],
         "list_id": null,
         "new_list": "Garage"
       }
@@ -1037,13 +677,7 @@
       "name": "priority p1",
       "text": "Pay rent p1",
       "expect": {
-        "spans": [
-          [
-            "p1",
-            "prio",
-            "1"
-          ]
-        ],
+        "spans": [["p1", "prio", "1"]],
         "priority": 1
       }
     },
@@ -1051,13 +685,7 @@
       "name": "priority p2",
       "text": "Pay rent p2",
       "expect": {
-        "spans": [
-          [
-            "p2",
-            "prio",
-            "2"
-          ]
-        ],
+        "spans": [["p2", "prio", "2"]],
         "priority": 2
       }
     },
@@ -1065,13 +693,7 @@
       "name": "priority p3",
       "text": "Pay rent p3",
       "expect": {
-        "spans": [
-          [
-            "p3",
-            "prio",
-            "3"
-          ]
-        ],
+        "spans": [["p3", "prio", "3"]],
         "priority": 3
       }
     },
@@ -1079,13 +701,7 @@
       "name": "priority p4",
       "text": "Pay rent p4",
       "expect": {
-        "spans": [
-          [
-            "p4",
-            "prio",
-            "4"
-          ]
-        ],
+        "spans": [["p4", "prio", "4"]],
         "priority": 4
       }
     },
@@ -1109,31 +725,15 @@
       "text": "Pay rent tomorrow 9am every month #Home p1",
       "expect": {
         "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ],
-          [
-            "9am",
-            "time",
-            "09:00"
-          ],
+          ["tomorrow", "date", "2026-10-22"],
+          ["9am", "time", "09:00"],
           [
             "every month",
             "repeat",
             "{\"freq\":\"month\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
           ],
-          [
-            "#Home",
-            "list",
-            "Home"
-          ],
-          [
-            "p1",
-            "prio",
-            "1"
-          ]
+          ["#Home", "list", "Home"],
+          ["p1", "prio", "1"]
         ],
         "date": "2026-10-22",
         "time": "09:00",
@@ -1236,83 +836,39 @@
       "name": "text outside the quotes still counts",
       "text": "Read \"today\" tomorrow",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ]
+        "spans": [["tomorrow", "date", "2026-10-22"]]
       }
     },
     {
       "name": "an unclosed quote masks nothing",
       "text": "Measure 5\" pipe tomorrow",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ]
+        "spans": [["tomorrow", "date", "2026-10-22"]]
       }
     },
     {
       "name": "punctuation is not part of the word",
       "text": "Call (tomorrow), then email.",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ]
+        "spans": [["tomorrow", "date", "2026-10-22"]]
       }
     },
     {
       "name": "the last of a kind wins and the earlier is an alternative",
       "text": "Pay rent tomorrow to tell today",
       "expect": {
-        "spans": [
-          [
-            "today",
-            "date",
-            "2026-10-21"
-          ]
-        ],
+        "spans": [["today", "date", "2026-10-21"]],
         "date": "2026-10-21",
-        "alternatives": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22",
-            "conflict"
-          ]
-        ]
+        "alternatives": [["tomorrow", "date", "2026-10-22", "conflict"]]
       }
     },
     {
       "name": "a use-instead pick beats the last",
       "text": "Pay rent tomorrow to tell today",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ],
+        "spans": [["tomorrow", "date", "2026-10-22"]],
         "date": "2026-10-22",
-        "alternatives": [
-          [
-            "today",
-            "date",
-            "2026-10-21",
-            "conflict"
-          ]
-        ]
+        "alternatives": [["today", "date", "2026-10-21", "conflict"]]
       },
       "prefer": {
         "date": "date:tomorrow:1"
@@ -1322,13 +878,7 @@
       "name": "a pick for a word that is gone falls back to the last",
       "text": "Pay rent tomorrow to tell today",
       "expect": {
-        "spans": [
-          [
-            "today",
-            "date",
-            "2026-10-21"
-          ]
-        ]
+        "spans": [["today", "date", "2026-10-21"]]
       },
       "prefer": {
         "date": "date:friday:1"
@@ -1340,85 +890,37 @@
       "expect": {
         "spans": [],
         "date": null,
-        "ignored": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ]
+        "ignored": [["tomorrow", "date", "2026-10-22"]]
       },
-      "ignored": [
-        "date:tomorrow:1"
-      ]
+      "ignored": ["date:tomorrow:1"]
     },
     {
       "name": "ignoring the last lets the earlier win",
       "text": "Pay rent tomorrow to tell today",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ],
+        "spans": [["tomorrow", "date", "2026-10-22"]],
         "date": "2026-10-22",
         "alternatives": [],
-        "ignored": [
-          [
-            "today",
-            "date",
-            "2026-10-21"
-          ]
-        ]
+        "ignored": [["today", "date", "2026-10-21"]]
       },
-      "ignored": [
-        "date:today:1"
-      ]
+      "ignored": ["date:today:1"]
     },
     {
       "name": "two priorities: the last wins",
       "text": "p1 then p3",
       "expect": {
-        "spans": [
-          [
-            "p3",
-            "prio",
-            "3"
-          ]
-        ],
+        "spans": [["p3", "prio", "3"]],
         "priority": 3,
-        "alternatives": [
-          [
-            "p1",
-            "prio",
-            "1",
-            "conflict"
-          ]
-        ]
+        "alternatives": [["p1", "prio", "1", "conflict"]]
       }
     },
     {
       "name": "two Lists: the last wins",
       "text": "x #ho and #wo",
       "expect": {
-        "spans": [
-          [
-            "#wo",
-            "list",
-            "Work"
-          ]
-        ],
+        "spans": [["#wo", "list", "Work"]],
         "list_id": "l-work",
-        "alternatives": [
-          [
-            "#ho",
-            "list",
-            "Home",
-            "conflict"
-          ]
-        ]
+        "alternatives": [["#ho", "list", "Home", "conflict"]]
       }
     },
     {
@@ -1426,11 +928,7 @@
       "text": "daily or weekly",
       "expect": {
         "spans": [
-          [
-            "weekly",
-            "repeat",
-            "{\"freq\":\"week\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"
-          ]
+          ["weekly", "repeat", "{\"freq\":\"week\",\"every\":1,\"days\":null,\"mode\":\"fixed\"}"]
         ],
         "alternatives": [
           [
@@ -1446,35 +944,16 @@
       "name": "two times: the last wins",
       "text": "at 9am or 3pm",
       "expect": {
-        "spans": [
-          [
-            "3pm",
-            "time",
-            "15:00"
-          ]
-        ],
+        "spans": [["3pm", "time", "15:00"]],
         "time": "15:00",
-        "alternatives": [
-          [
-            "at 9am",
-            "time",
-            "09:00",
-            "conflict"
-          ]
-        ]
+        "alternatives": [["at 9am", "time", "09:00", "conflict"]]
       }
     },
     {
       "name": "a frozen stretch is not read again",
       "text": "Pay rent tomorrow fri",
       "expect": {
-        "spans": [
-          [
-            "fri",
-            "date",
-            "2026-10-23"
-          ]
-        ],
+        "spans": [["fri", "date", "2026-10-23"]],
         "date": "2026-10-23",
         "alternatives": [],
         "ignored": []
@@ -1490,13 +969,7 @@
       "name": "a word only partly frozen is still read",
       "text": "Pay rent tomorrow",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ]
+        "spans": [["tomorrow", "date", "2026-10-22"]]
       },
       "frozen": [
         {
@@ -1509,13 +982,7 @@
       "name": "offsets count UTF-16 units",
       "text": "Party 🎉 tomorrow",
       "expect": {
-        "spans": [
-          [
-            "tomorrow",
-            "date",
-            "2026-10-22"
-          ]
-        ]
+        "spans": [["tomorrow", "date", "2026-10-22"]]
       }
     },
     {
