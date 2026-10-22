@@ -622,8 +622,9 @@ class QuickAddActivity : Activity() {
         )
         val dated = r.fields.date != null || r.fields.time != null
         // Not tappable, so no chevron: the calendar, time and Repeat panels are not in the sheet.
+        val whenIcon = if (r.fields.hasRepeat) R.drawable.qa_repeat else R.drawable.qa_calendar
         propsBox.addView(
-            (if (dated) chip(r.whenLabel, todoSoft, palette.todo, iconRes = R.drawable.qa_calendar) else chip(r.whenLabel, 0, palette.faint, line, iconRes = R.drawable.qa_calendar)).apply {
+            (if (dated) chip(r.whenLabel, todoSoft, palette.todo, iconRes = whenIcon) else chip(r.whenLabel, 0, palette.faint, line, iconRes = whenIcon)).apply {
                 contentDescription = "When: ${r.whenLabel}"
             },
         )

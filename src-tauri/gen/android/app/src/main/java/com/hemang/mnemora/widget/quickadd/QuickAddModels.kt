@@ -30,7 +30,15 @@ data class MarkedWord(
 )
 
 /** The fields the Task would get. Only what the sheet shows. */
-data class QuickFields(val date: String?, val time: String?, val priority: Int, val listId: String?, val newList: String?)
+data class QuickFields(
+    val date: String?,
+    val time: String?,
+    val priority: Int,
+    val listId: String?,
+    val newList: String?,
+    /** A Repeat was read: the When chip then shows the Repeat icon, as the app's does. */
+    val hasRepeat: Boolean = false,
+)
 
 /** What the sheet shows for the text so far (the bridge's `parse`). */
 data class Reading(
@@ -131,6 +139,7 @@ object QuickAddReplies {
                 priority = fields.getInt("priority"),
                 listId = text(fields, "list_id"),
                 newList = text(fields, "new_list"),
+                hasRepeat = !fields.isNull("repeat"),
             ),
             listLabel = ok.getString("list_label"),
             listIsNew = ok.getBoolean("list_is_new"),

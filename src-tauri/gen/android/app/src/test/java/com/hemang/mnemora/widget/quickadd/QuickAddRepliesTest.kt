@@ -40,6 +40,17 @@ class QuickAddRepliesTest {
     }
 
     @Test
+    fun aReadRepeatIsFlaggedSoTheWhenChipCanShowTheRepeatIcon() {
+        fun reading(repeat: String) = """{"ok":{"spans":[],"alternatives":[],"ignored":[],
+            "fields":{"date":"2026-10-22","time":null,"repeat":$repeat,"priority":4,"list_id":null,"new_list":null,"from_text":["repeat"]},
+            "list_label":"Inbox","list_is_new":false,"when_label":"Thu 22 Oct"}}"""
+        val weekly = (QuickAddReplies.reading(reading("""{"freq":"week","every":1,"days":null,"mode":"fixed"}""")) as QuickResult.Ok).value
+        assertTrue(weekly.fields.hasRepeat)
+        val none = (QuickAddReplies.reading(reading("null")) as QuickResult.Ok).value
+        assertFalse(none.fields.hasRepeat)
+    }
+
+    @Test
     fun statusesAndErrorsAreNotReadings() {
         assertEquals(QuickResult.NotSetUp, QuickAddReplies.reading("""{"status":"not_set_up"}"""))
         assertEquals(QuickResult.NeedsUpdate, QuickAddReplies.added("""{"status":"needs_update"}"""))
