@@ -84,13 +84,13 @@ object WidgetUpdater {
     }
 
     /**
-     * Makes sure the Undo bar comes down when its time is up, even if this process is frozen by
-     * then (the vivo freezer): the tap's receiver stays open until the bar ends and then redraws
-     * (see WidgetActionReceiver), and this job is the backstop if the process died. The draw itself
-     * checks the clock, so all either has to do is cause a draw.
+     * Makes sure the Undo bar comes down when its time is up, even though the vivo freezer freezes
+     * this process seconds after it goes idle (a frozen process runs no timer and loses its
+     * alarms): a job (see [WidgetJobs]) keeps it running until then and redraws. The draw itself
+     * checks the clock, so all the job has to do is cause a draw.
      */
-    fun hideUndoAt(context: Context, until: Long) {
-        WidgetJobs.armUndoExpiry(context, until)
+    fun hideUndoAt(context: Context) {
+        WidgetJobs.armUndoExpiry(context)
     }
 
     @Synchronized
@@ -98,8 +98,8 @@ object WidgetUpdater {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(ComponentName(context, TodoWidgetProvider::class.java))
         WidgetConfigStore.retainOnly(context, ids)
-        // A bar that is over goes, with the Undo token it holds; with none left the backstop is not needed.
-        if (!UndoBar.settle(context, System.currentTimeMillis())) WidgetJobs.cancelUndoExpiry(context)
+        // A bar that is over goes, with the Undo token (which may hold the Task's notes) it carries.
+        UndoBar.settle(context, System.currentTimeMillis())
         if (ids.isEmpty()) {
             WidgetJobs.cancelMidnight(context)
             return

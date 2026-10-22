@@ -23,11 +23,11 @@ object WidgetJobs {
     /** The redraw at the next local midnight. Stable, so arming it again replaces the pending one. */
     const val MIDNIGHT_ID = 4401
 
-    /** The backstop that takes the Undo bar down, should the process not do it itself. */
+    /** Keeps the process running until the Undo bar ends, then redraws so the bar goes. */
     const val UNDO_ID = 4402
 
     /** A little after the bar's end, so the clock has certainly passed it. */
-    private const val UNDO_SLACK_MS = 100L
+    const val UNDO_SLACK_MS = 150L
 
     private fun scheduler(context: Context): JobScheduler =
         context.applicationContext.getSystemService(JobScheduler::class.java)
@@ -47,24 +47,52 @@ object WidgetJobs {
 
     fun cancelMidnight(context: Context) = scheduler(context).cancel(MIDNIGHT_ID)
 
-    /** Redraw soon after the Undo bar ending at [until], which hides it. */
-    fun armUndoExpiry(context: Context, until: Long) {
-        schedule(context, UNDO_ID, until - System.currentTimeMillis() + UNDO_SLACK_MS)
-    }
+    /**
+     * Starts the job that waits for the Undo bar to end. It has no delay on purpose: a job that is
+     * running keeps the process out of the freezer, which a timer or an alarm cannot, and a job
+     * with a delay would run up to half a minute late. It reads the bar's end itself (see
+     * [WidgetJobService]), so a newer tick simply replaces it.
+     */
+    fun armUndoExpiry(context: Context) = schedule(context, UNDO_ID, 0L)
 
     fun cancelUndoExpiry(context: Context) = scheduler(context).cancel(UNDO_ID)
 }
 
 /**
- * Runs the jobs above: a redraw of every Todo widget, which re-arms the midnight job and hides an
- * Undo bar that is over. Not exported; only the system can bind it.
+ * Runs the jobs above. The midnight job redraws every Todo widget (which re-arms it); the Undo job
+ * waits in this running service until the bar ends and then redraws, which hides the bar and clears
+ * its Undo token. Not exported; only the system can bind it.
  */
 class WidgetJobService : JobService() {
+    @Volatile
+    private var undoWaiter: Thread? = null
+
     override fun onStartJob(params: JobParameters): Boolean {
-        WidgetUpdater.redrawAsync(applicationContext) { jobFinished(params, false) }
+        val app = applicationContext
+        if (params.jobId != WidgetJobs.UNDO_ID) {
+            WidgetUpdater.redrawAsync(app) { jobFinished(params, false) }
+            return true
+        }
+        undoWaiter = Thread {
+            try {
+                // The bar's end can move while waiting (a newer tick replaces this job, so this is rare).
+                while (true) {
+                    val until = UndoBar.storedUntil(app)
+                    val wait = until - System.currentTimeMillis()
+                    if (until == 0L || wait <= 0L || wait > UndoBar.DURATION_MS + UndoBar.DIALOG_GRACE_MS) break
+                    Thread.sleep(wait + WidgetJobs.UNDO_SLACK_MS)
+                }
+                WidgetUpdater.redrawAsync(app) { jobFinished(params, false) }
+            } catch (e: InterruptedException) {
+                // Stopped by the system or replaced by a newer job: nothing to do.
+            }
+        }.also { it.start() }
         return true
     }
 
-    /** Never retried: the next redraw arms what is needed again. */
-    override fun onStopJob(params: JobParameters): Boolean = false
+    /** Never retried: the next redraw hides a stale bar anyway, by its timestamp. */
+    override fun onStopJob(params: JobParameters): Boolean {
+        undoWaiter?.interrupt()
+        return false
+    }
 }

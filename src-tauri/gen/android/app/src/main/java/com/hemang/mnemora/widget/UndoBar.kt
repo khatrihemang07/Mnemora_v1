@@ -55,14 +55,15 @@ object UndoBar {
         return if (isShown(until, now)) UndoState(lead, p.getString("suffix", null), token, until) else null
     }
 
+    /** When the stored bar ends, or 0 when none is stored. */
+    fun storedUntil(context: Context): Long = prefs(context).getLong("until", 0L)
+
     /**
      * Clears the stored bar if its time is up, so its Undo token (which may carry the Task's notes)
-     * does not outlive it. Returns whether a bar is still wanted.
+     * does not outlive it.
      */
-    fun settle(context: Context, now: Long): Boolean {
-        val until = prefs(context).getLong("until", 0L)
-        if (isExpired(until, now)) clear(context)
-        return until != 0L && !isExpired(until, now)
+    fun settle(context: Context, now: Long) {
+        if (isExpired(storedUntil(context), now)) clear(context)
     }
 
     fun clear(context: Context) {

@@ -7,7 +7,6 @@ import android.content.Intent
 import android.util.Log
 import com.hemang.mnemora.MainActivity
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 /**
  * Taps on the Todo widget that change Tasks: a row's diamond (tick) and the Undo bar. Not exported;
@@ -20,30 +19,14 @@ class WidgetActionReceiver : BroadcastReceiver() {
         val app = context.applicationContext
         val pending = goAsync()
         executor.execute {
-            var holding = false
             try {
                 if (action == ACTION_UNDO) WidgetActions.undo(app) else row(app, intent)
-                holding = holdForUndoBar(app, pending)
             } catch (e: Throwable) {
                 Log.w(TAG, "widget action failed", e)
             } finally {
-                if (!holding) pending.finish()
+                pending.finish()
             }
         }
-    }
-
-    /**
-     * After a tick the Undo bar must come down about four seconds later. The vivo freezer freezes
-     * this process seconds after it goes idle, which stops a timer and deletes alarms, but not a
-     * process that is busy in a receiver. So the receiver stays open until the bar ends (well inside
-     * the broadcast limit), then redraws; WidgetJobs holds a job as the backstop if the process dies.
-     * Returns whether [pending] now belongs to that wait.
-     */
-    private fun holdForUndoBar(context: Context, pending: PendingResult): Boolean {
-        val until = UndoBar.get(context, System.currentTimeMillis())?.until ?: return false
-        val wait = (until - System.currentTimeMillis()).coerceAtLeast(0L) + EXPIRY_SLACK_MS
-        expiry.schedule({ WidgetUpdater.redrawAsync(context) { pending.finish() } }, wait, TimeUnit.MILLISECONDS)
-        return true
     }
 
     private fun row(context: Context, intent: Intent) {
@@ -97,10 +80,5 @@ class WidgetActionReceiver : BroadcastReceiver() {
                 .putExtra(EXTRA_TICK_STEPS, tickSteps)
 
         private val executor = Executors.newSingleThreadExecutor()
-
-        /** Ends the wait of a receiver that holds the process for the Undo bar. */
-        private val expiry = Executors.newSingleThreadScheduledExecutor()
-
-        private const val EXPIRY_SLACK_MS = 150L
     }
 }

@@ -38,7 +38,7 @@ object WidgetActions {
                 // second or so, which must not come out of the time to Undo.
                 val shown = bar.startedAt(System.currentTimeMillis(), grace)
                 UndoBar.put(context, shown)
-                WidgetUpdater.hideUndoAt(context, shown.until)
+                WidgetUpdater.hideUndoAt(context)
             }
             // The Task changed or went away since the widget was drawn: show what is true now.
             TickReply.Failed -> WidgetUpdater.redrawNow(context)
@@ -51,6 +51,7 @@ object WidgetActions {
     fun undo(context: Context) {
         val state = UndoBar.get(context, System.currentTimeMillis())
         UndoBar.clear(context)
+        WidgetJobs.cancelUndoExpiry(context)
         if (state != null) {
             val worked = ReplyParser.parseUndo(WidgetBridge.call(context, WidgetRequests.undo(state.token)))
             if (!worked) Log.w(TAG, "undo failed")
