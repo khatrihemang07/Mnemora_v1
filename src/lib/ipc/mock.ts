@@ -94,6 +94,17 @@ export async function installMock() {
   (window as unknown as { __journalMock: typeof journalFlags }).__journalMock = journalFlags;
   const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
 
+  journal.onRemoteChange = () => void events.journalChangedEvent.emit();
+  // Console: `__journalRemoteMock('new text')` acts out another device editing the newest Entry
+  // (or the Entry with the given id). The open Journal refreshes silently; an Entry being edited
+  // keeps its text until the editor closes. Browser only; Rust sends the same event after a sync.
+  (window as unknown as { __journalRemoteMock: unknown }).__journalRemoteMock = (
+    text: string,
+    id?: string,
+  ) => {
+    if (journal.simulateRemoteEdit(text, id)) void events.journalChangedEvent.emit();
+  };
+
   const todo = createTodoMock((key) => values[key]);
   // Console: `__listMergeMock()` (or `('Groceries', 'Pixel 8')`) acts out another device having made
   // a List with the same name: the one you are looking at merges away, you are moved to the

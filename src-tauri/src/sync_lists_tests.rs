@@ -110,6 +110,7 @@ pub(crate) fn world(app: &TestApp) -> Value {
             "tasks": rows("id, CASE WHEN deleted_at IS NULL THEN list_id END, sort_key, title, deleted_at IS NOT NULL", "todo_tasks", "id"),
             "comments": rows("id, task_id, body, edited, deleted_at IS NOT NULL", "todo_comments", "id"),
             "settings": rows("module, key, value", "settings", "module, key"),
+            "entries": rows("id, page_date, body, written_at, written_offset_min, written_tz, edited_at, word_count, created_at, deleted_at IS NOT NULL", "journal_entries", "id"),
         })
     })
 }

@@ -102,6 +102,8 @@ pub fn sync_now(state: State<'_, AppState>) {
 #[tauri::command]
 #[specta::specta]
 pub fn sync_resume(state: State<'_, AppState>) {
+    // An editor that went away with the app in the background no longer holds changes back.
+    crate::editing::release_lapsed(&state);
     state.sync.resume();
 }
 

@@ -110,6 +110,8 @@ pub struct RemoteChange<'a> {
     pub entity_id: &'a str,
     /// What the origin device did.
     pub op: ChangeOp,
+    /// When the origin made it: its wall-clock milliseconds (for times derived from it).
+    pub at: i64,
     /// `{field: value}` of the winning fields; whole groups only. May be empty when every field
     /// lost: the Module then applies nothing and returns the entity as it is.
     pub fields: &'a Map<String, Value>,

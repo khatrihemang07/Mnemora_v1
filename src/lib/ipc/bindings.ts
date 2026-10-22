@@ -29,6 +29,18 @@ export const commands = {
 	backupNow: () => typedError<string, AppError>(__TAURI_INVOKE("backup_now")),
 	/**  Opens the log folder in the system file manager. */
 	openLogDir: () => typedError<null, AppError>(__TAURI_INVOKE("open_log_dir")),
+	/**
+	 *  An editor opened or is still open on `scope` (a field, a group of fields, or `*` for the whole
+	 *  record) of one record: what other devices send for it waits. Call again about every 30
+	 *  seconds; the hold lapses after two minutes without a call, so an editor that vanished cannot
+	 *  hold changes back for ever.
+	 */
+	editingHold: (entity: string, entityId: string, scope: string) => typedError<null, AppError>(__TAURI_INVOKE("editing_hold", { entity, entityId, scope })),
+	/**
+	 *  The editor is done (its text is saved): what was held back is merged now, and the screens
+	 *  refresh silently.
+	 */
+	editingRelease: (entity: string, entityId: string, scope: string) => typedError<null, AppError>(__TAURI_INVOKE("editing_release", { entity, entityId, scope })),
 	/**  Writes a new Entry on a Page. Rejects blank text and invalid dates or zones. */
 	journalEntryCreate: (entry: NewEntry) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_create", { entry })),
 	/**  Replaces an Entry's text. `session_id` groups a composer session's saves in the change log. */
@@ -318,6 +330,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
 	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
@@ -620,6 +633,12 @@ export type InboxView = {
 	/**  Groups of Tasks with no List, then "No date, in a List" when there are such Tasks. */
 	groups: TaskGroup[],
 };
+
+/**
+ *  Sync changed Journal data from another device, so whatever the Journal shows is stale. The
+ *  UI refreshes in place, silently.
+ */
+export type JournalChangedEvent = null;
 
 /**
  *  TypeScript-facing description of any JSON value. Only used for type generation: on the wire

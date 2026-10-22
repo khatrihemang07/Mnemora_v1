@@ -92,6 +92,7 @@ mod tests {
                     entity: ENTITY,
                     entity_id: id,
                     op: crate::changelog::ChangeOp::Update,
+                    at: 0,
                     fields: &fields,
                     settings: &registry,
                 },

@@ -725,10 +725,14 @@ fn random_action(
     step: usize,
     ids: &mut Vec<Value>,
     list_ids: &mut Vec<Value>,
+    journal: &mut Journal,
 ) {
     let known: Vec<Value> = ids.clone();
     let pick = |rng: &mut Rng| known.get(rng.below(known.len().max(1))).cloned();
-    let roll = rng.below(20);
+    let roll = rng.below(28);
+    if roll >= 20 {
+        return random_entry_action(c, rng, d, step, journal);
+    }
     if roll >= 12 {
         return random_list_action(c, rng, d, step, roll, (&known, list_ids));
     }
@@ -787,6 +791,87 @@ fn random_action(
             let _ = c[d].invoke::<Value>("todo_task_skip", json!({ "id": id, "local": local() }));
         }
         (_, Some(_)) => {}
+    }
+}
+
+/// What the random run knows about the Journal: Entry ids and the editors left open.
+#[derive(Default)]
+struct Journal {
+    entries: Vec<Value>,
+    /// (device, Entry) with an editor open on it, holding remote changes back.
+    holds: Vec<(usize, Value)>,
+}
+
+/// Entries made, edited (also across several saves of one editing session), moved, deleted and
+/// restored, with editors opened and left open so that remote changes are held back meanwhile.
+fn release_entry(app: &TestApp, id: &Value) {
+    app.invoke::<()>(
+        "editing_release",
+        json!({ "entity": "journal_entry", "entityId": id, "scope": "*" }),
+    )
+    .unwrap();
+}
+
+fn random_entry_action(c: &Cluster, rng: &mut Rng, d: usize, step: usize, journal: &mut Journal) {
+    let id = journal
+        .entries
+        .get(rng.below(journal.entries.len().max(1)))
+        .cloned();
+    match (rng.below(8), id) {
+        (0, _) | (_, None) => {
+            let e = c[d]
+                .invoke::<Value>(
+                    "journal_entry_create",
+                    json!({ "entry": {
+                        "page_date": format!("2026-10-{:02}", 1 + rng.below(28)),
+                        "text": format!("entry {step}"), "written_tz": "UTC",
+                        "written_offset_min": 0, "session_id": format!("c{step}"),
+                    }}),
+                )
+                .unwrap();
+            journal.entries.push(e["id"].clone());
+        }
+        (1, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "journal_entry_update",
+                json!({ "id": id, "text": format!("edit {step}"), "sessionId": format!("e{step}") }),
+            );
+        }
+        // One editing session saving again and again: its record is rewritten in place.
+        (2, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "journal_entry_update",
+                json!({ "id": id, "text": format!("typed {}", rng.below(4)), "sessionId": format!("d{d}-{}", rng.below(2)) }),
+            );
+        }
+        (3, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "journal_entry_move",
+                json!({ "id": id, "pageDate": format!("2026-10-{:02}", 1 + rng.below(28)) }),
+            );
+        }
+        (4, Some(id)) => {
+            let _ = c[d].invoke::<()>("journal_entry_delete", json!({ "id": id }));
+        }
+        (5, Some(id)) => {
+            let _ = c[d].invoke::<Value>("journal_entry_restore", json!({ "id": id }));
+        }
+        // An editor opens on an Entry and is left open for a while.
+        (6, Some(id)) => {
+            c[d].invoke::<()>(
+                "editing_hold",
+                json!({ "entity": "journal_entry", "entityId": id, "scope": "*" }),
+            )
+            .unwrap();
+            journal.holds.push((d, id));
+        }
+        (_, Some(_)) => {
+            // An editor closes.
+            if !journal.holds.is_empty() {
+                let (d, id) = journal.holds.remove(rng.below(journal.holds.len()));
+                release_entry(&c[d], &id);
+            }
+        }
     }
 }
 
@@ -884,11 +969,12 @@ fn converge(seed: u64) {
     let mut rng = Rng(seed);
     let mut ids: Vec<Value> = Vec::new();
     let mut list_ids: Vec<Value> = Vec::new();
+    let mut journal = Journal::default();
     for step in 0..160 {
         let d = rng.below(3);
         c[d].clock()
             .advance(1 + i64::try_from(rng.below(40)).unwrap());
-        random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids);
+        random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids, &mut journal);
         if rng.below(4) == 0 {
             let (a, b) = (rng.below(3), rng.below(3));
             if a != b {
@@ -898,12 +984,16 @@ fn converge(seed: u64) {
             }
         }
     }
+    // Every editor closes in the end; what waited is merged, and the devices must agree.
+    for (d, id) in journal.holds.drain(..) {
+        release_entry(&c[d], &id);
+    }
     c.sync_all();
     let lists_first = crate::sync_lists_tests::world(&c[0]);
     for d in 1..3 {
         let other = crate::sync_lists_tests::world(&c[d]);
         if other != lists_first {
-            for section in ["lists", "tasks", "comments", "settings"] {
+            for section in ["lists", "tasks", "comments", "settings", "entries"] {
                 let (a, b) = (
                     lists_first[section].as_array().unwrap(),
                     other[section].as_array().unwrap(),

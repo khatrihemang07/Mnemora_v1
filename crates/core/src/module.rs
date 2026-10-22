@@ -147,6 +147,17 @@ impl Module for CoreModule {
              CREATE INDEX change_log_entity_seq ON change_log(entity, seq);
              CREATE INDEX change_log_entity_origin ON change_log(entity, origin_device, origin_seq);",
             ),
+            // Holds that keep Sync from replacing text being typed (local, never synced; see
+            // `editing`). Cleared at every start.
+            M::up(
+                "CREATE TABLE editing_sessions(
+                 entity TEXT NOT NULL,
+                 entity_id TEXT NOT NULL,
+                 scope TEXT NOT NULL,
+                 touched_at INTEGER NOT NULL,
+                 PRIMARY KEY(entity, entity_id, scope)
+             ) STRICT;",
+            ),
         ])
     }
 
@@ -158,6 +169,8 @@ impl Module for CoreModule {
     ) -> AppResult<()> {
         // First: every later write is stamped with this device.
         crate::hlc::set_device_id(conn, &device.device_id())?;
+        // No editor survives a restart: nothing is held back any more.
+        crate::editing::clear(conn)?;
         crate::settings::move_look_and_feel_to_device(conn, device)
     }
 

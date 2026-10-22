@@ -803,7 +803,7 @@ mod tests {
         .unwrap();
 
         let report = migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
-        assert_eq!(report.applied, vec![("core".into(), 1, 4)]);
+        assert_eq!(report.applied, vec![("core".into(), 1, 5)]);
         assert!(report.backup.is_some(), "existing data is backed up first");
         let theme: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'theme'", [], |r| {

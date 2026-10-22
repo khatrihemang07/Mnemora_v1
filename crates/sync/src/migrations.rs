@@ -71,5 +71,23 @@ pub fn all() -> Migrations<'static> {
              PRIMARY KEY(device, address)
          ) STRICT;",
         ),
+        // Held changes (#65), local and not synced: what other devices sent for a field that an
+        // editor holds (core::editing). The record itself is stored and counted as seen, so it
+        // is never asked for again; only its values for that unit wait here until the hold ends.
+        // `ms/counter/device` is the record's clock, which the unit's field clocks were raised to.
+        M::up(
+            "CREATE TABLE sync_held(
+             entity TEXT NOT NULL,
+             entity_id TEXT NOT NULL,
+             unit TEXT NOT NULL,
+             ms INTEGER NOT NULL,
+             counter INTEGER NOT NULL,
+             device TEXT NOT NULL,
+             op TEXT NOT NULL,
+             at INTEGER NOT NULL,
+             fields TEXT NOT NULL,
+             PRIMARY KEY(entity, entity_id, unit, ms, counter, device)
+         ) STRICT;",
+        ),
     ])
 }

@@ -8,14 +8,17 @@
 use std::collections::BTreeSet;
 
 use mnemora_core::changelog::{self, ChangeOp, Remote};
+use mnemora_core::editing;
 use mnemora_core::hlc::{Stamp, Timestamp};
 use mnemora_core::settings;
 use mnemora_core::syncable::{FieldClass, RemoteChange, SyncEntity, SyncEvent};
+use mnemora_core::util::now_ms;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use serde_json::{Map, Value};
 
 use crate::clocks;
 use crate::error::SyncError;
+use crate::held::{self, HeldUnit};
 use crate::merge::{Verdict, decide};
 use crate::registry::Registry;
 use crate::vector;
@@ -53,6 +56,10 @@ pub fn apply_batch(
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let mut applied = Applied::default();
     let mut folded: BTreeSet<&str> = BTreeSet::new();
+    // Editors that went away without letting go (their lease lapsed) hold nothing back now.
+    let released = held::release_ready(&tx, registry, me, now_ms())?;
+    applied.changed.extend(released.changed);
+    applied.events.extend(released.events);
     for record in &records {
         let (module, schema) = registry
             .find(&record.entity)
@@ -73,11 +80,12 @@ pub fn apply_batch(
         if folded.insert(&record.entity) {
             clocks::fold(&tx, schema, me)?;
         }
-        let winners = decide_fields(&tx, schema, record)?;
+        let (winners, kept_back) = decide_fields(&tx, schema, record, op)?;
         let change = RemoteChange {
             entity: &record.entity,
             entity_id: &record.entity_id,
             op,
+            at: record.at,
             fields: &winners,
             settings: registry.settings(),
         };
@@ -107,6 +115,19 @@ pub fn apply_batch(
             &record.origin_device,
             record.origin_seq,
         )?;
+        held::stash(
+            &tx,
+            &record.entity,
+            &record.entity_id,
+            &Stamp {
+                ms: record.hlc_ms,
+                counter: record.hlc_counter,
+                device: record.origin_device.clone(),
+            },
+            op,
+            record.at,
+            &kept_back,
+        )?;
         applied.stored += 1;
         applied.events.extend(outcome.events);
         if outcome.changed && record.entity != settings::ENTITY {
@@ -128,13 +149,21 @@ pub fn apply_batch(
     Ok(applied)
 }
 
-/// The values of `record` that win against the clocks held, whole groups at a time. The clocks
-/// of the winners move to the record's.
+/// The values of `record` that win against the clocks held, whole groups at a time, and the
+/// winning units an editor holds back (kept apart until it lets go, see `held`). The clocks of
+/// the winners move to the record's either way. A record that creates its entity is never
+/// held: nothing can be editing what does not exist yet.
 fn decide_fields(
     conn: &Connection,
     schema: &SyncEntity,
     record: &WireRecord,
-) -> Result<Map<String, Value>, SyncError> {
+    op: ChangeOp,
+) -> Result<(Map<String, Value>, Vec<HeldUnit>), SyncError> {
+    let scopes = if op == ChangeOp::Create {
+        Vec::new()
+    } else {
+        editing::held(conn, &record.entity, &record.entity_id, now_ms())?
+    };
     let stamp = Stamp {
         ms: record.hlc_ms,
         counter: record.hlc_counter,
@@ -160,18 +189,29 @@ fn decide_fields(
         }
     }
     let mut winners = Map::new();
-    for (_, members, class) in units {
+    let mut kept_back = Vec::new();
+    for (key, members, class) in units {
         let newest_held = members.iter().filter_map(|m| held.get(*m)).max();
         if decide(class, newest_held, &stamp) == Verdict::Take {
+            let waits = editing::is_held(&scopes, key);
+            let mut values = Map::new();
             for member in members {
                 if let Some(value) = record.fields.get(member) {
-                    winners.insert(member.to_owned(), value.clone());
+                    values.insert(member.to_owned(), value.clone());
                     clocks::raise(conn, &record.entity, &record.entity_id, member, &stamp)?;
                 }
             }
+            if waits {
+                kept_back.push(HeldUnit {
+                    unit: key.to_owned(),
+                    fields: values,
+                });
+            } else {
+                winners.extend(values);
+            }
         }
     }
-    Ok(winners)
+    Ok((winners, kept_back))
 }
 
 #[cfg(test)]

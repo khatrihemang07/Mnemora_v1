@@ -7,6 +7,7 @@
 pub mod changelog;
 pub mod db;
 pub mod device;
+pub mod editing;
 pub mod env;
 pub mod error;
 pub mod events;

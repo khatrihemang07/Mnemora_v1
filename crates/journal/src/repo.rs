@@ -55,6 +55,43 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Entry>> {
         .optional()?)
 }
 
+/// An Entry in any state, with when it was deleted (none while it is live).
+pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(Entry, Option<i64>)>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {COLUMNS}, deleted_at FROM journal_entries WHERE id = ?1"),
+            [id],
+            |r| Ok((from_row(r)?, r.get(10)?)),
+        )
+        .optional()?)
+}
+
+/// Writes the named columns of one Entry (names come from code, never from input).
+pub fn update_columns(
+    conn: &Connection,
+    id: &str,
+    sets: &[(&str, &dyn rusqlite::ToSql)],
+) -> AppResult<()> {
+    if sets.is_empty() {
+        return Ok(());
+    }
+    let assignments: Vec<String> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, (column, _))| format!("{column} = ?{}", i + 2))
+        .collect();
+    let mut values: Vec<&dyn rusqlite::ToSql> = vec![&id];
+    values.extend(sets.iter().map(|(_, v)| *v));
+    conn.execute(
+        &format!(
+            "UPDATE journal_entries SET {} WHERE id = ?1",
+            assignments.join(", ")
+        ),
+        values.as_slice(),
+    )?;
+    Ok(())
+}
+
 /// A soft-deleted Entry.
 pub fn get_deleted(conn: &Connection, id: &str) -> AppResult<Option<Entry>> {
     Ok(conn

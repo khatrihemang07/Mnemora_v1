@@ -23,6 +23,8 @@ macro_rules! specta_builder_for {
                 commands::log_ui_error,
                 commands::backup_now,
                 commands::open_log_dir::<$runtime>,
+                editing::editing_hold,
+                editing::editing_release,
                 journal::journal_entry_create,
                 journal::journal_entry_update,
                 journal::journal_entry_toggle_task,
@@ -93,6 +95,7 @@ macro_rules! specta_builder_for {
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
                 TodoChangedEvent,
+                JournalChangedEvent,
                 LinkOpenedEvent,
                 SyncPairingEvent,
                 SyncPeersEvent,
@@ -102,6 +105,7 @@ macro_rules! specta_builder_for {
 }
 
 mod commands;
+mod editing;
 mod env_guard;
 mod journal;
 mod links;
@@ -109,6 +113,8 @@ mod state;
 mod sync;
 #[cfg(test)]
 mod sync_cluster_tests;
+#[cfg(test)]
+mod sync_journal_tests;
 #[cfg(test)]
 mod sync_lists_tests;
 #[cfg(test)]
@@ -176,6 +182,11 @@ pub struct SettingsChangedEvent(pub SettingsChanged);
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct TodoChangedEvent;
 
+/// Sync changed Journal data from another device, so whatever the Journal shows is stale. The
+/// UI refreshes in place, silently.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct JournalChangedEvent;
+
 /// Sync merged two Todo Lists with the same name: whoever is looking at `from_id` moves to
 /// `into_id` (the List that was kept) and is told. `device` names the other device the List came
 /// from, when it is a paired one.
@@ -215,8 +226,8 @@ fn modules() -> Vec<Box<dyn Module>> {
     ]
 }
 
-/// Turns "Sync changed a Module's data" into that Module's own change event: Todo's screens
-/// refresh in place after every batch, silently. The Todo widget redraws once per sync session,
+/// Turns "Sync changed a Module's data" into that Module's own change event: Todo's and the
+/// Journal's screens refresh in place after every batch, silently. The Todo widget redraws once per sync session,
 /// not per batch, so a big sync does not flood it.
 fn follow_remote<R: tauri::Runtime>(
     bus: &EventBus,
@@ -225,10 +236,13 @@ fn follow_remote<R: tauri::Runtime>(
 ) {
     let handle_for_merges = handle.clone();
     bus.subscribe(move |event: &RemoteChanged| {
-        if event.module == mnemora_todo::MODULE_ID
-            && let Err(e) = TodoChangedEvent.emit(&handle)
-        {
-            tracing::warn!(target: "sync", error = %e, "could not emit the Todo change event");
+        let sent = match event.module.as_str() {
+            mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
+            mnemora_journal::MODULE_ID => JournalChangedEvent.emit(&handle),
+            _ => Ok(()),
+        };
+        if let Err(e) = sent {
+            tracing::warn!(target: "sync", error = %e, "could not emit the change event");
         }
     });
     let merged_handle = handle_for_merges;
@@ -317,6 +331,9 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
             tracing::warn!(module = module.id(), error = %e, "startup work failed");
         }
     }
+
+    // No editor survives a restart: merge what a previous run was still holding back for one.
+    editing::release_at_start(&mut conn, &modules, &device.device_id());
 
     let bus = EventBus::new();
     let settings = settings_store(&modules, &bus, &device);

@@ -37,8 +37,9 @@ use tempfile::TempDir;
 use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    LinkOpenedEvent, SettingsChangedEvent, SyncPairingEvent, SyncPeersEvent, TodoChangedEvent,
-    TodoListsMergedEvent, commands, journal, links, modules, settings_store, sync, todo,
+    JournalChangedEvent, LinkOpenedEvent, SettingsChangedEvent, SyncPairingEvent, SyncPeersEvent,
+    TodoChangedEvent, TodoListsMergedEvent, commands, editing, journal, links, modules,
+    settings_store, sync, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a
@@ -237,6 +238,27 @@ impl TestApp {
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).
     pub fn with_db<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
         f(&lock(&self.app.state::<AppState>().db))
+    }
+
+    /// What the app does at every start, after the Modules' own startup work: no editor
+    /// survives, and what was held back for one is merged. Call after dropping the Modules'
+    /// holds with [`run_startup`](Self::run_startup) of the core Module, or as is.
+    pub fn restart(&self) {
+        let state = self.app.state::<AppState>();
+        for module in state.modules.iter() {
+            module
+                .on_startup(
+                    &mut lock(&state.db),
+                    &state.device,
+                    &MigrationReport::default(),
+                )
+                .unwrap();
+        }
+        crate::editing::release_at_start(
+            &mut lock(&state.db),
+            &state.modules,
+            &state.device.device_id(),
+        );
     }
 
     /// Runs a Module's startup work again, as an app restart would (nothing newly migrated).

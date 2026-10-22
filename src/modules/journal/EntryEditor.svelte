@@ -12,6 +12,7 @@
   import CalendarDays from '~icons/lucide/calendar-days';
   import type { Entry } from '../../lib/ipc/bindings';
   import { blockNavigation, interceptBack } from '../../lib/router';
+  import { editingHold, WHOLE } from '../../lib/editing-hold';
   import { setTimer } from '../../lib/timing';
   import Button from '../../lib/ui/Button.svelte';
   import Chip from '../../lib/ui/Chip.svelte';
@@ -53,6 +54,10 @@
     crypto.randomUUID(),
   );
 
+  // Changes other devices make to this Entry wait while it is open (Rust merges them when we let go).
+  const hold = editingHold('journal_entry', start.id);
+  hold.take(WHOLE);
+
   let text = $state(start.body);
   let error = $state<unknown>(null);
   let card = $state<HTMLDivElement | null>(null);
@@ -68,6 +73,8 @@
       if (saved) {
         if (session.blankKept) notify("Empty entries aren't saved. Kept the previous text.");
         editing.close();
+        // After the last save, so the text we wrote is judged against what came in meanwhile.
+        await hold.releaseAll();
         void invalidateJournal();
       }
       return saved;
@@ -111,7 +118,7 @@
 
   // Leaving the Journal mid-edit still saves.
   onDestroy(() => {
-    void session.flush();
+    void session.flush().then(() => hold.releaseAll());
     if (editing.finisher === finish) editing.finisher = null;
     if (editing.active === editor) editing.active = null;
   });

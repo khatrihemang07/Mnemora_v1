@@ -79,12 +79,57 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
   const live = () => all.filter((e) => !deleted.has(e.id));
   const find = (id: unknown) => live().find((e) => e.id === id);
   const missing = () => fail('not_found', 'That Entry no longer exists');
+  /** Entries an editor holds (Rust: `editing_hold` with scope `*`), and the text waiting for them. */
+  const held = new Set<string>();
+  const waiting = new Map<string, string>();
+
+  const edit = (entry: Entry, text: string) => {
+    const now = Date.now();
+    entry.body = text;
+    entry.word_count = wordCount(text);
+    entry.updated_at = now;
+    if (now - entry.written_at > EDIT_GRACE_MS) entry.edited_at = now;
+  };
 
   return {
-    handles: (cmd: string) => cmd.startsWith('journal_'),
+    /** Set by the IPC mock: tells the UI that Journal data changed behind its back. */
+    onRemoteChange: undefined as (() => void) | undefined,
+
+    handles: (cmd: string) => cmd.startsWith('journal_') || cmd.startsWith('editing_'),
+
+    /**
+     * Another device editing an Entry (the Entry `id`, else the newest one on screen). An Entry
+     * an editor holds keeps its text until the editor lets go, as in Rust. True when the Entry's
+     * text changed now, so the caller refreshes the Journal's views.
+     */
+    simulateRemoteEdit(text: string, id?: string): boolean {
+      const entry = id ? find(id) : live().sort((x, y) => y.written_at - x.written_at)[0];
+      if (!entry) return false;
+      if (held.has(entry.id)) {
+        waiting.set(entry.id, text);
+        return false;
+      }
+      edit(entry, text);
+      return true;
+    },
 
     handle(cmd: string, a: Record<string, unknown>): unknown {
       switch (cmd) {
+        case 'editing_hold':
+          if (a.entity === 'journal_entry') held.add(a.entityId as string);
+          return null;
+        case 'editing_release': {
+          const id = a.entityId as string;
+          held.delete(id);
+          const text = waiting.get(id);
+          waiting.delete(id);
+          const entry = find(id);
+          if (text !== undefined && entry) {
+            edit(entry, text);
+            this.onRemoteChange?.();
+          }
+          return null;
+        }
         case 'journal_entry_create': {
           const n = a.entry as NewEntry;
           if (!n.text.trim()) throw fail('validation', "An Entry can't be blank");
