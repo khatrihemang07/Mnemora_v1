@@ -18,4 +18,10 @@ class HeaderDateTest {
         assertEquals("EEEd", HeaderDate.SKELETON)
         assertEquals("'·' EEE d", HeaderDate.pattern("EEE d"))
     }
+
+    @Test
+    fun theDateGivesWayBeforeTheNameAndOnlyWhenShown() {
+        assertFalse(HeaderDate.nameIsFlexible(true))
+        assertTrue(HeaderDate.nameIsFlexible(false))
+    }
 }

@@ -66,6 +66,20 @@
                         android:textSize="14sp"
                         android:textStyle="bold" />
 
+                    <!-- The name when the Today date is shown: no weight, so the date (weight 1, ellipsized) gives way and
+                         "Today" stays whole. The renderer swaps it for @id/title; no redraw is needed on a font change. -->
+                    <TextView
+                        android:id="@+id/title_fixed"
+                        android:visibility="gone"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="0"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
                     <TextView
                         android:id="@+id/count"
                         android:layout_width="wrap_content"
@@ -81,6 +95,8 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:ellipsize="end"
                         android:maxLines="1"
                         android:textSize="11.5sp" />
                 </LinearLayout>

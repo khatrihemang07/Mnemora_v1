@@ -226,8 +226,13 @@ object WidgetRenderer {
         views.setOnClickPendingIntent(R.id.header, linkIntent(context, WidgetLinks.build(snapshot.view), appWidgetId))
         colors.tint(views, R.id.chip, "setBackgroundTintList") { Palette.withAlpha(palette.todo, 0.16f) }
         colors.tint(views, R.id.chip_icon, "setImageTintList") { palette.todo }
-        views.setTextViewText(R.id.title, snapshot.title)
-        colors.text(views, R.id.title) { palette.ink }
+        // With the date shown the name takes no weight, so the date gives way first and "Today" stays whole.
+        val dateShown = HeaderDate.shows(snapshot.view, showDate)
+        val name = if (HeaderDate.nameIsFlexible(dateShown)) R.id.title else R.id.title_fixed
+        views.setViewVisibility(R.id.title, if (name == R.id.title) View.VISIBLE else View.GONE)
+        views.setViewVisibility(R.id.title_fixed, if (name == R.id.title_fixed) View.VISIBLE else View.GONE)
+        views.setTextViewText(name, snapshot.title)
+        colors.text(views, name) { palette.ink }
         val count = snapshot.count
         if (count == null) {
             views.setViewVisibility(R.id.count, View.GONE)

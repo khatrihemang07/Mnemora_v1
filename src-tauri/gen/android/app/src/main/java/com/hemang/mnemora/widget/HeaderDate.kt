@@ -14,4 +14,7 @@ object HeaderDate {
 
     /** A TextClock pattern for [datePattern] with the "·" separator ahead of it, quoted as a literal. */
     fun pattern(datePattern: String): String = "'·' $datePattern"
+
+    /** Name first, then count, then date: with the date shown the date is the flexible part, otherwise (long List names) the name is. */
+    fun nameIsFlexible(dateShown: Boolean): Boolean = !dateShown
 }
