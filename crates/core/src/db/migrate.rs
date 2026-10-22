@@ -85,6 +85,18 @@ fn stored_version(conn: &Connection, module: &str) -> AppResult<usize> {
     Ok(v.map_or(0, |v| usize::try_from(v).unwrap_or(0)))
 }
 
+/// The version each Module's schema is at, by Module id (what the Sync handshake compares).
+pub fn versions(conn: &Connection) -> AppResult<std::collections::BTreeMap<String, usize>> {
+    let mut stmt = conn.prepare("SELECT module, version FROM _module_migrations")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+    let mut out = std::collections::BTreeMap::new();
+    for row in rows {
+        let (module, version) = row?;
+        out.insert(module, usize::try_from(version).unwrap_or(0));
+    }
+    Ok(out)
+}
+
 fn from_total(conn: &Connection, modules: &[&dyn Module]) -> AppResult<usize> {
     modules
         .iter()

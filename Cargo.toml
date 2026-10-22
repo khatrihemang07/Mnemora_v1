@@ -34,6 +34,12 @@ tracing-appender = "=0.2.5"
 uuid = { version = "=1.28.0", features = ["v5", "v7"] }
 whoami = "=2.1.3"
 tempfile = "=3.27.0"
+# Sync network transport (#61): TLS 1.3 with pinned Ed25519 keys. `ring` is the crypto provider:
+# no cmake/NASM (unlike aws-lc-rs) and it cross-builds for aarch64-linux-android with the NDK clang.
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring"] }
+rcgen = { version = "=0.14.10", default-features = false, features = ["crypto", "ring"] }
+tokio = { version = "=1.54.0", default-features = false }
 # JNI glue for the Todo widget (ADR 0014); Android only.
 jni = "=0.21.1"
 

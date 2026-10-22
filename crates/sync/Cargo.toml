@@ -17,9 +17,14 @@ thiserror.workspace = true
 tracing.workspace = true
 specta = { workspace = true, features = ["derive"] }
 whoami.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
+rcgen.workspace = true
+tokio = { workspace = true, features = ["net", "rt", "sync", "time", "io-util"] }
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true

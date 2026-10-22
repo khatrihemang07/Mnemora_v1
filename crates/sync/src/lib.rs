@@ -10,6 +10,7 @@ mod error;
 mod merge;
 mod migrations;
 mod name;
+pub mod net;
 mod peers;
 mod registry;
 mod runtime;
