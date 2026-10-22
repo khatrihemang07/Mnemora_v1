@@ -258,6 +258,9 @@ pub struct Record {
     pub snapshot: Value,
     /// When it was recorded: UTC milliseconds. A session's record carries its latest edit.
     pub at: i64,
+    /// What the author changed, with the author's values: the same on every device. `None` for
+    /// a record from before `fields` existed, which stands for every field of its snapshot.
+    pub fields: Option<Map<String, Value>>,
 }
 
 /// Every record of one entity, oldest first by clock `(ms, counter, origin device)`: the same
@@ -265,7 +268,7 @@ pub struct Record {
 /// skipped: the log must never stop a screen from loading.
 pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<Record>> {
     let mut stmt = conn.prepare(
-        "SELECT op, session_id, snapshot, at FROM change_log
+        "SELECT op, session_id, snapshot, at, fields FROM change_log
          WHERE entity = ?1 AND entity_id = ?2
          ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq",
     )?;
@@ -275,17 +278,22 @@ pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<R
             r.get::<_, Option<String>>(1)?,
             r.get::<_, String>(2)?,
             r.get::<_, i64>(3)?,
+            r.get::<_, Option<String>>(4)?,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (op, session_id, snapshot, at) = row?;
+        let (op, session_id, snapshot, at, fields) = row?;
         if let Ok(snapshot) = serde_json::from_str(&snapshot) {
             out.push(Record {
                 op,
                 session_id,
                 snapshot,
                 at,
+                fields: fields.and_then(|f| match serde_json::from_str(&f) {
+                    Ok(Value::Object(map)) => Some(map),
+                    _ => None,
+                }),
             });
         }
     }

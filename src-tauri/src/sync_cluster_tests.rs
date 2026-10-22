@@ -532,6 +532,62 @@ fn a_skip_reads_as_skipped_in_history_on_the_other_device_too() {
 }
 
 #[test]
+fn history_of_concurrent_edits_reads_the_same_on_two_devices() {
+    let (c, id) = pair_with_task("Report");
+    c[0].clock().advance(1_000);
+    priority(&c[0], &id, 1);
+    set_when(&c[0], &id, "2026-10-25", None, None);
+    c[1].clock().advance(1_500);
+    priority(&c[1], &id, 2);
+    c[1].clock().advance(1_000);
+    set_when(&c[1], &id, "2026-10-27", Some("09:00"), None);
+    c.sync(0, 1);
+    c.sync(1, 0);
+    let lines = history(&c[0], &id);
+    assert!(
+        lines.len() >= 5,
+        "every authored change is a line: {lines:?}"
+    );
+    assert_eq!(history(&c[1], &id), lines, "same lines, same order");
+}
+
+#[test]
+fn history_of_concurrent_edits_reads_the_same_on_three_devices() {
+    let c = Cluster::new(3);
+    let t = create_repeating(&c[0], "Water plants", "2026-10-22");
+    let id = t["id"].clone();
+    c.sync_all();
+    c[0].clock().advance(1_000);
+    priority(&c[0], &id, 1);
+    c[1].clock().advance(1_100);
+    priority(&c[1], &id, 2);
+    c[2].clock().advance(1_200);
+    let daily = json!({ "freq": "day", "every": 1, "days": null, "mode": "fixed" });
+    set_when(&c[2], &id, "2026-10-30", None, Some(daily));
+    c[0].clock().advance(2_000);
+    update(&c[0], &id, "Water all plants", "", "sheet-a");
+    c[1].clock().advance(2_000);
+    c[1].invoke::<Value>("todo_task_skip", json!({ "id": id, "local": local() }))
+        .unwrap();
+    c[2].clock().advance(2_500);
+    c[2].invoke::<Value>("todo_task_skip", json!({ "id": id, "local": local() }))
+        .unwrap();
+    // Partial syncs, then everything: devices see different subsets on the way.
+    c.sync(0, 1);
+    c.sync(2, 1);
+    c.sync_all();
+    let lines = history(&c[0], &id);
+    assert!(lines.iter().any(|l| l.starts_with("skip ")), "{lines:?}");
+    assert!(
+        !lines.iter().any(|l| l.starts_with("done ")),
+        "two concurrent Skips never read as Done: {lines:?}"
+    );
+    for d in 1..3 {
+        assert_eq!(history(&c[d], &id), lines, "device {d}");
+    }
+}
+
+#[test]
 fn a_session_does_not_claim_a_value_another_device_changed_since() {
     let c = Cluster::new(3);
     let t = create(&c[0], "Report");
