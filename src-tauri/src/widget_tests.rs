@@ -1183,7 +1183,11 @@ fn settings_that_change_the_drawing_signal_once_and_others_do_not() {
     ] {
         let before = app.widget_signals();
         app.set_pref(key, value);
-        assert_eq!(app.widget_signals() - before, 1, "{key} redraws the widget once");
+        assert_eq!(
+            app.widget_signals() - before,
+            1,
+            "{key} redraws the widget once"
+        );
     }
     // A batch of several is still one signal per Module saved: here, one.
     let before = app.widget_signals();
@@ -1202,7 +1206,11 @@ fn settings_that_change_the_drawing_signal_once_and_others_do_not() {
     app.set_pref("core.display_name", json!("Hemang"));
     app.set_pref("core.reduce_motion", json!(true));
     app.set_pref("todo.parse_dates", json!(false));
-    assert_eq!(app.widget_signals(), before, "unrelated Settings stay quiet");
+    assert_eq!(
+        app.widget_signals(),
+        before,
+        "unrelated Settings stay quiet"
+    );
 }
 
 #[test]
