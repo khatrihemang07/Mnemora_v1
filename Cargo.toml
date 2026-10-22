@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/journal", "crates/todo", "src-tauri"]
+members = ["crates/core", "crates/journal", "crates/todo", "crates/sync", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ publish = false
 mnemora-core = { path = "crates/core" }
 mnemora-journal = { path = "crates/journal" }
 mnemora-todo = { path = "crates/todo" }
+mnemora-sync = { path = "crates/sync" }
 # Tauri 2.x stable. Crates.io "latest" is 3.0 alpha; we deliberately stay on 2.x.
 tauri = { version = "=2.12.4", default-features = false }
 tauri-build = "=2.7.3"

@@ -15,6 +15,13 @@ pub trait Module: Send + Sync {
     /// Stable id, also the Settings key prefix and the migration namespace.
     fn id(&self) -> &'static str;
 
+    /// Whether the Module is on until the user switches it off (true, the default) or off until
+    /// they opt in (Sync). A default-off Module is enabled when listed in the
+    /// `core.enabled_optional_modules` Preference; Sync's own switch is a Device setting instead.
+    fn default_enabled(&self) -> bool {
+        true
+    }
+
     /// This Module's own, independently versioned schema migrations.
     fn migrations(&self) -> Migrations<'static>;
 
@@ -170,5 +177,13 @@ impl Module for CoreModule {
         reg.register_device(m, "phone_tabs_edited", json!(false), validate::boolean());
         // Ids of Modules switched off. A list of the exceptions, so a new Module is on by default.
         reg.register(m, "disabled_modules", json!([]), validate::string_list(64));
+        // Ids of default-off Modules the user opted into. Enabled = (default on and not in
+        // `disabled_modules`) or (default off and listed here).
+        reg.register(
+            m,
+            "enabled_optional_modules",
+            json!([]),
+            validate::string_list(64),
+        );
     }
 }

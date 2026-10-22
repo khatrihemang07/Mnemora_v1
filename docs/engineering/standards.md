@@ -129,6 +129,16 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 43. Real app: the Journal Preferences and Spellcheck survive a restart; `device.toml` holds `spellcheck`, the database holds the three Preferences.
 44. Composer leak: start a new Entry and keep typing, then trigger a feed refresh (finish another Entry, or change the date chip): the in-progress Entry never appears in the feed until you finish it.
 
+### Sync
+
+1. Fresh install (dev browser or real app): Settings ▸ Modules lists Sync with its description and the switch off; there is no Sync row in the sidebar, no Sync section in Settings, `/sync` falls back to Home, and ⌘K finds nothing for "sync". Real app: nothing listens (`lsof -i` shows no Mnemora socket).
+2. Switch Sync on in Settings ▸ Modules: it applies at once (no SaveBar) and opens `/sync`, the Welcome page with the tabs Devices · Conflicts · Activity under the "Sync" title and this device's name prefilled (computer name; phone model on Android). Sync sits in the sidebar's bottom group beside Settings with the radio-tower icon in indigo and no ⌘-digit; ⌘K "Go to Sync" and "Open Sync conflicts" work; on a phone it is in the More sheet, never in the tab bar.
+3. Tabs: each tab has its own address (`/sync`, `/sync/conflicts`, `/sync/activity`), Back returns to the previous tab, ←/→ move between tabs, the active tab has a 2px indigo underline, the sidebar row stays active on every tab. Conflicts and Activity show their empty states. Sync now is disabled until a device is paired. "Pair a device" only says pairing is not available yet.
+4. Name: clear the field and leave it: "Give this device a name" shows and nothing is saved; 41 characters are refused likewise; a valid name is trimmed and kept after a reload (it is in `device.toml`).
+5. Settings ▸ Sync: Sync this device, name, Sync automatically (on), Allow over mobile data (phone layout only, off), Visible on this network (on) all save at once; Leave and forget all devices is disabled ("No paired devices yet.") until a device is paired (dev browser: `/?paired=2`), then asks before it forgets.
+6. Turning off (either switch) asks "Turn off Sync? This device stops syncing. Your data and paired devices are kept; turn Sync on again to catch up."; Cancel leaves the switch on; Turn off removes Sync from the sidebar, More, ⌘K and Settings, and `/sync` falls back to Home. Turning it on again returns to the Welcome page with the same name. Sync's on/off is never synced; disabling another Module still is.
+7. Dark, True black and a 390px-wide window: the tabs, Welcome card, switches, empty states and Dialog are legible; the primary buttons stay the brand violet (indigo only on the icon, tile, tab underline and counts).
+
 ## Performance budgets
 
 - First-load JS stays small: lazy-load route components (the registry already does) and heavy libraries (state machines, charts, CodeMirror: `MarkdownEditor` imports it dynamically).

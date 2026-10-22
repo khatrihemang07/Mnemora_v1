@@ -18,6 +18,8 @@ export interface CoreSettings {
   phoneTabs: string[];
   /** Modules switched off; absent Modules are on, so new ones appear by default. */
   disabledModules: string[];
+  /** Default-off Modules the user turned on (Sync's own switch is a Device setting instead). */
+  enabledOptionalModules: string[];
 }
 
 type Values = Record<string, JsonValue>;
@@ -39,5 +41,6 @@ export function readCore(values: Values = {}): CoreSettings {
     weekStart: pick(values['core.week_start'], ['mon', 'sun'], 'mon'),
     phoneTabs: strings(values['core.phone_tabs']),
     disabledModules: strings(values['core.disabled_modules']),
+    enabledOptionalModules: strings(values['core.enabled_optional_modules']),
   };
 }

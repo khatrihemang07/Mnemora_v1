@@ -277,6 +277,19 @@ export const commands = {
 	todoListSetSort: (id: string, sort: TaskSort) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_sort", { id, sort })),
 	/**  Sets how a List's page groups its Tasks: none, priority or due. */
 	todoListSetGroup: (id: string, groupBy: GroupBy) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_group", { id, groupBy })),
+	/**  Sync's state for this device: on or off, its name and options, and how many devices are paired. */
+	syncGet: () => typedError<SyncState, AppError>(__TAURI_INVOKE("sync_get")),
+	/**
+	 *  Turns Sync on or off for this device only (never synced). Off stops everything Sync runs and
+	 *  keeps the data and the paired devices.
+	 */
+	syncSetEnabled: (enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_enabled", { enabled })),
+	/**  Renames this device (1 to 40 characters). */
+	syncRename: (name: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_rename", { name })),
+	/**  Sets "Sync automatically", "Allow over mobile data" or "Visible on this network". */
+	syncSetOption: (option: SyncOption, enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_option", { option, enabled })),
+	/**  Leaves the group: forgets every paired device. This device keeps its data. */
+	syncLeave: () => typedError<null, AppError>(__TAURI_INVOKE("sync_leave")),
 };
 
 /** Events */
@@ -386,6 +399,8 @@ export type DeviceSettings = {
 	spellcheck?: boolean,
 	/**  Theme, density, text size, reduce motion and phone tabs. */
 	look?: LookAndFeel,
+	/**  The Sync Module's choices for this device. */
+	sync?: SyncDevice,
 };
 
 /**  The Tasks done on one day of Done. */
@@ -926,6 +941,49 @@ export type Span = {
 	text: string,
 	/**  Whether it matched the search. */
 	matched: boolean,
+};
+
+/**
+ *  The Sync Module's choices for this device (ADR 0017). Never synced: each device decides for
+ *  itself whether it talks to the network, so the on/off switch is a Device setting, not a
+ *  Preference.
+ */
+export type SyncDevice = {
+	/**  Sync is on. Off (the default) means nothing runs: no listener, no discovery, no tasks. */
+	enabled?: boolean,
+	/**  What the other devices call this one; `None` until Sync is first turned on. */
+	name?: string | null,
+	/**  Sync when devices are around and after changes. Off: only "Sync now". */
+	automatic?: boolean,
+	/**  Phone only: reach devices over Tailscale away from Wi-Fi. */
+	mobile_data?: boolean,
+	/**  Advertise on the local network so paired devices find this one. */
+	visible?: boolean,
+};
+
+/**  A yes/no choice in Settings › Sync. */
+export type SyncOption = 
+/**  Sync automatically. */
+"automatic" | 
+/**  Allow over mobile data. */
+"mobile_data" | 
+/**  Visible on this network. */
+"visible";
+
+/**  What the Sync screens show. */
+export type SyncState = {
+	/**  Sync is on for this device. */
+	enabled: boolean,
+	/**  This device's name; before it is first chosen, the one that would be prefilled. */
+	name: string,
+	/**  Sync on discovery and after changes. */
+	automatic: boolean,
+	/**  Phone: allow reaching devices away from Wi-Fi. */
+	mobile_data: boolean,
+	/**  Advertise on the local network. */
+	visible: boolean,
+	/**  Other devices this one is paired with. */
+	paired_devices: number,
 };
 
 /**  One thing to do. */

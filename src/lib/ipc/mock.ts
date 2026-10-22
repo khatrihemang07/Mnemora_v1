@@ -8,6 +8,7 @@ import { mockIPC } from '@tauri-apps/api/mocks';
 import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bindings';
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
+import { createSyncMock } from './mock-sync';
 import { createTodoMock } from './mock-todo';
 import { PREF_VALUES } from './mock-todo-arrange';
 
@@ -41,6 +42,7 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'core.phone_tabs': { default: ['home', 'journal', 'todo'], validate: list(4) },
   'core.phone_tabs_edited': { default: false, validate: bool },
   'core.disabled_modules': { default: [], validate: list(64) },
+  'core.enabled_optional_modules': { default: [], validate: list(64) },
   'journal.font': { default: 'serif', validate: oneOf('serif', 'sans') },
   'journal.width': { default: 'default', validate: oneOf('narrow', 'default', 'wide') },
   'journal.page_summary': { default: true, validate: bool },
@@ -79,6 +81,7 @@ export async function installMock() {
     log_level: 'info',
     spellcheck: true,
     look: {},
+    sync: { enabled: false, name: null, automatic: true, mobile_data: false, visible: true },
   };
 
   const query = new URLSearchParams(location.search);
@@ -91,6 +94,8 @@ export async function installMock() {
   const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
 
   const todo = createTodoMock((key) => values[key]);
+  // `?paired=2` shows Sync with two paired devices (Leave enabled, no Welcome page).
+  const sync = createSyncMock(device, Number(query.get('paired') ?? 0) || 0);
 
   applyPrePaintAttributes(values);
 
@@ -178,6 +183,7 @@ export async function installMock() {
         case 'open_log_dir':
           return null;
         default:
+          if (sync.handles(cmd)) return sync.handle(cmd, a);
           if (todo.handles(cmd)) return todo.handle(cmd, a);
           return journal.handles(cmd) ? journal.handle(cmd, a) : undefined;
       }

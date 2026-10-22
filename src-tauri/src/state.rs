@@ -8,6 +8,7 @@ use mnemora_core::env::Environment;
 use mnemora_core::logging::LogHandle;
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::SettingsStore;
+use mnemora_sync::SyncRuntime;
 
 use crate::widget::signal::WidgetSignal;
 
@@ -27,4 +28,6 @@ pub struct AppState {
     pub log: LogHandle,
     /// Tells the Todo widget that Todo data changed.
     pub widgets: Arc<WidgetSignal>,
+    /// Sync's services: nothing runs in them while Sync is off.
+    pub sync: SyncRuntime,
 }

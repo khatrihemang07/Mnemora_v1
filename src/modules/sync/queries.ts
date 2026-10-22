@@ -1,0 +1,20 @@
+import { queryOptions } from '@tanstack/svelte-query';
+import { commands } from '../../lib/ipc/bindings';
+import { queryClient } from '../../lib/ipc/query-client';
+import { unwrap } from '../../lib/ipc/unwrap';
+import { deviceQuery } from '../../lib/settings/queries';
+
+/** Sync's state for this device: on or off, name, options, and how many devices are paired. */
+export const syncQuery = queryOptions({
+  queryKey: ['sync'],
+  queryFn: () => unwrap(commands.syncGet()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/** Asks for fresh values after a change; the device file also holds Sync's on/off. */
+export async function refreshSync() {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: syncQuery.queryKey }),
+    queryClient.invalidateQueries({ queryKey: deviceQuery.queryKey }),
+  ]);
+}

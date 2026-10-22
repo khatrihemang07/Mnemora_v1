@@ -81,10 +81,26 @@ export interface ModuleAction {
   run: (ctx: ModuleContext, query: string) => void;
 }
 
+/**
+ * A Module's on/off switch when it is a Device setting rather than a Preference (Sync): read from
+ * the device file and never synced, so each device chooses for itself. Created during component
+ * setup, like `useBadge`, so it may hold queries.
+ */
+export interface DeviceSwitch {
+  /** Whether the Module is on for this device. */
+  readonly on: boolean;
+  /** The device file has been read, so `on` can be trusted (until then it reads off). */
+  readonly ready: boolean;
+  /** Asks for it on or off. Turning off may ask first; turning on may open the Module. */
+  set: (on: boolean) => void;
+}
+
 /** What a Module tells the shell about itself. Registered in one place: `shell/registry.ts`. */
 export interface ModuleManifest {
   id: string;
   name: string;
+  /** One line under the name in Settings ▸ Modules, for a Module that needs explaining. */
+  description?: string;
   icon: Component<{ class?: string }>;
   /** CSS custom property holding this Module's hue, e.g. `--hue-home`. */
   accentVar: string;
@@ -95,6 +111,13 @@ export interface ModuleManifest {
   navTree?: NavTree;
   /** Home and Settings: always on, no switch in Settings ▸ Modules. */
   required?: true;
+  /**
+   * `false`: off until the user opts in (Sync). Enabled = (default on and not disabled) or
+   * (default off and opted in); see `enabledModules`. Absent means on by default.
+   */
+  defaultEnabled?: false;
+  /** For a default-off Module whose on/off is a Device setting: the shell reads and sets it here. */
+  deviceSwitch?: (ctx: ModuleContext) => DeviceSwitch;
   /**
    * The Module's badge. Called while a sidebar row or tab renders (it may create queries), and
    * read reactively; none means nothing to show.

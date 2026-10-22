@@ -19,6 +19,7 @@ use mnemora_core::logging::LogHandle;
 use mnemora_core::module::Module;
 use mnemora_core::paths::AppPaths;
 use mnemora_core::util::now_ms;
+use mnemora_sync::{RuntimeProbe, SyncRuntime};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tauri::http::HeaderMap;
@@ -34,7 +35,7 @@ use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
     LinkOpenedEvent, SettingsChangedEvent, TodoChangedEvent, commands, journal, links, modules,
-    settings_store, todo,
+    settings_store, sync, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a
@@ -125,7 +126,10 @@ impl TestApp {
             paths,
             log: LogHandle::detached(),
             widgets,
+            sync: SyncRuntime::new(),
         };
+        // As at app start: services run only if the device file says Sync is on.
+        state.sync.reconcile(state.device.get().sync.enabled);
 
         let app = mock_builder()
             .invoke_handler(specta_builder_for!(MockRuntime).invoke_handler())
@@ -197,6 +201,11 @@ impl TestApp {
     /// This install's device id, as `device.toml` holds it.
     pub fn device_id(&self) -> String {
         self.app.state::<AppState>().device.device_id()
+    }
+
+    /// What Sync has running: all zeros while Sync is off.
+    pub fn sync_probe(&self) -> RuntimeProbe {
+        self.app.state::<AppState>().sync.probe()
     }
 
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).

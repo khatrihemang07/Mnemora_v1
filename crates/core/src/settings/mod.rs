@@ -339,10 +339,11 @@ mod tests {
             "core.week_start": "mon",
             "core.phone_tabs": ["home", "journal", "todo"],
             "core.phone_tabs_edited": false,
-            "core.disabled_modules": []
+            "core.disabled_modules": [],
+            "core.enabled_optional_modules": []
         });
         assert_eq!(serde_json::to_value(&snap.values).unwrap(), expected);
-        assert_eq!(snap.schema.len(), 11);
+        assert_eq!(snap.schema.len(), 12);
     }
 
     #[test]

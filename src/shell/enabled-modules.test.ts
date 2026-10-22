@@ -9,6 +9,7 @@ import {
   overlayModules,
   redirectForDisabled,
   setModuleEnabled,
+  setOptedIn,
 } from './enabled-modules';
 
 const comp = async () => ({ default: (() => {}) as never });
@@ -141,5 +142,36 @@ describe('overlayModules', () => {
     const a = mod('a', 40, { overlay: comp });
     const b = mod('b', 25, { overlay: comp });
     expect(ids(overlayModules([a, journal, b]))).toEqual(['b', 'a']);
+  });
+});
+
+describe('default-off Modules', () => {
+  const sync = mod('sync', 90, { defaultEnabled: false });
+  const withSync = [...all, sync];
+
+  it('are off until opted in', () => {
+    expect(ids(enabledModules(withSync, []))).not.toContain('sync');
+    expect(ids(enabledModules(withSync, [], ['sync']))).toContain('sync');
+  });
+  it('ignore the disabled list: only an opt-in turns them on', () => {
+    expect(ids(enabledModules(withSync, ['sync'], ['sync']))).toContain('sync');
+  });
+  it('do not change a default-on Module, whatever is opted in', () => {
+    expect(ids(enabledModules(withSync, ['todo'], ['todo']))).not.toContain('todo');
+    expect(ids(enabledModules(withSync, [], ['todo']))).toContain('todo');
+  });
+  it('leave the opted-in list as a plain set of ids', () => {
+    expect(setOptedIn([], 'sync', true)).toEqual(['sync']);
+    expect(setOptedIn(['sync'], 'sync', true)).toEqual(['sync']);
+    expect(setOptedIn(['sync', 'x'], 'sync', false)).toEqual(['x']);
+  });
+  it('send a switched-off Module URL home', () => {
+    const everything = [home, settings, sync];
+    expect(redirectForDisabled('/sync/activity', everything, enabledModules(everything, []))).toBe(
+      '/',
+    );
+    expect(
+      redirectForDisabled('/sync/activity', everything, enabledModules(everything, [], ['sync'])),
+    ).toBeNull();
   });
 });

@@ -137,6 +137,38 @@ impl LookAndFeel {
     }
 }
 
+/// The Sync Module's choices for this device (ADR 0017). Never synced: each device decides for
+/// itself whether it talks to the network, so the on/off switch is a Device setting, not a
+/// Preference.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(default)]
+// Four independent switches in a settings file; an enum per switch would only add noise.
+#[allow(clippy::struct_excessive_bools)]
+pub struct SyncDevice {
+    /// Sync is on. Off (the default) means nothing runs: no listener, no discovery, no tasks.
+    pub enabled: bool,
+    /// What the other devices call this one; `None` until Sync is first turned on.
+    pub name: Option<String>,
+    /// Sync when devices are around and after changes. Off: only "Sync now".
+    pub automatic: bool,
+    /// Phone only: reach devices over Tailscale away from Wi-Fi.
+    pub mobile_data: bool,
+    /// Advertise on the local network so paired devices find this one.
+    pub visible: bool,
+}
+
+impl Default for SyncDevice {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            name: None,
+            automatic: true,
+            mobile_data: false,
+            visible: true,
+        }
+    }
+}
+
 /// Everything stored per device.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
@@ -156,6 +188,8 @@ pub struct DeviceSettings {
     pub spellcheck: bool,
     /// Theme, density, text size, reduce motion and phone tabs.
     pub look: LookAndFeel,
+    /// The Sync Module's choices for this device.
+    pub sync: SyncDevice,
 }
 
 impl Default for DeviceSettings {
@@ -168,6 +202,7 @@ impl Default for DeviceSettings {
             log_level: "info".to_owned(),
             spellcheck: true,
             look: LookAndFeel::default(),
+            sync: SyncDevice::default(),
         }
     }
 }
@@ -381,6 +416,25 @@ mod tests {
         assert_eq!(back.look.get("density"), None, "unchosen stays unset");
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("density"), "{text}");
+    }
+
+    #[test]
+    fn sync_is_off_and_nameless_until_chosen_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        let fresh = DeviceSettings::default().sync;
+        assert!(!fresh.enabled, "Sync is off by default");
+        assert_eq!(fresh.name, None);
+        assert!(fresh.automatic && fresh.visible && !fresh.mobile_data);
+        // A file from before Sync has no [sync] table at all.
+        std::fs::write(&path, "log_level = \"debug\"\n").unwrap();
+        assert_eq!(DeviceSettings::load(&path).sync, fresh);
+        let mut s = DeviceSettings::default();
+        s.sync.enabled = true;
+        s.sync.name = Some("Studio Mac".into());
+        s.sync.mobile_data = true;
+        s.save(&path).unwrap();
+        assert_eq!(DeviceSettings::load(&path).sync, s.sync);
     }
 
     #[test]

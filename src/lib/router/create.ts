@@ -1,6 +1,6 @@
 import { createRouter, type Routes } from 'sv-router';
 import type { ModuleManifest, RoutePath } from './manifest';
-import { splitPath } from './path';
+import { isWithin, splitPath } from './path';
 import { buildRoutes } from './routes';
 import { withViewTransition } from './view-transition';
 
@@ -30,6 +30,8 @@ export function createAppRouter(manifests: ModuleManifest[]) {
     },
     href: (path: RoutePath) => router.p(path),
     isActive: (path: RoutePath) => router.isActive(path),
+    // On the path or one of its sub-pages (`/sync` while `/sync/activity` is open).
+    isWithin: (path: RoutePath) => isWithin(router.route.pathname, path),
     get pathname() {
       return router.route.pathname;
     },

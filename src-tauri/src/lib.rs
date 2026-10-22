@@ -75,6 +75,11 @@ macro_rules! specta_builder_for {
                 todo::todo_list_reorder,
                 todo::todo_list_set_sort,
                 todo::todo_list_set_group,
+                sync::sync_get,
+                sync::sync_set_enabled,
+                sync::sync_rename,
+                sync::sync_set_option,
+                sync::sync_leave,
             ])
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
@@ -89,6 +94,7 @@ mod env_guard;
 mod journal;
 mod links;
 mod state;
+mod sync;
 #[cfg(test)]
 mod test_support;
 mod theme_inject;
@@ -119,6 +125,7 @@ use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::{SettingsRegistry, SettingsStore};
 use mnemora_journal::JournalModule;
+use mnemora_sync::{SyncModule, SyncRuntime};
 use mnemora_todo::TodoModule;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -157,6 +164,7 @@ fn modules() -> Vec<Box<dyn Module>> {
         Box::new(CoreModule),
         Box::new(JournalModule),
         Box::new(TodoModule),
+        Box::new(SyncModule),
     ]
 }
 
@@ -231,6 +239,9 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     // Settings that change what the Todo widget draws redraw it too.
     let widgets = Arc::new(widget::signal::WidgetSignal::platform());
     widget::signal::follow_settings(&bus, &widgets);
+    // Sync starts only when this device has it on; off, nothing is started at all.
+    let sync = SyncRuntime::new();
+    sync.reconcile(device.get().sync.enabled);
     // Look and feel comes from the device file alone, so the first paint never waits on the database.
     let first_paint = settings.device_values();
 
@@ -251,6 +262,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         paths,
         log,
         widgets,
+        sync,
     };
     app.manage(state);
     #[cfg(target_os = "android")]
@@ -403,6 +415,11 @@ mod tests {
             "todoListSetSort",
             "todoListSetGroup",
             "deviceSetSpellcheck",
+            "syncGet",
+            "syncSetEnabled",
+            "syncRename",
+            "syncSetOption",
+            "syncLeave",
             "settingsChangedEvent",
             "linkOpenedEvent",
         ] {

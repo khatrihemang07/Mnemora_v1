@@ -2128,6 +2128,7 @@ dependencies = [
  "jni",
  "mnemora-core",
  "mnemora-journal",
+ "mnemora-sync",
  "mnemora-todo",
  "serde",
  "serde_json",
@@ -2173,6 +2174,21 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+]
+
+[[package]]
+name = "mnemora-sync"
+version = "0.1.0"
+dependencies = [
+ "mnemora-core",
+ "rusqlite",
+ "rusqlite_migration",
+ "serde",
+ "specta",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
+ "whoami",
 ]
 
 [[package]]

@@ -46,6 +46,7 @@
 
   // A disabled Module's URL (bookmark, history, a switch-off elsewhere) falls back to Home.
   $effect(() => {
+    if (!enabled.ready) return;
     const to = redirectForDisabled(router.pathname, modules, enabled.list);
     if (to) void router.navigate(to);
   });
