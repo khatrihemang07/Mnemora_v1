@@ -10,6 +10,7 @@ pub mod device;
 pub mod env;
 pub mod error;
 pub mod events;
+pub mod hlc;
 pub mod logging;
 pub mod module;
 pub mod paths;

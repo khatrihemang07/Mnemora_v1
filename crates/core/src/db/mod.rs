@@ -4,11 +4,36 @@ pub mod backup;
 pub mod migrate;
 
 use std::path::Path;
+use std::sync::Arc;
 
 pub use rusqlite::Connection;
 use rusqlite::OpenFlags;
+use rusqlite::functions::FunctionFlags;
 
 use crate::error::AppResult;
+use crate::util::now_ms;
+
+/// Where a connection reads wall-clock milliseconds from. The system clock unless a test swaps
+/// it (see [`set_time_source`]), so tests can simulate clock skew between devices.
+pub type TimeSource = Arc<dyn Fn() -> i64 + Send + Sync>;
+
+/// The SQL function that serves the connection's time source.
+const TIME_FUNCTION: &str = "mnemora_now";
+
+/// Replaces the wall clock this connection stamps change-log records with.
+pub fn set_time_source(conn: &Connection, source: TimeSource) -> AppResult<()> {
+    conn.create_scalar_function(TIME_FUNCTION, 0, FunctionFlags::SQLITE_UTF8, move |_| {
+        Ok(source())
+    })?;
+    Ok(())
+}
+
+/// Wall-clock milliseconds as this connection's time source says; the system clock when none
+/// was set.
+pub fn physical_now(conn: &Connection) -> i64 {
+    conn.query_row(&format!("SELECT {TIME_FUNCTION}()"), [], |r| r.get(0))
+        .unwrap_or_else(|_| now_ms())
+}
 
 /// Opens (creating if needed) the database at `path` with WAL and foreign keys on.
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -46,6 +71,7 @@ fn configure(conn: &Connection) -> AppResult<()> {
     conn.pragma_update(None, "foreign_keys", true)?;
     // Another connection (e.g. a backup) may briefly hold a lock.
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    set_time_source(conn, Arc::new(now_ms))?;
     Ok(())
 }
 

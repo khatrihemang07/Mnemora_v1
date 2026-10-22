@@ -1082,3 +1082,17 @@ fn history_of_an_unknown_task_is_not_found() {
         .unwrap_err();
     assert_eq!(err["code"], "not_found");
 }
+
+#[test]
+fn history_stays_in_the_order_things_happened_when_the_wall_clock_stands_still_or_goes_back() {
+    let app = TestApp::new();
+    app.clock().freeze(1_800_000_000_000);
+    let a = create(&app, "a");
+    priority(&app, &a, 1).unwrap();
+    app.clock().freeze(1_700_000_000_000);
+    priority(&app, &a, 2).unwrap();
+    assert_eq!(
+        history(&app, &a),
+        ["Priority P1 → P2", "Priority P4 → P1", "Created"]
+    );
+}

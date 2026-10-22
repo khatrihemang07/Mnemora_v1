@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use specta::Type;
 
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::util::new_id;
 
 /// Last known window geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -140,6 +141,9 @@ impl LookAndFeel {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct DeviceSettings {
+    /// Random id of this install in this Environment (a `UUIDv7`), made on first run and then
+    /// stable. `None` until [`DeviceStore::device_id`] first needs it.
+    pub device_id: Option<String>,
     /// Custom data folder; `None` means the platform default.
     pub data_dir: Option<String>,
     /// Window geometry.
@@ -157,6 +161,7 @@ pub struct DeviceSettings {
 impl Default for DeviceSettings {
     fn default() -> Self {
         Self {
+            device_id: None,
             data_dir: None,
             window: WindowState::default(),
             sidebar: SidebarState::default(),
@@ -232,6 +237,21 @@ impl DeviceStore {
             .clone()
     }
 
+    /// This install's id. The first call makes and saves it (an unsaved id would change on the
+    /// next start, so a failed write is logged and the session still uses the new one).
+    pub fn device_id(&self) -> String {
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(id) = &guard.device_id {
+            return id.clone();
+        }
+        let id = new_id();
+        guard.device_id = Some(id.clone());
+        if let Err(e) = guard.save(&self.path) {
+            tracing::warn!(error = %e, "could not save the new device id");
+        }
+        id
+    }
+
     /// Applies `change` and saves atomically. The in-memory copy is updated even if the
     /// write fails, so the session stays consistent; the error is still reported.
     pub fn update(&self, change: impl FnOnce(&mut DeviceSettings)) -> AppResult<()> {
@@ -291,6 +311,26 @@ mod tests {
         );
         assert_eq!(s.window, WindowState::default());
         assert!(s.spellcheck, "a file from before the flag keeps it on");
+    }
+
+    #[test]
+    fn device_id_is_made_once_saved_and_stable_across_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        let first = DeviceStore::new(path.clone(), DeviceSettings::load(&path));
+        let id = first.device_id();
+        assert_eq!(id.len(), 36);
+        assert_eq!(first.device_id(), id, "same on every call");
+        let restarted = DeviceStore::new(path.clone(), DeviceSettings::load(&path));
+        assert_eq!(restarted.device_id(), id, "same after a restart");
+        let other = tempfile::tempdir().unwrap();
+        let other_path = other.path().join("device.toml");
+        let other_env = DeviceStore::new(other_path.clone(), DeviceSettings::load(&other_path));
+        assert_ne!(
+            other_env.device_id(),
+            id,
+            "another Environment is another device"
+        );
     }
 
     #[test]

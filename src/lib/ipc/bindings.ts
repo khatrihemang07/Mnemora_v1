@@ -369,6 +369,11 @@ list_id: string };
 
 /**  Everything stored per device. */
 export type DeviceSettings = {
+	/**
+	 *  Random id of this install in this Environment (a `UUIDv7`), made on first run and then
+	 *  stable. `None` until [`DeviceStore::device_id`] first needs it.
+	 */
+	device_id?: string | null,
 	/**  Custom data folder; `None` means the platform default. */
 	data_dir?: string | null,
 	/**  Window geometry. */

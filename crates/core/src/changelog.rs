@@ -8,7 +8,8 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::error::AppResult;
-use crate::util::{new_id, now_ms};
+use crate::hlc;
+use crate::util::new_id;
 
 /// What happened to the entity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,14 +60,22 @@ pub struct Change {
 }
 
 /// Records `change`. With a session id, the session's existing record for this entity is
-/// replaced (snapshot and time; a `create` stays a `create`); otherwise a new record is appended.
+/// replaced (snapshot, time, clock and sequence; a `create` stays a `create`); otherwise a new record is appended.
 /// Pass a transaction to make it atomic with the entity write.
 pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
+    // Every write ticks, a session's rewrite included: peers pick records up by sequence.
+    let tick = hlc::tick(conn)?;
+    let device = hlc::device_id(conn)?;
     conn.execute(
-        "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
-         DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END, snapshot = excluded.snapshot, at = excluded.at",
+         DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
+             snapshot = excluded.snapshot, at = excluded.at,
+             origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
+             hlc_counter = excluded.hlc_counter, seq = excluded.seq,
+             origin_seq = excluded.origin_seq",
         rusqlite::params![
             new_id(),
             change.module,
@@ -75,7 +84,11 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
             change.op.as_str(),
             change.session_id,
             change.snapshot.to_string(),
-            now_ms(),
+            tick.physical_ms,
+            device,
+            tick.clock.ms,
+            tick.clock.counter,
+            tick.seq,
         ],
     )?;
     Ok(())
@@ -94,12 +107,14 @@ pub struct Record {
     pub at: i64,
 }
 
-/// Every record of one entity, oldest first. A record whose snapshot cannot be read back is
+/// Every record of one entity, oldest first by clock `(ms, counter, origin device)`: the same
+/// order on every device. On one device that is the order the changes were made. A record whose snapshot cannot be read back is
 /// skipped: the log must never stop a screen from loading.
 pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<Record>> {
     let mut stmt = conn.prepare(
         "SELECT op, session_id, snapshot, at FROM change_log
-         WHERE entity = ?1 AND entity_id = ?2 ORDER BY at, rowid",
+         WHERE entity = ?1 AND entity_id = ?2
+         ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq",
     )?;
     let rows = stmt.query_map([entity, entity_id], |r| {
         Ok((
@@ -212,6 +227,202 @@ mod tests {
         assert!(super::read(&conn, "entry", "nope").unwrap().is_empty());
     }
 
+    fn seqs(conn: &Connection) -> Vec<i64> {
+        let mut stmt = conn
+            .prepare("SELECT seq FROM change_log ORDER BY seq")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[test]
+    fn every_record_carries_this_device_a_clock_and_a_rising_sequence() {
+        let conn = migrated();
+        hlc::set_device_id(&conn, "dev-a").unwrap();
+        let source: db::TimeSource = std::sync::Arc::new(|| 5_000);
+        db::set_time_source(&conn, source).unwrap();
+        record(&conn, &change("e1", None, json!({}))).unwrap();
+        record(&conn, &change("e2", None, json!({}))).unwrap();
+        let rows: Vec<(String, i64, i64, i64, i64)> = conn
+            .prepare("SELECT origin_device, hlc_ms, hlc_counter, seq, origin_seq FROM change_log ORDER BY seq")
+            .unwrap()
+            .query_map([], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("dev-a".to_owned(), 5_000, 0, 1, 1),
+                ("dev-a".to_owned(), 5_000, 1, 2, 2)
+            ],
+            "a standing wall clock is told apart by the counter"
+        );
+    }
+
+    #[test]
+    fn rewriting_a_sessions_record_gives_it_a_new_higher_sequence_and_clock() {
+        let conn = migrated();
+        record(&conn, &change("e1", Some("s1"), json!({"v": 1}))).unwrap();
+        record(&conn, &change("e2", None, json!({"v": 9}))).unwrap();
+        let before = seqs(&conn);
+        record(&conn, &change("e1", Some("s1"), json!({"v": 2}))).unwrap();
+        let after = seqs(&conn);
+        assert_eq!(before, vec![1, 2]);
+        assert_eq!(
+            after,
+            vec![2, 3],
+            "one row rewritten: its old sequence is gone"
+        );
+        let rewritten: i64 = conn
+            .query_row(
+                "SELECT seq FROM change_log WHERE entity_id = 'e1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rewritten, 3);
+    }
+
+    #[test]
+    fn read_orders_by_clock_then_device_not_by_arrival() {
+        let conn = migrated();
+        hlc::set_device_id(&conn, "dev-a").unwrap();
+        record(&conn, &change("e1", None, json!({"v": "local"}))).unwrap();
+        // As if received: an earlier clock arriving later, and a tie decided by device id.
+        let received = |id: &str, device: &str, ms: i64, counter: i64, seq: i64, v: &str| {
+            conn.execute(
+                "INSERT INTO change_log(id, module, entity, entity_id, op, snapshot, at,
+                     origin_device, hlc_ms, hlc_counter, seq, origin_seq)
+                 VALUES (?1, 'journal', 'entry', 'e1', 'update', ?2, 1, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    id,
+                    json!({"v": v}).to_string(),
+                    device,
+                    ms,
+                    counter,
+                    seq + 100,
+                    seq
+                ],
+            )
+            .unwrap();
+        };
+        let local_ms: i64 = conn
+            .query_row("SELECT hlc_ms FROM change_log", [], |r| r.get(0))
+            .unwrap();
+        received("r1", "dev-b", local_ms - 10, 0, 1, "earlier");
+        received("r2", "dev-c", local_ms, 0, 2, "tie-c");
+        received("r3", "dev-0", local_ms, 0, 3, "tie-0");
+        let seen: Vec<Value> = read(&conn, "entry", "e1")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.snapshot["v"].clone())
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                json!("earlier"),
+                json!("tie-0"),
+                json!("local"),
+                json!("tie-c")
+            ],
+            "the local record has counter >= 0 on the same ms, so ties on (ms, counter 0) go by device id"
+        );
+    }
+
+    #[test]
+    fn upgrade_backfills_existing_rows_in_the_order_history_always_showed() {
+        struct Old;
+        impl Module for Old {
+            fn id(&self) -> &'static str {
+                "core"
+            }
+            fn migrations(&self) -> rusqlite_migration::Migrations<'static> {
+                rusqlite_migration::Migrations::new(vec![
+                    rusqlite_migration::M::up(
+                        "CREATE TABLE settings(
+                         module TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+                         updated_at INTEGER NOT NULL, PRIMARY KEY(module, key)
+                     ) STRICT",
+                    ),
+                    rusqlite_migration::M::up(
+                        "CREATE TABLE change_log(
+                         id TEXT PRIMARY KEY NOT NULL, module TEXT NOT NULL, entity TEXT NOT NULL,
+                         entity_id TEXT NOT NULL, op TEXT NOT NULL, session_id TEXT,
+                         snapshot TEXT NOT NULL, at INTEGER NOT NULL
+                     ) STRICT;
+                     CREATE UNIQUE INDEX change_log_session
+                         ON change_log(entity, entity_id, session_id) WHERE session_id IS NOT NULL;",
+                    ),
+                ])
+            }
+            fn register_settings(&self, _: &mut crate::settings::SettingsRegistry) {}
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = db::open_in_memory().unwrap();
+        migrate::run(&mut conn, &[&Old], dir.path()).unwrap();
+        // Inserted out of time order; ids are not in time order either.
+        for (id, at, v) in [
+            ("z", 300, "third"),
+            ("y", 100, "first"),
+            ("x", 200, "second"),
+        ] {
+            conn.execute(
+                "INSERT INTO change_log(id, module, entity, entity_id, op, snapshot, at)
+                 VALUES (?1, 'journal', 'entry', 'e1', 'update', ?2, ?3)",
+                rusqlite::params![id, json!({"v": v}).to_string(), at],
+            )
+            .unwrap();
+        }
+        migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
+        hlc::set_device_id(&conn, "dev-a").unwrap();
+        let seen: Vec<_> = read(&conn, "entry", "e1")
+            .unwrap()
+            .into_iter()
+            .map(|r| r.snapshot["v"].clone())
+            .collect();
+        assert_eq!(seen, vec![json!("first"), json!("second"), json!("third")]);
+        let (device, ms, counter, seq): (String, i64, i64, i64) = conn
+            .query_row(
+                "SELECT origin_device, hlc_ms, hlc_counter, seq FROM change_log WHERE id = 'x'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!((device.as_str(), ms, counter, seq), ("dev-a", 200, 0, 2));
+        // New records continue after the backfill, on a clock past the old times.
+        record(&conn, &change("e1", None, json!({"v": "fourth"}))).unwrap();
+        assert_eq!(seqs(&conn), vec![1, 2, 3, 4]);
+        let last = read(&conn, "entry", "e1").unwrap().pop().unwrap();
+        assert_eq!(last.snapshot["v"], json!("fourth"));
+    }
+
+    #[test]
+    fn a_clock_shown_a_later_remote_time_stamps_the_next_record_after_it() {
+        let conn = migrated();
+        let source: db::TimeSource = std::sync::Arc::new(|| 1_000);
+        db::set_time_source(&conn, source).unwrap();
+        hlc::observe(
+            &conn,
+            hlc::Timestamp {
+                ms: 9_000,
+                counter: 4,
+            },
+        )
+        .unwrap();
+        record(&conn, &change("e1", None, json!({}))).unwrap();
+        let (ms, counter): (i64, i64) = conn
+            .query_row("SELECT hlc_ms, hlc_counter FROM change_log", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert!((ms, counter) > (9_000, 4));
+    }
+
     #[test]
     fn upgrading_an_existing_database_keeps_settings() {
         struct CoreV1;
@@ -240,7 +451,7 @@ mod tests {
         .unwrap();
 
         let report = migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
-        assert_eq!(report.applied, vec![("core".into(), 1, 2)]);
+        assert_eq!(report.applied, vec![("core".into(), 1, 3)]);
         assert!(report.backup.is_some(), "existing data is backed up first");
         let theme: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'theme'", [], |r| {

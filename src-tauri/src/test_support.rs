@@ -7,6 +7,7 @@
 //! let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();
 //! ```
 
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use mnemora_core::db::migrate::MigrationReport;
@@ -17,6 +18,7 @@ use mnemora_core::events::EventBus;
 use mnemora_core::logging::LogHandle;
 use mnemora_core::module::Module;
 use mnemora_core::paths::AppPaths;
+use mnemora_core::util::now_ms;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tauri::http::HeaderMap;
@@ -35,12 +37,53 @@ use crate::{
     settings_store, todo,
 };
 
+/// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a
+/// skew, or frozen at a chosen instant. Lets a test (and later a cluster of `TestApp`s) make one
+/// device's clock run ahead, stand still or lag behind another's.
+#[derive(Default)]
+pub struct TestClock {
+    /// Milliseconds added to the system clock.
+    skew_ms: AtomicI64,
+    /// When non-zero, the clock stands still at this instant.
+    frozen_at: AtomicI64,
+}
+
+impl TestClock {
+    fn now(&self) -> i64 {
+        match self.frozen_at.load(Ordering::SeqCst) {
+            0 => now_ms() + self.skew_ms.load(Ordering::SeqCst),
+            frozen => frozen,
+        }
+    }
+
+    /// Stands still at `ms`.
+    pub fn freeze(&self, ms: i64) {
+        self.frozen_at.store(ms, Ordering::SeqCst);
+    }
+
+    /// Moves a frozen clock forward by `ms` (or a running one's skew).
+    pub fn advance(&self, ms: i64) {
+        if self.frozen_at.load(Ordering::SeqCst) == 0 {
+            self.skew_ms.fetch_add(ms, Ordering::SeqCst);
+        } else {
+            self.frozen_at.fetch_add(ms, Ordering::SeqCst);
+        }
+    }
+
+    /// Runs `ms` ahead of (or, negative, behind) the system clock, and keeps running.
+    pub fn skew(&self, ms: i64) {
+        self.frozen_at.store(0, Ordering::SeqCst);
+        self.skew_ms.store(ms, Ordering::SeqCst);
+    }
+}
+
 /// A mock Tauri app with every registered command, on an in-memory database migrated with every
 /// Module. Device files and backups go to a temp folder that is removed on drop.
 pub struct TestApp {
     // Field order matters: the app (and its database) drops before the folder.
     window: WebviewWindow<MockRuntime>,
     app: tauri::App<MockRuntime>,
+    clock: Arc<TestClock>,
     _dir: TempDir,
 }
 
@@ -61,6 +104,9 @@ impl TestApp {
         let modules = modules();
         let module_refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
         let mut conn = db::open_in_memory().unwrap();
+        let clock = Arc::new(TestClock::default());
+        let source = Arc::clone(&clock);
+        db::set_time_source(&conn, Arc::new(move || source.now())).unwrap();
         let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
         seed(&conn);
         let device = Arc::new(DeviceStore::new(paths.device_file(), device));
@@ -95,6 +141,7 @@ impl TestApp {
         Self {
             window,
             app,
+            clock,
             _dir: dir,
         }
     }
@@ -140,6 +187,16 @@ impl TestApp {
     /// How many times the Todo widget has been told that Todo changed.
     pub fn widget_signals(&self) -> u32 {
         self.app.state::<AppState>().widgets.sent()
+    }
+
+    /// This app's wall clock: freeze, advance or skew it to simulate a device whose time differs.
+    pub fn clock(&self) -> &TestClock {
+        &self.clock
+    }
+
+    /// This install's device id, as `device.toml` holds it.
+    pub fn device_id(&self) -> String {
+        self.app.state::<AppState>().device.device_id()
     }
 
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).
@@ -205,4 +262,61 @@ pub fn close_all_on(app: &TestApp, date: &str) {
         )
         .unwrap();
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_app_is_its_own_device_and_keeps_its_id_across_restarts() {
+        let a = TestApp::new();
+        let b = TestApp::new();
+        assert_ne!(a.device_id(), b.device_id());
+        let saved = DeviceSettings {
+            device_id: Some(a.device_id()),
+            ..DeviceSettings::default()
+        };
+        let restarted = TestApp::upgrading(|_| {}, saved);
+        assert_eq!(restarted.device_id(), a.device_id());
+    }
+
+    #[test]
+    fn records_are_stamped_with_the_apps_device_and_its_controllable_clock() {
+        let app = TestApp::new();
+        app.clock().freeze(1_800_000_000_000);
+        app.invoke::<Value>("todo_list_create", serde_json::json!({ "name": "Work" }))
+            .unwrap();
+        app.clock().advance(5_000);
+        app.invoke::<Value>("todo_list_create", serde_json::json!({ "name": "Home" }))
+            .unwrap();
+        let rows: Vec<(String, i64)> = app.with_db(|c| {
+            c.prepare("SELECT origin_device, hlc_ms FROM change_log ORDER BY seq")
+                .unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        });
+        assert_eq!(
+            rows,
+            vec![
+                (app.device_id(), 1_800_000_000_000),
+                (app.device_id(), 1_800_000_005_000)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_skewed_clock_runs_ahead_of_the_system_clock() {
+        let app = TestApp::new();
+        app.clock().skew(3_600_000);
+        app.invoke::<Value>("todo_list_create", serde_json::json!({ "name": "Work" }))
+            .unwrap();
+        let ms: i64 = app.with_db(|c| {
+            c.query_row("SELECT hlc_ms FROM change_log", [], |r| r.get(0))
+                .unwrap()
+        });
+        assert!(ms >= now_ms() + 3_500_000, "an hour ahead: {ms}");
+    }
 }
