@@ -290,12 +290,27 @@ export const commands = {
 	syncSetOption: (option: SyncOption, enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_option", { option, enabled })),
 	/**  Leaves the group: forgets every paired device. This device keeps its data. */
 	syncLeave: () => typedError<null, AppError>(__TAURI_INVOKE("sync_leave")),
+	/**  The Devices tab: this device (name, addresses, port) and the paired ones. */
+	syncDevices: () => typedError<DevicesView, AppError>(__TAURI_INVOKE("sync_devices")),
+	/**  Where pairing stands. Idle while Sync is off or still starting. */
+	syncPairState: () => __TAURI_INVOKE<PairingView>("sync_pair_state"),
+	/**  "Pair a device": shows a code and waits for the other device to type it. */
+	syncPairShow: () => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_show")),
+	/**  "New code": a fresh code with 3 tries and 2 minutes. */
+	syncPairNewCode: () => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_new_code")),
+	/**  "Enter a code": looks for a device showing a code on the network and tries the typed one. */
+	syncPairEnter: (code: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_enter", { code })),
+	/**  Allow or Deny the device that typed the right code. */
+	syncPairDecide: (allow: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_decide", { allow })),
+	/**  Closes the pairing sheet's pairing: no code, no search; whoever was asked is told. */
+	syncPairCancel: () => __TAURI_INVOKE<void>("sync_pair_cancel"),
 };
 
 /** Events */
 export const events = {
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
+	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
 };
 
@@ -401,6 +416,14 @@ export type DeviceSettings = {
 	look?: LookAndFeel,
 	/**  The Sync Module's choices for this device. */
 	sync?: SyncDevice,
+};
+
+/**  The Devices tab. */
+export type DevicesView = {
+	/**  This device. */
+	this_device: ThisDevice,
+	/**  The paired devices. */
+	peers: PeerRow[],
 };
 
 /**  The Tasks done on one day of Done. */
@@ -718,6 +741,15 @@ export type NewWhen = {
 	local: LocalNow,
 };
 
+/**  Which device has the older data, when two cannot pair because their data versions differ. */
+export type Older = 
+/**  This device: it must be updated. */
+"me" | 
+/**  The other device: it must be updated. */
+"them" | 
+/**  Each is older in some Module. */
+"both";
+
 /**  What "Move all" did: hand `previous` to `todo_tasks_restore_when` to undo it. */
 export type OverdueMove = {
 	/**  The date they were moved to. */
@@ -746,6 +778,105 @@ export type PageDirection =
 "from" | 
 /**  The Pages just after the cursor (newer), nearest first picked; needs a cursor. */
 "newer";
+
+/**  Why pairing did not happen. Each is shown inline with what to do about it. */
+export type PairingError = 
+/**
+ *  The code typed was wrong. `tries_left` 0 means the code is dead. `name` is the device
+ *  showing it.
+ */
+{ kind: "wrong_code"; 
+/**  Tries left on that code. */
+tries_left: number; 
+/**  The device showing the code. */
+name: string } | 
+/**  The code ran out of time. On the typing side `name` says where to get a new one. */
+{ kind: "code_expired"; 
+/**  The device that showed the code, when known. */
+name: string | null } | 
+/**  The code was typed wrong three times (shown on the device showing it). */
+{ kind: "tries_used" } | 
+/**  The person on the other device pressed Deny. */
+{ kind: "declined"; 
+/**  The device that said no. */
+name: string } | 
+/**  The other device cancelled. */
+{ kind: "cancelled"; 
+/**  The device that left, when known. */
+name: string | null } | 
+/**  The other device runs the other Environment (Sandbox with Production). */
+{ kind: "different_environment"; 
+/**  What the other device is. */
+theirs: Environment } | 
+/**  The two devices run different data versions. */
+{ kind: "version_mismatch"; 
+/**  The other device. */
+name: string; 
+/**  Which of the two must be updated. */
+older: Older } | 
+/**  Both devices already belong to a group of devices, not the same one. */
+{ kind: "different_groups" } | 
+/**  No device showing a code was found on the network. */
+{ kind: "nothing_nearby" } | 
+/**  The other device went away or could not be reached. */
+{ kind: "connection_lost" } | 
+/**  The other device is already pairing with someone. */
+{ kind: "busy" } | 
+/**  Sync is not ready (still starting, or off). */
+{ kind: "not_ready" };
+
+/**  The pairing sheet's state, in the order a pairing goes. */
+export type PairingView = 
+/**  Nothing is happening. */
+{ state: "idle" } | 
+/**  This device shows a code and waits for the other to type it. */
+{ state: "showing"; 
+/**  The 8 digits, `"4821 0937"`. */
+code: string; 
+/**  How long a code lives, in milliseconds (for the ring). */
+life_ms: number; 
+/**  How long this one has left. */
+left_ms: number; 
+/**  Wrong tries left before the code dies. */
+tries_left: number; 
+/**  Other devices can find this one (Visible on this network is on). */
+discoverable: boolean; 
+/**  The last attempt that failed for another reason than a wrong code. */
+notice: PairingError | null } | 
+/**  The right code was typed: Allow or Deny. */
+{ state: "asking"; 
+/**  The device that wants to pair. */
+name: string; 
+/**  Its kind. */
+platform: Platform; 
+/**  Length of the whole window, in milliseconds. */
+life_ms: number; 
+/**  What is left of it. */
+left_ms: number } | 
+/**  This device typed the code and is looking for the device that shows it. */
+{ state: "searching" } | 
+/**  The code was right; waiting for the person on the other device to Allow. */
+{ state: "waiting"; 
+/**  The device being waited for. */
+name: string } | 
+/**  Allowed here; recording the pairing and telling the other device. */
+{ state: "finishing"; 
+/**  The device being paired. */
+name: string } | 
+/**  Done. */
+{ state: "paired"; 
+/**  The other device's name here (may differ from its own if names clashed). */
+name: string; 
+/**  Its kind. */
+platform: Platform; 
+/**  The name was changed to keep names unique. */
+renamed: boolean; 
+/**  Devices of its group that came along. */
+also_joined: string[] } | 
+/**  It did not work. */
+{ state: "failed"; 
+/**  Why. */
+error: PairingError };
 
 /**  A word that was recognised but did not win. */
 export type ParseAlternative = {
@@ -813,6 +944,25 @@ export type Parsed = {
 	/**  A `#Name` that matched nothing: the List to create. */
 	new_list: string | null,
 };
+
+/**  A paired device as the Devices tab lists it. */
+export type PeerRow = {
+	/**  Its device id. */
+	id: string,
+	/**  Its name here. */
+	name: string,
+	/**  Its kind. */
+	platform: Platform,
+	/**  When it was paired: UTC milliseconds. */
+	paired_at: number,
+};
+
+/**  What kind of device: decides the icon, and nothing else. */
+export type Platform = 
+/**  A computer. */
+"desktop" | 
+/**  A phone. */
+"phone";
 
 /**
  *  Everything Quick edit can change, as the Task should be afterwards. What the box left alone is
@@ -970,6 +1120,9 @@ export type SyncOption =
 /**  Visible on this network. */
 "visible";
 
+/**  The pairing sheet's state changed (a code is shown, someone asks, it worked or failed). */
+export type SyncPairingEvent = PairingView;
+
 /**  What the Sync screens show. */
 export type SyncState = {
 	/**  Sync is on for this device. */
@@ -1103,6 +1256,18 @@ export type TextRange = {
 	start: number,
 	/**  One past the last unit. */
 	end: number,
+};
+
+/**  This device, as the This-device card shows it. */
+export type ThisDevice = {
+	/**  Its name. */
+	name: string,
+	/**  Its kind. */
+	platform: Platform,
+	/**  The port it listens on; `None` while it is not listening. */
+	port: number | null,
+	/**  Its shareable addresses (Wi-Fi, Tailscale), without the port. */
+	addresses: string[],
 };
 
 /**  The Entry written last on the day. */

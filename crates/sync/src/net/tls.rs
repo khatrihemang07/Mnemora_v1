@@ -52,6 +52,11 @@ impl Trust {
         self.write().pinned.remove(key);
     }
 
+    /// Stops trusting every key (leaving the group).
+    pub fn unpin_all(&self) {
+        self.write().pinned.clear();
+    }
+
     /// Whether `key` is pinned.
     pub fn is_pinned(&self, key: &PublicKey) -> bool {
         self.read().pinned.contains_key(key)

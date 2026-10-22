@@ -11,6 +11,9 @@ pub enum SyncError {
     /// Sync is off on this device, so no session may start.
     #[error("Sync is off on this device")]
     Off,
+    /// Sync is on but its network side has not started yet.
+    #[error("Sync is still starting. Try again in a moment")]
+    NotReady,
     /// The other device went away; what was applied so far stays, and the next session resumes.
     #[error("The connection to the other device was lost")]
     Disconnected,
@@ -34,7 +37,7 @@ impl From<rusqlite::Error> for SyncError {
 impl From<SyncError> for AppError {
     fn from(e: SyncError) -> Self {
         match e {
-            SyncError::Validation(_) | SyncError::Off => {
+            SyncError::Validation(_) | SyncError::Off | SyncError::NotReady => {
                 Self::new(ErrorCode::Validation, e.to_string())
             }
             SyncError::Disconnected => Self::new(ErrorCode::Io, e.to_string()),

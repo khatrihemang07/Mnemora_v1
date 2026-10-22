@@ -1,9 +1,21 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/sync.rs) and the browser mock (src/lib/ipc/mock-sync.test.ts). See ADR 0009. Each case renames this device with `input`: it is refused (`error` is the code and message) or saved as `saved`.",
+  "about": "Rules shared by the Rust commands (src-tauri/src/sync.rs) and the browser mock (src/lib/ipc/mock-sync.test.ts). See ADR 0009. Each case renames this device with `input`: it is refused (`error` is the code and message) or saved as `saved`. `unique_name_cases` give a device's wanted name and the names already taken in the group, and the name it is stored under; `code_cases` say what a typed pairing code reads as (null: not a code).",
   "name_cases": [
-    { "name": "a plain name", "input": "Pixel 8", "saved": "Pixel 8" },
-    { "name": "surrounding spaces are trimmed", "input": "  Pixel 8 ", "saved": "Pixel 8" },
-    { "name": "an accented name", "input": "Hemang’s Mac", "saved": "Hemang’s Mac" },
+    {
+      "name": "a plain name",
+      "input": "Pixel 8",
+      "saved": "Pixel 8"
+    },
+    {
+      "name": "surrounding spaces are trimmed",
+      "input": "  Pixel 8 ",
+      "saved": "Pixel 8"
+    },
+    {
+      "name": "an accented name",
+      "input": "Hemang’s Mac",
+      "saved": "Hemang’s Mac"
+    },
     {
       "name": "forty characters are fine",
       "input": "abcdefghijabcdefghijabcdefghijabcdefghij",
@@ -17,17 +29,107 @@
     {
       "name": "forty-one characters are refused",
       "input": "abcdefghijabcdefghijabcdefghijabcdefghijk",
-      "error": { "code": "validation", "message": "A device name is at most 40 characters" }
+      "error": {
+        "code": "validation",
+        "message": "A device name is at most 40 characters"
+      }
     },
     {
       "name": "an empty name is refused",
       "input": "",
-      "error": { "code": "validation", "message": "Give this device a name" }
+      "error": {
+        "code": "validation",
+        "message": "Give this device a name"
+      }
     },
     {
       "name": "a blank name is refused",
       "input": "   ",
-      "error": { "code": "validation", "message": "Give this device a name" }
+      "error": {
+        "code": "validation",
+        "message": "Give this device a name"
+      }
+    }
+  ],
+  "unique_name_cases": [
+    {
+      "name": "a free name is kept",
+      "wanted": "Pixel 8",
+      "taken": ["MacBook"],
+      "stored": "Pixel 8"
+    },
+    {
+      "name": "a clash gets (2)",
+      "wanted": "Pixel 8",
+      "taken": ["Pixel 8"],
+      "stored": "Pixel 8 (2)"
+    },
+    {
+      "name": "case is ignored",
+      "wanted": "PIXEL 8",
+      "taken": ["pixel 8"],
+      "stored": "PIXEL 8 (2)"
+    },
+    {
+      "name": "accents are ignored",
+      "wanted": "Café",
+      "taken": ["cafe"],
+      "stored": "Café (2)"
+    },
+    {
+      "name": "extra spaces are ignored",
+      "wanted": "Pixel  8",
+      "taken": ["Pixel 8"],
+      "stored": "Pixel  8 (2)"
+    },
+    {
+      "name": "the next free number is used",
+      "wanted": "Pixel 8",
+      "taken": ["Pixel 8", "Pixel 8 (2)"],
+      "stored": "Pixel 8 (3)"
+    },
+    {
+      "name": "this device's own name counts",
+      "wanted": "Mac",
+      "taken": ["Mac"],
+      "stored": "Mac (2)"
+    }
+  ],
+  "code_cases": [
+    {
+      "name": "eight digits",
+      "input": "48210937",
+      "code": "48210937"
+    },
+    {
+      "name": "two groups",
+      "input": "4821 0937",
+      "code": "48210937"
+    },
+    {
+      "name": "a dash and spaces around",
+      "input": " 4821-0937 ",
+      "code": "48210937"
+    },
+    {
+      "name": "seven digits",
+      "input": "4821093",
+      "code": null
+    },
+    {
+      "name": "nine digits",
+      "input": "482109377",
+      "code": null
+    },
+    {
+      "name": "a letter",
+      "input": "4821 093a",
+      "code": null
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "code": null
     }
   ]
 }

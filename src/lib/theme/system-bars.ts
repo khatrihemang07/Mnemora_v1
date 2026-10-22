@@ -5,6 +5,8 @@ export interface AndroidBridge {
   setSystemBars?: (dark: boolean, colorHex: string) => void;
   /** Sends the app to the background like Home, keeping the process alive (Back at the root). */
   moveTaskToBack?: () => void;
+  /** Holds or releases the Wi-Fi multicast lock that mDNS needs to receive anything (Sync). */
+  holdMulticastLock?: (hold: boolean) => void;
 }
 
 const HEX_DIGITS = 2;

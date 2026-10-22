@@ -24,7 +24,7 @@ export const syncManifest: ModuleManifest = {
     icon: RadioTower,
     component: () => import('./SyncSettings.svelte'),
   },
-  overlay: () => import('./TurnOffDialog.svelte'),
+  overlay: () => import('./SyncOverlay.svelte'),
   paletteActions: [
     {
       id: 'conflicts',

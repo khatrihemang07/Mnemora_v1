@@ -3,6 +3,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The light haptic tick when a Task is completed (navigator.vibrate): a normal permission, no prompt. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Sync (#62): finding the other device on the Wi-Fi with mDNS needs a multicast lock, held only
+         while the app is in front with Sync on. All three are normal permissions, no prompt. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />

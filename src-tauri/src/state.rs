@@ -31,6 +31,9 @@ pub struct AppState {
     pub widgets: Arc<WidgetSignal>,
     /// Sync's services: nothing runs in them while Sync is off.
     pub sync: SyncRuntime,
+    /// The app opens a real port and announces itself when Sync is on. False in tests, which
+    /// start their own network on loopback.
+    pub live_network: bool,
     /// Every Module, for the Sync engine to reach through the `Module` contract. Read by the
     /// sync sessions (today only the `TestApp` cluster starts them; the live runtime comes next).
     #[cfg_attr(

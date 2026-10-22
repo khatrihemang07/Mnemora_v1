@@ -39,5 +39,18 @@ pub fn all() -> Migrations<'static> {
              seq INTEGER NOT NULL
          ) STRICT;",
         ),
+        // Pairing (#62). A paired device is known by its public key (hex), which is what TLS
+        // pins; `paired_by` is the device that paired it (this one, or the member that
+        // introduced it). `sync_group` is the one group id this device belongs to, made at the
+        // first pairing; no row until then.
+        M::up(
+            "ALTER TABLE sync_peers ADD COLUMN public_key TEXT;
+         ALTER TABLE sync_peers ADD COLUMN platform TEXT NOT NULL DEFAULT 'desktop';
+         ALTER TABLE sync_peers ADD COLUMN paired_by TEXT;
+         CREATE TABLE sync_group(
+             one INTEGER PRIMARY KEY NOT NULL CHECK(one = 1),
+             id TEXT NOT NULL
+         ) STRICT;",
+        ),
     ])
 }

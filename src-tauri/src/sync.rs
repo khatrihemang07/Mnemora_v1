@@ -1,9 +1,19 @@
 //! Sync commands. Thin: the rules live in `mnemora-sync`.
 
-use mnemora_core::error::AppError;
-use mnemora_sync::{SyncOption, SyncState};
-use tauri::State;
+use std::sync::Arc;
 
+use mnemora_core::db::migrate;
+use mnemora_core::error::AppError;
+use mnemora_sync::discovery::{Discovery, Fixed, Mdns};
+use mnemora_sync::net::{DeviceIdentity, Handshake, PublicKey};
+use mnemora_sync::{
+    DevicesView, Network, NetworkOptions, Paired, PairingHost, PairingView, Platform, Stored,
+    SyncError, SyncOption, SyncState, Who,
+};
+use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_specta::Event;
+
+use crate::SyncPairingEvent;
 use crate::state::{AppState, lock};
 
 /// Sync's state for this device: on or off, its name and options, and how many devices are paired.
@@ -17,15 +27,25 @@ pub fn sync_get(state: State<'_, AppState>) -> Result<SyncState, AppError> {
 /// keeps the data and the paired devices.
 #[tauri::command]
 #[specta::specta]
-pub fn sync_set_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), AppError> {
-    mnemora_sync::set_enabled(&state.device, &state.sync, enabled)
+pub fn sync_set_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), AppError> {
+    mnemora_sync::set_enabled(&state.device, &state.sync, enabled)?;
+    if enabled {
+        launch_network(&app);
+    }
+    Ok(())
 }
 
 /// Renames this device (1 to 40 characters).
 #[tauri::command]
 #[specta::specta]
 pub fn sync_rename(state: State<'_, AppState>, name: String) -> Result<(), AppError> {
-    mnemora_sync::rename(&state.device, &name)
+    mnemora_sync::rename(&state.device, &name)?;
+    state.sync.refresh_advert();
+    Ok(())
 }
 
 /// Sets "Sync automatically", "Allow over mobile data" or "Visible on this network".
@@ -36,14 +56,202 @@ pub fn sync_set_option(
     option: SyncOption,
     enabled: bool,
 ) -> Result<(), AppError> {
-    mnemora_sync::set_option(&state.device, option, enabled)
+    mnemora_sync::set_option(&state.device, option, enabled)?;
+    if option == SyncOption::Visible {
+        state.sync.refresh_advert();
+    }
+    Ok(())
 }
 
 /// Leaves the group: forgets every paired device. This device keeps its data.
 #[tauri::command]
 #[specta::specta]
 pub fn sync_leave(state: State<'_, AppState>) -> Result<(), AppError> {
-    mnemora_sync::forget_all(&lock(&state.db))
+    mnemora_sync::forget_all(&lock(&state.db))?;
+    state.sync.unpin_all();
+    state.sync.refresh_advert();
+    Ok(())
+}
+
+/// The Devices tab: this device (name, addresses, port) and the paired ones.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_devices(state: State<'_, AppState>) -> Result<DevicesView, AppError> {
+    mnemora_sync::devices_view(
+        &state.device.get(),
+        &lock(&state.db),
+        state.sync.listening(),
+    )
+}
+
+/// Where pairing stands. Idle while Sync is off or still starting.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_state(state: State<'_, AppState>) -> PairingView {
+    state
+        .sync
+        .pairing()
+        .map_or(PairingView::Idle, |p| p.state())
+}
+
+/// "Pair a device": shows a code and waits for the other device to type it.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_show(state: State<'_, AppState>) -> Result<(), AppError> {
+    Ok(state.sync.pairing()?.show()?)
+}
+
+/// "New code": a fresh code with 3 tries and 2 minutes.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_new_code(state: State<'_, AppState>) -> Result<(), AppError> {
+    Ok(state.sync.pairing()?.new_code()?)
+}
+
+/// "Enter a code": looks for a device showing a code on the network and tries the typed one.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_enter(state: State<'_, AppState>, code: String) -> Result<(), AppError> {
+    Ok(state.sync.pairing()?.enter(&code)?)
+}
+
+/// Allow or Deny the device that typed the right code.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_decide(state: State<'_, AppState>, allow: bool) -> Result<(), AppError> {
+    state.sync.pairing()?.decide(allow);
+    Ok(())
+}
+
+/// Closes the pairing sheet's pairing: no code, no search; whoever was asked is told.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_cancel(state: State<'_, AppState>) {
+    if let Ok(pairing) = state.sync.pairing() {
+        pairing.cancel();
+    }
+}
+
+/// The app side of pairing: this device's facts from the database and device file, the pairing
+/// written to the database, and the pairing state sent to the window as an event.
+pub struct AppHost<R: Runtime> {
+    app: AppHandle<R>,
+}
+
+impl<R: Runtime> AppHost<R> {
+    pub fn new(app: AppHandle<R>) -> Self {
+        Self { app }
+    }
+}
+
+impl<R: Runtime> PairingHost for AppHost<R> {
+    fn me(&self) -> Result<Who, SyncError> {
+        let state = self.app.state::<AppState>();
+        let conn = lock(&state.db);
+        let device = state.device.get();
+        Ok(Who {
+            device: state.device.device_id(),
+            name: device
+                .sync
+                .name
+                .clone()
+                .unwrap_or_else(mnemora_sync::default_device_name),
+            platform: Platform::this(),
+            key: String::new(),
+            environment: state.env,
+            group: mnemora_sync::group(&conn)?,
+            data_versions: migrate::versions(&conn)?,
+            members: mnemora_sync::members(&conn)?,
+        })
+    }
+
+    fn handshake(&self) -> Result<Handshake, SyncError> {
+        let state = self.app.state::<AppState>();
+        let conn = lock(&state.db);
+        let group = mnemora_sync::group(&conn)?;
+        Handshake::local(
+            &conn,
+            state.env,
+            &state.device.device_id(),
+            group,
+            Vec::new(),
+        )
+    }
+
+    fn visible(&self) -> bool {
+        self.app.state::<AppState>().device.get().sync.visible
+    }
+
+    fn pinned(&self) -> Vec<(PublicKey, String)> {
+        let state = self.app.state::<AppState>();
+        mnemora_sync::pinned(&lock(&state.db)).unwrap_or_default()
+    }
+
+    fn store(&self, paired: &Paired) -> Result<Stored, SyncError> {
+        let state = self.app.state::<AppState>();
+        let name = state
+            .device
+            .get()
+            .sync
+            .name
+            .clone()
+            .unwrap_or_else(mnemora_sync::default_device_name);
+        let device = state.device.device_id();
+        mnemora_sync::store_paired(&mut lock(&state.db), &device, &name, paired)
+    }
+
+    fn show(&self, view: &PairingView) {
+        if let Err(e) = SyncPairingEvent(view.clone()).emit(&self.app) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the pairing state");
+        }
+    }
+}
+
+/// Starts the network side of Sync: this device's key, the listener, discovery and pairing. A no-op
+/// where the app does not run a live network (tests start their own).
+pub fn launch_network<R: Runtime>(app: &AppHandle<R>) {
+    if !app.state::<AppState>().live_network {
+        return;
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let discovery: Arc<dyn Discovery> = match Mdns::new(state.env) {
+            Ok(mdns) => Arc::new(mdns),
+            Err(e) => {
+                // Pairing by address and paired devices still work; only finding is lost.
+                tracing::warn!(target: "sync", error = %e, "local network discovery is unavailable");
+                Fixed::new()
+            }
+        };
+        if let Err(e) = start_network(&app, NetworkOptions::app(discovery)).await {
+            tracing::warn!(target: "sync", error = %e, "could not start Sync's network");
+        }
+    });
+}
+
+/// Binds the port and hands the running [`Network`] to the runtime, unless Sync was turned off
+/// while it started. Needs a Tokio runtime.
+pub async fn start_network<R: Runtime>(
+    app: &AppHandle<R>,
+    options: NetworkOptions,
+) -> Result<(), SyncError> {
+    let state = app.state::<AppState>();
+    if !state.device.get().sync.enabled {
+        return Err(SyncError::Off);
+    }
+    let dir = state
+        .paths
+        .device_file()
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    let identity = Arc::new(DeviceIdentity::load_or_create(&dir).map_err(SyncError::from)?);
+    let host = Arc::new(AppHost::new(app.clone()));
+    let network = Network::start(host, identity, options).await?;
+    // Turned off meanwhile: the network has no owner and is dropped here, closing its port.
+    let _ = state.sync.attach(network);
+    Ok(())
 }
 
 #[cfg(test)]

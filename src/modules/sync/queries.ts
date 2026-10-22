@@ -18,3 +18,10 @@ export async function refreshSync() {
     queryClient.invalidateQueries({ queryKey: deviceQuery.queryKey }),
   ]);
 }
+
+/** This device (addresses, port) and the paired devices. */
+export const devicesQuery = queryOptions({
+  queryKey: ['sync', 'devices'],
+  queryFn: () => unwrap(commands.syncDevices()),
+  staleTime: Number.POSITIVE_INFINITY,
+});

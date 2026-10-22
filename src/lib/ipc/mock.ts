@@ -9,6 +9,7 @@ import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bind
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
 import { createSyncMock } from './mock-sync';
+import { defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
 import { createTodoMock } from './mock-todo';
 import { PREF_VALUES } from './mock-todo-arrange';
 
@@ -95,7 +96,18 @@ export async function installMock() {
 
   const todo = createTodoMock((key) => values[key]);
   // `?paired=2` shows Sync with two paired devices (Leave enabled, no Welcome page).
-  const sync = createSyncMock(device, Number(query.get('paired') ?? 0) || 0);
+  // `__syncMock` steers the simulated second device (see mock-sync-pairing.ts); `?paircode=SECONDS`
+  // makes a shown code expire sooner.
+  const pairFlags = defaultPairingFlags();
+  const codeSeconds = Number(query.get('paircode') ?? 0);
+  if (codeSeconds > 0) pairFlags.lifeMs = codeSeconds * 1000;
+  (window as unknown as { __syncMock: PairingFlags }).__syncMock = pairFlags;
+  const sync = createSyncMock(
+    device,
+    Number(query.get('paired') ?? 0) || 0,
+    (view) => void events.syncPairingEvent.emit(view),
+    pairFlags,
+  );
 
   applyPrePaintAttributes(values);
 

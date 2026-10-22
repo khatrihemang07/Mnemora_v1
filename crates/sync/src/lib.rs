@@ -4,13 +4,18 @@
 
 #![forbid(unsafe_code)]
 
+mod addresses;
 mod apply;
 mod clocks;
+mod devices;
+pub mod discovery;
 mod error;
 mod merge;
 mod migrations;
 mod name;
 pub mod net;
+mod network;
+pub mod pair;
 mod peers;
 mod registry;
 mod runtime;
@@ -25,9 +30,18 @@ use mnemora_core::module::Module;
 use mnemora_core::settings::SettingsRegistry;
 use rusqlite_migration::Migrations;
 
+pub use addresses::{is_tailscale, local as local_addresses, shareable as shareable_address};
+pub use devices::{DevicesView, ThisDevice, view as devices_view};
 pub use error::SyncError;
 pub use name::{MAX_NAME_CHARS, default_device_name, validate_name};
-pub use peers::{forget_all, paired_count};
+pub use network::{Network, NetworkOptions};
+pub use pair::msg::{Member, Who};
+pub use pair::{
+    Older, Paired, Pairing, PairingError, PairingHost, PairingView, Platform, Stored, Timing,
+};
+pub use peers::{
+    PeerRow, forget_all, group, list as list_peers, members, paired_count, pinned, store_paired,
+};
 pub use registry::{Modules, Registry};
 pub use runtime::{RuntimeProbe, SyncRuntime};
 pub use session::{Endpoint, Session, SessionStats, pump};

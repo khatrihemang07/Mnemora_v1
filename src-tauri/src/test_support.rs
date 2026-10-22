@@ -37,8 +37,8 @@ use tempfile::TempDir;
 use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    LinkOpenedEvent, SettingsChangedEvent, TodoChangedEvent, commands, journal, links, modules,
-    settings_store, sync, todo,
+    LinkOpenedEvent, SettingsChangedEvent, SyncPairingEvent, TodoChangedEvent, commands, journal,
+    links, modules, settings_store, sync, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a
@@ -137,6 +137,7 @@ impl TestApp {
             log: LogHandle::detached(),
             widgets: Arc::clone(&widgets),
             sync: SyncRuntime::new(),
+            live_network: false,
             modules,
             bus: bus.clone(),
         };

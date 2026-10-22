@@ -1,7 +1,7 @@
 <!--
   WelcomeCard: the first thing after turning Sync on, shown on Devices until the first pairing.
-  Three lines on how it works, this device's name (prefilled from the computer or phone) and Pair a
-  device. Pairing itself arrives with its own ticket, so the buttons only say so for now.
+  Three lines on how it works, this device's name (prefilled from the computer or phone) and the two
+  ways to start pairing; the sheet itself is PairSheet, mounted by the Devices page.
 -->
 <script lang="ts">
   import type { Component } from 'svelte';
@@ -11,8 +11,8 @@
   import Wifi from '~icons/lucide/wifi';
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
-  import { notify } from '../../lib/ui/toast';
   import DeviceNameField from './DeviceNameField.svelte';
+  import { pairing } from './pairing.svelte';
 
   const lines: { icon: Component<{ class?: string }>; text: string }[] = [
     { icon: Wifi, text: 'Your devices talk directly, on the same Wi-Fi or over Tailscale.' },
@@ -25,8 +25,6 @@
       text: 'Changes merge on their own. If the same text was rewritten on two devices, Sync keeps both and asks you.',
     },
   ];
-
-  const pair = () => notify('Pairing is not available yet.');
 </script>
 
 <Card>
@@ -44,7 +42,7 @@
   <div class="mt-4 text-sm text-muted">This device's name</div>
   <DeviceNameField class="mt-1" />
   <div class="mt-4 flex flex-wrap items-center gap-2">
-    <Button variant="primary" onclick={pair}><Plus class="size-4" /> Pair a device</Button>
-    <Button variant="ghost" onclick={pair}>Enter a code from another device</Button>
+    <Button variant="primary" onclick={() => void pairing.start('show')}><Plus class="size-4" /> Pair a device</Button>
+    <Button variant="ghost" onclick={() => void pairing.start('enter')}>Enter a code from another device</Button>
   </div>
 </Card>

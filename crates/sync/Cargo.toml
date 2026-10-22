@@ -20,7 +20,11 @@ whoami.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
 rcgen.workspace = true
-tokio = { workspace = true, features = ["net", "rt", "sync", "time", "io-util"] }
+tokio = { workspace = true, features = ["net", "rt", "sync", "time", "io-util", "macros"] }
+spake2.workspace = true
+mdns-sd.workspace = true
+ring.workspace = true
+if-addrs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

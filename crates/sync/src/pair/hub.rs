@@ -1,0 +1,661 @@
+//! [`Pairing`]: the state of the pairing sheet and the tasks behind it. The UI calls `show`,
+//! `enter`, `decide`, `new_code` and `cancel`; every change is published to the host as a
+//! [`PairingView`]. While a code is shown, TLS admits unpinned keys and the listener hands them
+//! here; while one is typed, the same switch lets this device dial a device that is not pinned.
+
+use std::collections::HashSet;
+use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
+
+use tokio::runtime::Handle;
+use tokio::sync::oneshot;
+use tokio::task::AbortHandle;
+use tokio::time::{sleep, timeout_at};
+
+use super::Timing;
+use super::code::{self, MAX_TRIES};
+use super::host::{Paired, PairingHost, Stored};
+use super::msg::{Reason, Who};
+use super::proto::{self, Decision, Failure, ShowerPort, TyperPort};
+use super::view::{PairingError, PairingView};
+use crate::SyncError;
+use crate::discovery::{Advert, Discovery};
+use crate::net::{NetConfig, Secured, secure_dial};
+
+/// A code on display.
+struct Show {
+    code: String,
+    expires: Instant,
+    tries_left: u8,
+    /// Why the code no longer works, once it does not.
+    dead: Option<PairingError>,
+    /// The last attempt that failed for a reason other than a wrong code.
+    notice: Option<PairingError>,
+}
+
+/// The question to the person on the showing device.
+struct Pending {
+    id: u64,
+    who: Who,
+    answer: Option<oneshot::Sender<Decision>>,
+    /// Allow was pressed; the pairing is being recorded.
+    answered: bool,
+}
+
+struct Inner {
+    /// What the sheet shows when no code is on display and nobody is asking.
+    base: PairingView,
+    show: Option<Show>,
+    asking: Option<Pending>,
+    typing: Option<AbortHandle>,
+    timer: Option<AbortHandle>,
+    /// Bumps whenever a code is made or pairing is cancelled, so a late task knows it is stale.
+    generation: u64,
+    next_question: u64,
+}
+
+impl Inner {
+    fn show_alive(&self) -> bool {
+        self.show.as_ref().is_some_and(|s| s.dead.is_none())
+    }
+}
+
+/// Pairing for one running Sync: see the module docs.
+pub struct Pairing {
+    host: Arc<dyn PairingHost>,
+    discovery: Arc<dyn Discovery>,
+    config: NetConfig,
+    port: u16,
+    timing: Timing,
+    runtime: Handle,
+    tasks: Arc<AtomicUsize>,
+    inner: Mutex<Inner>,
+}
+
+struct TaskCount(Arc<AtomicUsize>);
+
+impl Drop for TaskCount {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+fn millis(d: Duration) -> u32 {
+    u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
+}
+
+impl Pairing {
+    /// Pairing over `config`'s identity and trust set, listening on `port`. Tasks run on `runtime`.
+    pub fn new(
+        host: Arc<dyn PairingHost>,
+        discovery: Arc<dyn Discovery>,
+        config: NetConfig,
+        port: u16,
+        timing: Timing,
+        runtime: Handle,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            host,
+            discovery,
+            config,
+            port,
+            timing,
+            runtime,
+            tasks: Arc::new(AtomicUsize::new(0)),
+            inner: Mutex::new(Inner {
+                base: PairingView::Idle,
+                show: None,
+                asking: None,
+                typing: None,
+                timer: None,
+                generation: 0,
+                next_question: 0,
+            }),
+        })
+    }
+
+    /// Live pairing tasks (timer, typing, connections being served).
+    pub fn tasks(&self) -> usize {
+        self.tasks.load(Ordering::SeqCst)
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) -> AbortHandle {
+        self.tasks.fetch_add(1, Ordering::SeqCst);
+        let count = TaskCount(Arc::clone(&self.tasks));
+        self.runtime
+            .spawn(async move {
+                let _count = count;
+                task.await;
+            })
+            .abort_handle()
+    }
+
+    /// This device as it introduces itself, with its key.
+    fn me(&self) -> Result<Who, SyncError> {
+        let mut me = self.host.me()?;
+        me.key = self.config.identity.public_key().to_hex();
+        Ok(me)
+    }
+
+    // ---- what the sheet shows
+
+    fn view_of(&self, g: &Inner) -> PairingView {
+        if let Some(p) = &g.asking {
+            return if p.answered {
+                PairingView::Finishing {
+                    name: p.who.name.clone(),
+                }
+            } else {
+                PairingView::Asking {
+                    name: p.who.name.clone(),
+                    platform: p.who.platform,
+                    life_ms: millis(self.timing.code_life),
+                    left_ms: g.show.as_ref().map_or(0, |s| {
+                        millis(s.expires.saturating_duration_since(Instant::now()))
+                    }),
+                }
+            };
+        }
+        match &g.show {
+            Some(s) => match &s.dead {
+                Some(error) => PairingView::Failed {
+                    error: error.clone(),
+                },
+                None => PairingView::Showing {
+                    code: code::display(&s.code),
+                    life_ms: millis(self.timing.code_life),
+                    left_ms: millis(s.expires.saturating_duration_since(Instant::now())),
+                    tries_left: s.tries_left,
+                    discoverable: self.host.visible(),
+                    notice: s.notice.clone(),
+                },
+            },
+            None => g.base.clone(),
+        }
+    }
+
+    /// Whether TLS currently admits unpinned keys (a code is shown or being typed).
+    #[cfg(test)]
+    pub(crate) fn state_is_open(&self) -> bool {
+        self.config.trust.pairing_open()
+    }
+
+    /// The state right now.
+    pub fn state(&self) -> PairingView {
+        let g = self.lock();
+        self.view_of(&g)
+    }
+
+    /// Tells the host. Called with the lock held so that events keep the order of the changes.
+    fn publish(&self, g: &Inner) {
+        self.host.show(&self.view_of(g));
+    }
+
+    /// TLS admits unpinned keys exactly while a code is shown or being typed.
+    fn sync_open(&self, g: &Inner) {
+        self.config
+            .trust
+            .set_pairing_open(g.show_alive() || g.typing.is_some());
+    }
+
+    /// Announces this device again (the "pairing open" flag, the group, Visible on this network).
+    pub fn refresh_advert(&self) {
+        let open = self.lock().show_alive();
+        let advert = if self.host.visible() {
+            self.host.me().ok().map(|me| Advert {
+                device: me.device,
+                group: me.group,
+                port: self.port,
+                pairing_open: open,
+            })
+        } else {
+            None
+        };
+        self.discovery.advertise(advert.as_ref());
+    }
+
+    // ---- showing a code
+
+    /// Stops whatever is going on: no code, no typing, nobody asked.
+    fn clear(g: &mut Inner, tell: Decision) {
+        g.generation += 1;
+        if let Some(t) = g.typing.take() {
+            t.abort();
+        }
+        if let Some(t) = g.timer.take() {
+            t.abort();
+        }
+        if let Some(answer) = g.asking.take().and_then(|mut p| p.answer.take()) {
+            let _ = answer.send(tell);
+        }
+        g.show = None;
+        g.base = PairingView::Idle;
+    }
+
+    /// Shows a new code and opens pairing.
+    pub fn show(self: &Arc<Self>) -> Result<(), SyncError> {
+        let code =
+            code::generate().ok_or(SyncError::Validation("This device cannot make a code"))?;
+        {
+            let mut g = self.lock();
+            Self::clear(&mut g, Decision::Cancelled);
+            self.start_code(&mut g, code);
+        }
+        self.refresh_advert();
+        Ok(())
+    }
+
+    fn start_code(self: &Arc<Self>, g: &mut Inner, code: String) {
+        let generation = g.generation;
+        g.show = Some(Show {
+            code,
+            expires: Instant::now() + self.timing.code_life,
+            tries_left: MAX_TRIES,
+            dead: None,
+            notice: None,
+        });
+        let me = Arc::clone(self);
+        let life = self.timing.code_life;
+        g.timer = Some(self.spawn(async move {
+            sleep(life).await;
+            me.expire(generation);
+        }));
+        self.sync_open(g);
+        self.publish(g);
+    }
+
+    /// "New code": a fresh code, 3 tries and 2 minutes, unless someone is being asked right now.
+    pub fn new_code(self: &Arc<Self>) -> Result<(), SyncError> {
+        let code =
+            code::generate().ok_or(SyncError::Validation("This device cannot make a code"))?;
+        {
+            let mut g = self.lock();
+            if g.show.is_none() || g.asking.is_some() {
+                return Ok(());
+            }
+            Self::clear(&mut g, Decision::Cancelled);
+            self.start_code(&mut g, code);
+        }
+        self.refresh_advert();
+        Ok(())
+    }
+
+    fn expire(&self, generation: u64) {
+        {
+            let mut g = self.lock();
+            if g.generation != generation || !g.show_alive() {
+                return;
+            }
+            if let Some(show) = g.show.as_mut() {
+                show.dead = Some(PairingError::CodeExpired { name: None });
+            }
+            if let Some(answer) = g.asking.take().and_then(|mut p| p.answer.take()) {
+                let _ = answer.send(Decision::Expired);
+            }
+            self.sync_open(&g);
+            self.publish(&g);
+        }
+        self.refresh_advert();
+    }
+
+    /// Allow or Deny, from the question on the showing device.
+    pub fn decide(&self, allow: bool) {
+        let mut g = self.lock();
+        let Some(p) = g.asking.as_mut() else { return };
+        let Some(answer) = p.answer.take() else {
+            return;
+        };
+        p.answered = allow;
+        let _ = answer.send(if allow {
+            Decision::Allow
+        } else {
+            Decision::Deny
+        });
+        self.publish(&g);
+    }
+
+    /// Closes the sheet's pairing: no code, no search, and whoever was asked is told.
+    pub fn cancel(&self) {
+        {
+            let mut g = self.lock();
+            Self::clear(&mut g, Decision::Cancelled);
+            self.sync_open(&g);
+            self.publish(&g);
+        }
+        self.refresh_advert();
+    }
+
+    /// Stops everything for good (Sync turned off). Publishes nothing.
+    pub fn shutdown(&self) {
+        {
+            let mut g = self.lock();
+            Self::clear(&mut g, Decision::Cancelled);
+            self.config.trust.set_pairing_open(false);
+        }
+        self.discovery.advertise(None);
+    }
+
+    /// The listener handed over a connection from an unpinned key.
+    pub(crate) fn handle_incoming(self: &Arc<Self>, secured: Box<Secured>) {
+        if !self.lock().show_alive() {
+            tracing::debug!(target: "sync", "no code is shown, dropping a pairing attempt");
+            return;
+        }
+        let me = Arc::clone(self);
+        self.spawn(async move { me.serve(*secured).await });
+    }
+
+    async fn serve(self: Arc<Self>, secured: Secured) {
+        let Secured {
+            mut channel, key, ..
+        } = secured;
+        let Ok(me) = self.me() else { return };
+        let result = proto::show_code(&mut channel, &ShowSide(&self), &me, key, &self.timing).await;
+        match result {
+            Ok(stored) => self.finish_shower(&stored),
+            Err(Failure::Refused {
+                reason: Reason::Declined,
+                ..
+            }) => self.cancel(),
+            Err(Failure::Environment { theirs }) => {
+                self.notice(PairingError::DifferentEnvironment { theirs });
+            }
+            Err(Failure::Version { name, older }) => {
+                self.notice(PairingError::VersionMismatch { name, older });
+            }
+            Err(Failure::Refused {
+                reason: Reason::Groups,
+                ..
+            }) => self.notice(PairingError::DifferentGroups),
+            // A wrong code was counted when it happened; expiry, cancel and a lost connection
+            // were published by whoever caused them.
+            Err(_) => {}
+        }
+    }
+
+    fn notice(&self, error: PairingError) {
+        let mut g = self.lock();
+        if let Some(show) = g.show.as_mut().filter(|s| s.dead.is_none()) {
+            show.notice = Some(error);
+            self.publish(&g);
+        }
+    }
+
+    fn finish_shower(&self, stored: &Stored) {
+        {
+            let mut g = self.lock();
+            Self::clear(&mut g, Decision::Cancelled);
+            g.base = paired_view(stored);
+            self.sync_open(&g);
+            self.publish(&g);
+        }
+        self.refresh_advert();
+    }
+
+    /// Records a pairing and pins the keys it brought.
+    fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
+        let stored = self.host.store(paired)?;
+        for (key, device) in &stored.pins {
+            self.config.trust.pin(*key, device);
+        }
+        tracing::info!(target: "sync", also_joined = stored.also_joined.len(), "paired a device");
+        Ok(stored)
+    }
+
+    // ---- typing a code
+
+    /// Types a code: looks for devices showing one and tries it on each.
+    pub fn enter(self: &Arc<Self>, input: &str) -> Result<(), SyncError> {
+        let code =
+            code::normalise(input).ok_or(SyncError::Validation("Type all 8 digits of the code"))?;
+        let mut g = self.lock();
+        Self::clear(&mut g, Decision::Cancelled);
+        let generation = g.generation;
+        g.base = PairingView::Searching;
+        let me = Arc::clone(self);
+        g.typing = Some(self.spawn(async move { me.type_and_finish(code, generation).await }));
+        self.sync_open(&g);
+        self.publish(&g);
+        Ok(())
+    }
+
+    async fn type_and_finish(self: Arc<Self>, code: String, generation: u64) {
+        let outcome = self.search_and_pair(&code).await;
+        {
+            let mut g = self.lock();
+            if g.generation != generation {
+                return;
+            }
+            g.typing = None;
+            g.base = match outcome {
+                Ok(stored) => paired_view(&stored),
+                Err(error) => PairingView::Failed { error },
+            };
+            self.sync_open(&g);
+            self.publish(&g);
+        }
+        self.refresh_advert();
+    }
+
+    async fn search_and_pair(&self, code: &str) -> Result<Stored, PairingError> {
+        let me = self.me().map_err(|_| PairingError::NotReady)?;
+        let mut browsing = self
+            .discovery
+            .browse()
+            .map_err(|_| PairingError::NothingNearby)?;
+        let deadline = tokio::time::Instant::now() + self.timing.search;
+        let mut tried = HashSet::new();
+        let mut best: Option<PairingError> = None;
+        while let Ok(Some(found)) = timeout_at(deadline, browsing.found.recv()).await {
+            if !found.pairing_open
+                || found.device == me.device
+                || !tried.insert(found.device.clone())
+            {
+                continue;
+            }
+            let mut result = Err(PairingError::ConnectionLost);
+            for addr in &found.addrs {
+                result = self.attempt(*addr, &me, code).await;
+                if !matches!(result, Err(PairingError::ConnectionLost)) {
+                    break;
+                }
+            }
+            match result {
+                Ok(stored) => return Ok(stored),
+                Err(error) if is_final(&error) => return Err(error),
+                Err(error) => {
+                    if best.as_ref().is_none_or(|b| rank(&error) > rank(b)) {
+                        best = Some(error);
+                    }
+                }
+            }
+        }
+        Err(best.unwrap_or(PairingError::NothingNearby))
+    }
+
+    async fn attempt(
+        &self,
+        addr: std::net::SocketAddr,
+        me: &Who,
+        code: &str,
+    ) -> Result<Stored, PairingError> {
+        let secured = secure_dial(&self.config, addr).await.map_err(|e| {
+            tracing::debug!(target: "sync", error = %e, "could not reach a device to pair with");
+            PairingError::ConnectionLost
+        })?;
+        let Secured {
+            mut channel, key, ..
+        } = secured;
+        proto::type_code(&mut channel, &TypeSide(self), me, key, code, &self.timing)
+            .await
+            .map_err(typer_error)
+    }
+}
+
+fn paired_view(stored: &Stored) -> PairingView {
+    PairingView::Paired {
+        name: stored.name.clone(),
+        platform: stored.platform,
+        renamed: stored.renamed,
+        also_joined: stored.also_joined.clone(),
+    }
+}
+
+/// An error that ends the search at once: the right code was typed, and something else is wrong.
+fn is_final(error: &PairingError) -> bool {
+    matches!(
+        error,
+        PairingError::Declined { .. }
+            | PairingError::VersionMismatch { .. }
+            | PairingError::DifferentGroups
+            | PairingError::Cancelled { .. }
+    )
+}
+
+/// Which error is most worth showing when several devices were tried.
+fn rank(error: &PairingError) -> u8 {
+    match error {
+        PairingError::WrongCode { .. } => 5,
+        PairingError::CodeExpired { .. } => 4,
+        PairingError::DifferentEnvironment { .. } => 3,
+        PairingError::Busy => 2,
+        PairingError::ConnectionLost => 1,
+        _ => 0,
+    }
+}
+
+fn typer_error(failure: Failure) -> PairingError {
+    match failure {
+        Failure::WrongCode { tries_left, name } => PairingError::WrongCode { tries_left, name },
+        Failure::Version { name, older } => PairingError::VersionMismatch { name, older },
+        Failure::Environment { theirs } => PairingError::DifferentEnvironment { theirs },
+        Failure::Lost => PairingError::ConnectionLost,
+        Failure::Refused { reason, name } => match reason {
+            Reason::Declined => PairingError::Declined {
+                name: name.unwrap_or_default(),
+            },
+            Reason::Expired => PairingError::CodeExpired { name },
+            Reason::Cancelled => PairingError::Cancelled { name },
+            Reason::Busy => PairingError::Busy,
+            Reason::Groups => PairingError::DifferentGroups,
+            Reason::Version => PairingError::VersionMismatch {
+                name: name.unwrap_or_default(),
+                older: super::view::Older::Them,
+            },
+            Reason::Environment { sender } => PairingError::DifferentEnvironment { theirs: sender },
+        },
+    }
+}
+
+/// The typing side's hooks into [`Pairing`].
+struct TypeSide<'a>(&'a Pairing);
+
+impl TyperPort for TypeSide<'_> {
+    fn waiting(&self, shower: &Who) {
+        let mut g = self.0.lock();
+        g.base = PairingView::Waiting {
+            name: shower.name.clone(),
+        };
+        self.0.publish(&g);
+    }
+
+    fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
+        self.0.commit(paired)
+    }
+}
+
+/// The showing side's hooks into [`Pairing`].
+struct ShowSide<'a>(&'a Arc<Pairing>);
+
+impl ShowerPort for ShowSide<'_> {
+    fn code(&self) -> Option<String> {
+        let g = self.0.lock();
+        g.show
+            .as_ref()
+            .filter(|s| s.dead.is_none())
+            .map(|s| s.code.clone())
+    }
+
+    fn wrong_try(&self) -> u8 {
+        let left = {
+            let mut g = self.0.lock();
+            let Some(show) = g.show.as_mut().filter(|s| s.dead.is_none()) else {
+                return 0;
+            };
+            show.tries_left = show.tries_left.saturating_sub(1);
+            show.notice = None;
+            let left = show.tries_left;
+            if left == 0 {
+                show.dead = Some(PairingError::TriesUsed);
+                if let Some(timer) = g.timer.take() {
+                    timer.abort();
+                }
+            }
+            self.0.sync_open(&g);
+            self.0.publish(&g);
+            left
+        };
+        if left == 0 {
+            self.0.refresh_advert();
+        }
+        left
+    }
+
+    fn ask(&self, who: &Who) -> impl Future<Output = Decision> + Send {
+        let hub = Arc::clone(self.0);
+        let who = who.clone();
+        async move {
+            let (tx, rx) = oneshot::channel();
+            let id = {
+                let mut g = hub.lock();
+                if !g.show_alive() {
+                    return Decision::Expired;
+                }
+                if g.asking.is_some() {
+                    return Decision::Busy;
+                }
+                g.next_question += 1;
+                let id = g.next_question;
+                if let Some(show) = g.show.as_mut() {
+                    show.notice = None;
+                }
+                g.asking = Some(Pending {
+                    id,
+                    who,
+                    answer: Some(tx),
+                    answered: false,
+                });
+                hub.publish(&g);
+                id
+            };
+            // Whatever ends the question, even a dropped connection, takes it off the sheet.
+            let _question = EndQuestion { hub: &hub, id };
+            rx.await.unwrap_or(Decision::Cancelled)
+        }
+    }
+
+    fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
+        self.0.commit(paired)
+    }
+}
+
+struct EndQuestion<'a> {
+    hub: &'a Arc<Pairing>,
+    id: u64,
+}
+
+impl Drop for EndQuestion<'_> {
+    fn drop(&mut self) {
+        let mut g = self.hub.lock();
+        if g.asking.as_ref().is_some_and(|p| p.id == self.id) {
+            g.asking = None;
+            self.hub.publish(&g);
+        }
+    }
+}

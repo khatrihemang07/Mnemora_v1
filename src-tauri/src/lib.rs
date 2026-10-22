@@ -76,15 +76,23 @@ macro_rules! specta_builder_for {
                 todo::todo_list_set_sort,
                 todo::todo_list_set_group,
                 sync::sync_get,
-                sync::sync_set_enabled,
+                sync::sync_set_enabled::<$runtime>,
                 sync::sync_rename,
                 sync::sync_set_option,
                 sync::sync_leave,
+                sync::sync_devices,
+                sync::sync_pair_state,
+                sync::sync_pair_show,
+                sync::sync_pair_new_code,
+                sync::sync_pair_enter,
+                sync::sync_pair_decide,
+                sync::sync_pair_cancel,
             ])
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
                 TodoChangedEvent,
-                LinkOpenedEvent
+                LinkOpenedEvent,
+                SyncPairingEvent
             ])
     };
 }
@@ -97,6 +105,8 @@ mod state;
 mod sync;
 #[cfg(test)]
 mod sync_cluster_tests;
+#[cfg(test)]
+mod sync_pairing_tests;
 #[cfg(test)]
 mod test_support;
 mod theme_inject;
@@ -155,6 +165,10 @@ pub struct SettingsChangedEvent(pub SettingsChanged);
 /// whatever Todo shows is stale.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct TodoChangedEvent;
+
+/// The pairing sheet's state changed (a code is shown, someone asks, it worked or failed).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncPairingEvent(pub mnemora_sync::PairingView);
 
 /// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
@@ -284,10 +298,15 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         log,
         widgets,
         sync,
+        live_network: true,
         modules,
         bus,
     };
     app.manage(state);
+    // With Sync on, open the port and start announcing; with it off nothing is started.
+    if device.get().sync.enabled {
+        sync::launch_network(app.handle());
+    }
     #[cfg(target_os = "android")]
     widget::register_app(app.handle().clone());
     // A Todo widget placed before the app ever ran (or before an update) shows a "open Mnemora"
@@ -443,6 +462,14 @@ mod tests {
             "syncRename",
             "syncSetOption",
             "syncLeave",
+            "syncDevices",
+            "syncPairState",
+            "syncPairShow",
+            "syncPairNewCode",
+            "syncPairEnter",
+            "syncPairDecide",
+            "syncPairCancel",
+            "syncPairingEvent",
             "settingsChangedEvent",
             "linkOpenedEvent",
         ] {

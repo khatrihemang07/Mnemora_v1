@@ -3,27 +3,24 @@
 //! this type and can be asserted through [`SyncRuntime::probe`].
 
 use std::net::SocketAddr;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use mnemora_core::events::EventBus;
 use mnemora_core::hlc;
 use rusqlite::Connection;
 
 use crate::error::SyncError;
+use crate::network::Network;
+use crate::pair::Pairing;
 use crate::registry::Registry;
 use crate::session::Session;
 
-/// Everything that exists only while Sync is on. Later tickets add the TLS listener, the mDNS
-/// advertisement and the session tasks here, so each has exactly one owner that [`SyncRuntime`]
-/// drops when Sync turns off.
+/// Everything that exists only while Sync is on. The network side (the TLS listener, the
+/// discovery announcement, pairing and their tasks) is one [`Network`], attached once it has
+/// started, so each has exactly one owner that [`SyncRuntime`] drops when Sync turns off.
 #[derive(Default)]
 struct Services {
-    /// Sockets accepting peers.
-    listeners: Vec<SocketAddr>,
-    /// Service names advertised on the local network.
-    advertisements: Vec<String>,
-    /// Background tasks (sessions, retries).
-    tasks: usize,
+    network: Option<Network>,
     /// Sessions started since Sync was switched on.
     sessions: usize,
 }
@@ -86,12 +83,54 @@ impl SyncRuntime {
             },
             |s| RuntimeProbe {
                 running: true,
-                listeners: s.listeners.len(),
-                advertisements: s.advertisements.len(),
-                tasks: s.tasks,
+                listeners: usize::from(s.network.is_some()),
+                advertisements: s.network.as_ref().map_or(0, Network::discovery_active),
+                tasks: s.network.as_ref().map_or(0, Network::tasks),
                 sessions: s.sessions,
             },
         )
+    }
+
+    /// Hands over the started network side. If Sync was switched off while it was starting, there
+    /// is nothing to own it and it is given back to be dropped.
+    pub fn attach(&self, network: Network) -> Result<(), Network> {
+        let mut services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        match services.as_mut() {
+            Some(s) if s.network.is_none() => {
+                s.network = Some(network);
+                Ok(())
+            }
+            _ => Err(network),
+        }
+    }
+
+    /// Pairing, once Sync is on and its network side has started.
+    pub fn pairing(&self) -> Result<Arc<Pairing>, SyncError> {
+        let services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        let services = services.as_ref().ok_or(SyncError::Off)?;
+        let network = services.network.as_ref().ok_or(SyncError::NotReady)?;
+        Ok(Arc::clone(network.pairing()))
+    }
+
+    /// The listening address, once started.
+    pub fn listening(&self) -> Option<SocketAddr> {
+        let services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        services.as_ref()?.network.as_ref().map(Network::addr)
+    }
+
+    /// Announces this device again (a setting or the group changed).
+    pub fn refresh_advert(&self) {
+        if let Ok(pairing) = self.pairing() {
+            pairing.refresh_advert();
+        }
+    }
+
+    /// Stops trusting every key (this device left its group).
+    pub fn unpin_all(&self) {
+        let services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(network) = services.as_ref().and_then(|s| s.network.as_ref()) {
+            network.unpin_all();
+        }
     }
 
     /// Starts an exchange with another device over `conn`, this device's database. Refuses

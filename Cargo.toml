@@ -40,6 +40,14 @@ rustls = { version = "=0.23.46", default-features = false, features = ["ring", "
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring"] }
 rcgen = { version = "=0.14.10", default-features = false, features = ["crypto", "ring"] }
 tokio = { version = "=1.54.0", default-features = false }
+# Pairing (#62): SPAKE2 turns the 8-digit code into a key (RFC-style PAKE, Ed25519 group); mdns-sd
+# advertises and browses `_mnemora._tcp` (no async runtime, cross-builds for Android); ring is
+# already in the tree through rustls and does the key-confirmation HMAC and the code's randomness;
+# if-addrs (already a dependency of mdns-sd) lists this device's addresses for the Devices tab.
+spake2 = { version = "=0.4.0", features = ["std"] }
+mdns-sd = { version = "=0.21.6", default-features = false, features = ["async"] }
+ring = { version = "=0.17.14", default-features = false }
+if-addrs = "=0.15.0"
 # JNI glue for the Todo widget (ADR 0014); Android only.
 jni = "=0.21.1"
 
