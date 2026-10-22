@@ -50,6 +50,7 @@
     <string name="widget_quick_add_hint">Quick add</string>
     <string name="widget_quick_add_notes_hint">Notes (Markdown). - [ ] adds a checklist item</string>
     <string name="widget_quick_add_add">Add</string>
+    <string name="widget_quick_add_close">Close</string>
     <string name="widget_quick_add_notes">Notes</string>
     <string name="widget_quick_add_inbox">Inbox</string>
     <string name="widget_quick_add_priority">Priority</string>

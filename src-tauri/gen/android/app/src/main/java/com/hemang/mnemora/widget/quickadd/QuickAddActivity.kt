@@ -84,7 +84,7 @@ class QuickAddActivity : Activity() {
     private lateinit var chipsBox: FlowLayout
     private lateinit var pickerBox: LinearLayout
     private lateinit var propsBox: FlowLayout
-    private lateinit var addButton: TextView
+    private lateinit var addButton: ImageView
 
     private val line get() = Palette.blend(palette.ink, palette.background, 0.14f)
     private val todoSoft get() = Palette.withAlpha(palette.todo, 0.14f)
@@ -258,14 +258,29 @@ class QuickAddActivity : Activity() {
         sheet.addView(body, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { marginStart = dp(30) })
 
         // Adding by tap, for a keyboard without an Enter that adds.
-        addButton = text(getString(R.string.widget_quick_add_add), 13.5f, palette.onTodo, bold = true).apply {
-            gravity = Gravity.CENTER
-            background = round(palette.todo, 12)
-            setPadding(dp(18), dp(9), dp(18), dp(9))
-            contentDescription = getString(R.string.widget_quick_add_add)
-            setOnClickListener { submit() }
+        // A close and a submit button, right-aligned: the same pair as the app's capture box.
+        val closeButton = ImageView(this).apply {
+            setImageResource(R.drawable.qa_x)
+            imageTintList = android.content.res.ColorStateList.valueOf(palette.faint)
+            setPadding(dp(9), dp(9), dp(9), dp(9))
+            contentDescription = getString(R.string.widget_quick_add_close)
+            setOnClickListener { discard() }
         }
-        sheet.addView(addButton, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+        addButton = ImageView(this).apply {
+            setImageResource(R.drawable.qa_arrow_up)
+            imageTintList = android.content.res.ColorStateList.valueOf(palette.onTodo)
+            background = round(palette.todo, 18)
+            setPadding(dp(9), dp(9), dp(9), dp(9))
+            contentDescription = getString(R.string.widget_quick_add_add)
+            setOnClickListener { if (!field.text.isNullOrBlank() && !busy) submit() }
+        }
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(closeButton, LinearLayout.LayoutParams(dp(36), dp(36)))
+            addView(addButton, LinearLayout.LayoutParams(dp(36), dp(36)).apply { marginStart = dp(4) })
+        }
+        sheet.addView(actions, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
             gravity = Gravity.END
             topMargin = dp(8)
             bottomMargin = dp(10)

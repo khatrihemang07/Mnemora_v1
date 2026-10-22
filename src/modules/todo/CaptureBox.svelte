@@ -14,12 +14,15 @@
   Adding (mode "add"): Enter adds and the box stays open for the next one; Esc or clicking away
   closes it and drops what was typed. Quick edit (mode "edit"): the box is pre-filled with the
   Task; words already in the old title are not read again, only new text; Enter or clicking away
-  saves (with Undo), Esc cancels. `listId` and `date` are what a Task added here inherits.
+  saves (with Undo), Esc cancels. At the end of the chip row, × does what Esc does and a round submit
+  button (↑ add, ✓ save) does what Enter does; it is dimmed while the title is empty. `listId` and `date` are what a Task added here inherits.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { onMount, tick } from 'svelte';
+  import ArrowUp from '~icons/lucide/arrow-up';
   import Calendar from '~icons/lucide/calendar';
+  import Check from '~icons/lucide/check';
   import Clock from '~icons/lucide/clock';
   import Flag from '~icons/lucide/flag';
   import Inbox from '~icons/lucide/inbox';
@@ -32,6 +35,7 @@
   import type { Parsed, ParseSpan, Task } from '../../lib/ipc/bindings';
   import { IpcError } from '../../lib/ipc/unwrap';
   import Chip from '../../lib/ui/Chip.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import type { WhenValue } from '../../lib/ui/WhenPicker.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
@@ -140,7 +144,7 @@
   let caret = $state(0);
   let suggestIndex = $state(0);
   let dismissedAt = $state<number | null>(null);
-  let busy = false;
+  let busy = $state(false);
   let cancelled = false;
   let justUnrecognised = false;
 
@@ -763,6 +767,26 @@
           Notes
         </Chip>
       {/if}
+      <div class="ml-auto flex items-center gap-1">
+        <IconButton
+          icon={X}
+          label={editing ? 'Cancel' : 'Close'}
+          shortcut="Esc"
+          variant="quiet"
+          onpointerdown={keepFocus}
+          onclick={cancel}
+        />
+        <IconButton
+          icon={editing ? Check : ArrowUp}
+          label={editing ? 'Save' : 'Add'}
+          shortcut="↵"
+          variant="solid"
+          hue="--hue-todo"
+          disabled={!text.trim() || busy}
+          onpointerdown={keepFocus}
+          onclick={submit}
+        />
+      </div>
     </div>
 
     <div class="hidden flex-wrap gap-x-3 pt-1.5 text-[0.7rem] text-faint desktop:flex">
