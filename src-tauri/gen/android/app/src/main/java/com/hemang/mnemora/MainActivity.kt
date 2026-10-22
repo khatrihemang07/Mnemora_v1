@@ -22,6 +22,13 @@ class MainActivity : TauriActivity() {
   }
 
   private inner class SystemBarsBridge {
+    // Back at the root: leave like any Android app. exit(0) from Rust runs libc exit destructors
+    // while the render thread still draws, which aborts (#51).
+    @JavascriptInterface
+    fun moveTaskToBack() {
+      runOnUiThread { moveTaskToBack(true) }
+    }
+
     // JavascriptInterface methods run on a WebView thread; window changes need the UI thread.
     @JavascriptInterface
     fun setSystemBars(dark: Boolean, colorHex: String) {

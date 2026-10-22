@@ -1,4 +1,5 @@
 import { os } from '../platform';
+import type { AndroidBridge } from '../theme/system-bars';
 
 /** Screens that take Back for themselves (an open editor), newest last. */
 const interceptors: (() => void)[] = [];
@@ -26,17 +27,37 @@ export function closeOnBack(isOpen: () => boolean, close: () => void): void {
   });
 }
 
+interface BackDeps {
+  goBack: () => void;
+  exitApp: () => void;
+  bridge: AndroidBridge | undefined;
+}
+
 /**
- * Android hardware back: finish an open editor, else go back in history, or exit at the root. A
+ * One Back press: an open editor or overlay first, then history, then leave the app. Leaving
+ * moves the task to the back like any Android app; `exit(0)` would run libc exit destructors
+ * while the render thread still draws, which aborts (#51). It stays only as a fallback.
+ */
+export function handleBack({ canGoBack }: { canGoBack: boolean }, deps: BackDeps): void {
+  const intercepted = interceptors.at(-1);
+  if (intercepted) intercepted();
+  else if (canGoBack) deps.goBack();
+  else if (typeof deps.bridge?.moveTaskToBack === 'function') deps.bridge.moveTaskToBack();
+  else deps.exitApp();
+}
+
+/**
+ * Android hardware back: finish an open editor, else go back in history, or leave at the root. A
  * no-op on desktop and in a browser, where the platform already handles back.
  */
 export async function installBackButton(): Promise<void> {
   if (os !== 'android' || !('__TAURI_INTERNALS__' in window)) return;
   const { onBackButtonPress, exit } = await import('@tauri-apps/api/app');
-  await onBackButtonPress(({ canGoBack }) => {
-    const intercepted = interceptors.at(-1);
-    if (intercepted) intercepted();
-    else if (canGoBack) window.history.back();
-    else void exit(0);
-  });
+  await onBackButtonPress((state) =>
+    handleBack(state, {
+      goBack: () => window.history.back(),
+      exitApp: () => void exit(0),
+      bridge: window.MnemoraAndroid,
+    }),
+  );
 }
