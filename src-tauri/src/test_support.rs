@@ -9,8 +9,9 @@
 
 use std::sync::{Arc, Mutex};
 
+use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::db::{self, Connection};
-use mnemora_core::device::DeviceSettings;
+use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
 use mnemora_core::events::EventBus;
 use mnemora_core::logging::LogHandle;
@@ -27,7 +28,7 @@ use tauri::webview::InvokeRequest;
 use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tempfile::TempDir;
 
-use crate::state::{AppState, DeviceStore, lock};
+use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
     LinkOpenedEvent, SettingsChangedEvent, TodoChangedEvent, commands, journal, links, modules,
@@ -45,15 +46,27 @@ pub struct TestApp {
 
 impl TestApp {
     /// Builds the app. Panics on failure; this is test setup.
-    #[allow(clippy::unwrap_used, clippy::expect_used)]
     pub fn new() -> Self {
+        Self::upgrading(|_| {}, DeviceSettings::default())
+    }
+
+    /// Like [`new`](Self::new), for an install that already has data: `seed` writes to the
+    /// freshly migrated database and `device` is what `device.toml` held, then the Modules'
+    /// startup work runs as it does when the app starts.
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    pub fn upgrading(seed: impl FnOnce(&db::Connection), device: DeviceSettings) -> Self {
         let dir = tempfile::tempdir().expect("temp dir");
         let paths = AppPaths::resolve(Environment::Production, dir.path(), None);
 
         let modules = modules();
         let module_refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
         let mut conn = db::open_in_memory().unwrap();
-        db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
+        let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
+        seed(&conn);
+        let device = Arc::new(DeviceStore::new(paths.device_file(), device));
+        for module in &modules {
+            module.on_startup(&mut conn, &device, &report).unwrap();
+        }
 
         let bus = EventBus::new();
         let widgets = Arc::new(WidgetSignal::silent());
@@ -61,11 +74,8 @@ impl TestApp {
         let state = AppState {
             env: Environment::Production,
             db: Mutex::new(conn),
-            settings: settings_store(&modules, &bus),
-            device: Arc::new(DeviceStore::new(
-                paths.device_file(),
-                DeviceSettings::default(),
-            )),
+            settings: settings_store(&modules, &bus, &device),
+            device,
             paths,
             log: LogHandle::detached(),
             widgets,
@@ -137,9 +147,17 @@ impl TestApp {
         f(&lock(&self.app.state::<AppState>().db))
     }
 
-    /// Like `with_db`, for code that needs `&mut Connection` (it opens its own transaction).
-    pub fn with_db_mut<R>(&self, f: impl FnOnce(&mut Connection) -> R) -> R {
-        f(&mut lock(&self.app.state::<AppState>().db))
+    /// Runs a Module's startup work again, as an app restart would (nothing newly migrated).
+    #[allow(clippy::unwrap_used)]
+    pub fn run_startup(&self, module: &dyn Module) {
+        let state = self.app.state::<AppState>();
+        module
+            .on_startup(
+                &mut lock(&state.db),
+                &state.device,
+                &MigrationReport::default(),
+            )
+            .unwrap();
     }
 }
 

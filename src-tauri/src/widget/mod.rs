@@ -113,10 +113,15 @@ pub fn handle(source: &dyn Source, request: &str) -> String {
     match request {
         Request::Snapshot { view, local } => reply(source.run(&mut |conn| {
             let view = WidgetView::parse(&view)?;
-            let snapshot = mnemora_todo::snapshot(conn, &view, &local)?;
+            let mut snapshot = mnemora_todo::snapshot(conn, &view, &local)?;
+            snapshot.app_theme = source.app_theme();
             encode(&snapshot)
         })),
-        Request::Lists => reply(source.run(&mut |conn| encode(&mnemora_todo::widget_lists(conn)?))),
+        Request::Lists => reply(source.run(&mut |conn| {
+            let mut lists = mnemora_todo::widget_lists(conn)?;
+            lists.app_theme = source.app_theme();
+            encode(&lists)
+        })),
         Request::Complete {
             id,
             tick_steps,

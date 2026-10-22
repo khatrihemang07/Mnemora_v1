@@ -55,6 +55,15 @@ const DEFS: Record<string, { default: JsonValue; validate: Validator }> = {
   'todo.done_in_lists': { default: 'today_shown', validate: oneOf(...PREF_VALUES.done_in_lists) },
 };
 
+/** Settings kept in the device file (crates/core/src/device.rs `LOOK_KEYS`). */
+const LOOK_KEYS: string[] = [
+  'core.theme',
+  'core.density',
+  'core.text_size',
+  'core.reduce_motion',
+  'core.phone_tabs',
+];
+
 const err = (code: AppError['code'], message: string): AppError => ({
   code,
   message,
@@ -69,6 +78,7 @@ export async function installMock() {
     sidebar: { width: 248, rail: false, todo_open: null },
     log_level: 'info',
     spellcheck: true,
+    look: {},
   };
 
   const query = new URLSearchParams(location.search);
@@ -110,6 +120,11 @@ export async function installMock() {
           // Saving the tabs marks them as edited, like Rust.
           if (changes.some((c) => c.key === 'core.phone_tabs'))
             values['core.phone_tabs_edited'] = true;
+          // Look and feel is a Device setting: Rust keeps it in device.toml, not the database.
+          const look = device.look as Record<string, JsonValue>;
+          for (const c of changes)
+            if (LOOK_KEYS.includes(c.key)) look[c.key.slice('core.'.length)] = c.value;
+          if (changes.some((c) => c.key === 'core.phone_tabs')) look.phone_tabs_edited = true;
           // Same shape the Rust side emits: one event per module, keys without the module prefix.
           for (const module of new Set(changes.map((c) => c.key.split('.')[0] as string))) {
             void events.settingsChangedEvent.emit({

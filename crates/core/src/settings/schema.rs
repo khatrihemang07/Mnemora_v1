@@ -33,6 +33,9 @@ pub struct SettingDef {
     pub default: Value,
     /// Gatekeeper for every write.
     pub validator: Validator,
+    /// Kept in `device.toml` (a Device setting), not in the `settings` table: never synced and
+    /// not change-logged.
+    pub device: bool,
 }
 
 /// Wire form of a registered key, so the UI can render defaults and reset buttons.
@@ -62,6 +65,30 @@ impl SettingsRegistry {
     /// Declares `module.key`. A duplicate is a programming error: it is logged and the
     /// first registration wins, so one Module cannot silently override another.
     pub fn register(&mut self, module: &str, key: &str, default: Value, validator: Validator) {
+        self.insert(module, key, default, validator, false);
+    }
+
+    /// Like [`register`](Self::register), for a Device setting: read from and written to
+    /// `device.toml`. Only the `core` keys in [`LOOK_KEYS`](crate::device::LOOK_KEYS) have a home
+    /// there.
+    pub fn register_device(
+        &mut self,
+        module: &str,
+        key: &str,
+        default: Value,
+        validator: Validator,
+    ) {
+        self.insert(module, key, default, validator, true);
+    }
+
+    fn insert(
+        &mut self,
+        module: &str,
+        key: &str,
+        default: Value,
+        validator: Validator,
+        device: bool,
+    ) {
         let full = format!("{module}.{key}");
         if self.defs.contains_key(&full) {
             tracing::error!(key = %full, "duplicate settings key ignored");
@@ -74,6 +101,7 @@ impl SettingsRegistry {
                 key: key.to_owned(),
                 default,
                 validator,
+                device,
             },
         );
     }

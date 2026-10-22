@@ -5,6 +5,7 @@ use rusqlite_migration::{M, Migrations};
 use serde_json::json;
 
 use crate::db::migrate::MigrationReport;
+use crate::device::DeviceStore;
 use crate::error::AppResult;
 use crate::settings::{SettingsRegistry, validate};
 
@@ -23,7 +24,12 @@ pub trait Module: Send + Sync {
     /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
     /// purging old rows, or upgrade steps keyed on what `report` says this run applied). No
     /// polling: nothing calls this again. Never log user content.
-    fn on_startup(&self, _conn: &mut Connection, _report: &MigrationReport) -> AppResult<()> {
+    fn on_startup(
+        &self,
+        _conn: &mut Connection,
+        _device: &DeviceStore,
+        _report: &MigrationReport,
+    ) -> AppResult<()> {
         Ok(())
     }
 }
@@ -67,27 +73,36 @@ impl Module for CoreModule {
         ])
     }
 
+    fn on_startup(
+        &self,
+        conn: &mut Connection,
+        device: &DeviceStore,
+        _report: &MigrationReport,
+    ) -> AppResult<()> {
+        crate::settings::move_look_and_feel_to_device(conn, device)
+    }
+
     fn register_settings(&self, reg: &mut SettingsRegistry) {
         let m = self.id();
-        reg.register(
+        reg.register_device(
             m,
             "theme",
             json!("system"),
             validate::one_of(&["system", "light", "dark", "oled"]),
         );
-        reg.register(
+        reg.register_device(
             m,
             "density",
             json!("comfortable"),
             validate::one_of(&["comfortable", "compact"]),
         );
-        reg.register(
+        reg.register_device(
             m,
             "text_size",
             json!("m"),
             validate::one_of(&["s", "m", "l"]),
         );
-        reg.register(m, "reduce_motion", json!(false), validate::boolean());
+        reg.register_device(m, "reduce_motion", json!(false), validate::boolean());
         // Empty means "use the OS first name".
         reg.register(m, "display_name", json!(""), validate::text(60));
         reg.register(
@@ -111,7 +126,7 @@ impl Module for CoreModule {
         // New installs get Home + Journal + Todo; a saved choice always wins over this default.
         // An install that never saved its tabs gets Todo appended by this default alone; one that
         // did (the Journal pins ["home"] for those that never chose) keeps what it has.
-        reg.register(
+        reg.register_device(
             m,
             "phone_tabs",
             json!(["home", "journal", "todo"]),
@@ -119,7 +134,7 @@ impl Module for CoreModule {
         );
         // Set when the tabs are saved from Settings: a saved value without it was only ever
         // pinned by an upgrade, so a Module arriving later may still add its tab.
-        reg.register(m, "phone_tabs_edited", json!(false), validate::boolean());
+        reg.register_device(m, "phone_tabs_edited", json!(false), validate::boolean());
         // Ids of Modules switched off. A list of the exceptions, so a new Module is on by default.
         reg.register(m, "disabled_modules", json!([]), validate::string_list(64));
     }

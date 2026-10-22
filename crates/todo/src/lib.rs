@@ -34,6 +34,7 @@ mod widget;
 mod widget_text;
 
 use mnemora_core::db::migrate::MigrationReport;
+use mnemora_core::device::DeviceStore;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
@@ -114,8 +115,13 @@ impl Module for TodoModule {
         }
     }
 
-    fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
-        upgrade::append_todo_tab(conn, report)?;
+    fn on_startup(
+        &self,
+        conn: &mut Connection,
+        device: &DeviceStore,
+        report: &MigrationReport,
+    ) -> AppResult<()> {
+        upgrade::append_todo_tab(conn, device, report)?;
         Ok(())
     }
 }

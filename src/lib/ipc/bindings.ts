@@ -379,6 +379,8 @@ export type DeviceSettings = {
 	log_level?: string,
 	/**  Spellcheck in every text editor. Per device: input methods and dictionaries differ. */
 	spellcheck?: boolean,
+	/**  Theme, density, text size, reduce motion and phone tabs. */
+	look?: LookAndFeel,
 };
 
 /**  The Tasks done on one day of Done. */
@@ -637,6 +639,27 @@ export type LocalNow = {
 	 *  today, because closing times are stored in UTC.
 	 */
 	offset_min: number,
+};
+
+/**
+ *  Look and feel (ADR 0005, amended): per device so a phone and a Mac can look different. Each
+ *  field is `None` until chosen on this device, and then the registered default of its Setting
+ *  applies; that is how an upgrade tells "never saved" from "saved the default". Values are
+ *  validated by the Setting's own validator on the way in, never here.
+ */
+export type LookAndFeel = {
+	/**  `system`, `light`, `dark` or `oled`. */
+	theme?: string | null,
+	/**  `comfortable` or `compact`. */
+	density?: string | null,
+	/**  `s`, `m` or `l`. */
+	text_size?: string | null,
+	/**  Turn animations off. */
+	reduce_motion?: boolean | null,
+	/**  Ids of the phone tab bar's tabs, in order. */
+	phone_tabs?: string[] | null,
+	/**  The tabs were saved from Settings (an upgrade only pins them). */
+	phone_tabs_edited?: boolean | null,
 };
 
 /**  Everything the UI supplies to write a new Entry. */

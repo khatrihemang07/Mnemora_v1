@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 
 use mnemora_core::error::AppResult;
-use mnemora_core::settings;
 use rusqlite::Connection;
 use serde::Serialize;
 
@@ -136,7 +135,8 @@ pub struct EmptyState {
 pub struct WidgetSnapshot {
     /// The view's name as asked for (`today`, `list:<id>`).
     pub view: String,
-    /// Settings ▸ Theme (`system`, `light`, `dark`, `oled`): what "Same as app" follows.
+    /// Settings ▸ Theme (`system`, `light`, `dark`, `oled`): what "Same as app" follows. The theme
+    /// is a Device setting, so the app's bridge fills it in; empty here.
     pub app_theme: String,
     /// The header's name for it.
     pub title: String,
@@ -238,18 +238,11 @@ pub struct WidgetList {
 /// What the setup screen needs: the Lists to pick from, and the app's theme to dress itself in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct WidgetLists {
-    /// Settings ▸ Theme (`system`, `light`, `dark`, `oled`).
+    /// Settings ▸ Theme (`system`, `light`, `dark`, `oled`). A Device setting: the app's bridge
+    /// fills it in; empty here.
     pub app_theme: String,
     /// The Lists in the sidebar's order.
     pub lists: Vec<WidgetList>,
-}
-
-fn app_theme(conn: &Connection) -> AppResult<String> {
-    let stored = settings::stored(conn, "core", "theme")?;
-    Ok(match stored.as_ref().and_then(|v| v.as_str()) {
-        Some(t @ ("system" | "light" | "dark" | "oled")) => t.to_owned(),
-        _ => "system".to_owned(),
-    })
 }
 
 /// The Lists for the setup screen, in the order the sidebar shows them.
@@ -265,7 +258,7 @@ pub fn lists(conn: &Connection) -> AppResult<WidgetLists> {
         })
         .collect();
     Ok(WidgetLists {
-        app_theme: app_theme(conn)?,
+        app_theme: String::new(),
         lists,
     })
 }
@@ -306,7 +299,6 @@ pub fn snapshot(
         WidgetView::List(id) => list_snapshot(conn, &cx, id)?,
     };
     snap.view = view.name();
-    snap.app_theme = app_theme(conn)?;
     Ok(snap)
 }
 

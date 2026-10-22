@@ -118,8 +118,6 @@ pub fn journal_today(state: State<'_, AppState>, today: String) -> Result<TodayS
 mod tests {
     use std::collections::HashMap;
 
-    use mnemora_core::db::migrate::MigrationReport;
-    use mnemora_core::module::Module;
     use serde_json::{Value, json};
 
     use crate::test_support::TestApp;
@@ -636,11 +634,7 @@ mod tests {
         let log_before = row_count(&app, "change_log");
 
         // The startup hook is what the app runs.
-        app.with_db_mut(|c| {
-            mnemora_journal::JournalModule
-                .on_startup(c, &MigrationReport::default())
-                .unwrap();
-        });
+        app.run_startup(&mnemora_journal::JournalModule);
 
         assert_eq!(row_count(&app, "journal_entries"), 1);
         assert_eq!(row_count(&app, "change_log"), log_before);

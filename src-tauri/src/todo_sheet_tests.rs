@@ -1,8 +1,6 @@
 //! Command-layer tests for the Task sheet's rules: Priority, Won't do, open steps, delete and
 //! purge, Comments and History. They drive the real commands through the mock runtime (ADR 0009).
 
-use mnemora_core::db::migrate::MigrationReport;
-use mnemora_core::module::Module;
 use mnemora_todo::TodoModule;
 use serde_json::{Value, json};
 
@@ -528,11 +526,7 @@ fn what_was_deleted_over_thirty_days_ago_survives_a_restart_with_its_change_log(
     age(&app, "todo_comments", &comment["id"], 31);
     let log_before = log_len(&app);
 
-    app.with_db_mut(|c| {
-        TodoModule
-            .on_startup(c, &MigrationReport::default())
-            .unwrap();
-    });
+    app.run_startup(&TodoModule);
 
     assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_tasks"), 2);
     assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_lists"), 1);

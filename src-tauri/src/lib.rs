@@ -111,7 +111,7 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 use mnemora_core::db;
-use mnemora_core::device::DeviceSettings;
+use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
 use mnemora_core::events::{EventBus, SettingsChanged};
 use mnemora_core::logging;
@@ -125,7 +125,7 @@ use specta::Type;
 use tauri::{Manager, WebviewWindowBuilder};
 use tauri_specta::{Builder, Event};
 
-use crate::state::{AppState, DeviceStore};
+use crate::state::AppState;
 
 /// Decided at build time; there is deliberately no runtime switch that could mix data sets.
 const ENVIRONMENT: Environment = if cfg!(feature = "sandbox") {
@@ -161,12 +161,16 @@ fn modules() -> Vec<Box<dyn Module>> {
 }
 
 /// A Settings store over every Module's registered keys.
-fn settings_store(modules: &[Box<dyn Module>], bus: &EventBus) -> SettingsStore {
+fn settings_store(
+    modules: &[Box<dyn Module>],
+    bus: &EventBus,
+    device: &Arc<DeviceStore>,
+) -> SettingsStore {
     let mut registry = SettingsRegistry::new();
     for module in modules {
         module.register_settings(&mut registry);
     }
-    SettingsStore::new(Arc::new(registry), bus.clone())
+    SettingsStore::new(Arc::new(registry), bus.clone(), Arc::clone(device))
 }
 
 /// Commands and events exposed over IPC. Also used to export bindings.
@@ -207,6 +211,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         tracing::warn!(error = %e, "ignoring invalid saved log level");
     }
     let paths = AppPaths::resolve(ENVIRONMENT, &base, device.data_dir_override().as_deref());
+    let device = Arc::new(DeviceStore::new(paths.device_file(), device));
 
     let modules = modules();
     let module_refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
@@ -216,17 +221,18 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
 
     // Once per start, after migrations. A failing Module must not stop the app.
     for module in &modules {
-        if let Err(e) = module.on_startup(&mut conn, &report) {
+        if let Err(e) = module.on_startup(&mut conn, &device, &report) {
             tracing::warn!(module = module.id(), error = %e, "startup work failed");
         }
     }
 
     let bus = EventBus::new();
-    let settings = settings_store(&modules, &bus);
+    let settings = settings_store(&modules, &bus, &device);
     // Settings that change what the Todo widget draws redraw it too.
     let widgets = Arc::new(widget::signal::WidgetSignal::platform());
     widget::signal::follow_settings(&bus, &widgets);
-    let snapshot = settings.get_all(&conn)?;
+    // Look and feel comes from the device file alone, so the first paint never waits on the database.
+    let first_paint = settings.device_values();
 
     // Bridge core's in-process event to a typed IPC event.
     let handle = app.handle().clone();
@@ -241,7 +247,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         env: ENVIRONMENT,
         db: Mutex::new(conn),
         settings,
-        device: Arc::new(DeviceStore::new(paths.device_file(), device.clone())),
+        device: Arc::clone(&device),
         paths,
         log,
         widgets,
@@ -254,7 +260,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     // the next Todo write.
     app.state::<AppState>().widgets.todo_changed();
 
-    create_main_window(app, &snapshot.values, &device)?;
+    create_main_window(app, &first_paint, &device.get())?;
     Ok(())
 }
 

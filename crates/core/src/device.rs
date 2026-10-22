@@ -1,8 +1,10 @@
 //! Device-only values stored in `device.toml` (never synced, never in the database).
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use specta::Type;
 
 use crate::error::{AppError, AppResult, ErrorCode};
@@ -59,6 +61,81 @@ impl Default for SidebarState {
     }
 }
 
+/// Look and feel (ADR 0005, amended): per device so a phone and a Mac can look different. Each
+/// field is `None` until chosen on this device, and then the registered default of its Setting
+/// applies; that is how an upgrade tells "never saved" from "saved the default". Values are
+/// validated by the Setting's own validator on the way in, never here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct LookAndFeel {
+    /// `system`, `light`, `dark` or `oled`.
+    pub theme: Option<String>,
+    /// `comfortable` or `compact`.
+    pub density: Option<String>,
+    /// `s`, `m` or `l`.
+    pub text_size: Option<String>,
+    /// Turn animations off.
+    pub reduce_motion: Option<bool>,
+    /// Ids of the phone tab bar's tabs, in order.
+    pub phone_tabs: Option<Vec<String>>,
+    /// The tabs were saved from Settings (an upgrade only pins them).
+    pub phone_tabs_edited: Option<bool>,
+}
+
+/// The `core` keys that live in [`LookAndFeel`] instead of the `settings` table.
+pub const LOOK_KEYS: [&str; 6] = [
+    "theme",
+    "density",
+    "text_size",
+    "reduce_motion",
+    "phone_tabs",
+    "phone_tabs_edited",
+];
+
+impl LookAndFeel {
+    /// The saved value of `key` (a [`LOOK_KEYS`] name) as JSON, or `None` when never saved.
+    pub fn get(&self, key: &str) -> Option<Value> {
+        match key {
+            "theme" => self.theme.as_ref().map(|v| json!(v)),
+            "density" => self.density.as_ref().map(|v| json!(v)),
+            "text_size" => self.text_size.as_ref().map(|v| json!(v)),
+            "reduce_motion" => self.reduce_motion.map(|v| json!(v)),
+            "phone_tabs" => self.phone_tabs.as_ref().map(|v| json!(v)),
+            "phone_tabs_edited" => self.phone_tabs_edited.map(|v| json!(v)),
+            _ => None,
+        }
+    }
+
+    /// Saves `value` for `key`. False (and nothing changed) for an unknown key or a value of
+    /// the wrong JSON type; the caller has already validated the value's content.
+    pub fn set(&mut self, key: &str, value: &Value) -> bool {
+        let text = || value.as_str().map(str::to_owned);
+        match key {
+            "theme" => text().map(|v| self.theme = Some(v)).is_some(),
+            "density" => text().map(|v| self.density = Some(v)).is_some(),
+            "text_size" => text().map(|v| self.text_size = Some(v)).is_some(),
+            "reduce_motion" => value
+                .as_bool()
+                .map(|v| self.reduce_motion = Some(v))
+                .is_some(),
+            "phone_tabs_edited" => value
+                .as_bool()
+                .map(|v| self.phone_tabs_edited = Some(v))
+                .is_some(),
+            "phone_tabs" => value
+                .as_array()
+                .and_then(|a| {
+                    a.iter()
+                        .map(|t| t.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()
+                })
+                .map(|v| self.phone_tabs = Some(v))
+                .is_some(),
+            _ => false,
+        }
+    }
+}
+
 /// Everything stored per device.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
@@ -73,6 +150,8 @@ pub struct DeviceSettings {
     pub log_level: String,
     /// Spellcheck in every text editor. Per device: input methods and dictionaries differ.
     pub spellcheck: bool,
+    /// Theme, density, text size, reduce motion and phone tabs.
+    pub look: LookAndFeel,
 }
 
 impl Default for DeviceSettings {
@@ -83,6 +162,7 @@ impl Default for DeviceSettings {
             sidebar: SidebarState::default(),
             log_level: "info".to_owned(),
             spellcheck: true,
+            look: LookAndFeel::default(),
         }
     }
 }
@@ -126,6 +206,38 @@ impl DeviceSettings {
             .as_deref()
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
+    }
+}
+
+/// `device.toml` held in memory, written through on every change.
+pub struct DeviceStore {
+    path: PathBuf,
+    inner: Mutex<DeviceSettings>,
+}
+
+impl DeviceStore {
+    /// Wraps already-loaded settings that live at `path`.
+    pub fn new(path: PathBuf, settings: DeviceSettings) -> Self {
+        Self {
+            path,
+            inner: Mutex::new(settings),
+        }
+    }
+
+    /// A copy of the current settings.
+    pub fn get(&self) -> DeviceSettings {
+        self.inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Applies `change` and saves atomically. The in-memory copy is updated even if the
+    /// write fails, so the session stays consistent; the error is still reported.
+    pub fn update(&self, change: impl FnOnce(&mut DeviceSettings)) -> AppResult<()> {
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        change(&mut guard);
+        guard.save(&self.path)
     }
 }
 
@@ -208,5 +320,38 @@ mod tests {
             ..DeviceSettings::default()
         };
         assert_eq!(s.data_dir_override(), None);
+    }
+
+    #[test]
+    fn look_and_feel_is_unset_until_chosen_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        assert_eq!(DeviceSettings::default().look.get("theme"), None);
+        let mut s = DeviceSettings::default();
+        assert!(s.look.set("theme", &json!("oled")));
+        assert!(s.look.set("reduce_motion", &json!(true)));
+        assert!(s.look.set("phone_tabs", &json!(["home", "todo"])));
+        assert!(!s.look.set("theme", &json!(3)), "wrong type is refused");
+        assert!(!s.look.set("bogus", &json!("x")));
+        s.save(&path).unwrap();
+        let back = DeviceSettings::load(&path);
+        assert_eq!(back.look.get("theme"), Some(json!("oled")));
+        assert_eq!(back.look.get("reduce_motion"), Some(json!(true)));
+        assert_eq!(back.look.get("phone_tabs"), Some(json!(["home", "todo"])));
+        assert_eq!(back.look.get("density"), None, "unchosen stays unset");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("density"), "{text}");
+    }
+
+    #[test]
+    fn a_file_from_before_look_and_feel_has_none_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        std::fs::write(&path, "log_level = \"debug\"\n").unwrap();
+        let s = DeviceSettings::load(&path);
+        assert_eq!(s.look, LookAndFeel::default());
+        for key in LOOK_KEYS {
+            assert_eq!(s.look.get(key), None, "{key}");
+        }
     }
 }
