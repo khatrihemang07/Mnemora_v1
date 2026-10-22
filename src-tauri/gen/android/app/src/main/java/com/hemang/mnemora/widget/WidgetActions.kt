@@ -29,7 +29,7 @@ object WidgetActions {
         when (reply) {
             is TickReply.Completed -> {
                 val until = UndoBar.expiresAt(System.currentTimeMillis())
-                UndoBar.put(context, UndoState(reply.message, reply.token, until))
+                UndoBar.put(context, UndoState(reply.lead, reply.suffix, reply.token, until))
                 lightTick(context)
                 WidgetUpdater.redrawNow(context)
                 WidgetUpdater.hideUndoAt(context, until)

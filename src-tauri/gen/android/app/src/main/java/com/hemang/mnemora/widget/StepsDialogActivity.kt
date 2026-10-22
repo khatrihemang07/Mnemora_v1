@@ -16,7 +16,6 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.RequiresApi
 import com.hemang.mnemora.R
-import java.util.concurrent.Executors
 
 /**
  * "N steps are still open": the question a tick asks when the Task's notes hold unticked Checklist
@@ -25,7 +24,6 @@ import java.util.concurrent.Executors
  */
 @RequiresApi(31)
 class StepsDialogActivity : Activity() {
-    private val io = Executors.newSingleThreadExecutor()
     private var busy = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,19 +83,16 @@ class StepsDialogActivity : Activity() {
         setContentView(root)
     }
 
-    /** Completes (ticking the steps first or not) off the main thread, then closes. */
+    /**
+     * Hands the answer to the receiver and closes. The work must not run here: once this activity is
+     * gone the process is cached and its threads are held back for seconds, while a receiver's
+     * `goAsync` keeps it running (a tick from the dialog took 3.4 s that way).
+     */
     private fun answer(taskId: String, tickSteps: Boolean) {
         if (busy) return
         busy = true
-        val app = applicationContext
-        io.execute { WidgetActions.complete(app, taskId, tickSteps) }
+        sendBroadcast(WidgetActionReceiver.complete(this, taskId, tickSteps))
         finish()
-    }
-
-    override fun onDestroy() {
-        // Lets a running completion finish; no new work is accepted.
-        io.shutdown()
-        super.onDestroy()
     }
 
     companion object {

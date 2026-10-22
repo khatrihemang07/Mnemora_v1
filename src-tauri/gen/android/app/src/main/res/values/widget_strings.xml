@@ -36,6 +36,7 @@
     <string name="widget_background_solid">Solid</string>
     <string name="widget_background_see_through">See-through</string>
     <string name="widget_background_none">None</string>
+    <string name="widget_complete_task">Complete %1$s</string>
     <string name="widget_undo">Undo</string>
     <string name="widget_steps_one">1 step is still open</string>
     <string name="widget_steps_many">%1$d steps are still open</string>

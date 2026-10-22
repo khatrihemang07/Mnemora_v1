@@ -7,15 +7,12 @@
     android:layout_height="wrap_content"
     android:gravity="top"
     android:orientation="horizontal"
-    android:paddingStart="6dp"
-    android:paddingTop="5dp"
-    android:paddingEnd="6dp"
-    android:paddingBottom="5dp">
+    android:paddingEnd="6dp">
 
     <FrameLayout
         android:id="@+id/diamond"
-        android:layout_width="30sp"
-        android:layout_height="30sp">
+        android:layout_width="48dp"
+        android:layout_height="48dp">
 
         <ImageView
             android:id="@+id/diamond_fill"
@@ -38,11 +35,12 @@
         android:id="@+id/row_title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="6dp"
+        android:layout_marginStart="-6dp"
         android:layout_weight="1"
         android:ellipsize="end"
         android:maxLines="2"
-        android:paddingTop="5dp"
+        android:paddingTop="13dp"
+        android:paddingBottom="8dp"
         android:shadowColor="#F2FFFFFF"
         android:shadowDx="0"
         android:shadowDy="1"
@@ -54,7 +52,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
-        android:layout_marginTop="3dp"
+        android:layout_marginTop="11dp"
         android:background="@drawable/widget_pill"
         android:maxLines="1"
         android:maxWidth="96dp"
@@ -75,7 +73,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
         android:maxLines="1"
-        android:paddingTop="6dp"
+        android:paddingTop="15dp"
         android:shadowColor="#F2FFFFFF"
         android:shadowDx="0"
         android:shadowDy="1"

@@ -160,12 +160,19 @@ fn tick(
             return Err(e);
         }
     };
-    let message = match (&done.occurrence, &done.task.due_date) {
+    let lead = mnemora_todo::completed_message(&task.title);
+    // A repeating Task says where it went; the widget keeps that part whole and cuts the title.
+    let suffix = match (&done.occurrence, &done.task.due_date) {
         (Some(_), Some(next)) => {
-            mnemora_todo::completed_repeat_message(&task.title, next, &local.today)
+            let full = mnemora_todo::completed_repeat_message(&task.title, next, &local.today);
+            full.strip_prefix(&lead)
+                .map(|rest| rest.trim_start().to_owned())
         }
-        _ => mnemora_todo::completed_message(&task.title),
+        _ => None,
     };
+    let message = suffix
+        .as_ref()
+        .map_or_else(|| lead.clone(), |s| format!("{lead} {s}"));
     let token = UndoToken {
         reopen: done.occurrence.map_or_else(|| id.to_owned(), |o| o.id),
         notes: ticked.then_some(task.notes),
@@ -173,6 +180,8 @@ fn tick(
     Ok(json!({
         "kind": "completed",
         "message": message,
+        "lead": lead,
+        "suffix": suffix,
         "token": encode(&token)?.to_string(),
     }))
 }

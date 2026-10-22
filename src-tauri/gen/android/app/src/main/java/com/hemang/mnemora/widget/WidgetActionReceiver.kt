@@ -31,6 +31,11 @@ class WidgetActionReceiver : BroadcastReceiver() {
 
     private fun row(context: Context, intent: Intent) {
         when (intent.getStringExtra(EXTRA_KIND)) {
+            // The steps dialog's answer: tickSteps says which of its two completing choices was taken.
+            KIND_COMPLETE -> {
+                val id = intent.getStringExtra(EXTRA_TASK_ID) ?: return
+                WidgetActions.complete(context, id, intent.getBooleanExtra(EXTRA_TICK_STEPS, false))
+            }
             KIND_TICK -> {
                 val id = intent.getStringExtra(EXTRA_TASK_ID) ?: return
                 val reply = WidgetActions.complete(context, id, null)
@@ -57,6 +62,16 @@ class WidgetActionReceiver : BroadcastReceiver() {
         const val EXTRA_TASK_ID = "task_id"
         const val KIND_TICK = "tick"
         const val KIND_OPEN = "open"
+        const val KIND_COMPLETE = "complete"
+        const val EXTRA_TICK_STEPS = "tick_steps"
+
+        /** The broadcast that completes a Task with the answer to its open steps. Explicit, so only this app's receiver gets it. */
+        fun complete(context: Context, taskId: String, tickSteps: Boolean): Intent =
+            Intent(context, WidgetActionReceiver::class.java)
+                .setAction(ACTION_ROW)
+                .putExtra(EXTRA_KIND, KIND_COMPLETE)
+                .putExtra(EXTRA_TASK_ID, taskId)
+                .putExtra(EXTRA_TICK_STEPS, tickSteps)
 
         private val executor = Executors.newSingleThreadExecutor()
     }

@@ -1235,6 +1235,8 @@ fn ticking_a_task_completes_it_and_undo_reopens_it() {
     let reply = tick(&bridge, &task.id, None);
     assert_eq!(reply["ok"]["kind"], "completed", "{reply}");
     assert_eq!(reply["ok"]["message"], "Completed “Buy oat milk”");
+    assert_eq!(reply["ok"]["lead"], "Completed “Buy oat milk”");
+    assert!(reply["ok"]["suffix"].is_null());
     assert_eq!(titles_today(&bridge), ["Other"]);
     let done = mnemora_todo::task(&conn, &task.id).unwrap();
     assert_eq!(done.state, mnemora_todo::TaskState::Done);
@@ -1259,6 +1261,9 @@ fn ticking_a_repeating_task_says_where_it_went_and_undo_rewinds_it() {
         "Completed “Call mum” · next Thu 22 Oct"
     );
     assert_eq!(reply["ok"]["kind"], "completed");
+    // The bar keeps the date whole and shortens the title, so it gets the two parts apart.
+    assert_eq!(reply["ok"]["lead"], "Completed “Call mum”");
+    assert_eq!(reply["ok"]["suffix"], "· next Thu 22 Oct");
     let moved = mnemora_todo::task(&conn, &task.id).unwrap();
     assert_eq!(moved.due_date.as_deref(), Some("2026-10-22"));
     assert_eq!(moved.state, mnemora_todo::TaskState::Open);

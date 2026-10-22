@@ -3,7 +3,7 @@ package com.hemang.mnemora.widget
 import android.content.Context
 
 /** The Undo bar's text, what undoes the tick, and when the bar goes away. */
-data class UndoState(val message: String, val token: String, val until: Long)
+data class UndoState(val lead: String, val suffix: String?, val token: String, val until: Long)
 
 /**
  * The themed Undo bar at the bottom of the Todo widget after a tick. It lives for about four
@@ -27,7 +27,8 @@ object UndoBar {
     /** Keeps the bar for the next draw; a later tick replaces it, like the app's toast. */
     fun put(context: Context, state: UndoState) {
         prefs(context).edit()
-            .putString("message", state.message)
+            .putString("lead", state.lead)
+            .putString("suffix", state.suffix)
             .putString("token", state.token)
             .putLong("until", state.until)
             .apply()
@@ -36,10 +37,10 @@ object UndoBar {
     /** The bar to show at [now], or none. */
     fun get(context: Context, now: Long): UndoState? {
         val p = prefs(context)
-        val message = p.getString("message", null) ?: return null
+        val lead = p.getString("lead", null) ?: return null
         val token = p.getString("token", null) ?: return null
         val until = p.getLong("until", 0L)
-        return if (isShown(until, now)) UndoState(message, token, until) else null
+        return if (isShown(until, now)) UndoState(lead, p.getString("suffix", null), token, until) else null
     }
 
     fun clear(context: Context) {

@@ -62,7 +62,14 @@ sealed interface Reply {
 /** What the bridge answered to a tick. */
 sealed interface TickReply {
     /** The Task is done (or moved on). [message] is the Undo bar's text, [token] undoes it. */
-    data class Completed(val message: String, val token: String) : TickReply
+    data class Completed(
+        val message: String,
+        /** The bar's title part, which may be cut short to fit. */
+        val lead: String,
+        /** "· next Thu 29 Oct" for a repeating Task, which is never cut; none otherwise. */
+        val suffix: String?,
+        val token: String,
+    ) : TickReply
 
     /** The Task has unticked steps: ask before doing anything. */
     data class OpenSteps(val taskId: String, val title: String, val count: Int) : TickReply
@@ -95,7 +102,12 @@ object ReplyParser {
         return try {
             val ok = JSONObject(json).optJSONObject("ok") ?: return TickReply.Failed
             when (ok.optString("kind")) {
-                "completed" -> TickReply.Completed(ok.getString("message"), ok.getString("token"))
+                "completed" -> TickReply.Completed(
+                    ok.getString("message"),
+                    ok.getString("lead"),
+                    if (ok.isNull("suffix")) null else ok.getString("suffix"),
+                    ok.getString("token"),
+                )
                 "open_steps" -> TickReply.OpenSteps(ok.getString("task_id"), ok.getString("title"), ok.getInt("count"))
                 else -> TickReply.Failed
             }

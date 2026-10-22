@@ -47,7 +47,7 @@ object WidgetRenderer {
         val open = openApp(context)
         views.setOnClickPendingIntent(R.id.root, open)
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
-        undoBar(context, views, palette, config.background, appWidgetId)
+        undoBar(context, views, palette, look, config.background, appWidgetId)
         when (reply) {
             is Reply.Ok -> ok(context, views, palette, edge, reply.snapshot, open, previewLines, appWidgetId)
             Reply.NotSetUp -> message(
@@ -85,7 +85,7 @@ object WidgetRenderer {
     }
 
     /** The Undo bar after a tick, in the widget's own theme; hidden once its time is up. */
-    private fun undoBar(context: Context, views: RemoteViews, palette: Palette, background: Background, appWidgetId: Int) {
+    private fun undoBar(context: Context, views: RemoteViews, palette: Palette, look: Look, background: Background, appWidgetId: Int) {
         // The setup screen's preview is not a real widget: no bar there.
         val state = if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) null else UndoBar.get(context, System.currentTimeMillis())
         if (state == null) {
@@ -94,12 +94,21 @@ object WidgetRenderer {
         }
         // Over a bare wallpaper the bar is its own light card, whatever the theme.
         val bare = background == Background.NONE
-        val fill = if (bare) Palette.withAlpha(0xFFFFFFFF.toInt(), 0.92f) else palette.surface2
+        // On a dark card surface-2 is barely lighter than the card, so the bar lifts with a wash of the ink.
+        val fill = when {
+            bare -> Palette.withAlpha(0xFFFFFFFF.toInt(), 0.92f)
+            WidgetTheme.isDark(look) -> Palette.blend(palette.ink, palette.background, 0.16f)
+            else -> palette.surface2
+        }
         val ink = if (bare) 0xFF1D1712.toInt() else palette.ink
         views.setViewVisibility(R.id.undo_bar, View.VISIBLE)
         views.setColorStateList(R.id.undo_bar, "setBackgroundTintList", ColorStateList.valueOf(fill))
-        views.setTextViewText(R.id.undo_text, state.message)
+        views.setTextViewText(R.id.undo_text, state.lead)
         views.setTextColor(R.id.undo_text, ink)
+        // The title gives way; "· next Thu 29 Oct" stays whole.
+        views.setViewVisibility(R.id.undo_suffix, if (state.suffix == null) View.GONE else View.VISIBLE)
+        views.setTextViewText(R.id.undo_suffix, state.suffix.orEmpty())
+        views.setTextColor(R.id.undo_suffix, ink)
         views.setTextColor(R.id.undo_action, palette.todo)
         views.setOnClickPendingIntent(R.id.undo_action, actionIntent(context, WidgetActionReceiver.ACTION_UNDO, 2, FLAG_IMMUTABLE_ONLY))
     }
@@ -247,7 +256,8 @@ object WidgetRenderer {
             R.id.row_root,
             Intent().putExtra(WidgetActionReceiver.EXTRA_KIND, WidgetActionReceiver.KIND_OPEN),
         )
-        // The diamond ticks.
+        // The diamond ticks; TalkBack says what it ticks.
+        views.setContentDescription(R.id.diamond, context.getString(R.string.widget_complete_task, row.title))
         views.setOnClickFillInIntent(
             R.id.diamond,
             Intent()
