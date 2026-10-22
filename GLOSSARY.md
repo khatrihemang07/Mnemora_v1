@@ -29,11 +29,11 @@ Which data set the app is running against: Production or Sandbox.
 _Avoid_: Profile, mode, stage
 
 **Preference**:
-A user setting stored with the data, so it follows the data when synced, such as theme or time format.
+A user setting stored with the data, so it follows the data when synced, such as time format or week start.
 _Avoid_: Option, config
 
 **Device setting**:
-A setting that belongs to one device and is never synced, such as window size or the data folder.
+A setting that belongs to one device and is never synced, such as window size, the data folder or the theme (look and feel is per device).
 _Avoid_: Local preference, machine config
 
 **Home**:
@@ -176,3 +176,29 @@ _Avoid_: Widget (alone), home card, launcher card
 **Todo badge**:
 The count beside Todo in the sidebar and on the phone tab bar: Tasks due today plus Overdue ones, red while anything is Overdue, hidden at zero. The Inbox and Today counts under Todo are separate.
 _Avoid_: Notification count, unread
+
+### Sync
+
+**Sync**:
+The optional Module, off by default, that keeps your own devices in step directly with each other, with no account or cloud service. It runs only while the app is open, and with it off the app behaves as if it did not exist.
+_Avoid_: Backup, cloud, account
+
+**Paired device**:
+Another device of yours that this one trusts and keeps in step with. Pairing with any one device joins the whole group, so every device learns about the others. Forgetting a device cuts it off from all of them until it is paired again.
+_Avoid_: Peer, client, node
+
+**Pairing code**:
+The 8 digits one device shows and the other types to make them trust each other. It works once, for 2 minutes, and stops working after 3 wrong tries.
+_Avoid_: PIN, password, token
+
+**Conflict**:
+Text you wrote that two devices both rewrote in the same passage, so Sync cannot tell which to keep. It waits in the Sync Module for you to Keep this, Keep other, Edit merged or decide Later. Until then the newest version shows and nothing in Journal or Todo is marked. Only text (an Entry's body, a Task's title and notes, a Comment) can conflict.
+_Avoid_: Clash, merge error, collision
+
+**Resolved automatically**:
+A difference between devices that Sync settled for you by keeping the newest value (a Priority, a Due date, a delete against an edit). It is only a log, with what was kept and what was replaced and a one-click "Use ‹other› instead", and never needs dismissing.
+_Avoid_: Auto-merge, silent conflict
+
+**Sync activity**:
+The record of what Sync did: sessions with how much moved, pairing, joining, forgetting, pauses, failures, and Conflicts raised and resolved. It is kept for good, is shared by every device, and never holds your content.
+_Avoid_: Sync log, history (that is a Task's)

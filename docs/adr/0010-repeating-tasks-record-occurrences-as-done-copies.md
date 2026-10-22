@@ -11,3 +11,7 @@ The recurrence maths are pure functions in `crates/todo/src/recurrence.rs` (a Ty
 - **Move the Task and keep only a counter or a log line**: rejected; Done would need a second source, and Comments and notes at that moment would be lost.
 - **Make the next occurrence a new Task and close the old one**: rejected; the Task would change identity every time, breaking links, History and the sort order.
 - **Generate future occurrences ahead of time**: rejected; projections are not Tasks, they pile up when ignored, and editing the rule would mean rewriting them.
+
+## Amendment (2026-10-22): the occurrence id is derived
+
+The occurrence copy's id is a UUIDv5 of the Task's id and the occurrence's Due date, instead of a fresh UUIDv7, so completing the same repeating Task on the same date on two devices offline produces the same record and Done shows one occurrence (ADR 0017). Reopening and then completing on the same date upserts that row and clears its deletion. Existing occurrences keep their ids.
