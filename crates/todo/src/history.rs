@@ -74,7 +74,7 @@ fn short_day(date: &str) -> String {
 }
 
 /// "Every 3 days after done", the same wording as the UI's Repeat label.
-fn repeat_label(freq: &str, every: u64, days: u64, mode: &str) -> String {
+pub(crate) fn repeat_label(freq: &str, every: u64, days: u64, mode: &str) -> String {
     let unit = match freq {
         "day" => "day",
         "week" => "week",

@@ -2,6 +2,8 @@
 //! no date or wording logic. `src/lib/ipc/fixtures/widget-text.json` runs the same cases here and
 //! in Vitest.
 
+use crate::history::repeat_label;
+use crate::recurrence::RepeatRule;
 use crate::when::epoch_day;
 
 const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -57,6 +59,69 @@ pub fn completed_repeat_message(title: &str, next: &str, today: &str) -> String 
         quoted_title(title),
         day_text(next, today)
     )
+}
+
+/// Where a just-added Task landed, for the toast: `Today`, `Upcoming · Thu 22 Oct`, or its List (or
+/// the Inbox) when it has no date. Port of `landedIn`.
+pub fn landed_in(due_date: Option<&str>, list_name: Option<&str>, today: &str) -> String {
+    match due_date {
+        None => list_name.unwrap_or("Inbox").to_owned(),
+        Some(date) if date <= today => "Today".to_owned(),
+        Some(date) => format!("Upcoming · {}", day_text(date, today)),
+    }
+}
+
+/// The toast after a Quick add from outside Todo: `Added “Call plumber” to Today`. Port of
+/// `quickAddedMessage`.
+pub fn quick_added_message(title: &str, place: &str) -> String {
+    format!("Added {} to {place}", quoted_title(title))
+}
+
+/// A Repeat in words: `Every 3 days after done`, `Every Mon, Thu`. Port of `repeatLabel`.
+pub fn repeat_text(rule: &RepeatRule) -> String {
+    repeat_label(
+        &rule.freq,
+        u64::from(rule.every),
+        u64::from(rule.days.unwrap_or(0)),
+        &rule.mode,
+    )
+}
+
+/// What a recognised value means in the user's terms, for the chip: `Fri 23 Oct`, `9:30 PM`,
+/// `P1`, `Every 2 weeks`. A List is not handled here (its chip names it). Port of `meaningText`.
+pub fn meaning_text(kind: &str, value: &str, today: &str, format: TimeFormat) -> String {
+    match kind {
+        "date" => day_text(value, today),
+        "time" => format_hm(value, format),
+        "prio" => format!("P{value}"),
+        "repeat" => serde_json::from_str::<RepeatRule>(value)
+            .map_or_else(|_| value.to_owned(), |rule| repeat_text(&rule)),
+        _ => value.to_owned(),
+    }
+}
+
+/// The When chip: `Tomorrow · 09:00 · Every month`, or `When` while there is nothing. Port of
+/// `whenChipLabel`.
+pub fn when_chip_label(
+    date: Option<&str>,
+    time: Option<&str>,
+    repeat: Option<&RepeatRule>,
+    today: &str,
+    format: TimeFormat,
+) -> String {
+    let parts: Vec<String> = [
+        date.map(|d| row_date_label(d, today)),
+        time.map(|t| format_hm(t, format)),
+        repeat.map(repeat_text),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if parts.is_empty() {
+        "When".to_owned()
+    } else {
+        parts.join(" · ")
+    }
 }
 
 /// `21:30` as the Setting wants it: `21:30` or `9:30 PM`. A malformed time is returned as given.
@@ -324,6 +389,67 @@ mod tests {
                     text(&case, "today")
                 ),
                 text(&case, "message"),
+                "{case}"
+            );
+        }
+    }
+
+    fn rule_of(case: &Value) -> Option<RepeatRule> {
+        let r = &case["repeat"];
+        r.as_object()
+            .map(|_| serde_json::from_value(r.clone()).unwrap())
+    }
+
+    fn format_of(case: &Value) -> TimeFormat {
+        TimeFormat::from_setting(case["format"].as_str())
+    }
+
+    #[test]
+    fn the_quick_add_toast_matches_the_app() {
+        for case in cases("landed_in") {
+            assert_eq!(
+                landed_in(
+                    case["due_date"].as_str(),
+                    case["list"].as_str(),
+                    text(&case, "today")
+                ),
+                text(&case, "text"),
+                "{case}"
+            );
+        }
+        for case in cases("quick_added_message") {
+            assert_eq!(
+                quick_added_message(text(&case, "title"), text(&case, "where")),
+                text(&case, "message"),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_quick_add_chips_match_the_app() {
+        for case in cases("meaning_text") {
+            assert_eq!(
+                meaning_text(
+                    text(&case, "kind"),
+                    text(&case, "value"),
+                    text(&case, "today"),
+                    format_of(&case)
+                ),
+                text(&case, "text"),
+                "{case}"
+            );
+        }
+        for case in cases("when_chip_label") {
+            assert_eq!(
+                when_chip_label(
+                    case["date"].as_str(),
+                    case["time"].as_str(),
+                    rule_of(&case).as_ref(),
+                    text(&case, "today"),
+                    format_of(&case)
+                ),
+                text(&case, "label"),
                 "{case}"
             );
         }

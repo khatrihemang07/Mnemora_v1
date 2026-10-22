@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Parsed, ParseSpan } from '../../lib/ipc/bindings';
+import type { Parsed, ParseSpan, RepeatRule } from '../../lib/ipc/bindings';
+import resolveFixture from '../../lib/ipc/fixtures/capture-resolve.json';
 import {
   applySuggestion,
   backspaceTarget,
   type CaptureBase,
+  type CaptureHand,
   foldTag,
   hashQuery,
   ignoreKinds,
@@ -418,6 +420,47 @@ describe('the fields the Task gets', () => {
       base,
     );
     expect(got.fromText).toEqual(['date', 'prio']);
+  });
+});
+
+// The Todo widget's Rust port (crates/todo/src/quick_add.rs) runs the same cases.
+describe('capture-resolve fixture, against resolveFields', () => {
+  it.each(resolveFixture.resolve)('$name', ({ parsed: p, hand, base, fields }) => {
+    const words = p
+      ? parsed({
+          spans: p.kinds.map((kind, i) => span({ kind, key: `${kind}:${i}` })),
+          date: p.date,
+          time: p.time,
+          repeat: p.repeat as RepeatRule | null,
+          priority: p.priority,
+          list_id: p.list_id,
+          new_list: p.new_list,
+        })
+      : null;
+    // A key is there only for a chip that was touched; null means cleared.
+    const touched: Record<string, unknown> = hand;
+    const chips: CaptureHand = {};
+    if ('list_id' in touched) chips.listId = touched.list_id as string | null;
+    if ('date' in touched) chips.date = touched.date as string | null;
+    if ('time' in touched) chips.time = touched.time as string | null;
+    if ('repeat' in touched) chips.repeat = touched.repeat as RepeatRule | null;
+    if ('priority' in touched) chips.priority = touched.priority as number;
+    const got = resolveFields(words, chips, {
+      listId: base.list_id,
+      date: base.date,
+      time: base.time,
+      repeat: base.repeat as RepeatRule | null,
+      priority: base.priority,
+    });
+    expect({
+      date: got.date,
+      time: got.time,
+      repeat: got.repeat,
+      priority: got.priority,
+      list_id: got.listId,
+      new_list: got.newList,
+      from_text: got.fromText,
+    }).toEqual(fields);
   });
 });
 

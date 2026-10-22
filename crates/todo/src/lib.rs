@@ -16,6 +16,7 @@ mod list_service;
 mod migrations;
 mod order;
 mod parse;
+mod quick_add;
 mod recurrence;
 mod reorder;
 mod repeat;
@@ -57,6 +58,10 @@ pub use list_service::{
     set_list_group, set_list_sort, sidebar,
 };
 pub use parse::{ParseAlternative, ParseRequest, ParseSpan, Parsed, TextRange};
+pub use quick_add::{
+    Added, Base, CaptureContext, Chip, Fields, Hand, Marked, Place, QuickRequest, Reading,
+    add_quick, capture_context, read_quick, resolve_fields,
+};
 pub use recurrence::{MAX_EVERY, RepeatRule};
 pub use reorder::{reorder_list, reorder_task};
 pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};

@@ -1,0 +1,475 @@
+{
+  "about": "What the Quick add / Capture box gives a Task: the typed words win over a chip, a chip over where the box opened (resolveFields in src/modules/todo/capture.ts; resolve_fields in crates/todo/src/quick_add.rs). parsed lists only what resolution reads: the kinds of the words that won and the values the parser settled. hand holds a key only for a chip that was touched (null means cleared). Run by Rust (quick_add.rs) and Vitest (capture.test.ts).",
+  "resolve": [
+    {
+      "name": "nothing typed keeps where the box opened",
+      "parsed": null,
+      "hand": {},
+      "base": {
+        "list_id": "L1",
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": "L1",
+        "new_list": null,
+        "from_text": []
+      }
+    },
+    {
+      "name": "a date word beats the day the box opened on",
+      "parsed": {
+        "kinds": ["date"],
+        "date": "2026-10-23",
+        "time": null,
+        "repeat": null,
+        "priority": null,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {},
+      "base": {
+        "list_id": null,
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-23",
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["date"]
+      }
+    },
+    {
+      "name": "a time alone keeps the day the box opened on",
+      "parsed": {
+        "kinds": ["time"],
+        "date": "2026-10-22",
+        "time": "18:00",
+        "repeat": null,
+        "priority": null,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {},
+      "base": {
+        "list_id": null,
+        "date": "2026-10-24",
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-24",
+        "time": "18:00",
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["time"]
+      }
+    },
+    {
+      "name": "a time alone in a box with no day takes the parser's today or tomorrow",
+      "parsed": {
+        "kinds": ["time"],
+        "date": "2026-10-22",
+        "time": "18:00",
+        "repeat": null,
+        "priority": null,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {},
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-22",
+        "time": "18:00",
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["time"]
+      }
+    },
+    {
+      "name": "a word for a time beats the opened-on time",
+      "parsed": {
+        "kinds": ["time"],
+        "date": null,
+        "time": "09:30",
+        "repeat": null,
+        "priority": null,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {},
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": "07:00",
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": "09:30",
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["time"]
+      }
+    },
+    {
+      "name": "tonight sets a date and a time and counts the kinds once",
+      "parsed": {
+        "kinds": ["date", "time"],
+        "date": "2026-10-21",
+        "time": "20:00",
+        "repeat": null,
+        "priority": null,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {},
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-21",
+        "time": "20:00",
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["date", "time"]
+      }
+    },
+    {
+      "name": "a #List word beats the List the box opened in",
+      "parsed": {
+        "kinds": ["list"],
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": null,
+        "list_id": "L2",
+        "new_list": null
+      },
+      "hand": {},
+      "base": {
+        "list_id": "L1",
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": "L2",
+        "new_list": null,
+        "from_text": ["list"]
+      }
+    },
+    {
+      "name": "a #Name that matches nothing is a new List and not the opened-in one",
+      "parsed": {
+        "kinds": ["list"],
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": null,
+        "list_id": null,
+        "new_list": "Gym"
+      },
+      "hand": {},
+      "base": {
+        "list_id": "L1",
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": "Gym",
+        "from_text": ["list"]
+      }
+    },
+    {
+      "name": "a List chosen by hand beats where the box opened",
+      "parsed": null,
+      "hand": {
+        "list_id": "L3"
+      },
+      "base": {
+        "list_id": "L1",
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": "L3",
+        "new_list": null,
+        "from_text": []
+      }
+    },
+    {
+      "name": "the Inbox chosen by hand beats the opened-in List",
+      "parsed": null,
+      "hand": {
+        "list_id": null
+      },
+      "base": {
+        "list_id": "L1",
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": []
+      }
+    },
+    {
+      "name": "a #List word beats a List chosen by hand",
+      "parsed": {
+        "kinds": ["list"],
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": null,
+        "list_id": "L2",
+        "new_list": null
+      },
+      "hand": {
+        "list_id": "L3"
+      },
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": "L2",
+        "new_list": null,
+        "from_text": ["list"]
+      }
+    },
+    {
+      "name": "a Priority word beats the chip beats the base",
+      "parsed": {
+        "kinds": ["prio"],
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 1,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {
+        "priority": 2
+      },
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 3
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 1,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["prio"]
+      }
+    },
+    {
+      "name": "a Priority chip beats the base",
+      "parsed": null,
+      "hand": {
+        "priority": 2
+      },
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 3
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 2,
+        "list_id": null,
+        "new_list": null,
+        "from_text": []
+      }
+    },
+    {
+      "name": "a date cleared by hand clears the opened-on day",
+      "parsed": null,
+      "hand": {
+        "date": null
+      },
+      "base": {
+        "list_id": null,
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": []
+      }
+    },
+    {
+      "name": "a date picked by hand beats the opened-on day",
+      "parsed": null,
+      "hand": {
+        "date": "2026-10-25"
+      },
+      "base": {
+        "list_id": null,
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-25",
+        "time": null,
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": []
+      }
+    },
+    {
+      "name": "a Repeat word beats a Repeat picked by hand",
+      "parsed": {
+        "kinds": ["repeat"],
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": {
+          "freq": "week",
+          "every": 1,
+          "days": null,
+          "mode": "fixed"
+        },
+        "priority": null,
+        "list_id": null,
+        "new_list": null
+      },
+      "hand": {
+        "repeat": {
+          "freq": "day",
+          "every": 1,
+          "days": null,
+          "mode": "fixed"
+        }
+      },
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": null,
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": "2026-10-21",
+        "time": null,
+        "repeat": {
+          "freq": "week",
+          "every": 1,
+          "days": null,
+          "mode": "fixed"
+        },
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": ["repeat"]
+      }
+    },
+    {
+      "name": "a time picked by hand stands when nothing is typed",
+      "parsed": null,
+      "hand": {
+        "time": "07:15"
+      },
+      "base": {
+        "list_id": null,
+        "date": null,
+        "time": "09:00",
+        "repeat": null,
+        "priority": 4
+      },
+      "fields": {
+        "date": null,
+        "time": "07:15",
+        "repeat": null,
+        "priority": 4,
+        "list_id": null,
+        "new_list": null,
+        "from_text": []
+      }
+    }
+  ]
+}

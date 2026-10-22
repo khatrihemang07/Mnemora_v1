@@ -16,7 +16,7 @@ pub mod source;
 use mnemora_core::db::Connection;
 use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::util::new_id;
-use mnemora_todo::{LocalNow, WidgetView};
+use mnemora_todo::{LocalNow, QuickRequest, WidgetView};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -41,6 +41,13 @@ enum Request {
     },
     /// Undo for a tick: the `token` its reply gave.
     Undo { token: String },
+    /// What the Quick add sheet needs on opening: placeholder, inherited place, Lists, Settings.
+    CaptureContext { view: String, local: LocalNow },
+    /// Typed text as the Capture box reads it: highlighted words, chips and the fields the Task
+    /// would get. Writes nothing.
+    Parse(QuickRequest),
+    /// Adds the Task the sheet describes (the app's Capture box rules, ported).
+    Add(QuickRequest),
 }
 
 /// What Undo needs to put a tick back, handed to the widget and returned by it. Opaque to Kotlin.
@@ -112,6 +119,17 @@ pub fn handle(source: &dyn Source, request: &str) -> String {
             local,
         } => complete(source, &id, tick_steps, &local),
         Request::Undo { token } => reply(source.write(&mut |conn| undo(conn, &token))),
+        Request::CaptureContext { view, local } => reply(source.run(&mut |conn| {
+            let view = WidgetView::parse(&view)?;
+            encode(&mnemora_todo::capture_context(conn, &view, &local)?)
+        })),
+        Request::Parse(request) => {
+            reply(source.run(&mut |conn| encode(&mnemora_todo::read_quick(conn, &request)?)))
+        }
+        Request::Add(request) => reply(source.write(&mut |conn| {
+            let added = mnemora_todo::add_quick(conn, &request)?;
+            Ok(json!({ "message": added.message, "task": encode(&added.task)? }))
+        })),
     }
 }
 

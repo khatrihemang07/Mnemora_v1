@@ -218,7 +218,7 @@ fn chip(emoji: Option<&str>, name: &str) -> String {
     }
 }
 
-fn list_chip(list: &TodoList) -> String {
+pub(crate) fn list_chip(list: &TodoList) -> String {
     chip(list.emoji.as_deref(), &list.name)
 }
 

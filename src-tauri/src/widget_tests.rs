@@ -480,6 +480,15 @@ fn set_pref(conn: &db::Connection, module: &str, key: &str, value: &str) {
     .unwrap();
 }
 
+/// A Setting stored as the JSON text given (a boolean, say).
+fn set_raw_pref(conn: &db::Connection, module: &str, key: &str, json: &str) {
+    conn.execute(
+        "INSERT OR REPLACE INTO settings(module, key, value, updated_at) VALUES (?1, ?2, ?3, 0)",
+        [module, key, json],
+    )
+    .unwrap();
+}
+
 fn titles(group: &Value) -> Vec<String> {
     rows(group).into_iter().map(|r| r.0).collect()
 }
@@ -1563,4 +1572,609 @@ fn wait_for(seen: &std::sync::atomic::AtomicU32, want: u32) {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert_eq!(seen.load(Ordering::SeqCst), want, "event never arrived");
+}
+
+// ------------------------------------------------------------------------------- Quick add
+
+fn local_json(today: &str) -> Value {
+    json!({ "today": today, "now": "14:05", "offset_min": 0 })
+}
+
+fn context(source: &dyn Source, view: &str) -> Value {
+    let reply = call(
+        source,
+        &json!({ "method": "capture_context", "view": view, "local": local_json(TODAY) }),
+    );
+    assert!(reply["ok"].is_object(), "{reply}");
+    reply["ok"].clone()
+}
+
+fn quick(method: &str, view: &str, text: &str, extra: Value) -> Value {
+    let mut request = json!({
+        "method": method, "view": view, "text": text, "local": local_json(TODAY),
+    });
+    for (key, value) in extra.as_object().cloned().unwrap_or_default() {
+        request[key] = value;
+    }
+    request
+}
+
+fn read(source: &dyn Source, view: &str, text: &str, extra: Value) -> Value {
+    let reply = call(source, &quick("parse", view, text, extra));
+    assert!(reply["ok"].is_object(), "{reply}");
+    reply["ok"].clone()
+}
+
+fn added(source: &dyn Source, view: &str, text: &str, extra: Value) -> Value {
+    let reply = call(source, &quick("add", view, text, extra));
+    assert!(reply["ok"].is_object(), "{reply}");
+    reply["ok"].clone()
+}
+
+fn the_task(conn: &db::Connection, added: &Value) -> mnemora_todo::Task {
+    mnemora_todo::task(conn, added["task"]["id"].as_str().unwrap()).unwrap()
+}
+
+fn new_list(conn: &mut db::Connection, name: &str, emoji: Option<&str>) -> mnemora_todo::TodoList {
+    let list = mnemora_todo::create_list(conn, name).unwrap();
+    match emoji {
+        Some(e) => mnemora_todo::set_list_emoji(conn, &list.id, Some(e)).unwrap(),
+        None => list,
+    }
+}
+
+#[test]
+fn the_sheet_opens_in_the_place_each_view_stands_for() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = new_list(&mut conn, "Home", Some("🏠"));
+    let bridge = phone.bridge();
+
+    let today = context(&bridge, "today");
+    assert_eq!(today["placeholder"], "Quick add, due today");
+    assert_eq!(today["place"], json!({ "date": TODAY, "list_id": null }));
+
+    let upcoming = context(&bridge, "upcoming");
+    assert_eq!(upcoming["placeholder"], "Quick add, due tomorrow");
+    assert_eq!(
+        upcoming["place"],
+        json!({ "date": "2026-10-22", "list_id": null })
+    );
+
+    for view in ["inbox", "all"] {
+        let ctx = context(&bridge, view);
+        assert_eq!(ctx["placeholder"], "Quick add to Inbox", "{view}");
+        assert_eq!(ctx["place"], json!({ "date": null, "list_id": null }));
+    }
+
+    let list = context(&bridge, &format!("list:{}", home.id));
+    assert_eq!(list["placeholder"], "Quick add to 🏠 Home");
+    assert_eq!(list["place"], json!({ "date": null, "list_id": home.id }));
+
+    // A List deleted since the widget was set up is the Inbox, and the hint says so.
+    mnemora_todo::delete_list(
+        &mut conn,
+        &home.id,
+        &mnemora_todo::DeleteChoice::MoveToInbox,
+    )
+    .unwrap();
+    let gone = context(&bridge, &format!("list:{}", home.id));
+    assert_eq!(gone["placeholder"], "Quick add to Inbox");
+    assert_eq!(gone["place"], json!({ "date": null, "list_id": null }));
+}
+
+#[test]
+fn the_context_carries_the_lists_and_the_settings_that_shape_reading() {
+    let (phone, mut conn) = Phone::migrated();
+    new_list(&mut conn, "Home", Some("🏠"));
+    new_list(&mut conn, "Work", None);
+    let bridge = phone.bridge();
+
+    let ctx = context(&bridge, "today");
+    let labels: Vec<&str> = ctx["lists"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["label"].as_str().unwrap())
+        .collect();
+    assert_eq!(labels, ["🏠 Home", "Work"]);
+    assert_eq!(ctx["lists"][0]["name"], "Home");
+    assert_eq!(ctx["lists"][0]["emoji"], "🏠");
+    assert_eq!(ctx["parse_dates"], true);
+    assert_eq!(ctx["week_start"], "mon");
+    assert_eq!(ctx["time_format"], "24h");
+
+    set_raw_pref(&conn, "todo", "parse_dates", "false");
+    set_pref(&conn, "core", "week_start", "sun");
+    set_pref(&conn, "core", "time_format", "12h");
+    let ctx = context(&bridge, "today");
+    assert_eq!(ctx["parse_dates"], false);
+    assert_eq!(ctx["week_start"], "sun");
+    assert_eq!(ctx["time_format"], "12h");
+}
+
+#[test]
+fn before_the_app_ever_ran_the_sheet_cannot_open() {
+    let phone = Phone::fresh();
+    let bridge = phone.bridge();
+    for request in [
+        json!({ "method": "capture_context", "view": "today", "local": local_json(TODAY) }),
+        quick("parse", "today", "x", json!({})),
+        quick("add", "today", "x", json!({})),
+    ] {
+        assert_eq!(call(&bridge, &request)["status"], "not_set_up");
+    }
+}
+
+#[test]
+fn parse_reads_the_words_as_the_app_does_and_says_what_they_mean() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = new_list(&mut conn, "Home", Some("🏠"));
+    let bridge = phone.bridge();
+
+    let text = "Call plumber tomorrow 9am p2 #Home";
+    let got = read(&bridge, "inbox", text, json!({}));
+    let seen: Vec<(String, String, String)> = got["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| {
+            (
+                s["kind"].as_str().unwrap().to_owned(),
+                s["word"].as_str().unwrap().to_owned(),
+                s["meaning"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    assert!(
+        seen.contains(&("date".into(), "tomorrow".into(), "Thu 22 Oct".into())),
+        "{seen:?}"
+    );
+    assert!(
+        seen.contains(&("time".into(), "9am".into(), "09:00".into())),
+        "{seen:?}"
+    );
+    assert!(
+        seen.contains(&("prio".into(), "p2".into(), "P2".into())),
+        "{seen:?}"
+    );
+    assert!(
+        seen.contains(&("list".into(), "#Home".into(), "Home".into())),
+        "{seen:?}"
+    );
+    // The offsets are where the words sit in the text.
+    let date = got["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["kind"] == "date")
+        .unwrap();
+    let (start, end) = (
+        date["start"].as_u64().unwrap(),
+        date["end"].as_u64().unwrap(),
+    );
+    // ASCII text: UTF-16 units and bytes agree here.
+    assert_eq!(
+        &text[usize::try_from(start).unwrap()..usize::try_from(end).unwrap()],
+        "tomorrow"
+    );
+
+    assert_eq!(got["fields"]["date"], "2026-10-22");
+    assert_eq!(got["fields"]["time"], "09:00");
+    assert_eq!(got["fields"]["priority"], 2);
+    assert_eq!(got["fields"]["list_id"], home.id);
+    assert_eq!(got["list_label"], "🏠 Home");
+    assert_eq!(got["list_is_new"], false);
+    assert_eq!(got["when_label"], "Tomorrow · 09:00");
+}
+
+#[test]
+fn parse_words_follow_the_time_format_and_offsets_count_utf16_units() {
+    let (phone, conn) = Phone::migrated();
+    set_pref(&conn, "core", "time_format", "12h");
+    let bridge = phone.bridge();
+
+    // The emoji is two UTF-16 units, as in a Kotlin string.
+    let got = read(&bridge, "inbox", "🎉 party at 9pm", json!({}));
+    let time = &got["spans"][0];
+    assert_eq!(time["kind"], "time");
+    assert_eq!(time["meaning"], "9:00 PM");
+    assert_eq!(
+        (
+            time["start"].as_u64().unwrap(),
+            time["end"].as_u64().unwrap()
+        ),
+        (9, 15)
+    );
+    assert_eq!(got["when_label"], "Today · 9:00 PM", "{got}");
+}
+
+#[test]
+fn parse_honours_kept_as_text_and_use_instead() {
+    let (phone, _conn) = Phone::migrated();
+    let bridge = phone.bridge();
+
+    let both = read(&bridge, "inbox", "dinner tomorrow or friday", json!({}));
+    assert_eq!(both["spans"].as_array().unwrap().len(), 1);
+    assert_eq!(both["alternatives"].as_array().unwrap().len(), 1);
+    assert_eq!(both["alternatives"][0]["reason"], "conflict");
+    let loser = both["alternatives"][0]["key"].as_str().unwrap().to_owned();
+    let winner = both["spans"][0]["key"].as_str().unwrap().to_owned();
+
+    let swapped = read(
+        &bridge,
+        "inbox",
+        "dinner tomorrow or friday",
+        json!({ "prefer": { "date": loser } }),
+    );
+    assert_eq!(swapped["spans"][0]["key"], loser);
+    assert_eq!(swapped["alternatives"][0]["key"], winner);
+
+    let kept = read(
+        &bridge,
+        "inbox",
+        "dinner tomorrow or friday",
+        json!({ "ignored": [winner, loser] }),
+    );
+    assert_eq!(kept["spans"], json!([]));
+    assert_eq!(kept["ignored"].as_array().unwrap().len(), 2);
+    assert_eq!(kept["fields"]["date"], Value::Null);
+}
+
+#[test]
+fn parse_offers_a_new_list_for_an_unknown_name_and_turns_off_with_the_preference() {
+    let (phone, conn) = Phone::migrated();
+    let bridge = phone.bridge();
+
+    let got = read(&bridge, "inbox", "Buy bolts #Garage", json!({}));
+    assert_eq!(got["spans"][0]["meaning"], "New list “Garage”");
+    assert_eq!(got["fields"]["new_list"], "Garage");
+    assert_eq!(got["fields"]["list_id"], Value::Null);
+    assert_eq!(got["list_label"], "Garage");
+    assert_eq!(got["list_is_new"], true);
+
+    set_raw_pref(&conn, "todo", "parse_dates", "false");
+    let off = read(&bridge, "today", "Buy bolts tomorrow p1 #Garage", json!({}));
+    assert_eq!(off["spans"], json!([]));
+    // Nothing is read, so the place the sheet opened in still stands.
+    assert_eq!(off["fields"]["date"], TODAY);
+    assert_eq!(off["fields"]["priority"], 4);
+}
+
+#[test]
+fn parse_applies_the_chips_used_by_hand() {
+    let (phone, mut conn) = Phone::migrated();
+    let work = new_list(&mut conn, "Work", None);
+    let bridge = phone.bridge();
+
+    let got = read(
+        &bridge,
+        "inbox",
+        "Report",
+        json!({ "hand": { "list_id": work.id, "priority": 1 } }),
+    );
+    assert_eq!(got["fields"]["list_id"], work.id);
+    assert_eq!(got["fields"]["priority"], 1);
+    assert_eq!(got["list_label"], "Work");
+
+    // The words win over a chip.
+    let got = read(
+        &bridge,
+        "inbox",
+        "Report p3",
+        json!({ "hand": { "priority": 1 } }),
+    );
+    assert_eq!(got["fields"]["priority"], 3);
+    // The Inbox chosen by hand beats the List the widget shows.
+    let got = read(
+        &bridge,
+        &format!("list:{}", work.id),
+        "Report",
+        json!({ "hand": { "list_id": null } }),
+    );
+    assert_eq!(got["fields"]["list_id"], Value::Null);
+    assert_eq!(got["list_label"], "Inbox");
+}
+
+#[test]
+fn adding_inherits_the_place_of_every_view() {
+    let (phone, mut conn) = Phone::migrated();
+    let home = new_list(&mut conn, "Home", Some("🏠"));
+    let bridge = phone.bridge();
+
+    let today = added(&bridge, "today", "Water plants", json!({}));
+    let task = the_task(&conn, &today);
+    assert_eq!(
+        (task.due_date.as_deref(), task.list_id.as_deref()),
+        (Some(TODAY), None)
+    );
+    assert_eq!(today["message"], "Added “Water plants” to Today");
+
+    let upcoming = added(&bridge, "upcoming", "Book dentist", json!({}));
+    let task = the_task(&conn, &upcoming);
+    assert_eq!(
+        (task.due_date.as_deref(), task.list_id.as_deref()),
+        (Some("2026-10-22"), None)
+    );
+    assert_eq!(
+        upcoming["message"],
+        "Added “Book dentist” to Upcoming · Thu 22 Oct"
+    );
+
+    for view in ["inbox", "all"] {
+        let got = added(&bridge, view, &format!("Sort mail {view}"), json!({}));
+        let task = the_task(&conn, &got);
+        assert_eq!((task.due_date, task.list_id), (None, None), "{view}");
+        assert_eq!(got["message"], format!("Added “Sort mail {view}” to Inbox"));
+    }
+
+    let got = added(&bridge, &format!("list:{}", home.id), "Fix tap", json!({}));
+    let task = the_task(&conn, &got);
+    assert_eq!((task.due_date, task.list_id), (None, Some(home.id.clone())));
+    assert_eq!(got["message"], "Added “Fix tap” to Home");
+
+    // A deleted List lands in the Inbox rather than failing.
+    mnemora_todo::delete_list(
+        &mut conn,
+        &home.id,
+        &mnemora_todo::DeleteChoice::MoveToInbox,
+    )
+    .unwrap();
+    let got = added(&bridge, &format!("list:{}", home.id), "Orphan", json!({}));
+    assert_eq!(the_task(&conn, &got).list_id, None);
+}
+
+#[test]
+fn typed_words_beat_where_the_view_opened() {
+    let (phone, mut conn) = Phone::migrated();
+    let work = new_list(&mut conn, "Work", None);
+    let bridge = phone.bridge();
+
+    let got = added(
+        &bridge,
+        "today",
+        "Call plumber tomorrow 9am #Work p1",
+        json!({}),
+    );
+    let task = the_task(&conn, &got);
+    assert_eq!(task.title, "Call plumber tomorrow 9am #Work p1");
+    assert_eq!(task.due_date.as_deref(), Some("2026-10-22"));
+    assert_eq!(task.due_time.as_deref(), Some("09:00"));
+    assert_eq!(task.priority, 1);
+    assert_eq!(task.list_id.as_deref(), Some(work.id.as_str()));
+    // It is not due today, so the toast says where it went.
+    assert_eq!(
+        got["message"],
+        "Added “Call plumber tomorrow 9am #Work p1” to Upcoming · Thu 22 Oct"
+    );
+    let understood: Value = serde_json::from_str(task.understood.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        understood,
+        json!([
+            { "word": "tomorrow", "kind": "date", "value": "2026-10-22" },
+            { "word": "9am", "kind": "time", "value": "09:00" },
+            { "word": "#Work", "kind": "list", "value": work.id },
+            { "word": "p1", "kind": "prio", "value": "1" },
+        ])
+    );
+}
+
+#[test]
+fn a_time_alone_in_upcoming_keeps_tomorrows_day() {
+    let (phone, conn) = Phone::migrated();
+    let bridge = phone.bridge();
+    let got = added(&bridge, "upcoming", "Gym at 7pm", json!({}));
+    let task = the_task(&conn, &got);
+    assert_eq!(task.due_date.as_deref(), Some("2026-10-22"));
+    assert_eq!(task.due_time.as_deref(), Some("19:00"));
+}
+
+#[test]
+fn a_hash_name_that_matches_no_list_makes_one() {
+    let (phone, mut conn) = Phone::migrated();
+    let bridge = phone.bridge();
+    let before = mnemora_todo::sidebar(&conn, &at(TODAY))
+        .unwrap()
+        .lists
+        .len();
+
+    let got = added(&bridge, "inbox", "Buy bolts #Garage", json!({}));
+    let task = the_task(&conn, &got);
+    let lists = mnemora_todo::sidebar(&conn, &at(TODAY)).unwrap().lists;
+    assert_eq!(lists.len(), before + 1);
+    let garage = lists.iter().find(|e| e.list.name == "Garage").unwrap();
+    assert_eq!(task.list_id.as_deref(), Some(garage.list.id.as_str()));
+    assert_eq!(got["message"], "Added “Buy bolts #Garage” to Garage");
+    let understood: Value = serde_json::from_str(task.understood.as_deref().unwrap()).unwrap();
+    assert_eq!(
+        understood,
+        json!([{ "word": "#Garage", "kind": "list", "value": garage.list.id }])
+    );
+
+    // The second time the List exists and is reused, not made again.
+    let again = added(&bridge, "inbox", "More bolts #garage", json!({}));
+    assert_eq!(
+        the_task(&conn, &again).list_id.as_deref(),
+        Some(garage.list.id.as_str())
+    );
+    assert_eq!(
+        mnemora_todo::sidebar(&conn, &at(TODAY))
+            .unwrap()
+            .lists
+            .len(),
+        before + 1
+    );
+    let _ = &mut conn;
+}
+
+#[test]
+fn priority_notes_and_the_chips_are_stored() {
+    let (phone, mut conn) = Phone::migrated();
+    let work = new_list(&mut conn, "Work", None);
+    let bridge = phone.bridge();
+
+    let got = added(
+        &bridge,
+        "inbox",
+        "Plan trip",
+        json!({ "notes": "- [ ] flights\n- [ ] hotel", "hand": { "priority": 2, "list_id": work.id } }),
+    );
+    let task = the_task(&conn, &got);
+    assert_eq!(task.priority, 2);
+    assert_eq!(task.notes, "- [ ] flights\n- [ ] hotel");
+    assert_eq!(task.list_id.as_deref(), Some(work.id.as_str()));
+    assert_eq!(task.understood, None);
+
+    // No Priority is the app's 4.
+    let plain = added(&bridge, "inbox", "Plain", json!({}));
+    assert_eq!(the_task(&conn, &plain).priority, 4);
+}
+
+#[test]
+fn kept_as_text_words_stay_in_the_title_and_out_of_the_fields() {
+    let (phone, conn) = Phone::migrated();
+    let bridge = phone.bridge();
+    let read_it = read(&bridge, "inbox", "Visit mum tomorrow", json!({}));
+    let key = read_it["spans"][0]["key"].clone();
+
+    let got = added(
+        &bridge,
+        "inbox",
+        "Visit mum tomorrow",
+        json!({ "ignored": [key] }),
+    );
+    let task = the_task(&conn, &got);
+    assert_eq!(task.title, "Visit mum tomorrow");
+    assert_eq!(task.due_date, None);
+    assert_eq!(task.understood, None);
+}
+
+#[test]
+fn a_repeat_word_makes_a_repeating_task() {
+    let (phone, conn) = Phone::migrated();
+    let bridge = phone.bridge();
+    let got = added(&bridge, "inbox", "Water plants every 3 days", json!({}));
+    let task = the_task(&conn, &got);
+    assert_eq!(task.repeat_freq.as_deref(), Some("day"));
+    assert_eq!(task.repeat_every, Some(3));
+    assert!(task.due_date.is_some());
+}
+
+#[test]
+fn adding_writes_one_create_row_and_a_new_list_writes_its_own() {
+    let (phone, conn) = Phone::migrated();
+    let bridge = phone.bridge();
+    let count = |entity: &str| -> i64 {
+        conn.query_row(
+            "SELECT COUNT(*) FROM change_log WHERE module = 'todo' AND entity = ?1 AND op = 'create'",
+            [entity],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    let (tasks, lists) = (count("todo_task"), count("todo_list"));
+
+    added(&bridge, "today", "One", json!({}));
+    assert_eq!((count("todo_task"), count("todo_list")), (tasks + 1, lists));
+    added(&bridge, "today", "Two #Fresh", json!({}));
+    assert_eq!(
+        (count("todo_task"), count("todo_list")),
+        (tasks + 2, lists + 1)
+    );
+}
+
+#[test]
+fn a_task_added_by_the_widget_is_the_task_the_app_would_add() {
+    let app = TestApp::new();
+    let live = Live::new(app.handle());
+
+    // The app's Capture box: read, then todo_task_create with what was read.
+    let via_app: Value = app
+        .invoke(
+            "todo_task_create",
+            json!({
+                "title": "Call plumber tomorrow 9am p2",
+                "listId": null,
+                "when": { "date": "2026-10-22", "time": "09:00", "local": at_json(TODAY) },
+                "details": {
+                    "notes": "ring twice", "priority": 2, "repeat": null,
+                    "understood": "[{\"word\":\"tomorrow\",\"kind\":\"date\",\"value\":\"2026-10-22\"},{\"word\":\"9am\",\"kind\":\"time\",\"value\":\"09:00\"},{\"word\":\"p2\",\"kind\":\"prio\",\"value\":\"2\"}]",
+                },
+            }),
+        )
+        .unwrap();
+    let via_widget = added(
+        &live,
+        "inbox",
+        "Call plumber tomorrow 9am p2",
+        json!({ "notes": "ring twice" }),
+    );
+
+    let strip = |mut task: Value| {
+        let task_obj = task.as_object_mut().unwrap();
+        for key in ["id", "created_at", "updated_at", "closed_at", "sort_key"] {
+            task_obj.remove(key);
+        }
+        task
+    };
+    assert_eq!(strip(via_app.clone()), strip(via_widget["task"].clone()));
+    let id_of = |v: &Value| v["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        log_shape(&app, &id_of(&via_app)),
+        log_shape(&app, &id_of(&via_widget["task"]))
+    );
+    assert!(!log_shape(&app, &id_of(&via_app)).is_empty());
+    assert_eq!(
+        history(&app, &id_of(&via_app)),
+        history(&app, &id_of(&via_widget["task"]))
+    );
+}
+
+#[test]
+fn adding_tells_a_running_app_once_and_a_refused_add_says_nothing() {
+    use std::sync::atomic::Ordering;
+    let app = TestApp::new();
+    let seen = count_events(&app);
+    let live = Live::new(app.handle());
+
+    read(&live, "today", "Quiet tomorrow", json!({}));
+    context(&live, "today");
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(seen.load(Ordering::SeqCst), 0, "reading is quiet");
+
+    added(&live, "today", "Loud", json!({}));
+    wait_for(&seen, 1);
+
+    let refused = call(&live, &quick("add", "today", "   ", json!({})));
+    assert!(refused["err"]["message"].is_string(), "{refused}");
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(seen.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn bad_quick_add_requests_are_errors_and_create_nothing() {
+    let (phone, conn) = Phone::migrated();
+    let bridge = phone.bridge();
+    let long = "x".repeat(501);
+    for request in [
+        quick("add", "today", "", json!({})),
+        quick("add", "today", &long, json!({})),
+        quick("add", "today", "two\nlines", json!({})),
+        quick("add", "nowhere", "Task", json!({})),
+        quick("parse", "nowhere", "Task", json!({})),
+        quick(
+            "add",
+            "today",
+            "Task",
+            json!({ "hand": { "list_id": "no-such-list" } }),
+        ),
+        json!({ "method": "add", "view": "today", "local": local_json(TODAY) }),
+        json!({ "method": "add", "text": "x", "view": "today", "local": { "today": "junk", "now": "x", "offset_min": 0 } }),
+    ] {
+        let reply = call(&bridge, &request);
+        assert!(reply["err"]["message"].is_string(), "{request} -> {reply}");
+    }
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM todo_tasks", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
 }

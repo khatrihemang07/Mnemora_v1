@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { completedRepeatMessage, rowDateLabel } from '../../modules/todo/dates';
+import {
+  completedRepeatMessage,
+  landedIn,
+  rowDateLabel,
+  whenChipLabel,
+} from '../../modules/todo/dates';
 import { plainTitle } from '../../modules/todo/notes';
-import { completedMessage } from '../../modules/todo/tasks';
+import { completedMessage, quickAddedMessage } from '../../modules/todo/tasks';
+import { meaningText, type UnderstoodKind } from '../../modules/todo/understood';
 import { formatHm } from '../ui/when-time';
 import fixture from './fixtures/widget-text.json';
 
@@ -28,6 +34,47 @@ describe('widget-text fixture, against the app', () => {
     'completed, repeating: $title',
     ({ title, next, today, message }) => {
       expect(completedRepeatMessage(title, next, today)).toBe(message);
+    },
+  );
+
+  it.each(fixture.landed_in)('landed in: $due_date / $list', ({ due_date, list, today, text }) => {
+    expect(landedIn({ due_date }, list, today)).toBe(text);
+  });
+
+  it.each(fixture.quick_added_message)('added toast: $title', ({ title, where, message }) => {
+    expect(quickAddedMessage(title, where)).toBe(message);
+  });
+
+  it.each(fixture.meaning_text)(
+    'chip meaning: $kind $value',
+    ({ kind, value, today, format, text }) => {
+      expect(
+        meaningText(kind as UnderstoodKind, value, {
+          today,
+          timeFormat: format as '24h' | '12h',
+          listName: () => null,
+        }),
+      ).toBe(text);
+    },
+  );
+
+  it.each(fixture.when_chip_label)(
+    'When chip: $label',
+    ({ date, time, repeat, today, format, label }) => {
+      expect(
+        whenChipLabel(
+          {
+            due_date: date,
+            due_time: time,
+            repeat_freq: repeat?.freq ?? null,
+            repeat_every: repeat?.every ?? null,
+            repeat_days: repeat?.days ?? null,
+            repeat_mode: repeat?.mode ?? null,
+          },
+          today,
+          format as '24h' | '12h',
+        ),
+      ).toBe(label);
     },
   );
 });

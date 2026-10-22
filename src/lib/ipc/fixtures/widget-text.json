@@ -1,5 +1,5 @@
 {
-  "about": "Text rules the Todo widget's Rust code (crates/todo/src/widget_text.rs) shares with the app's TypeScript (src/modules/todo/dates.ts, notes.ts, lib/ui/when-time.ts, when-grid.ts). The same cases run in Rust and in Vitest (widget-text.test.ts). plain_title: a title without its Markdown marks. row_date_label: today, date, label. format_hm: a time as the Setting wants it. row_day_label (Rust only, no TypeScript peer): the day on a widget row for a Task not due today. Known gaps, out of scope here: nested or unbalanced marks, links whose address the app refuses, strikethrough and highlight (kept as text in both). completed_message / completed_repeat_message: the toast after a tick, matching tasks.ts completedMessage and dates.ts completedRepeatMessage (the Undo bar on the Todo widget says the same).",
+  "about": "Text rules the Todo widget's Rust code (crates/todo/src/widget_text.rs) shares with the app's TypeScript (src/modules/todo/dates.ts, notes.ts, lib/ui/when-time.ts, when-grid.ts). The same cases run in Rust and in Vitest (widget-text.test.ts). plain_title: a title without its Markdown marks. row_date_label: today, date, label. format_hm: a time as the Setting wants it. row_day_label (Rust only, no TypeScript peer): the day on a widget row for a Task not due today. Known gaps, out of scope here: nested or unbalanced marks, links whose address the app refuses, strikethrough and highlight (kept as text in both). completed_message / completed_repeat_message: the toast after a tick, matching tasks.ts completedMessage and dates.ts completedRepeatMessage (the Undo bar on the Todo widget says the same). landed_in / quick_added_message: the toast after a Quick add (matches dates.ts landedIn and tasks.ts quickAddedMessage). meaning_text / when_chip_label: the Quick add chips (matches understood.ts meaningText and dates.ts whenChipLabel).",
   "plain_title": [
     {
       "title": "Call mum",
@@ -201,6 +201,199 @@
       "next": "2027-01-04",
       "today": "2026-12-30",
       "message": "Completed “Renew passport” · next Mon 4 Jan 2027"
+    }
+  ],
+  "landed_in": [
+    {
+      "due_date": "2026-10-21",
+      "list": null,
+      "today": "2026-10-21",
+      "text": "Today"
+    },
+    {
+      "due_date": "2026-10-19",
+      "list": "Home",
+      "today": "2026-10-21",
+      "text": "Today"
+    },
+    {
+      "due_date": "2026-10-22",
+      "list": null,
+      "today": "2026-10-21",
+      "text": "Upcoming · Thu 22 Oct"
+    },
+    {
+      "due_date": "2027-01-05",
+      "list": "Home",
+      "today": "2026-10-21",
+      "text": "Upcoming · Tue 5 Jan 2027"
+    },
+    {
+      "due_date": null,
+      "list": "Groceries",
+      "today": "2026-10-21",
+      "text": "Groceries"
+    },
+    {
+      "due_date": null,
+      "list": null,
+      "today": "2026-10-21",
+      "text": "Inbox"
+    }
+  ],
+  "quick_added_message": [
+    {
+      "title": "Call plumber",
+      "where": "Today",
+      "message": "Added “Call plumber” to Today"
+    },
+    {
+      "title": "Pay **rent** at [the bank](https://x.y)",
+      "where": "Upcoming · Thu 22 Oct",
+      "message": "Added “Pay rent at the bank” to Upcoming · Thu 22 Oct"
+    },
+    {
+      "title": "Water the plants and then call the electrician about the meter",
+      "where": "Inbox",
+      "message": "Added “Water the plants and then call the…” to Inbox"
+    },
+    {
+      "title": "Milk",
+      "where": "Groceries",
+      "message": "Added “Milk” to Groceries"
+    }
+  ],
+  "meaning_text": [
+    {
+      "kind": "date",
+      "value": "2026-10-23",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "Fri 23 Oct"
+    },
+    {
+      "kind": "date",
+      "value": "2027-01-05",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "Tue 5 Jan 2027"
+    },
+    {
+      "kind": "time",
+      "value": "21:30",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "21:30"
+    },
+    {
+      "kind": "time",
+      "value": "21:30",
+      "today": "2026-10-21",
+      "format": "12h",
+      "text": "9:30 PM"
+    },
+    {
+      "kind": "prio",
+      "value": "1",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "P1"
+    },
+    {
+      "kind": "repeat",
+      "value": "{\"freq\": \"week\", \"every\": 2, \"days\": null, \"mode\": \"fixed\"}",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "Every 2 weeks"
+    },
+    {
+      "kind": "repeat",
+      "value": "{\"freq\": \"week\", \"every\": 1, \"days\": 18, \"mode\": \"fixed\"}",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "Every Mon, Thu"
+    },
+    {
+      "kind": "repeat",
+      "value": "{\"freq\": \"week\", \"every\": 1, \"days\": 62, \"mode\": \"fixed\"}",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "Every weekday"
+    },
+    {
+      "kind": "repeat",
+      "value": "{\"freq\": \"day\", \"every\": 3, \"days\": null, \"mode\": \"after\"}",
+      "today": "2026-10-21",
+      "format": "24h",
+      "text": "Every 3 days after done"
+    }
+  ],
+  "when_chip_label": [
+    {
+      "date": null,
+      "time": null,
+      "repeat": null,
+      "today": "2026-10-21",
+      "format": "24h",
+      "label": "When"
+    },
+    {
+      "date": "2026-10-21",
+      "time": null,
+      "repeat": null,
+      "today": "2026-10-21",
+      "format": "24h",
+      "label": "Today"
+    },
+    {
+      "date": "2026-10-22",
+      "time": "09:00",
+      "repeat": null,
+      "today": "2026-10-21",
+      "format": "24h",
+      "label": "Tomorrow · 09:00"
+    },
+    {
+      "date": "2026-10-22",
+      "time": "09:00",
+      "repeat": null,
+      "today": "2026-10-21",
+      "format": "12h",
+      "label": "Tomorrow · 9:00 AM"
+    },
+    {
+      "date": null,
+      "time": "18:30",
+      "repeat": null,
+      "today": "2026-10-21",
+      "format": "24h",
+      "label": "18:30"
+    },
+    {
+      "date": "2026-10-24",
+      "time": null,
+      "repeat": {
+        "freq": "week",
+        "every": 1,
+        "days": 18,
+        "mode": "fixed"
+      },
+      "today": "2026-10-21",
+      "format": "24h",
+      "label": "Sat · Every Mon, Thu"
+    },
+    {
+      "date": "2026-10-21",
+      "time": "08:00",
+      "repeat": {
+        "freq": "day",
+        "every": 1,
+        "days": null,
+        "mode": "fixed"
+      },
+      "today": "2026-10-21",
+      "format": "24h",
+      "label": "Today · 08:00 · Every day"
     }
   ]
 }
