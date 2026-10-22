@@ -8,11 +8,13 @@ mod capture;
 mod comment;
 mod comment_repo;
 mod comment_service;
+mod comment_sync;
 mod error;
 mod history;
 mod list;
 mod list_repo;
 mod list_service;
+mod list_sync;
 mod migrations;
 mod order;
 mod parse;
@@ -39,7 +41,7 @@ use mnemora_core::device::DeviceStore;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
-use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity};
+use mnemora_core::syncable::{Applied, RemoteChange, Settled, SyncEntity};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -124,7 +126,17 @@ impl Module for TodoModule {
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
         match change.entity {
             service::ENTITY => sync::apply(conn, change),
+            list_service::ENTITY => list_sync::apply(conn, change),
+            comment_service::ENTITY => comment_sync::apply(conn, change),
             _ => Err(TodoError::Validation("Todo does not sync that kind of record").into()),
+        }
+    }
+
+    fn settle_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Settled> {
+        match change.entity {
+            service::ENTITY => sync::settle(conn, change),
+            list_service::ENTITY => list_sync::settle(conn, change),
+            _ => Ok(Settled::default()),
         }
     }
 

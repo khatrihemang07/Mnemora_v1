@@ -1,6 +1,7 @@
 //! Typed Settings: a schema registry plus validated, atomic persistence.
 
 mod schema;
+pub(crate) mod sync;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

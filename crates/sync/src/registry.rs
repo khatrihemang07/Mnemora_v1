@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use mnemora_core::module::Module;
+use mnemora_core::settings::{self, SettingsRegistry};
 use mnemora_core::syncable::{FieldClass, SyncEntity};
 use serde_json::{Map, Value};
 
@@ -14,12 +15,38 @@ pub type Modules = Arc<Vec<Box<dyn Module>>>;
 #[derive(Clone)]
 pub struct Registry {
     modules: Modules,
+    settings: Arc<SettingsRegistry>,
 }
 
 impl Registry {
     /// A registry over `modules`.
     pub fn new(modules: Modules) -> Self {
-        Self { modules }
+        let mut settings = SettingsRegistry::new();
+        for module in modules.iter() {
+            module.register_settings(&mut settings);
+        }
+        Self {
+            modules,
+            settings: Arc::new(settings),
+        }
+    }
+
+    /// Every Module's registered Preferences.
+    pub fn settings(&self) -> &SettingsRegistry {
+        &self.settings
+    }
+
+    /// Ids of `entity`'s records that stay on this device and are never sent: the Device
+    /// settings among the Preferences (look and feel), whose old change-log rows still exist.
+    pub fn local_only(&self, entity: &str) -> Vec<String> {
+        if entity != settings::ENTITY {
+            return Vec::new();
+        }
+        self.settings
+            .iter()
+            .filter(|(_, def)| def.device)
+            .map(|(full, _)| full.clone())
+            .collect()
     }
 
     /// The Module and field table of the entity called `name`.

@@ -60,6 +60,7 @@ impl Module for Todoish {
         Ok(Applied {
             snapshot: json!({"id": change.entity_id}),
             changed: true,
+            events: Vec::new(),
         })
     }
 }

@@ -323,6 +323,7 @@ export const events = {
 	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
 	syncPeersEvent: makeEvent<SyncPeersEvent>("sync-peers-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
+	todoListsMergedEvent: makeEvent<TodoListsMergedEvent>("todo-lists-merged-event"),
 };
 
 /* Types */
@@ -1403,6 +1404,24 @@ export type TodoList = {
 	created_at: number,
 	/**  Row update time: UTC milliseconds. */
 	updated_at: number,
+};
+
+/**
+ *  Sync merged two Todo Lists with the same name: whoever is looking at `from_id` moves to
+ *  `into_id` (the List that was kept) and is told. `device` names the other device the List came
+ *  from, when it is a paired one.
+ */
+export type TodoListsMergedEvent = {
+	/**  The List that went away. */
+	from_id: string,
+	/**  Its name. */
+	from_name: string,
+	/**  The List that was kept. */
+	into_id: string,
+	/**  Its name. */
+	into_name: string,
+	/**  The other device whose List it was. */
+	device: string | null,
 };
 
 /**  Upcoming: Overdue on top, then the Tasks from tomorrow on in groups. */

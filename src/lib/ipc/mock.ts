@@ -95,6 +95,19 @@ export async function installMock() {
   const journal = createJournalMock(query.get('seed') === 'journal', journalFlags);
 
   const todo = createTodoMock((key) => values[key]);
+  // Console: `__listMergeMock()` (or `('Groceries', 'Pixel 8')`) acts out another device having made
+  // a List with the same name: the one you are looking at merges away, you are moved to the
+  // survivor and told. Browser only; Rust sends the same event after a real sync.
+  (window as unknown as { __listMergeMock: unknown }).__listMergeMock = (
+    name?: string,
+    deviceName = 'Pixel 8',
+  ) => {
+    const merged = todo.simulateMerge(name, deviceName);
+    if (!merged) return null;
+    void events.todoListsMergedEvent.emit(merged);
+    void events.todoChangedEvent.emit();
+    return merged;
+  };
   // `?paired=2` shows Sync with two paired devices (Leave enabled, no Welcome page).
   // `__syncMock` steers the simulated second device (see mock-sync-pairing.ts); `?paircode=SECONDS`
   // makes a shown code expire sooner.

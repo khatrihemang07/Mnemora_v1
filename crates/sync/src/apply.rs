@@ -9,7 +9,8 @@ use std::collections::BTreeSet;
 
 use mnemora_core::changelog::{self, ChangeOp, Remote};
 use mnemora_core::hlc::{Stamp, Timestamp};
-use mnemora_core::syncable::{FieldClass, RemoteChange, SyncEntity};
+use mnemora_core::settings;
+use mnemora_core::syncable::{FieldClass, RemoteChange, SyncEntity, SyncEvent};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use serde_json::{Map, Value};
 
@@ -25,8 +26,11 @@ use crate::wire::WireRecord;
 pub struct Applied {
     /// Records stored (duplicates and own records are not counted).
     pub stored: usize,
-    /// Modules whose data visibly changed.
+    /// Modules whose data visibly changed (Preferences are reported as events instead).
     pub changed: BTreeSet<String>,
+    /// What the Modules report about the records they took: the hook where the Activity log and
+    /// Resolved automatically will record List merges, Tasks put in the Inbox and the like.
+    pub events: Vec<SyncEvent>,
 }
 
 /// Applies `records` atomically: all of them, with the vector advanced, or none.
@@ -53,7 +57,9 @@ pub fn apply_batch(
         let (module, schema) = registry
             .find(&record.entity)
             .ok_or(SyncError::UnknownEntity)?;
-        if module.id() != record.module {
+        // A Preference belongs to the Module that registered its key, whatever Module owns the
+        // entity.
+        if module.id() != record.module && record.entity != settings::ENTITY {
             return Err(SyncError::Protocol("record names the wrong Module".into()));
         }
         let op = ChangeOp::parse(&record.op)
@@ -68,15 +74,14 @@ pub fn apply_batch(
             clocks::fold(&tx, schema, me)?;
         }
         let winners = decide_fields(&tx, schema, record)?;
-        let outcome = module.apply_remote(
-            &tx,
-            &RemoteChange {
-                entity: &record.entity,
-                entity_id: &record.entity_id,
-                op,
-                fields: &winners,
-            },
-        )?;
+        let change = RemoteChange {
+            entity: &record.entity,
+            entity_id: &record.entity_id,
+            op,
+            fields: &winners,
+            settings: registry.settings(),
+        };
+        let outcome = module.apply_remote(&tx, &change)?;
         changelog::record_remote(
             &tx,
             &Remote {
@@ -103,9 +108,21 @@ pub fn apply_batch(
             record.origin_seq,
         )?;
         applied.stored += 1;
-        if outcome.changed {
+        applied.events.extend(outcome.events);
+        if outcome.changed && record.entity != settings::ENTITY {
             applied.changed.insert(record.module.clone());
         }
+        // After the record is stored, so what the Module records for itself is stamped later
+        // than the record and wins over it on every device.
+        let settled = module.settle_remote(&tx, &change)?;
+        if settled.recorded {
+            // Its records raise field clocks too: read them in before the next comparison.
+            folded.clear();
+        }
+        if settled.recorded || !settled.events.is_empty() {
+            applied.changed.insert(module.id().to_owned());
+        }
+        applied.events.extend(settled.events);
     }
     tx.commit()?;
     Ok(applied)
@@ -215,6 +232,7 @@ mod tests {
             Ok(ModuleApplied {
                 snapshot: json!({"id": change.entity_id}),
                 changed: true,
+                events: Vec::new(),
             })
         }
     }

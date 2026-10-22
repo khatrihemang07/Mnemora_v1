@@ -799,3 +799,18 @@ describe('capture in the browser mock', () => {
     ]);
   });
 });
+
+describe('simulated List merge', () => {
+  it('moves the List away into a survivor with its Tasks and reports it', () => {
+    const mock = createTodoMock();
+    const list = mock.handle('todo_list_create', { name: 'Groceries' }) as TodoList;
+    const task = mock.handle('todo_task_create', { title: 'Milk', listId: list.id }) as Task;
+    const merged = mock.simulateMerge('groceries', 'Pixel 8');
+    expect(merged).toMatchObject({ from_id: list.id, from_name: 'Groceries', device: 'Pixel 8' });
+    const sidebar = mock.handle('todo_lists', { local: LOCAL }) as SidebarView;
+    expect(sidebar.lists.map((e) => e.list.id)).toEqual([merged?.into_id]);
+    expect((mock.handle('todo_task', { id: task.id }) as Task).list_id).toBe(merged?.into_id);
+    expect(() => mock.handle('todo_list', { id: list.id, local: LOCAL })).toThrow();
+    expect(createTodoMock().simulateMerge(undefined, 'Pixel 8')).toBeNull();
+  });
+});

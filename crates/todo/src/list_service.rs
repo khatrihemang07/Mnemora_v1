@@ -26,6 +26,18 @@ use crate::{list_repo, repo};
 /// Change-log entity name for Lists.
 pub(crate) const ENTITY: &str = "todo_list";
 
+/// The change-log snapshot of a List: the List plus its `deleted_at`, like Task ones.
+pub(crate) fn snapshot_of(
+    list: &TodoList,
+    deleted_at: Option<i64>,
+) -> AppResult<serde_json::Value> {
+    let mut snapshot = serde_json::to_value(list).map_err(TodoError::Snapshot)?;
+    if let Some(fields) = snapshot.as_object_mut() {
+        fields.insert("deleted_at".into(), deleted_at.into());
+    }
+    Ok(snapshot)
+}
+
 /// Writes a change-log record for a List; the snapshot carries `deleted_at` like Task ones do.
 pub(crate) fn record_list(
     conn: &Connection,
@@ -33,10 +45,7 @@ pub(crate) fn record_list(
     op: ChangeOp,
     deleted_at: Option<i64>,
 ) -> AppResult<()> {
-    let mut snapshot = serde_json::to_value(list).map_err(TodoError::Snapshot)?;
-    if let Some(fields) = snapshot.as_object_mut() {
-        fields.insert("deleted_at".into(), deleted_at.into());
-    }
+    let snapshot = snapshot_of(list, deleted_at)?;
     changelog::record(
         conn,
         &Change {

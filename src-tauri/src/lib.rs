@@ -95,7 +95,8 @@ macro_rules! specta_builder_for {
                 TodoChangedEvent,
                 LinkOpenedEvent,
                 SyncPairingEvent,
-                SyncPeersEvent
+                SyncPeersEvent,
+                TodoListsMergedEvent
             ])
     };
 }
@@ -108,6 +109,8 @@ mod state;
 mod sync;
 #[cfg(test)]
 mod sync_cluster_tests;
+#[cfg(test)]
+mod sync_lists_tests;
 #[cfg(test)]
 mod sync_live_tests;
 #[cfg(test)]
@@ -136,7 +139,9 @@ use std::sync::{Arc, Mutex};
 use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
-use mnemora_core::events::{EventBus, RemoteChanged, RemoteSessionEnded, SettingsChanged};
+use mnemora_core::events::{
+    EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
+};
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
@@ -171,6 +176,23 @@ pub struct SettingsChangedEvent(pub SettingsChanged);
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct TodoChangedEvent;
 
+/// Sync merged two Todo Lists with the same name: whoever is looking at `from_id` moves to
+/// `into_id` (the List that was kept) and is told. `device` names the other device the List came
+/// from, when it is a paired one.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct TodoListsMergedEvent {
+    /// The List that went away.
+    pub from_id: String,
+    /// Its name.
+    pub from_name: String,
+    /// The List that was kept.
+    pub into_id: String,
+    /// Its name.
+    pub into_name: String,
+    /// The other device whose List it was.
+    pub device: Option<String>,
+}
+
 /// The pairing sheet's state changed (a code is shown, someone asks, it worked or failed).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SyncPairingEvent(pub mnemora_sync::PairingView);
@@ -201,11 +223,25 @@ fn follow_remote<R: tauri::Runtime>(
     handle: tauri::AppHandle<R>,
     widgets: &Arc<widget::signal::WidgetSignal>,
 ) {
+    let handle_for_merges = handle.clone();
     bus.subscribe(move |event: &RemoteChanged| {
         if event.module == mnemora_todo::MODULE_ID
             && let Err(e) = TodoChangedEvent.emit(&handle)
         {
             tracing::warn!(target: "sync", error = %e, "could not emit the Todo change event");
+        }
+    });
+    let merged_handle = handle_for_merges;
+    bus.subscribe(move |event: &ListsMerged| {
+        let event = TodoListsMergedEvent {
+            from_id: event.from_id.clone(),
+            from_name: event.from_name.clone(),
+            into_id: event.into_id.clone(),
+            into_name: event.into_name.clone(),
+            device: event.device.clone(),
+        };
+        if let Err(e) = event.emit(&merged_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the List merge event");
         }
     });
     let widgets = Arc::clone(widgets);

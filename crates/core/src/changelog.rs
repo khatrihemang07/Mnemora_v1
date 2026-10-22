@@ -247,6 +247,20 @@ pub fn record_remote(conn: &Connection, remote: &Remote<'_>, snapshot: &Value) -
     Ok(())
 }
 
+/// The device that made an entity: the origin of its earliest `create` record by clock, if this
+/// device holds one.
+pub fn creator(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT origin_device FROM change_log
+             WHERE entity = ?1 AND entity_id = ?2 AND op = 'create'
+             ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq LIMIT 1",
+            [entity, entity_id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
 /// One stored record, as read back.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {

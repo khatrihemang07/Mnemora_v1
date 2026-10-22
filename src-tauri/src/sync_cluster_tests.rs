@@ -713,72 +713,182 @@ impl Rng {
     }
 }
 
+/// Names for the random Lists: few, and several spellings of the same name, so that clashes
+/// are common.
+const LIST_NAMES: [&str; 6] = ["Home", "home", "Work", "WORK", "Café", "cafe"];
+
+/// One random action on device `d`: a Task, List, Comment or Preference change.
+fn random_action(
+    c: &Cluster,
+    rng: &mut Rng,
+    d: usize,
+    step: usize,
+    ids: &mut Vec<Value>,
+    list_ids: &mut Vec<Value>,
+) {
+    let known: Vec<Value> = ids.clone();
+    let pick = |rng: &mut Rng| known.get(rng.below(known.len().max(1))).cloned();
+    let roll = rng.below(20);
+    if roll >= 12 {
+        return random_list_action(c, rng, d, step, roll, (&known, list_ids));
+    }
+    match (roll, pick(rng)) {
+        (0, _) | (_, None) => {
+            let t = create(&c[d], &format!("t{step}"));
+            ids.push(t["id"].clone());
+        }
+        (1, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "todo_task_set_priority",
+                json!({ "id": id, "priority": 1 + rng.below(4) }),
+            );
+        }
+        (2, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "todo_task_update",
+                json!({ "id": id, "title": format!("e{step}"), "notes": format!("n{}", rng.below(5)), "sessionId": format!("s{step}") }),
+            );
+        }
+        (3, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "todo_task_set_when",
+                json!({ "id": id, "date": format!("2026-11-{:02}", 1 + rng.below(27)), "time": null, "repeat": null, "local": local() }),
+            );
+        }
+        (4, Some(id)) => {
+            let _ = c[d].invoke::<()>("todo_task_delete", json!({ "id": id }));
+        }
+        (5, Some(id)) => {
+            let _ = c[d].invoke::<Value>("todo_task_restore", json!({ "id": id }));
+        }
+        (6, Some(id)) => {
+            let _ =
+                c[d].invoke::<Value>("todo_task_complete", json!({ "id": id, "local": local() }));
+        }
+        (7, Some(id)) => {
+            let _ = c[d].invoke::<Value>("todo_task_reopen", json!({ "id": id }));
+        }
+        (8, Some(id)) => {
+            let _ =
+                c[d].invoke::<Value>("todo_task_wont_do", json!({ "id": id, "local": local() }));
+        }
+        // An editing session that goes on across syncs: its record is rewritten in place.
+        (9, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "todo_task_update",
+                json!({ "id": id, "title": format!("r{}", rng.below(4)), "notes": format!("m{}", rng.below(3)), "sessionId": format!("d{d}-{}", rng.below(2)) }),
+            );
+        }
+        (10, _) => {
+            let t = create_repeating(&c[d], &format!("rep{step}"), "2026-10-22");
+            ids.push(t["id"].clone());
+        }
+        (11, Some(id)) => {
+            let _ = c[d].invoke::<Value>("todo_task_skip", json!({ "id": id, "local": local() }));
+        }
+        (_, Some(_)) => {}
+    }
+}
+
+/// Lists (made with names that clash, renamed, deleted, given Tasks), Comments and Preferences.
+fn random_list_action(
+    c: &Cluster,
+    rng: &mut Rng,
+    d: usize,
+    step: usize,
+    roll: usize,
+    (ids, list_ids): (&[Value], &mut Vec<Value>),
+) {
+    let id = ids.get(rng.below(ids.len().max(1))).cloned();
+    let lists = list_ids.clone();
+    let some_list = |rng: &mut Rng| lists.get(rng.below(lists.len().max(1))).cloned();
+    match (roll, id) {
+        // Lists: made with names that clash, renamed, deleted, given tasks.
+        (12, _) => {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            let name = LIST_NAMES[rng.below(LIST_NAMES.len())];
+            if let Ok(list) = c[d].invoke::<Value>("todo_list_create", json!({ "name": name })) {
+                list_ids.push(list["id"].clone());
+            }
+        }
+        (13, _) => {
+            if let Some(list) = some_list(rng) {
+                let name = LIST_NAMES[rng.below(LIST_NAMES.len())];
+                let _ =
+                    c[d].invoke::<Value>("todo_list_rename", json!({ "id": list, "name": name }));
+            }
+        }
+        (14, _) => {
+            if let Some(list) = some_list(rng) {
+                let choice = if rng.below(2) == 0 {
+                    "delete_tasks"
+                } else {
+                    "move_to_inbox"
+                };
+                let _ = c[d].invoke::<Value>(
+                    "todo_list_delete",
+                    json!({ "id": list, "choice": { "kind": choice } }),
+                );
+            }
+        }
+        (15, Some(id)) => {
+            let list = {
+                let picked = some_list(rng);
+                picked.filter(|_| rng.below(5) != 0)
+            };
+            let _ = c[d].invoke::<Value>("todo_task_move", json!({ "id": id, "listId": list }));
+        }
+        (16, Some(id)) => {
+            let _ = c[d].invoke::<Value>(
+                "todo_comment_add",
+                json!({ "taskId": id, "body": format!("c{step}") }),
+            );
+        }
+        (17, Some(id)) => {
+            let comments: Vec<Value> = c[d]
+                .invoke("todo_comments", json!({ "taskId": id }))
+                .unwrap_or_default();
+            if let Some(comment) = comments.get(rng.below(comments.len().max(1))) {
+                if rng.below(2) == 0 {
+                    let _ = c[d].invoke::<Value>(
+                        "todo_comment_edit",
+                        json!({ "id": comment["id"], "body": format!("e{step}") }),
+                    );
+                } else {
+                    let _ =
+                        c[d].invoke::<()>("todo_comment_delete", json!({ "id": comment["id"] }));
+                }
+            }
+        }
+        (18, _) => {
+            let (key, values): (&str, &[&str]) = match rng.below(3) {
+                0 => ("core.week_start", &["mon", "sun"]),
+                1 => ("core.time_format", &["24h", "12h"]),
+                _ => ("core.theme", &["dark", "light", "oled"]),
+            };
+            c[d].set_pref(key, json!(values[rng.below(values.len())]));
+        }
+        (19, _) => {
+            if let Some(list) = some_list(rng) {
+                let emoji = ["🏠", "💼", "☕"][rng.below(3)];
+                let _ = c[d]
+                    .invoke::<Value>("todo_list_set_emoji", json!({ "id": list, "emoji": emoji }));
+            }
+        }
+        _ => {}
+    }
+}
+
 fn converge(seed: u64) {
     let c = Cluster::new(3);
     let mut rng = Rng(seed);
     let mut ids: Vec<Value> = Vec::new();
-    for step in 0..120 {
+    let mut list_ids: Vec<Value> = Vec::new();
+    for step in 0..160 {
         let d = rng.below(3);
         c[d].clock()
             .advance(1 + i64::try_from(rng.below(40)).unwrap());
-        let known: Vec<Value> = ids.clone();
-        let pick = |rng: &mut Rng| known.get(rng.below(known.len().max(1))).cloned();
-        match (rng.below(12), pick(&mut rng)) {
-            (0, _) | (_, None) => {
-                let t = create(&c[d], &format!("t{step}"));
-                ids.push(t["id"].clone());
-            }
-            (1, Some(id)) => {
-                let _ = c[d].invoke::<Value>(
-                    "todo_task_set_priority",
-                    json!({ "id": id, "priority": 1 + rng.below(4) }),
-                );
-            }
-            (2, Some(id)) => {
-                let _ = c[d].invoke::<Value>(
-                    "todo_task_update",
-                    json!({ "id": id, "title": format!("e{step}"), "notes": format!("n{}", rng.below(5)), "sessionId": format!("s{step}") }),
-                );
-            }
-            (3, Some(id)) => {
-                let _ = c[d].invoke::<Value>(
-                    "todo_task_set_when",
-                    json!({ "id": id, "date": format!("2026-11-{:02}", 1 + rng.below(27)), "time": null, "repeat": null, "local": local() }),
-                );
-            }
-            (4, Some(id)) => {
-                let _ = c[d].invoke::<()>("todo_task_delete", json!({ "id": id }));
-            }
-            (5, Some(id)) => {
-                let _ = c[d].invoke::<Value>("todo_task_restore", json!({ "id": id }));
-            }
-            (6, Some(id)) => {
-                let _ = c[d]
-                    .invoke::<Value>("todo_task_complete", json!({ "id": id, "local": local() }));
-            }
-            (7, Some(id)) => {
-                let _ = c[d].invoke::<Value>("todo_task_reopen", json!({ "id": id }));
-            }
-            (8, Some(id)) => {
-                let _ = c[d]
-                    .invoke::<Value>("todo_task_wont_do", json!({ "id": id, "local": local() }));
-            }
-            // An editing session that goes on across syncs: its record is rewritten in place.
-            (9, Some(id)) => {
-                let _ = c[d].invoke::<Value>(
-                    "todo_task_update",
-                    json!({ "id": id, "title": format!("r{}", rng.below(4)), "notes": format!("m{}", rng.below(3)), "sessionId": format!("d{d}-{}", rng.below(2)) }),
-                );
-            }
-            (10, _) => {
-                let t = create_repeating(&c[d], &format!("rep{step}"), "2026-10-22");
-                ids.push(t["id"].clone());
-            }
-            (_, Some(id)) => {
-                let _ =
-                    c[d].invoke::<Value>("todo_task_skip", json!({ "id": id, "local": local() }));
-            }
-        }
+        random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids);
         if rng.below(4) == 0 {
             let (a, b) = (rng.below(3), rng.below(3));
             if a != b {
@@ -789,6 +899,29 @@ fn converge(seed: u64) {
         }
     }
     c.sync_all();
+    let lists_first = crate::sync_lists_tests::world(&c[0]);
+    for d in 1..3 {
+        let other = crate::sync_lists_tests::world(&c[d]);
+        if other != lists_first {
+            for section in ["lists", "tasks", "comments", "settings"] {
+                let (a, b) = (
+                    lists_first[section].as_array().unwrap(),
+                    other[section].as_array().unwrap(),
+                );
+                for row in a.iter().filter(|r| !b.contains(r)) {
+                    eprintln!("DIFF seed {seed} {section} only on 0: {row}");
+                }
+                for row in b.iter().filter(|r| !a.contains(r)) {
+                    eprintln!("DIFF seed {seed} {section} only on {d}: {row}");
+                }
+            }
+        }
+        assert!(
+            other == lists_first,
+            "seed {seed}: device {d} differs in Lists, Comments or Preferences"
+        );
+    }
+    // Look and feel is per device: the theme is whatever each device last set itself.
     for id in &ids {
         let first = seen(&c[0], id);
         for d in 1..3 {
@@ -803,7 +936,7 @@ fn converge(seed: u64) {
 
 #[test]
 fn three_devices_with_random_edits_end_identical() {
-    for seed in [1, 7, 42, 2026, 99_991, 31_337] {
+    for seed in [1, 7, 15, 17, 25, 42, 2026, 99_991, 31_337] {
         converge(seed);
     }
 }

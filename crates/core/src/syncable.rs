@@ -16,6 +16,7 @@
 use serde_json::{Map, Value};
 
 use crate::changelog::ChangeOp;
+use crate::settings::SettingsRegistry;
 
 /// How a field merges when two devices changed it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,7 +102,7 @@ impl SyncEntity {
 }
 
 /// Field values from another device for one entity: the ones that won the merge.
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct RemoteChange<'a> {
     /// The change-log entity name.
     pub entity: &'a str,
@@ -112,6 +113,9 @@ pub struct RemoteChange<'a> {
     /// `{field: value}` of the winning fields; whole groups only. May be empty when every field
     /// lost: the Module then applies nothing and returns the entity as it is.
     pub fields: &'a Map<String, Value>,
+    /// Every Module's registered Preferences: what a Preference may be set to, and which are
+    /// Device settings (never taken from another device).
+    pub settings: &'a SettingsRegistry,
 }
 
 /// What applying a [`RemoteChange`] left behind.
@@ -121,6 +125,53 @@ pub struct Applied {
     pub snapshot: Value,
     /// Whether anything visible changed (so screens should refresh).
     pub changed: bool,
+    /// What happened that Sync reports on: the hook for the Activity log and for Resolved
+    /// automatically (never carries more than names a screen already shows).
+    pub events: Vec<SyncEvent>,
+}
+
+/// What a Module's handling of a remote change tells Sync, beyond the data itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SyncEvent {
+    /// A Task was put in the Inbox because the List it was moved to is gone on this device.
+    TaskToInbox {
+        /// The Task.
+        task_id: String,
+        /// The List it was meant for.
+        list_id: String,
+    },
+    /// Two Lists with the same name became one: `from` was soft-deleted and its Tasks joined
+    /// the end of `into`.
+    ListsMerged {
+        /// The List that went away.
+        from_id: String,
+        /// Its name.
+        from_name: String,
+        /// The device that made it.
+        from_device: Option<String>,
+        /// The List that survives.
+        into_id: String,
+        /// Its name.
+        into_name: String,
+        /// The device that made it.
+        into_device: Option<String>,
+    },
+    /// A Preference took another device's value.
+    SettingChanged {
+        /// Owning Module id.
+        module: String,
+        /// Key within the Module.
+        key: String,
+    },
+}
+
+/// What [`Module::settle_remote`](crate::module::Module::settle_remote) did.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Settled {
+    /// It recorded changes of its own in the change log (so clocks must be read again).
+    pub recorded: bool,
+    /// What it reports.
+    pub events: Vec<SyncEvent>,
 }
 
 /// The entity called `name` among a Module's declared ones.

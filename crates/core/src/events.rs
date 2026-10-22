@@ -69,6 +69,22 @@ pub struct RemoteChanged {
     pub module: String,
 }
 
+/// Sync merged two Todo Lists with the same name: `from` is gone and its Tasks are in `into`.
+/// Whoever is looking at `from` is moved to `into`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListsMerged {
+    /// The List that went away.
+    pub from_id: String,
+    /// Its name.
+    pub from_name: String,
+    /// The List that survives.
+    pub into_id: String,
+    /// Its name.
+    pub into_name: String,
+    /// The other device whose List it was (its name), when known: "Groceries from Pixel 8".
+    pub device: Option<String>,
+}
+
 /// A sync session with another device ended, having changed these Modules' data. Sent once per
 /// session, not per batch, for things that only need to know at the end (the Todo widget).
 #[derive(Debug, Clone, PartialEq, Eq)]

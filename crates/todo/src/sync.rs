@@ -13,14 +13,16 @@
 //!   that History reads "Skipped" on every device, not "Done".
 //! - `updated_at` is recomputed here when values arrive.
 
+use mnemora_core::changelog::ChangeOp;
 use mnemora_core::error::AppResult;
-use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity, SyncField};
+use mnemora_core::syncable::{Applied, RemoteChange, Settled, SyncEntity, SyncEvent, SyncField};
 use mnemora_core::util::now_ms;
 use rusqlite::Connection;
 use serde_json::{Map, Value};
 
+use crate::order::key_after;
 use crate::recurrence::RepeatRule;
-use crate::service::{ENTITY, snapshot_of};
+use crate::service::{ENTITY, record_at, snapshot_of};
 use crate::task::{
     TaskState, validate_notes, validate_priority, validate_title, validate_understood,
 };
@@ -31,8 +33,12 @@ const TITLE: &str = "title";
 const WHEN: &str = "when";
 const STATE: &str = "state";
 
+/// Everything Todo syncs: Tasks, Lists and Comments.
+pub(crate) const ENTITIES: &[SyncEntity] =
+    &[TASK, crate::list_sync::LIST, crate::comment_sync::COMMENT];
+
 /// The Task entity's fields and how each merges.
-pub(crate) const ENTITIES: &[SyncEntity] = &[SyncEntity {
+const TASK: SyncEntity = SyncEntity {
     name: ENTITY,
     fields: &[
         SyncField::value("list_id"),
@@ -55,14 +61,14 @@ pub(crate) const ENTITIES: &[SyncEntity] = &[SyncEntity {
         SyncField::value("skipped"),
         SyncField::derived("updated_at"),
     ],
-}];
+};
 
 /// A value to write that may be NULL (`Set(None)`), apart from "no value was sent".
 #[derive(Debug, Clone, PartialEq)]
-struct Set<T>(Option<T>);
+pub(crate) struct Set<T>(pub(crate) Option<T>);
 
 /// A string or null.
-fn text(v: &Value) -> Option<Set<String>> {
+pub(crate) fn text(v: &Value) -> Option<Set<String>> {
     match v {
         Value::Null => Some(Set(None)),
         Value::String(s) => Some(Set(Some(s.clone()))),
@@ -71,7 +77,7 @@ fn text(v: &Value) -> Option<Set<String>> {
 }
 
 /// A whole number or null.
-fn number(v: &Value) -> Option<Set<i64>> {
+pub(crate) fn number(v: &Value) -> Option<Set<i64>> {
     match v {
         Value::Null => Some(Set(None)),
         other => other.as_i64().map(|n| Set(Some(n))),
@@ -201,13 +207,15 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
             return Ok(Applied {
                 snapshot: Value::Object(change.fields.clone()),
                 changed: false,
+                events: Vec::new(),
             });
         };
         repo::insert_remote(conn, id, title, sort_key, created_at, now_ms())?;
     }
 
-    write(conn, id, patch)?;
-    keep_out_of_missing_lists(conn, id)?;
+    let mut events = Vec::new();
+    write(conn, id, patch, &mut events)?;
+    keep_out_of_missing_lists(conn, id, &mut events)?;
 
     // The record's own marker, not state: it shows in this record's snapshot only.
     let skipped = change.fields.get("skipped") == Some(&Value::Bool(true));
@@ -227,10 +235,12 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     Ok(Applied {
         snapshot: snapshot_now(conn, skipped)?,
         changed,
+        events,
     })
 }
 
-fn strip_updated(snapshot: &Value) -> Value {
+/// A snapshot without `updated_at`, which is derived and says nothing about what changed.
+pub(crate) fn strip_updated(snapshot: &Value) -> Value {
     let mut copy = snapshot.clone();
     if let Some(fields) = copy.as_object_mut() {
         fields.remove("updated_at");
@@ -239,10 +249,18 @@ fn strip_updated(snapshot: &Value) -> Value {
 }
 
 /// Writes every checked unit of `patch`.
-fn write(conn: &Connection, id: &str, patch: Patch) -> AppResult<()> {
+fn write(conn: &Connection, id: &str, patch: Patch, events: &mut Vec<SyncEvent>) -> AppResult<()> {
+    // Whether the Task is visible once this is written: only a visible Task is moved out of a
+    // List that is gone. A deleted one keeps the List it was in (its row is there, deleted or
+    // not), so that every device holds the same, whichever of the Task and the List it heard of
+    // first, and Restore finds it where it was.
+    let visible = match &patch.deleted_at {
+        Some(Set(deleted)) => deleted.is_none(),
+        None => repo::deleted_at(conn, id)?.is_none(),
+    };
     let list_id = match patch.list_id {
-        // A List this device does not have (or has deleted) puts the Task in the Inbox.
-        Some(Set(Some(list))) if list_repo::get(conn, &list)?.is_none() => Some(Set(None)),
+        Some(Set(Some(list))) if visible => Some(Set(home_or_inbox(conn, id, &list, events)?)),
+        Some(Set(Some(list))) => Some(Set(list_repo::get_any(conn, &list)?.map(|_| list))),
         other => other,
     };
     let repeat_of = match patch.repeat_of {
@@ -299,16 +317,80 @@ fn write(conn: &Connection, id: &str, patch: Patch) -> AppResult<()> {
     repo::update_columns(conn, id, &sets)
 }
 
-/// A Task never points at a List that is gone: it sits in the Inbox instead (as Undo of a
-/// delete does).
-fn keep_out_of_missing_lists(conn: &Connection, id: &str) -> AppResult<()> {
+/// After a Task record is stored: a Task that was meant for a List that has since been merged
+/// away is in the surviving List now (see `list_repo::home`), and joins the end of its manual
+/// order like the Tasks that were in the merged List when it merged. Recorded as an ordinary
+/// change, so every device ends with the newest such key.
+pub(crate) fn settle(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Settled> {
+    let id = change.entity_id;
+    let Some(named) = change.fields.get("list_id").and_then(Value::as_str) else {
+        return Ok(Settled::default());
+    };
+    let Some(mut task) = repo::get_any(conn, id)? else {
+        return Ok(Settled::default());
+    };
+    let Some(home) = list_repo::home(conn, named)? else {
+        return Ok(Settled::default());
+    };
+    if home == named || task.list_id.as_deref() != Some(home.as_str()) {
+        return Ok(Settled::default());
+    }
+    let end = repo::in_list(conn, &home)?
+        .into_iter()
+        .filter(|t| t.id != task.id)
+        .map(|t| t.sort_key)
+        .max();
+    if end
+        .as_deref()
+        .is_none_or(|end| task.sort_key.as_str() > end)
+    {
+        return Ok(Settled::default());
+    }
+    task.sort_key = key_after(end.as_deref());
+    task.updated_at = now_ms();
+    repo::update_sort_key(conn, &task)?;
+    record_at(conn, &task, ChangeOp::Move, repo::deleted_at(conn, id)?)?;
+    Ok(Settled {
+        recorded: true,
+        events: Vec::new(),
+    })
+}
+
+/// Where a Task meant for `list` goes here: that List while it is live, the List it was merged
+/// into, else the Inbox (none), which is reported as an event (the Activity log will say
+/// "moved to the Inbox").
+fn home_or_inbox(
+    conn: &Connection,
+    task: &str,
+    list: &str,
+    events: &mut Vec<SyncEvent>,
+) -> AppResult<Option<String>> {
+    let home = list_repo::home(conn, list)?;
+    if home.is_none() {
+        events.push(SyncEvent::TaskToInbox {
+            task_id: task.to_owned(),
+            list_id: list.to_owned(),
+        });
+    }
+    Ok(home)
+}
+
+/// A Task never points at a List that is gone: it sits in the List that took its place, or in
+/// the Inbox (as Undo of a delete does).
+fn keep_out_of_missing_lists(
+    conn: &Connection,
+    id: &str,
+    events: &mut Vec<SyncEvent>,
+) -> AppResult<()> {
     let Some(task) = repo::get_any(conn, id)? else {
         return Ok(());
     };
     if let Some(list) = &task.list_id
+        && repo::deleted_at(conn, id)?.is_none()
         && list_repo::get(conn, list)?.is_none()
     {
-        repo::update_columns(conn, id, &[("list_id", &None::<String>)])?;
+        let home = home_or_inbox(conn, id, list, events)?;
+        repo::update_columns(conn, id, &[("list_id", &home)])?;
     }
     Ok(())
 }

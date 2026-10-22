@@ -89,3 +89,30 @@ pub fn set_deleted(
     )?;
     Ok(())
 }
+
+/// Writes the named columns of a Comment, whatever its deletion (applying values received from
+/// another device). The names are the caller's own constants, never user input.
+pub fn update_columns(
+    conn: &Connection,
+    id: &str,
+    sets: &[(&str, &dyn rusqlite::ToSql)],
+) -> AppResult<()> {
+    if sets.is_empty() {
+        return Ok(());
+    }
+    let assignments: Vec<String> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, (column, _))| format!("{column} = ?{}", i + 2))
+        .collect();
+    let mut values: Vec<&dyn rusqlite::ToSql> = vec![&id];
+    values.extend(sets.iter().map(|(_, v)| *v));
+    conn.execute(
+        &format!(
+            "UPDATE todo_comments SET {} WHERE id = ?1",
+            assignments.join(", ")
+        ),
+        values.as_slice(),
+    )?;
+    Ok(())
+}

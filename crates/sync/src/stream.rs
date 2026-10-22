@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use mnemora_core::changelog::ChangeOp;
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::error::SyncError;
@@ -100,16 +100,35 @@ pub fn pending(
         for (device, newest) in vector::of_entity(conn, me, entity)? {
             let from = peer_entity.get(&device).copied().unwrap_or(0);
             if newest > from {
+                let local_only = registry.local_only(entity);
+                let mut args: Vec<&dyn rusqlite::ToSql> = vec![&entity, &device, &from];
+                args.extend(local_only.iter().map(|id| id as &dyn rusqlite::ToSql));
                 total += conn.query_row(
-                    "SELECT COUNT(*) FROM change_log
-                     WHERE entity = ?1 AND origin_device = ?2 AND origin_seq > ?3",
-                    params![entity, device, from],
+                    &format!(
+                        "SELECT COUNT(*) FROM change_log
+                         WHERE entity = ?1 AND origin_device = ?2 AND origin_seq > ?3
+                           AND entity_id NOT IN ({})",
+                        placeholders(local_only.len(), 4)
+                    ),
+                    args.as_slice(),
                     |r| r.get::<_, i64>(0),
                 )?;
             }
         }
     }
     Ok(usize::try_from(total).unwrap_or(0))
+}
+
+/// `?first, ?first+1, ...` for `n` bound ids. For none, an id no record has, so `NOT IN` keeps
+/// every row (`NOT IN ()` is not valid SQL).
+fn placeholders(n: usize, first: usize) -> String {
+    if n == 0 {
+        return "''".to_owned();
+    }
+    (first..first + n)
+        .map(|i| format!("?{i}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Clock order, then device, then sequence: the same on every device.
@@ -134,18 +153,19 @@ fn records_after(
     let Some((_, schema)) = registry.find(entity) else {
         return Err(SyncError::UnknownEntity);
     };
-    let mut stmt = conn.prepare(
+    let local_only = registry.local_only(entity);
+    let mut stmt = conn.prepare(&format!(
         "SELECT module, entity_id, op, session_id, at, origin_seq, hlc_ms, hlc_counter, fields,
                 snapshot
          FROM change_log WHERE entity = ?1 AND origin_device = ?2 AND origin_seq > ?3
+           AND entity_id NOT IN ({})
          ORDER BY origin_seq LIMIT ?4",
-    )?;
-    let mut rows = stmt.query(params![
-        entity,
-        device,
-        from,
-        i64::try_from(BATCH_RECORDS).unwrap_or(i64::MAX)
-    ])?;
+        placeholders(local_only.len(), 5)
+    ))?;
+    let limit = i64::try_from(BATCH_RECORDS).unwrap_or(i64::MAX);
+    let mut args: Vec<&dyn rusqlite::ToSql> = vec![&entity, &device, &from, &limit];
+    args.extend(local_only.iter().map(|id| id as &dyn rusqlite::ToSql));
+    let mut rows = stmt.query(args.as_slice())?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
         let fields: Option<String> = row.get(8)?;

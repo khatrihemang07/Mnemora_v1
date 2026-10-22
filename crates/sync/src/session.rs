@@ -8,11 +8,17 @@
 
 use std::collections::BTreeSet;
 
-use mnemora_core::events::{EventBus, RemoteChanged, RemoteSessionEnded};
+use std::collections::BTreeMap;
+
+use mnemora_core::events::{
+    EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
+};
+use mnemora_core::syncable::SyncEvent;
 use rusqlite::Connection;
 
 use crate::apply::apply_batch;
 use crate::error::SyncError;
+use crate::peers;
 use crate::registry::Registry;
 use crate::stream::{Cursor, next_batch, pending};
 use crate::transport::Transport;
@@ -164,6 +170,9 @@ impl Session {
                 }
                 let applied = apply_batch(conn, &self.registry, &self.me, records)?;
                 self.stats.received += applied.stored;
+                // First, so a screen on a List that merged away is moved before it refreshes and
+                // finds the List gone.
+                self.announce(conn, applied.events);
                 for module in &applied.changed {
                     self.bus.publish(&RemoteChanged {
                         module: module.clone(),
@@ -186,6 +195,49 @@ impl Session {
                 }
                 _ => Err(SyncError::Protocol("an Ack out of turn".into())),
             },
+        }
+    }
+
+    /// Turns what the Modules reported into events for the app: Preferences that changed, and
+    /// Lists that merged (named after the other device when it is a paired one).
+    fn announce(&self, conn: &Connection, events: Vec<SyncEvent>) {
+        let mut settings: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for event in events {
+            match event {
+                SyncEvent::SettingChanged { module, key } => {
+                    settings.entry(module).or_default().push(key);
+                }
+                SyncEvent::ListsMerged {
+                    from_id,
+                    from_name,
+                    from_device,
+                    into_id,
+                    into_name,
+                    into_device,
+                } => {
+                    // The device that is not this one: the survivor's, else the other List's.
+                    let other = [into_device, from_device]
+                        .into_iter()
+                        .flatten()
+                        .find(|d| *d != self.me);
+                    let device = other.and_then(|d| peers::name_of(conn, &d).ok().flatten());
+                    tracing::info!(target: "sync", "two Lists with the same name merged");
+                    self.bus.publish(&ListsMerged {
+                        from_id,
+                        from_name,
+                        into_id,
+                        into_name,
+                        device,
+                    });
+                }
+                // Recorded by the Activity log (#67/#68); nothing shows it yet.
+                SyncEvent::TaskToInbox { .. } => {
+                    tracing::debug!(target: "sync", "a Task went to the Inbox: its List is gone");
+                }
+            }
+        }
+        for (module, keys) in settings {
+            self.bus.publish(&SettingsChanged { module, keys });
         }
     }
 

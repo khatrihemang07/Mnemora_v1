@@ -38,7 +38,7 @@ use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
     LinkOpenedEvent, SettingsChangedEvent, SyncPairingEvent, SyncPeersEvent, TodoChangedEvent,
-    commands, journal, links, modules, settings_store, sync, todo,
+    TodoListsMergedEvent, commands, journal, links, modules, settings_store, sync, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a
@@ -156,6 +156,11 @@ impl TestApp {
         // Typed events can only be emitted once mounted, as in the real app.
         specta_builder_for!(MockRuntime).mount_events(&app);
         crate::follow_remote(&bus, app.handle().clone(), &widgets);
+        // As in `setup`: Settings changes reach the UI as a typed event.
+        let handle = app.handle().clone();
+        bus.subscribe(move |event: &mnemora_core::events::SettingsChanged| {
+            let _ = tauri_specta::Event::emit(&SettingsChangedEvent(event.clone()), &handle);
+        });
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
             .build()
             .unwrap();

@@ -46,6 +46,7 @@ import type {
   TodayView,
   TodoCounts,
   TodoList,
+  TodoListsMergedEvent,
   UpcomingView,
 } from './bindings';
 import {
@@ -424,6 +425,44 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
     handles: (cmd: string) => cmd.startsWith('todo_'),
     /** The change-log ops recorded so far, oldest first: a test seam, not a command. */
     ops: (): readonly string[] => ops,
+
+    /**
+     * What Sync does when another device made a List with the same name: that one is older, so it
+     * survives with this List's Tasks added at its end, and this List goes. Returns the event the
+     * app emits (none when there is no such List). A browser-only simulation, not a command.
+     */
+    simulateMerge(name: string | undefined, device: string): TodoListsMergedEvent | null {
+      const loser = liveLists().find(
+        (l) => name === undefined || foldName(l.name) === foldName(name),
+      );
+      if (!loser) return null;
+      const now = Date.now();
+      const survivor: StoredList = {
+        id: crypto.randomUUID(),
+        name: loser.name,
+        emoji: null,
+        sort_key: loser.sort_key,
+        task_sort: 'manual',
+        group_by: 'none',
+        created_at: now,
+        updated_at: now,
+      };
+      lists.push(survivor);
+      for (const task of live().filter((t) => t.list_id === loser.id)) {
+        task.list_id = survivor.id;
+        task.updated_at = now;
+        record(task, 'move');
+      }
+      loser.deleted = true;
+      loser.updated_at = now;
+      return {
+        from_id: loser.id,
+        from_name: loser.name,
+        into_id: survivor.id,
+        into_name: survivor.name,
+        device,
+      };
+    },
 
     handle(cmd: string, a: Record<string, unknown>): unknown {
       switch (cmd) {

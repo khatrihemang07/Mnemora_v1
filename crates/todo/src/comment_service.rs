@@ -14,16 +14,22 @@ use crate::{comment_repo, repo};
 /// Change-log entity name for Comments.
 pub(crate) const ENTITY: &str = "todo_comment";
 
+/// The change-log snapshot of a Comment: the Comment plus its `deleted_at`.
+pub(crate) fn snapshot_of(c: &Comment, deleted_at: Option<i64>) -> AppResult<serde_json::Value> {
+    let mut snapshot = serde_json::to_value(c).map_err(TodoError::Snapshot)?;
+    if let Some(fields) = snapshot.as_object_mut() {
+        fields.insert("deleted_at".into(), deleted_at.into());
+    }
+    Ok(snapshot)
+}
+
 pub(crate) fn record(
     conn: &Connection,
     c: &Comment,
     op: ChangeOp,
     deleted_at: Option<i64>,
 ) -> AppResult<()> {
-    let mut snapshot = serde_json::to_value(c).map_err(TodoError::Snapshot)?;
-    if let Some(fields) = snapshot.as_object_mut() {
-        fields.insert("deleted_at".into(), deleted_at.into());
-    }
+    let snapshot = snapshot_of(c, deleted_at)?;
     changelog::record(
         conn,
         &Change {

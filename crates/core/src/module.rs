@@ -8,7 +8,7 @@ use crate::db::migrate::MigrationReport;
 use crate::device::DeviceStore;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::settings::{SettingsRegistry, validate};
-use crate::syncable::{Applied, RemoteChange, SyncEntity};
+use crate::syncable::{Applied, RemoteChange, Settled, SyncEntity};
 
 /// A self-contained area of the app. Registered in one place by the app crate.
 /// Modules never import each other; they share only core contracts and the event bus.
@@ -46,6 +46,16 @@ pub trait Module: Send + Sync {
             ErrorCode::Internal,
             "This Module does not take part in Sync",
         ))
+    }
+
+    /// Runs right after a remote change was applied and stored, in the same transaction, for
+    /// work that must follow the stored record: a rule that decides something by comparing the
+    /// change with the rest of the data and records the outcome as ordinary local changes
+    /// (Todo's List name clash). Anything recorded here is stamped later than the record it
+    /// follows, so it wins over it on every device. Idempotent: running it again after nothing
+    /// changed records nothing.
+    fn settle_remote(&self, _conn: &Connection, _change: &RemoteChange<'_>) -> AppResult<Settled> {
+        Ok(Settled::default())
     }
 
     /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
@@ -149,6 +159,20 @@ impl Module for CoreModule {
         // First: every later write is stamped with this device.
         crate::hlc::set_device_id(conn, &device.device_id())?;
         crate::settings::move_look_and_feel_to_device(conn, device)
+    }
+
+    fn sync_entities(&self) -> &'static [SyncEntity] {
+        crate::settings::sync::ENTITIES
+    }
+
+    fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
+        match change.entity {
+            crate::settings::ENTITY => crate::settings::sync::apply(conn, change),
+            _ => Err(AppError::new(
+                ErrorCode::Internal,
+                "Core does not sync that kind of record",
+            )),
+        }
     }
 
     fn register_settings(&self, reg: &mut SettingsRegistry) {

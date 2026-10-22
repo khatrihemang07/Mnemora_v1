@@ -100,6 +100,15 @@ pub fn list(conn: &Connection) -> AppResult<Vec<PeerRow>> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// The name of a paired device, if it is one.
+pub fn name_of(conn: &Connection, device: &str) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row("SELECT name FROM sync_peers WHERE id = ?1", [device], |r| {
+            r.get(0)
+        })
+        .optional()?)
+}
+
 /// The keys to pin at startup, as `(key, device id)`. A peer with no stored key is skipped.
 pub fn pinned(conn: &Connection) -> AppResult<Vec<(PublicKey, String)>> {
     let mut stmt =
