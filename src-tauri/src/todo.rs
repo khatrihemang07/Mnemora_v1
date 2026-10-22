@@ -1853,6 +1853,7 @@ mod tests {
         let today: Value = app.invoke("todo_today", json!({ "local": day })).unwrap();
         assert_eq!(titles(&tasks_of(&today)), json!(["Water the plants"]));
         complete_on(&app, &a, DEFAULT_TODAY);
+        crate::test_support::close_all_on(&app, DEFAULT_TODAY);
         let today: Value = app.invoke("todo_today", json!({ "local": day })).unwrap();
         assert_eq!(titles(&tasks_of(&today)), json!([]));
         assert_eq!(titles(&today["done"]), json!(["Water the plants"]));

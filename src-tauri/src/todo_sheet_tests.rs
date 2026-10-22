@@ -6,7 +6,7 @@ use mnemora_core::module::Module;
 use mnemora_todo::{TodoModule, purge_deleted};
 use serde_json::{Value, json};
 
-use crate::test_support::{TestApp, inbox_tasks_of, tasks_of};
+use crate::test_support::{TestApp, close_all_on, inbox_tasks_of, tasks_of};
 
 const TODAY: &str = "2026-10-21";
 
@@ -203,6 +203,7 @@ fn wont_do_closes_the_task_into_done_without_counting_as_done() {
     assert_eq!(wont["state"], "wont");
     assert!(wont["closed_at"].as_i64().is_some());
     complete(&app, &b).unwrap();
+    close_all_on(&app, TODAY);
 
     let today: Value = app
         .invoke("todo_today", json!({ "local": local(TODAY) }))

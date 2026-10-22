@@ -170,3 +170,16 @@ fn flatten(view: &Value, overdue: bool) -> Value {
         .flat_map(|g| g["tasks"].as_array().cloned().unwrap_or_default());
     Value::Array(tasks.collect())
 }
+
+/// Stamps every closed Task as closed at noon UTC on `date`. Completing stamps the real clock,
+/// which is never inside a pinned test day, so tests that read the Done window pin it here.
+pub fn close_all_on(app: &TestApp, date: &str) {
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE todo_tasks SET closed_at = CAST(strftime('%s', ?1 || ' 12:00:00') AS INTEGER) * 1000
+             WHERE state <> 'open'",
+            [date],
+        )
+        .unwrap();
+    });
+}
