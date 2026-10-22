@@ -2,9 +2,11 @@ import { QueryClient } from '@tanstack/svelte-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const handlers = vi.hoisted(() => new Map<string, () => void>());
+const failing = vi.hoisted(() => new Set<string>());
 vi.mock('./bindings', () => {
   const event = (name: string) => ({
     listen: async (handler: () => void) => {
+      if (failing.has(name)) throw new Error(`cannot listen to ${name}`);
       handlers.set(name, handler);
       return () => handlers.delete(name);
     },
@@ -60,6 +62,7 @@ describe('startEventBridge, the Todo widget', () => {
   let stop: () => void;
   beforeEach(() => {
     handlers.clear();
+    failing.clear();
     vi.stubGlobal('document', fakeDocument);
   });
   afterEach(() => {
@@ -100,5 +103,12 @@ describe('startEventBridge, the Todo widget', () => {
     stop = await startEventBridge(client);
     handlers.get('settings')?.();
     await vi.waitFor(() => expect(fetched.sort()).toEqual(['journal', 'todo']));
+  });
+
+  it('removes the first listener when the second cannot be registered', async () => {
+    const { client } = setup();
+    failing.add('todo');
+    await expect(startEventBridge(client)).rejects.toThrow('cannot listen to todo');
+    expect(handlers.size).toBe(0);
   });
 });

@@ -12,9 +12,16 @@ export async function startEventBridge(client: QueryClient): Promise<() => void>
     void client.invalidateQueries();
   });
   // The Todo widget wrote while the app was alive: what Todo shows is stale.
-  const unlistenTodo = await events.todoChangedEvent.listen(() => {
-    void client.invalidateQueries({ queryKey: TODO_KEY });
-  });
+  let unlistenTodo: () => void;
+  try {
+    unlistenTodo = await events.todoChangedEvent.listen(() => {
+      void client.invalidateQueries({ queryKey: TODO_KEY });
+    });
+  } catch (error) {
+    // Do not leave the first listener behind when the second one cannot be registered.
+    unlistenSettings();
+    throw error;
+  }
   // The Todo widget can also write while the app is stopped or its webview is paused, and no
   // event arrives then: coming back to the app refetches Todo.
   const onVisible = () => {

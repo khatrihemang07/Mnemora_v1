@@ -21,8 +21,11 @@
     void Promise.race([stopLinks, new Promise((r) => setTimeout(r, LINK_WAIT_MS))]).then(open, open);
     void installBackButton();
     return () => {
-      void stop.then((unlisten) => unlisten());
-      void stopLinks.then((unlisten) => unlisten());
+      // A listener that never registered has nothing to remove; that must not be an unhandled rejection.
+      const release = (unlisten: () => void) => unlisten();
+      const ignore = () => {};
+      void stop.then(release, ignore);
+      void stopLinks.then(release, ignore);
     };
   });
 </script>
