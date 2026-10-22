@@ -546,3 +546,34 @@ pub fn deleted_at(conn: &Connection, id: &str) -> AppResult<Option<i64>> {
         .optional()?
         .flatten())
 }
+
+/// Live Tasks whose newest choice of List (the latest change-log record that set it, by clock)
+/// is `list_id`, with the List each is in now: `(task id, column)`. The log is the same on every
+/// device once synced, so is the answer.
+pub fn chosen_list_is(
+    conn: &Connection,
+    list_id: &str,
+) -> AppResult<Vec<(String, Option<String>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.list_id FROM todo_tasks t
+         JOIN (
+             SELECT entity_id,
+                    CASE WHEN fields IS NULL THEN json_extract(snapshot, '$.list_id')
+                         ELSE json_extract(fields, '$.list_id') END AS chosen,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY entity_id
+                        ORDER BY hlc_ms DESC, hlc_counter DESC, origin_device DESC,
+                                 origin_seq DESC) AS newest
+             FROM change_log
+             WHERE entity = ?2
+               AND (fields IS NULL
+                    OR EXISTS (SELECT 1 FROM json_each(change_log.fields) WHERE key = 'list_id'))
+         ) c ON c.entity_id = t.id AND c.newest = 1
+         WHERE t.deleted_at IS NULL AND c.chosen = ?1",
+    )?;
+    stmt.query_map(params![list_id, crate::service::ENTITY], |r| {
+        Ok((r.get(0)?, r.get(1)?))
+    })?
+    .collect::<Result<_, _>>()
+    .map_err(corrupt_or_db)
+}

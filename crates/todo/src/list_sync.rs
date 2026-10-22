@@ -168,6 +168,12 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     let snapshot = state_now(conn)?;
     let changed = before_snapshot.as_ref().map(strip_updated) != Some(strip_updated(&snapshot));
     if changed {
+        let mut keys = vec![name_key(&name)];
+        if let Some((old, _)) = &before {
+            keys.push(name_key(&old.name));
+        }
+        let revived = was_deleted.is_some() && deleted_at.is_none();
+        rehome(conn, id, &keys, revived)?;
         // `updated_at` is derived: it says when this device last changed the row.
         list_repo::update_columns(conn, id, &[("updated_at", &now_ms())])?;
     }
@@ -258,13 +264,49 @@ pub(crate) fn settle(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<
         Some(other) if other.id < list.id => {
             // The parked List is the newer: it goes away.
             merge(conn, &list, &other, &mut settled)?;
-            return Ok(settled);
         }
-        Some(other) => merge(conn, &other, &list, &mut settled)?,
-        None => {}
+        Some(other) => {
+            merge(conn, &other, &list, &mut settled)?;
+            list_repo::unpark(conn, &list.id)?;
+        }
+        None => list_repo::unpark(conn, &list.id)?,
     }
-    list_repo::unpark(conn, &list.id)?;
+    // Which List a gone List's Tasks belong in may have changed with the decision.
+    rehome(conn, &list.id, &[name_key(&list.name)], true)?;
     Ok(settled)
+}
+
+/// Tasks sit where `list_repo::home` says their List's place is. That depends on the Lists, which
+/// change after a Task was placed (a rename into the name of a deleted List, a deleted List
+/// restored), so when a List changes its Tasks are placed again: every live Task whose newest
+/// List choice (from the change log, the same on every device) names a List this change can
+/// affect: the List itself and the deleted Lists with its old or new name. Only the column is
+/// written, so nothing is recorded and every device ends with the same place for every Task,
+/// whatever order the Lists and the Tasks arrived in. `revived`: the List was deleted and is
+/// live again.
+fn rehome(conn: &Connection, id: &str, keys: &[String], revived: bool) -> AppResult<()> {
+    let mut affected = vec![id.to_owned()];
+    let mut gone = revived;
+    for key in keys {
+        affected.extend(list_repo::with_name_key(conn, key)?);
+    }
+    affected.sort();
+    affected.dedup();
+    for list in &affected {
+        gone |= list_repo::get(conn, list)?.is_none();
+    }
+    if !gone {
+        return Ok(());
+    }
+    for list in &affected {
+        for (task, column) in repo::chosen_list_is(conn, list)? {
+            let place = list_repo::home(conn, list)?;
+            if column != place {
+                repo::update_columns(conn, &task, &[("list_id", &place)])?;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Merges `from` into `into`: its Tasks go to the end of `into`'s manual order, keeping their

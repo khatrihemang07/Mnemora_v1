@@ -626,3 +626,169 @@ fn a_synced_preference_announces_settings_changed_and_an_invalid_value_is_ignore
     assert_eq!(events[0]["keys"], json!(["week_start"]));
     assert_eq!(pref(&c[1], "core.time_format"), "24h");
 }
+
+// ---------------------------------------------------------------- three devices, every order
+
+fn log_rows(app: &TestApp) -> i64 {
+    app.with_db(|db| {
+        db.query_row("SELECT COUNT(*) FROM change_log", [], |r| r.get(0))
+            .unwrap()
+    })
+}
+
+/// Three devices each make "Groceries" with Tasks while apart; the pairs then meet in every
+/// order (each pair once, and every four-step sequence of pairs). Every device must end with the
+/// same Lists, Tasks, manual-order keys and Comments, and further rounds must record nothing.
+#[test]
+fn three_devices_making_the_same_list_converge_in_every_delivery_order() {
+    let pairs = [(0, 1), (0, 2), (1, 2)];
+    let mut sequences: Vec<Vec<usize>> = Vec::new();
+    for a in 0..3 {
+        for b in 0..3 {
+            for c in 0..3 {
+                if a != b && b != c && a != c {
+                    sequences.push(vec![a, b, c]);
+                }
+                for d in 0..3 {
+                    sequences.push(vec![a, b, c, d]);
+                }
+            }
+        }
+    }
+    for order in sequences {
+        let c = Cluster::new(3);
+        let mut ids = Vec::new();
+        for d in 0..3 {
+            let l = create_list(&c[d], "Groceries");
+            ids.push(l["id"].clone());
+            for n in 0..2 {
+                task_in(&c[d], &format!("d{d}t{n}"), Some(&l["id"]));
+            }
+        }
+        for &p in &order {
+            c.sync(pairs[p].0, pairs[p].1);
+        }
+        c.sync_all();
+        c.sync_all();
+        let rows: Vec<i64> = (0..3).map(|d| log_rows(&c[d])).collect();
+        c.sync_all();
+        c.sync_all();
+        let after: Vec<i64> = (0..3).map(|d| log_rows(&c[d])).collect();
+        assert_eq!(rows, after, "records keep growing after {order:?}");
+        for d in 0..3 {
+            let all = lists(&c[d]);
+            assert_eq!(all.len(), 1, "device {d} after {order:?}");
+            assert_eq!(all[0].0, ids[0].as_str().unwrap());
+            assert_eq!(titles_in(&c[d], &ids[0]).len(), 6, "device {d} {order:?}");
+        }
+        same_world(&c, 3);
+    }
+}
+
+// ---------------------------------------------------------------- restore after concurrent deletes
+
+fn restore_task(app: &TestApp, id: &Value) {
+    app.invoke::<Value>("todo_task_restore", json!({ "id": id }))
+        .unwrap();
+}
+
+fn delete_task(app: &TestApp, id: &Value) {
+    app.invoke::<Value>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+}
+
+/// B makes a Task in a List that A deletes while B deletes the Task: the deleted Task's List
+/// column may differ for a while, but Restore on either device (or both) must give every device
+/// the same List.
+#[test]
+fn restoring_a_task_deleted_with_its_list_gives_the_same_list_on_every_device() {
+    for restorers in [vec![0], vec![1], vec![0, 1]] {
+        for (merged, delete_first) in [(false, false), (true, false), (true, true)] {
+            let c = Cluster::new(3);
+            let trip = create_list(&c[0], if merged { "Groceries" } else { "Trip" });
+            let twin = merged.then(|| create_list(&c[1], "groceries"));
+            if !merged {
+                c.sync(0, 1);
+            }
+            // B (1) makes the Task in the List that is going away.
+            let away = twin.as_ref().unwrap_or(&trip);
+            let t = task_in(&c[1], "Pack", Some(&away["id"]));
+            if merged {
+                // The older List (A's) survives; B's newer List is merged away on its own.
+                if delete_first {
+                    delete_task(&c[1], &t["id"]);
+                }
+                c.sync(0, 1);
+                if !delete_first {
+                    delete_task(&c[1], &t["id"]);
+                }
+            } else {
+                c[0].clock().advance(1_000);
+                c[0].invoke::<Value>(
+                    "todo_list_delete",
+                    json!({ "id": trip["id"], "choice": { "kind": "move_to_inbox" } }),
+                )
+                .unwrap();
+                c[1].clock().advance(2_000);
+                delete_task(&c[1], &t["id"]);
+            }
+            c.sync_all();
+            for &d in &restorers {
+                restore_task(&c[d], &t["id"]);
+            }
+            c.sync_all();
+            same_world(&c, 3);
+            let lists: Vec<Value> = (0..3)
+                .map(|d| task(&c[d], &t["id"])["list_id"].clone())
+                .collect();
+            assert!(
+                lists.windows(2).all(|w| w[0] == w[1]),
+                "{lists:?} restorers {restorers:?} merged {merged} first {delete_first}"
+            );
+        }
+    }
+}
+
+/// A Task moved into a List that was deleted elsewhere goes where that List's name now points: a
+/// List renamed to the deleted one's name later takes it in. Devices that hear of the rename
+/// before or after the move agree.
+#[test]
+fn a_task_moved_into_a_deleted_list_lands_the_same_whether_a_rename_into_its_name_came_first() {
+    for rename_first in [false, true] {
+        let c = Cluster::new(3);
+        let food = create_list(&c[0], "Food");
+        let bar = create_list(&c[0], "Bar");
+        let t = task_in(&c[0], "T", None);
+        c.sync_all();
+        c[0].invoke::<Value>(
+            "todo_list_delete",
+            json!({ "id": bar["id"], "choice": { "kind": "move_to_inbox" } }),
+        )
+        .unwrap();
+        c[1].clock().advance(5_000);
+        c[1].invoke::<Value>(
+            "todo_task_move",
+            json!({ "id": t["id"], "listId": bar["id"] }),
+        )
+        .unwrap();
+        c.sync(0, 2);
+        c[2].clock().advance(1_000);
+        rename_list(&c[2], &food["id"], "Bar");
+        if rename_first {
+            c.sync(2, 1);
+            c.sync(0, 1);
+        } else {
+            c.sync(0, 1);
+            c.sync(2, 1);
+        }
+        c.sync_all();
+        for d in 0..3 {
+            assert_eq!(
+                task(&c[d], &t["id"])["list_id"],
+                food["id"],
+                "device {d}, rename first: {rename_first}"
+            );
+        }
+        same_world(&c, 3);
+    }
+}

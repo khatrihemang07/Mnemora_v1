@@ -65,3 +65,56 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
         }],
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Map, json};
+
+    use super::*;
+    use crate::module::{CoreModule, Module};
+    use crate::settings::SettingsRegistry;
+
+    /// What a hostile or newer peer may send: only a registered, non-device key with a value its
+    /// validator accepts is ever stored.
+    #[test]
+    fn a_received_preference_is_stored_only_for_a_registered_shared_key_with_a_valid_value() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = crate::db::open_in_memory().unwrap();
+        crate::db::migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
+        let mut registry = SettingsRegistry::new();
+        CoreModule.register_settings(&mut registry);
+        let send = |id: &str, value: Value| {
+            let mut fields = Map::new();
+            fields.insert("value".into(), value);
+            let applied = apply(
+                &conn,
+                &RemoteChange {
+                    entity: ENTITY,
+                    entity_id: id,
+                    op: crate::changelog::ChangeOp::Update,
+                    fields: &fields,
+                    settings: &registry,
+                },
+            )
+            .unwrap();
+            applied.changed
+        };
+        assert!(!send("core.theme", json!("dark")), "a Device setting");
+        assert!(!send("core.density", json!("compact")), "a Device setting");
+        assert!(!send("core.no_such_key", json!("x")), "an unregistered key");
+        assert!(
+            !send("nomodule.week_start", json!("sun")),
+            "an unknown Module"
+        );
+        assert!(!send("noseparator", json!("sun")), "a malformed id");
+        assert!(
+            !send("core.week_start", json!("someday")),
+            "an invalid value"
+        );
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM settings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 0, "nothing was stored");
+        assert!(send("core.week_start", json!("sun")));
+    }
+}

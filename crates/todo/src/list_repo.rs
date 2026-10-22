@@ -268,3 +268,11 @@ pub fn home(conn: &Connection, id: &str) -> AppResult<Option<String>> {
         .optional()?
         .flatten())
 }
+
+/// Ids of every List, live or not, that has this folded name.
+pub fn with_name_key(conn: &Connection, name_key: &str) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM todo_lists WHERE name_key = ?1")?;
+    Ok(stmt
+        .query_map([name_key], |r| r.get(0))?
+        .collect::<Result<_, _>>()?)
+}
