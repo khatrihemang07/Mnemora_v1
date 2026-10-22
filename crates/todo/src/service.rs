@@ -54,14 +54,13 @@ pub(crate) fn record_skip(conn: &Connection, task: &Task) -> AppResult<()> {
     record_in(conn, task, ChangeOp::Tick, None, None, true)
 }
 
-fn record_in(
-    conn: &Connection,
+/// The change-log snapshot of a Task: the Task type plus its `deleted_at`, without the Comment
+/// count (counted when read, never stored).
+pub(crate) fn snapshot_of(
     task: &Task,
-    op: ChangeOp,
     deleted_at: Option<i64>,
-    session_id: Option<&str>,
     skipped: bool,
-) -> AppResult<()> {
+) -> AppResult<serde_json::Value> {
     let mut snapshot = serde_json::to_value(task).map_err(TodoError::Snapshot)?;
     if let Some(fields) = snapshot.as_object_mut() {
         fields.remove("comment_count");
@@ -70,6 +69,18 @@ fn record_in(
             fields.insert("skipped".into(), true.into());
         }
     }
+    Ok(snapshot)
+}
+
+fn record_in(
+    conn: &Connection,
+    task: &Task,
+    op: ChangeOp,
+    deleted_at: Option<i64>,
+    session_id: Option<&str>,
+    skipped: bool,
+) -> AppResult<()> {
+    let snapshot = snapshot_of(task, deleted_at, skipped)?;
     changelog::record(
         conn,
         &Change {

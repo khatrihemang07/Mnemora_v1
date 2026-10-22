@@ -96,6 +96,8 @@ mod links;
 mod state;
 mod sync;
 #[cfg(test)]
+mod sync_cluster_tests;
+#[cfg(test)]
 mod test_support;
 mod theme_inject;
 mod todo;
@@ -119,13 +121,13 @@ use std::sync::{Arc, Mutex};
 use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
-use mnemora_core::events::{EventBus, SettingsChanged};
+use mnemora_core::events::{EventBus, RemoteChanged, SettingsChanged};
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::{SettingsRegistry, SettingsStore};
 use mnemora_journal::JournalModule;
-use mnemora_sync::{SyncModule, SyncRuntime};
+use mnemora_sync::{Modules, SyncModule, SyncRuntime};
 use mnemora_todo::TodoModule;
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -166,6 +168,24 @@ fn modules() -> Vec<Box<dyn Module>> {
         Box::new(TodoModule),
         Box::new(SyncModule),
     ]
+}
+
+/// Turns "Sync changed a Module's data" into that Module's own change event: Todo's screens
+/// refresh as they do after a Todo widget write, and the Todo widget redraws.
+fn follow_remote<R: tauri::Runtime>(
+    bus: &EventBus,
+    handle: tauri::AppHandle<R>,
+    widgets: &Arc<widget::signal::WidgetSignal>,
+) {
+    let widgets = Arc::clone(widgets);
+    bus.subscribe(move |event: &RemoteChanged| {
+        if event.module == mnemora_todo::MODULE_ID {
+            widgets.todo_changed();
+            if let Err(e) = TodoChangedEvent.emit(&handle) {
+                tracing::warn!(target: "sync", error = %e, "could not emit the Todo change event");
+            }
+        }
+    });
 }
 
 /// A Settings store over every Module's registered keys.
@@ -221,14 +241,14 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     let paths = AppPaths::resolve(ENVIRONMENT, &base, device.data_dir_override().as_deref());
     let device = Arc::new(DeviceStore::new(paths.device_file(), device));
 
-    let modules = modules();
+    let modules: Modules = Arc::new(modules());
     let module_refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
     let mut conn = db::open(&paths.db_file)?;
     let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir)?;
     tracing::info!(applied = ?report.applied, backup = ?report.backup, "database ready");
 
     // Once per start, after migrations. A failing Module must not stop the app.
-    for module in &modules {
+    for module in modules.iter() {
         if let Err(e) = module.on_startup(&mut conn, &device, &report) {
             tracing::warn!(module = module.id(), error = %e, "startup work failed");
         }
@@ -239,6 +259,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     // Settings that change what the Todo widget draws redraw it too.
     let widgets = Arc::new(widget::signal::WidgetSignal::platform());
     widget::signal::follow_settings(&bus, &widgets);
+    follow_remote(&bus, app.handle().clone(), &widgets);
     // Sync starts only when this device has it on; off, nothing is started at all.
     let sync = SyncRuntime::new();
     sync.reconcile(device.get().sync.enabled);
@@ -263,6 +284,8 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         log,
         widgets,
         sync,
+        modules,
+        bus,
     };
     app.manage(state);
     #[cfg(target_os = "android")]

@@ -59,6 +59,7 @@ mod tests {
         listeners: 0,
         advertisements: 0,
         tasks: 0,
+        sessions: 0,
     };
 
     fn get(app: &TestApp) -> Value {

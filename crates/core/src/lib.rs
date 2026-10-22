@@ -16,5 +16,6 @@ pub mod module;
 pub mod paths;
 pub mod search;
 pub mod settings;
+pub mod syncable;
 pub mod text;
 pub mod util;

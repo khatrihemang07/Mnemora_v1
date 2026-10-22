@@ -1,0 +1,221 @@
+//! One sync exchange between two devices, as a state machine that does no I/O of its own.
+//!
+//! Both sides say Hello with their version vector, then each streams what the other lacks in
+//! batches, waiting for an Ack after every batch (so neither side buffers a whole database).
+//! Each received batch is applied in one transaction that also advances the vector, so a
+//! dropped connection costs at most the batch in flight and the next session resumes from the
+//! vector. A driver ([`Endpoint`]) moves messages between a session and a [`Transport`].
+
+use std::collections::BTreeSet;
+
+use mnemora_core::events::{EventBus, RemoteChanged};
+use rusqlite::Connection;
+
+use crate::apply::apply_batch;
+use crate::error::SyncError;
+use crate::registry::Registry;
+use crate::stream::{Cursor, next_batch};
+use crate::transport::Transport;
+use crate::vector;
+use crate::wire::{Message, Vector};
+
+/// What a session moved.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SessionStats {
+    /// Records sent to the other device.
+    pub sent: usize,
+    /// Records received and stored.
+    pub received: usize,
+    /// Modules whose data the session changed here.
+    pub changed: BTreeSet<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Outbound {
+    /// Waiting for the other device's Hello.
+    Idle,
+    /// A batch is out; `last` says whether it ends the stream.
+    AwaitingAck { last: bool },
+    /// Everything was sent and acknowledged.
+    Finished,
+}
+
+/// One exchange with one other device. Created through `SyncRuntime::session`, which refuses
+/// while Sync is off.
+pub struct Session {
+    me: String,
+    registry: Registry,
+    bus: EventBus,
+    peer: Option<(String, Vector)>,
+    cursor: Cursor,
+    outbound: Outbound,
+    inbound_done: bool,
+    stats: SessionStats,
+}
+
+impl Session {
+    pub(crate) fn new(me: String, registry: Registry, bus: EventBus) -> Self {
+        Self {
+            me,
+            registry,
+            bus,
+            peer: None,
+            cursor: Cursor::default(),
+            outbound: Outbound::Idle,
+            inbound_done: false,
+            stats: SessionStats::default(),
+        }
+    }
+
+    /// The message that opens the exchange.
+    pub fn hello(&self, conn: &Connection) -> Result<Message, SyncError> {
+        Ok(Message::Hello {
+            device: self.me.clone(),
+            vector: vector::all(conn, &self.registry, &self.me)?,
+        })
+    }
+
+    /// The device id of the other side, once it has said Hello.
+    pub fn peer(&self) -> Option<&str> {
+        self.peer.as_ref().map(|p| p.0.as_str())
+    }
+
+    /// Everything was sent, acknowledged and received.
+    pub fn is_done(&self) -> bool {
+        self.inbound_done && self.outbound == Outbound::Finished
+    }
+
+    /// What has moved so far.
+    pub fn stats(&self) -> &SessionStats {
+        &self.stats
+    }
+
+    /// Reacts to a message from the other device; returns what to send back. An error leaves
+    /// the database as it was before that message.
+    pub fn handle(
+        &mut self,
+        conn: &Connection,
+        message: Message,
+    ) -> Result<Vec<Message>, SyncError> {
+        match message {
+            Message::Hello { device, vector } => {
+                if self.peer.is_some() || self.outbound != Outbound::Idle {
+                    return Err(SyncError::Protocol("a second Hello".into()));
+                }
+                if device == self.me {
+                    return Err(SyncError::Protocol(
+                        "this device is talking to itself".into(),
+                    ));
+                }
+                self.peer = Some((device, vector));
+                Ok(vec![self.next_outbound(conn)?])
+            }
+            Message::Batch { records, last } => {
+                if self.peer.is_none() || self.inbound_done {
+                    return Err(SyncError::Protocol("a batch out of turn".into()));
+                }
+                let applied = apply_batch(conn, &self.registry, &self.me, records)?;
+                self.stats.received += applied.stored;
+                for module in &applied.changed {
+                    self.bus.publish(&RemoteChanged {
+                        module: module.clone(),
+                    });
+                }
+                self.stats.changed.extend(applied.changed);
+                self.inbound_done = last;
+                Ok(vec![Message::Ack])
+            }
+            Message::Ack => match self.outbound {
+                Outbound::AwaitingAck { last: true } => {
+                    self.outbound = Outbound::Finished;
+                    Ok(Vec::new())
+                }
+                Outbound::AwaitingAck { last: false } => Ok(vec![self.next_outbound(conn)?]),
+                _ => Err(SyncError::Protocol("an Ack out of turn".into())),
+            },
+        }
+    }
+
+    fn next_outbound(&mut self, conn: &Connection) -> Result<Message, SyncError> {
+        let Some((_, peer_vector)) = &self.peer else {
+            return Err(SyncError::Protocol("no Hello yet".into()));
+        };
+        let (records, more) = next_batch(
+            conn,
+            &self.registry,
+            &self.me,
+            peer_vector,
+            &mut self.cursor,
+        )?;
+        self.stats.sent += records.len();
+        self.outbound = Outbound::AwaitingAck { last: !more };
+        Ok(Message::Batch {
+            records,
+            last: !more,
+        })
+    }
+}
+
+/// A [`Session`] joined to a [`Transport`]: poll it until it is done.
+pub struct Endpoint<T: Transport> {
+    session: Session,
+    transport: T,
+    opened: bool,
+}
+
+impl<T: Transport> Endpoint<T> {
+    /// Joins `session` to `transport`.
+    pub fn new(session: Session, transport: T) -> Self {
+        Self {
+            session,
+            transport,
+            opened: false,
+        }
+    }
+
+    /// Does whatever can be done now: opens the exchange, or takes one received message and
+    /// answers it. Returns whether anything happened.
+    pub fn poll(&mut self, conn: &Connection) -> Result<bool, SyncError> {
+        if !self.opened {
+            self.opened = true;
+            let hello = self.session.hello(conn)?;
+            self.transport.send(hello)?;
+            return Ok(true);
+        }
+        let Some(message) = self.transport.try_recv()? else {
+            return Ok(false);
+        };
+        for reply in self.session.handle(conn, message)? {
+            self.transport.send(reply)?;
+        }
+        Ok(true)
+    }
+
+    /// The session finished.
+    pub fn is_done(&self) -> bool {
+        self.session.is_done()
+    }
+
+    /// The session, for its stats.
+    pub fn session(&self) -> &Session {
+        &self.session
+    }
+}
+
+/// Runs two endpoints, each over its own database, until both are done: the in-process driver
+/// the tests use. Fails with the first error either side meets (a cut line fails both).
+pub fn pump<A: Transport, B: Transport>(
+    a: (&mut Endpoint<A>, &Connection),
+    b: (&mut Endpoint<B>, &Connection),
+) -> Result<(), SyncError> {
+    let (ea, ca) = a;
+    let (eb, cb) = b;
+    while !(ea.is_done() && eb.is_done()) {
+        let moved_a = ea.poll(ca)?;
+        let moved_b = eb.poll(cb)?;
+        if !moved_a && !moved_b {
+            return Err(SyncError::Protocol("the exchange stalled".into()));
+        }
+    }
+    Ok(())
+}

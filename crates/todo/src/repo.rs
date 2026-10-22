@@ -488,3 +488,61 @@ pub fn closed_in_list(conn: &Connection, list_id: &str) -> AppResult<Vec<Task>> 
         .collect::<Result<_, _>>()
         .map_err(corrupt_or_db)
 }
+
+/// Writes the named columns of a Task, whatever its state or deletion (applying values received
+/// from another device). The names are the caller's own constants, never user input.
+pub fn update_columns(
+    conn: &Connection,
+    id: &str,
+    sets: &[(&str, &dyn rusqlite::ToSql)],
+) -> AppResult<()> {
+    if sets.is_empty() {
+        return Ok(());
+    }
+    let assignments: Vec<String> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, (column, _))| format!("{column} = ?{}", i + 2))
+        .collect();
+    let mut values: Vec<&dyn rusqlite::ToSql> = vec![&id];
+    values.extend(sets.iter().map(|(_, v)| *v));
+    conn.execute(
+        &format!(
+            "UPDATE todo_tasks SET {} WHERE id = ?1",
+            assignments.join(", ")
+        ),
+        values.as_slice(),
+    )?;
+    Ok(())
+}
+
+/// Inserts a Task received from another device with only what it must have; the rest of what
+/// it sent is written by `update_columns`. It starts deleted (hidden) until its `deleted_at`
+/// has been applied, so a half-built Task is never visible.
+pub fn insert_remote(
+    conn: &Connection,
+    id: &str,
+    title: &str,
+    sort_key: &str,
+    created_at: i64,
+    now: i64,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO todo_tasks(id, title, sort_key, created_at, updated_at, deleted_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
+        params![id, title, sort_key, created_at, now],
+    )?;
+    Ok(())
+}
+
+/// A Task's `deleted_at`, `None` when it is live or not there.
+pub fn deleted_at(conn: &Connection, id: &str) -> AppResult<Option<i64>> {
+    Ok(conn
+        .query_row(
+            "SELECT deleted_at FROM todo_tasks WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten())
+}

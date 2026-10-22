@@ -5,6 +5,14 @@
 use std::net::SocketAddr;
 use std::sync::{Mutex, PoisonError};
 
+use mnemora_core::events::EventBus;
+use mnemora_core::hlc;
+use rusqlite::Connection;
+
+use crate::error::SyncError;
+use crate::registry::Registry;
+use crate::session::Session;
+
 /// Everything that exists only while Sync is on. Later tickets add the TLS listener, the mDNS
 /// advertisement and the session tasks here, so each has exactly one owner that [`SyncRuntime`]
 /// drops when Sync turns off.
@@ -16,6 +24,8 @@ struct Services {
     advertisements: Vec<String>,
     /// Background tasks (sessions, retries).
     tasks: usize,
+    /// Sessions started since Sync was switched on.
+    sessions: usize,
 }
 
 /// A read-only view of [`SyncRuntime`], for tests and diagnostics.
@@ -29,6 +39,8 @@ pub struct RuntimeProbe {
     pub advertisements: usize,
     /// Live background tasks.
     pub tasks: usize,
+    /// Sessions the engine has run since Sync was switched on. Zero while it is off.
+    pub sessions: usize,
 }
 
 /// Starts and stops Sync's services to match the Device setting.
@@ -70,14 +82,32 @@ impl SyncRuntime {
                 listeners: 0,
                 advertisements: 0,
                 tasks: 0,
+                sessions: 0,
             },
             |s| RuntimeProbe {
                 running: true,
                 listeners: s.listeners.len(),
                 advertisements: s.advertisements.len(),
                 tasks: s.tasks,
+                sessions: s.sessions,
             },
         )
+    }
+
+    /// Starts an exchange with another device over `conn`, this device's database. Refuses
+    /// while Sync is off: the engine does no work, not even reading the change log, unless
+    /// the runtime is running.
+    pub fn session(
+        &self,
+        conn: &Connection,
+        registry: Registry,
+        bus: EventBus,
+    ) -> Result<Session, SyncError> {
+        let mut services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        let services = services.as_mut().ok_or(SyncError::Off)?;
+        let me = hlc::device_id(conn)?;
+        services.sessions += 1;
+        Ok(Session::new(me, registry, bus))
     }
 }
 
@@ -94,7 +124,8 @@ mod tests {
                 running: false,
                 listeners: 0,
                 advertisements: 0,
-                tasks: 0
+                tasks: 0,
+                sessions: 0
             }
         );
     }

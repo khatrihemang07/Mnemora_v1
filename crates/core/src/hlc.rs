@@ -123,6 +123,12 @@ pub fn observe(conn: &Connection, remote: Timestamp) -> AppResult<Timestamp> {
     Ok(step(conn, Some(remote))?.clock)
 }
 
+/// Like [`observe`], for a record that is being stored: also takes the new local sequence it
+/// gets here (a received record is appended like any other, after everything already held).
+pub fn observe_tick(conn: &Connection, remote: Timestamp) -> AppResult<Tick> {
+    step(conn, Some(remote))
+}
+
 fn step(conn: &Connection, remote: Option<Timestamp>) -> AppResult<Tick> {
     // The first statement writes, so this takes the database's write lock before the clock is
     // read: a second connection (Sync gets its own) waits its turn instead of reading a stale

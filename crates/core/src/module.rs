@@ -6,8 +6,9 @@ use serde_json::json;
 
 use crate::db::migrate::MigrationReport;
 use crate::device::DeviceStore;
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult, ErrorCode};
 use crate::settings::{SettingsRegistry, validate};
+use crate::syncable::{Applied, RemoteChange, SyncEntity};
 
 /// A self-contained area of the app. Registered in one place by the app crate.
 /// Modules never import each other; they share only core contracts and the event bus.
@@ -27,6 +28,25 @@ pub trait Module: Send + Sync {
 
     /// Declares this Module's Settings keys, defaults and validators.
     fn register_settings(&self, reg: &mut SettingsRegistry);
+
+    /// The entities this Module keeps in step between devices, with the class of every field.
+    /// None by default: a Module that declares none never syncs. See [`crate::syncable`].
+    fn sync_entities(&self) -> &'static [SyncEntity] {
+        &[]
+    }
+
+    /// Applies field values received from another device to one of this Module's entities,
+    /// through its own repository and validation (ADR 0001): creating the entity when it is
+    /// new here. Only the values that won the merge are passed. The result is not a new local
+    /// change: nothing is recorded in the change log (Sync records the received change itself)
+    /// and nothing new is stamped, but the Module's usual caches and indexes are kept in step.
+    /// Returns the entity's full state afterwards. Never log the values.
+    fn apply_remote(&self, _conn: &Connection, _change: &RemoteChange<'_>) -> AppResult<Applied> {
+        Err(AppError::new(
+            ErrorCode::Internal,
+            "This Module does not take part in Sync",
+        ))
+    }
 
     /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
     /// purging old rows, or upgrade steps keyed on what `report` says this run applied). No
@@ -107,6 +127,15 @@ impl Module for CoreModule {
              ) STRICT;
              INSERT INTO device_clock(id, device_id, ms, counter, seq)
                  SELECT 1, '', COALESCE(MAX(hlc_ms), 0), 0, COALESCE(MAX(seq), 0) FROM change_log;",
+            ),
+            // Sync (ADR 0017): `fields` holds only what a record changed, as `{field: value}`
+            // with the origin's values (a received record keeps them as sent, so any device can
+            // relay it). Older rows have none, which reads as "every field of the snapshot".
+            // The indexes serve the per-entity clock fold and the per-origin stream and vector.
+            M::up(
+                "ALTER TABLE change_log ADD COLUMN fields TEXT;
+             CREATE INDEX change_log_entity_seq ON change_log(entity, seq);
+             CREATE INDEX change_log_entity_origin ON change_log(entity, origin_device, origin_seq);",
             ),
         ])
     }

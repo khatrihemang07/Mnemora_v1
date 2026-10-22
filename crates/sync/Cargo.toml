@@ -12,6 +12,7 @@ mnemora-core.workspace = true
 rusqlite.workspace = true
 rusqlite_migration.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 specta = { workspace = true, features = ["derive"] }

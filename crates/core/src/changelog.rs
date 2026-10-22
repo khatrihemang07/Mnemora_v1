@@ -4,8 +4,8 @@
 //!
 //! Snapshots hold user content, so nothing in this file may log them.
 
-use rusqlite::Connection;
-use serde_json::Value;
+use rusqlite::{Connection, OptionalExtension};
+use serde_json::{Map, Value};
 
 use crate::error::AppResult;
 use crate::hlc;
@@ -29,6 +29,19 @@ pub enum ChangeOp {
 }
 
 impl ChangeOp {
+    /// Reads a stored `op` value.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "create" => Self::Create,
+            "update" => Self::Update,
+            "move" => Self::Move,
+            "tick" => Self::Tick,
+            "delete" => Self::Delete,
+            "restore" => Self::Restore,
+            _ => return None,
+        })
+    }
+
     /// The value stored in the `op` column.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -62,20 +75,25 @@ pub struct Change {
 /// Records `change`. With a session id, the session's existing record for this entity is
 /// replaced (snapshot, time, clock and sequence; a `create` stays a `create`); otherwise a new record is appended.
 /// Pass a transaction to make it atomic with the entity write.
+///
+/// The record also keeps which fields the change touched, with their new values (`fields`): what
+/// Sync sends. A session's rewrite keeps what the session changed before and adds what it
+/// changed since.
 pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
     // Every write ticks, a session's rewrite included: peers pick records up by sequence.
     let tick = hlc::tick(conn)?;
     let device = hlc::device_id(conn)?;
+    let fields = changed_fields(conn, change)?;
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
-                                origin_device, hlc_ms, hlc_counter, seq, origin_seq)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
          DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
              snapshot = excluded.snapshot, at = excluded.at,
              origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
              hlc_counter = excluded.hlc_counter, seq = excluded.seq,
-             origin_seq = excluded.origin_seq",
+             origin_seq = excluded.origin_seq, fields = excluded.fields",
         rusqlite::params![
             new_id(),
             change.module,
@@ -89,6 +107,132 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
             tick.clock.ms,
             tick.clock.counter,
             tick.seq,
+            fields.map(|f| Value::Object(f).to_string()),
+        ],
+    )?;
+    Ok(())
+}
+
+/// What `change` touched, as `{field: new value}`: the keys whose value differs from the
+/// entity's latest snapshot (all of them for a first record), plus, for a session's rewrite,
+/// what the session's record already held. `None` when the session's record predates this
+/// column: it keeps meaning "every field of the snapshot".
+fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Option<Map<String, Value>>> {
+    let latest: Option<String> = conn
+        .query_row(
+            "SELECT snapshot FROM change_log WHERE entity = ?1 AND entity_id = ?2
+             ORDER BY seq DESC LIMIT 1",
+            [&change.entity, &change.entity_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let before: Option<Value> = latest.and_then(|s| serde_json::from_str(&s).ok());
+    let mut keys: Vec<String> = diff_keys(&change.snapshot, before.as_ref());
+    if let Some(session) = &change.session_id {
+        let earlier: Option<Option<String>> = conn
+            .query_row(
+                "SELECT fields FROM change_log
+                 WHERE entity = ?1 AND entity_id = ?2 AND session_id = ?3",
+                rusqlite::params![change.entity, change.entity_id, session],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match earlier {
+            // A record from before `fields` existed stays "everything".
+            Some(None) => return Ok(None),
+            Some(Some(text)) => {
+                if let Ok(Value::Object(map)) = serde_json::from_str(&text) {
+                    keys.extend(map.into_iter().map(|(k, _)| k));
+                }
+            }
+            None => {}
+        }
+    }
+    let now = change.snapshot.as_object();
+    Ok(Some(
+        keys.into_iter()
+            .map(|k| {
+                let v = now.and_then(|n| n.get(&k)).cloned().unwrap_or(Value::Null);
+                (k, v)
+            })
+            .collect(),
+    ))
+}
+
+/// The keys of `now` whose value differs from `before` (a key that vanished counts, and is
+/// null in the record).
+fn diff_keys(now: &Value, before: Option<&Value>) -> Vec<String> {
+    let (Some(now), Some(Value::Object(before))) = (now.as_object(), before) else {
+        return now
+            .as_object()
+            .map(|n| n.keys().cloned().collect())
+            .unwrap_or_default();
+    };
+    let mut keys: Vec<String> = now
+        .iter()
+        .filter(|(k, v)| before.get(*k) != Some(*v))
+        .map(|(k, _)| k.clone())
+        .collect();
+    keys.extend(before.keys().filter(|k| !now.contains_key(*k)).cloned());
+    keys
+}
+
+/// A record received from another device, to be stored as it was sent.
+#[derive(Debug, Clone)]
+pub struct Remote<'a> {
+    /// Id of the owning Module.
+    pub module: &'a str,
+    /// Kind of entity.
+    pub entity: &'a str,
+    /// Id of the changed entity.
+    pub entity_id: &'a str,
+    /// What happened.
+    pub op: ChangeOp,
+    /// The origin's editing session, if any: a record of the same session replaces the one held.
+    pub session_id: Option<&'a str>,
+    /// When the origin made it: its wall-clock milliseconds.
+    pub at: i64,
+    /// The device that made it.
+    pub origin_device: &'a str,
+    /// Its sequence on that device.
+    pub origin_seq: i64,
+    /// Its hybrid logical clock.
+    pub clock: hlc::Timestamp,
+    /// What it changed, with the origin's values, exactly as sent (so this device can relay it).
+    pub fields: &'a Map<String, Value>,
+}
+
+/// Stores a record received from another device: shows the clock its timestamp, appends it
+/// with a fresh local sequence and keeps its origin device, origin sequence and clock. A record
+/// of an editing session this device already holds replaces it (the origin rewrote it).
+/// `snapshot` is the entity's full state after the change was applied here. Pass a transaction.
+pub fn record_remote(conn: &Connection, remote: &Remote<'_>, snapshot: &Value) -> AppResult<()> {
+    let tick = hlc::observe_tick(conn, remote.clock)?;
+    conn.execute(
+        "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+         ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
+         DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
+             snapshot = excluded.snapshot, at = excluded.at,
+             origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
+             hlc_counter = excluded.hlc_counter, seq = excluded.seq,
+             origin_seq = excluded.origin_seq, fields = excluded.fields",
+        rusqlite::params![
+            new_id(),
+            remote.module,
+            remote.entity,
+            remote.entity_id,
+            remote.op.as_str(),
+            remote.session_id,
+            snapshot.to_string(),
+            remote.at,
+            remote.origin_device,
+            remote.clock.ms,
+            remote.clock.counter,
+            tick.seq,
+            remote.origin_seq,
+            Value::Object(remote.fields.clone()).to_string(),
         ],
     )?;
     Ok(())
@@ -423,6 +567,168 @@ mod tests {
         assert!((ms, counter) > (9_000, 4));
     }
 
+    fn stored_fields(conn: &Connection) -> Vec<Value> {
+        let mut stmt = conn
+            .prepare("SELECT fields FROM change_log ORDER BY seq")
+            .unwrap();
+        stmt.query_map([], |r| r.get::<_, Option<String>>(0))
+            .unwrap()
+            .map(|f| {
+                f.unwrap()
+                    .map_or(Value::Null, |s| serde_json::from_str(&s).unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_record_keeps_only_the_fields_it_changed() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"a": 1, "b": 2}))).unwrap();
+        record(&conn, &change("e1", None, json!({"a": 1, "b": 3}))).unwrap();
+        record(&conn, &change("e1", None, json!({"a": 1, "b": 3, "c": 4}))).unwrap();
+        record(&conn, &change("e2", None, json!({"a": 9}))).unwrap();
+        assert_eq!(
+            stored_fields(&conn),
+            vec![
+                json!({"a": 1, "b": 2}),
+                json!({"b": 3}),
+                json!({"c": 4}),
+                json!({"a": 9})
+            ]
+        );
+    }
+
+    #[test]
+    fn a_sessions_rewrite_keeps_what_the_session_changed_before() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"a": 1, "b": 1, "c": 1}))).unwrap();
+        record(
+            &conn,
+            &change("e1", Some("s"), json!({"a": 2, "b": 1, "c": 1})),
+        )
+        .unwrap();
+        // Another change lands between, then the session goes on.
+        record(&conn, &change("e1", None, json!({"a": 2, "b": 5, "c": 1}))).unwrap();
+        record(
+            &conn,
+            &change("e1", Some("s"), json!({"a": 2, "b": 5, "c": 7})),
+        )
+        .unwrap();
+        assert_eq!(
+            stored_fields(&conn),
+            vec![
+                json!({"a": 1, "b": 1, "c": 1}),
+                json!({"b": 5}),
+                json!({"a": 2, "c": 7}),
+            ],
+            "the session still says it changed a, and not b"
+        );
+    }
+
+    #[test]
+    fn a_session_record_from_before_fields_stays_everything() {
+        let conn = migrated();
+        record(&conn, &change("e1", Some("s"), json!({"a": 1}))).unwrap();
+        conn.execute("UPDATE change_log SET fields = NULL", [])
+            .unwrap();
+        record(&conn, &change("e1", Some("s"), json!({"a": 2}))).unwrap();
+        assert_eq!(stored_fields(&conn), vec![Value::Null]);
+    }
+
+    fn remote<'a>(
+        fields: &'a Map<String, Value>,
+        seq: i64,
+        session: Option<&'a str>,
+    ) -> Remote<'a> {
+        Remote {
+            module: "journal",
+            entity: "entry",
+            entity_id: "e1",
+            op: ChangeOp::Update,
+            session_id: session,
+            at: 7,
+            origin_device: "dev-b",
+            origin_seq: seq,
+            clock: hlc::Timestamp {
+                ms: 9_000,
+                counter: 2,
+            },
+            fields,
+        }
+    }
+
+    #[test]
+    fn a_received_record_keeps_its_origin_and_gets_a_fresh_local_sequence() {
+        let conn = migrated();
+        hlc::set_device_id(&conn, "dev-a").unwrap();
+        record(&conn, &change("e0", None, json!({}))).unwrap();
+        let fields = json!({"a": 1}).as_object().unwrap().clone();
+        record_remote(&conn, &remote(&fields, 40, None), &json!({"a": 1, "z": 0})).unwrap();
+        let row: (String, i64, i64, i64, i64, i64, String) = conn
+            .query_row(
+                "SELECT origin_device, origin_seq, hlc_ms, hlc_counter, seq, at, fields
+                 FROM change_log WHERE entity_id = 'e1'",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                "dev-b".into(),
+                40,
+                9_000,
+                2,
+                2,
+                7,
+                json!({"a": 1}).to_string()
+            ),
+            "seq 1 was the local record"
+        );
+        // The clock moved past it: the next local record sorts after.
+        record(&conn, &change("e1", None, json!({"a": 2}))).unwrap();
+        let (ms, counter): (i64, i64) = conn
+            .query_row(
+                "SELECT hlc_ms, hlc_counter FROM change_log WHERE origin_device = 'dev-a' ORDER BY seq DESC",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert!((ms, counter) > (9_000, 2));
+    }
+
+    #[test]
+    fn a_received_record_of_a_held_session_replaces_it() {
+        let conn = migrated();
+        let first = json!({"a": 1}).as_object().unwrap().clone();
+        let second = json!({"a": 2, "b": 3}).as_object().unwrap().clone();
+        record_remote(&conn, &remote(&first, 5, Some("s")), &json!({"a": 1})).unwrap();
+        record_remote(
+            &conn,
+            &remote(&second, 9, Some("s")),
+            &json!({"a": 2, "b": 3}),
+        )
+        .unwrap();
+        let rows: Vec<(i64, String)> = conn
+            .prepare("SELECT origin_seq, fields FROM change_log")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(rows, vec![(9, json!({"a": 2, "b": 3}).to_string())]);
+    }
+
     #[test]
     fn upgrading_an_existing_database_keeps_settings() {
         struct CoreV1;
@@ -451,7 +757,7 @@ mod tests {
         .unwrap();
 
         let report = migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
-        assert_eq!(report.applied, vec![("core".into(), 1, 3)]);
+        assert_eq!(report.applied, vec![("core".into(), 1, 4)]);
         assert!(report.backup.is_some(), "existing data is backed up first");
         let theme: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'theme'", [], |r| {

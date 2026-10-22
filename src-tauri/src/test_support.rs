@@ -19,7 +19,10 @@ use mnemora_core::logging::LogHandle;
 use mnemora_core::module::Module;
 use mnemora_core::paths::AppPaths;
 use mnemora_core::util::now_ms;
-use mnemora_sync::{RuntimeProbe, SyncRuntime};
+use mnemora_sync::transport::memory;
+use mnemora_sync::{
+    Endpoint, Modules, Registry, RuntimeProbe, SessionStats, SyncError, SyncRuntime, pump,
+};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tauri::http::HeaderMap;
@@ -94,6 +97,13 @@ impl TestApp {
         Self::upgrading(|_| {}, DeviceSettings::default())
     }
 
+    /// An app with Sync switched on, as a device that has paired would be.
+    pub fn syncing() -> Self {
+        let mut device = DeviceSettings::default();
+        device.sync.enabled = true;
+        Self::upgrading(|_| {}, device)
+    }
+
     /// Like [`new`](Self::new), for an install that already has data: `seed` writes to the
     /// freshly migrated database and `device` is what `device.toml` held, then the Modules'
     /// startup work runs as it does when the app starts.
@@ -102,7 +112,7 @@ impl TestApp {
         let dir = tempfile::tempdir().expect("temp dir");
         let paths = AppPaths::resolve(Environment::Production, dir.path(), None);
 
-        let modules = modules();
+        let modules: Modules = Arc::new(modules());
         let module_refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
         let mut conn = db::open_in_memory().unwrap();
         let clock = Arc::new(TestClock::default());
@@ -111,7 +121,7 @@ impl TestApp {
         let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
         seed(&conn);
         let device = Arc::new(DeviceStore::new(paths.device_file(), device));
-        for module in &modules {
+        for module in modules.iter() {
             module.on_startup(&mut conn, &device, &report).unwrap();
         }
 
@@ -125,8 +135,10 @@ impl TestApp {
             device,
             paths,
             log: LogHandle::detached(),
-            widgets,
+            widgets: Arc::clone(&widgets),
             sync: SyncRuntime::new(),
+            modules,
+            bus: bus.clone(),
         };
         // As at app start: services run only if the device file says Sync is on.
         state.sync.reconcile(state.device.get().sync.enabled);
@@ -139,6 +151,7 @@ impl TestApp {
             .unwrap();
         // Typed events can only be emitted once mounted, as in the real app.
         specta_builder_for!(MockRuntime).mount_events(&app);
+        crate::follow_remote(&bus, app.handle().clone(), &widgets);
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
             .build()
             .unwrap();
@@ -208,6 +221,10 @@ impl TestApp {
         self.app.state::<AppState>().sync.probe()
     }
 
+    fn state(&self) -> tauri::State<'_, AppState> {
+        self.app.state::<AppState>()
+    }
+
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).
     pub fn with_db<R>(&self, f: impl FnOnce(&Connection) -> R) -> R {
         f(&lock(&self.app.state::<AppState>().db))
@@ -224,6 +241,96 @@ impl TestApp {
                 &MigrationReport::default(),
             )
             .unwrap();
+    }
+}
+
+/// Several devices, each a [`TestApp`] with Sync on, a clock frozen at the same instant and its
+/// own database, that can be synced pairwise through the sync crate's in-memory transport. Tests
+/// make changes with the real commands on each device, sync, and read back through commands.
+///
+/// All clocks start frozen at [`Cluster::START`]: a test that needs one device's change to be
+/// the newer one advances that device's clock (`cluster[i].clock().advance(..)`). Two changes on
+/// the same millisecond are ordered by the clock's counter, then by device id.
+pub struct Cluster {
+    devices: Vec<TestApp>,
+}
+
+impl Cluster {
+    /// The instant every device's clock starts at.
+    pub const START: i64 = 1_800_000_000_000;
+
+    /// `n` devices.
+    pub fn new(n: usize) -> Self {
+        let devices: Vec<TestApp> = (0..n).map(|_| TestApp::syncing()).collect();
+        for d in &devices {
+            d.clock().freeze(Self::START);
+        }
+        Self { devices }
+    }
+
+    /// A cluster of devices built by the caller (some with Sync off, for instance). Their clocks
+    /// are frozen at [`Cluster::START`] too.
+    pub fn from_devices(devices: Vec<TestApp>) -> Self {
+        for d in &devices {
+            d.clock().freeze(Self::START);
+        }
+        Self { devices }
+    }
+
+    /// Runs one exchange between devices `a` and `b`, each end over its own database. The line
+    /// is cut after `cut_after` messages when given. Returns what each side moved.
+    pub fn try_sync(
+        &self,
+        a: usize,
+        b: usize,
+        cut_after: Option<usize>,
+    ) -> Result<(SessionStats, SessionStats), SyncError> {
+        assert_ne!(a, b, "a device does not sync with itself");
+        let (app_a, app_b) = (&self.devices[a], &self.devices[b]);
+        let (state_a, state_b) = (app_a.state(), app_b.state());
+        let (db_a, db_b) = (lock(&state_a.db), lock(&state_b.db));
+        let session_a = state_a.sync.session(
+            &db_a,
+            Registry::new(Arc::clone(&state_a.modules)),
+            state_a.bus.clone(),
+        )?;
+        let session_b = state_b.sync.session(
+            &db_b,
+            Registry::new(Arc::clone(&state_b.modules)),
+            state_b.bus.clone(),
+        )?;
+        let (ta, tb, link) = memory::pair();
+        if let Some(n) = cut_after {
+            link.cut_after(n);
+        }
+        let (mut ea, mut eb) = (Endpoint::new(session_a, ta), Endpoint::new(session_b, tb));
+        let done = pump((&mut ea, &db_a), (&mut eb, &db_b));
+        done.map(|()| (ea.session().stats().clone(), eb.session().stats().clone()))
+    }
+
+    /// Runs one exchange between `a` and `b`; panics if it fails.
+    #[allow(clippy::unwrap_used)]
+    pub fn sync(&self, a: usize, b: usize) -> (SessionStats, SessionStats) {
+        self.try_sync(a, b, None).unwrap()
+    }
+
+    /// Syncs every pair twice over, so that changes have travelled through any path.
+    pub fn sync_all(&self) {
+        for _ in 0..2 {
+            for a in 0..self.devices.len() {
+                for b in (a + 1)..self.devices.len() {
+                    self.sync(a, b);
+                }
+            }
+        }
+    }
+}
+
+impl std::ops::Index<usize> for Cluster {
+    type Output = TestApp;
+
+    fn index(&self, device: usize) -> &TestApp {
+        &self.devices[device]
     }
 }
 

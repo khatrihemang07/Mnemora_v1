@@ -4,12 +4,21 @@
 
 #![forbid(unsafe_code)]
 
+mod apply;
+mod clocks;
 mod error;
+mod merge;
 mod migrations;
 mod name;
 mod peers;
+mod registry;
 mod runtime;
+mod session;
 mod state;
+mod stream;
+pub mod transport;
+mod vector;
+mod wire;
 
 use mnemora_core::module::Module;
 use mnemora_core::settings::SettingsRegistry;
@@ -18,8 +27,13 @@ use rusqlite_migration::Migrations;
 pub use error::SyncError;
 pub use name::{MAX_NAME_CHARS, default_device_name, validate_name};
 pub use peers::{forget_all, paired_count};
+pub use registry::{Modules, Registry};
 pub use runtime::{RuntimeProbe, SyncRuntime};
+pub use session::{Endpoint, Session, SessionStats, pump};
 pub use state::{SyncOption, SyncState, current, rename, set_enabled, set_option};
+pub use stream::{BATCH_BYTES, BATCH_RECORDS};
+pub use transport::Transport;
+pub use wire::{Message, Vector, WireRecord};
 
 /// The Sync Module.
 pub struct SyncModule;

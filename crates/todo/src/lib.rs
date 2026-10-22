@@ -26,6 +26,7 @@ mod search;
 mod search_repo;
 mod service;
 mod steps;
+mod sync;
 mod task;
 mod task_service;
 mod upgrade;
@@ -38,6 +39,7 @@ use mnemora_core::device::DeviceStore;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
+use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -112,6 +114,17 @@ impl Module for TodoModule {
             arrange::DONE_IN_LISTS,
         ] {
             reg.register(MODULE_ID, key, json!(allowed[0]), validate::one_of(allowed));
+        }
+    }
+
+    fn sync_entities(&self) -> &'static [SyncEntity] {
+        sync::ENTITIES
+    }
+
+    fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
+        match change.entity {
+            service::ENTITY => sync::apply(conn, change),
+            _ => Err(TodoError::Validation("Todo does not sync that kind of record").into()),
         }
     }
 

@@ -61,6 +61,14 @@ pub struct SettingsChanged {
     pub keys: Vec<String>,
 }
 
+/// Sync applied changes from another device to a Module's data, so whatever that Module shows
+/// is stale. The app shell turns this into the Module's own change event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteChanged {
+    /// Id of the Module whose data changed, e.g. `todo`.
+    pub module: String,
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
