@@ -37,7 +37,8 @@ fn known(modules: &Modules, entity: &str, scope: &str) -> bool {
 /// An editor opened or is still open on `scope` (a field, a group of fields, or `*` for the whole
 /// record) of one record: what other devices send for it waits. Call again about every 30
 /// seconds; the hold lapses after two minutes without a call, so an editor that vanished cannot
-/// hold changes back for ever.
+/// hold changes back for ever. Answers whether Sync is on: with it off the editor has nothing to
+/// renew and starts no timer.
 #[tauri::command]
 #[specta::specta]
 pub fn editing_hold(
@@ -45,11 +46,12 @@ pub fn editing_hold(
     entity: String,
     entity_id: String,
     scope: String,
-) -> Result<(), AppError> {
+) -> Result<bool, AppError> {
     if entity_id.len() > MAX_NAME || !known(&state.modules, &entity, &scope) {
         return Err(invalid());
     }
-    editing::hold(&lock(&state.db), &entity, &entity_id, &scope, now_ms())
+    editing::hold(&lock(&state.db), &entity, &entity_id, &scope, now_ms())?;
+    Ok(state.device.get().sync.enabled)
 }
 
 /// The editor is done (its text is saved): what was held back is merged now, and the screens

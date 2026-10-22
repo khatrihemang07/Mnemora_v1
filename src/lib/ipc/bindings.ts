@@ -33,9 +33,10 @@ export const commands = {
 	 *  An editor opened or is still open on `scope` (a field, a group of fields, or `*` for the whole
 	 *  record) of one record: what other devices send for it waits. Call again about every 30
 	 *  seconds; the hold lapses after two minutes without a call, so an editor that vanished cannot
-	 *  hold changes back for ever.
+	 *  hold changes back for ever. Answers whether Sync is on: with it off the editor has nothing to
+	 *  renew and starts no timer.
 	 */
-	editingHold: (entity: string, entityId: string, scope: string) => typedError<null, AppError>(__TAURI_INVOKE("editing_hold", { entity, entityId, scope })),
+	editingHold: (entity: string, entityId: string, scope: string) => typedError<boolean, AppError>(__TAURI_INVOKE("editing_hold", { entity, entityId, scope })),
 	/**
 	 *  The editor is done (its text is saved): what was held back is merged now, and the screens
 	 *  refresh silently.

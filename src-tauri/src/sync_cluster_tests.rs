@@ -858,7 +858,7 @@ fn random_entry_action(c: &Cluster, rng: &mut Rng, d: usize, step: usize, journa
         }
         // An editor opens on an Entry and is left open for a while.
         (6, Some(id)) => {
-            c[d].invoke::<()>(
+            c[d].invoke::<bool>(
                 "editing_hold",
                 json!({ "entity": "journal_entry", "entityId": id, "scope": "*" }),
             )

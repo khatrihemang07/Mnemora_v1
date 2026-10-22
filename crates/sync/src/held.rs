@@ -120,8 +120,7 @@ pub fn release_ready(
             clocks::fold(conn, schema, me)?;
         }
         let held = clocks::load(conn, &entity, &entity_id)?;
-        let mut winners = Map::new();
-        let mut newest: Option<&Row> = None;
+        let mut winning: Vec<&Row> = Vec::new();
         for row in &rows {
             // Still the newest the clocks know for the unit: nothing newer landed since.
             let newest_held = schema
@@ -131,10 +130,7 @@ pub fn release_ready(
                 .filter_map(|f| held.get(f.name))
                 .max();
             if newest_held == Some(&row.stamp) {
-                winners.extend(row.fields.clone());
-                if newest.is_none_or(|n| row.stamp > n.stamp) {
-                    newest = Some(row);
-                }
+                winning.push(row);
             }
         }
         conn.execute(
@@ -145,36 +141,50 @@ pub fn release_ready(
                 Value::from(rows.iter().map(|r| r.unit.clone()).collect::<Vec<_>>()).to_string()
             ],
         )?;
-        let Some(newest) = newest else { continue };
-        let change = RemoteChange {
-            entity: &entity,
-            entity_id: &entity_id,
-            op: newest.op,
-            at: newest.at,
-            fields: &winners,
-            settings: registry.settings(),
-        };
-        let outcome = module.apply_remote(conn, &change)?;
-        // The newest log row says what the record looks like now (the next local change is
-        // compared with it to see what it touched).
-        conn.execute(
-            "UPDATE change_log SET snapshot = ?3
-             WHERE entity = ?1 AND entity_id = ?2
-               AND seq = (SELECT MAX(seq) FROM change_log WHERE entity = ?1 AND entity_id = ?2)",
-            params![entity, entity_id, outcome.snapshot.to_string()],
-        )?;
-        out.events.extend(outcome.events);
-        if outcome.changed {
-            out.changed.insert(module.id().to_owned());
+        // One record at a time, oldest clock first, each with its own operation and moment, as
+        // a device that held nothing applied them: what derives from them (the edited time)
+        // comes out the same on every device.
+        let mut index = 0;
+        while index < winning.len() {
+            let stamp = &winning[index].stamp;
+            let mut fields = Map::new();
+            let mut end = index;
+            while end < winning.len() && &winning[end].stamp == stamp {
+                fields.extend(winning[end].fields.clone());
+                end += 1;
+            }
+            let row = winning[index];
+            index = end;
+            let change = RemoteChange {
+                entity: &entity,
+                entity_id: &entity_id,
+                op: row.op,
+                at: row.at,
+                fields: &fields,
+                settings: registry.settings(),
+            };
+            let outcome = module.apply_remote(conn, &change)?;
+            // The newest log row says what the record looks like now (the next local change is
+            // compared with it to see what it touched).
+            conn.execute(
+                "UPDATE change_log SET snapshot = ?3
+                 WHERE entity = ?1 AND entity_id = ?2
+                   AND seq = (SELECT MAX(seq) FROM change_log WHERE entity = ?1 AND entity_id = ?2)",
+                params![entity, entity_id, outcome.snapshot.to_string()],
+            )?;
+            out.events.extend(outcome.events);
+            if outcome.changed {
+                out.changed.insert(module.id().to_owned());
+            }
+            let settled = module.settle_remote(conn, &change)?;
+            if settled.recorded {
+                folded.clear();
+            }
+            if settled.recorded || !settled.events.is_empty() {
+                out.changed.insert(module.id().to_owned());
+            }
+            out.events.extend(settled.events);
         }
-        let settled = module.settle_remote(conn, &change)?;
-        if settled.recorded {
-            folded.clear();
-        }
-        if settled.recorded || !settled.events.is_empty() {
-            out.changed.insert(module.id().to_owned());
-        }
-        out.events.extend(settled.events);
     }
     Ok(out)
 }

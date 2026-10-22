@@ -87,7 +87,7 @@ fn body(app: &TestApp, id: &Value) -> Option<String> {
 }
 
 fn hold(app: &TestApp, entity: &str, id: &Value, scope: &str) {
-    app.invoke::<()>(
+    app.invoke::<bool>(
         "editing_hold",
         json!({ "entity": entity, "entityId": id, "scope": scope }),
     )
@@ -321,6 +321,61 @@ fn what_was_held_converges_with_other_changes_that_came_in_meanwhile() {
 }
 
 #[test]
+fn a_device_holding_an_entry_relays_what_it_holds_and_never_claims_it_as_its_own() {
+    let c = Cluster::new(3);
+    let e = create(&c[0], "2026-10-20", "first draft");
+    let id = e["id"].clone();
+    c.sync_all();
+    hold(&c[1], ENTRY, &id, "*");
+    c[0].clock().advance(1_000);
+    edit(&c[0], &id, "A's new words", "s-a");
+    c.sync(0, 1);
+    assert_eq!(body(&c[1], &id).as_deref(), Some("first draft"));
+    // The holding device changes something else, then passes everything on before it lets go.
+    c[1].clock().advance(1_000);
+    move_to(&c[1], &id, "2026-10-27");
+    c.sync(1, 2);
+    assert_eq!(
+        shown(&c[2]),
+        [("2026-10-27".into(), "A's new words".into())],
+        "the relayed text is A's, not the stale text the holder's database has"
+    );
+    release(&c[1], ENTRY, &id, "*");
+    c.sync_all();
+    for d in 0..3 {
+        assert_eq!(
+            shown(&c[d]),
+            [("2026-10-27".into(), "A's new words".into())],
+            "device {d}"
+        );
+    }
+}
+
+#[test]
+fn what_was_held_gives_the_same_edited_time_as_when_it_was_not_held() {
+    let c = Cluster::new(3);
+    let e = create(&c[0], "2026-10-20", "first draft");
+    let id = e["id"].clone();
+    c.sync_all();
+    hold(&c[1], ENTRY, &id, "*");
+    c[0].clock().advance(20 * 60 * 1000);
+    edit(&c[0], &id, "written much later", "s-a");
+    c[0].clock().advance(5 * 60 * 1000);
+    move_to(&c[0], &id, "2026-10-27");
+    c.sync(0, 1);
+    c.sync(0, 2);
+    release(&c[1], ENTRY, &id, "*");
+    let edited = |d: usize| entry(&c[d], &id).unwrap()["edited_at"].clone();
+    assert!(edited(2).is_number());
+    assert_eq!(
+        edited(1),
+        edited(2),
+        "held or not, the text was edited at the same moment"
+    );
+    assert_eq!(edited(0), edited(2));
+}
+
+#[test]
 fn a_hold_whose_editor_vanished_ends_when_the_lease_lapses() {
     let (c, id) = pair_with_entry("first draft");
     hold(&c[1], ENTRY, &id, "*");
@@ -371,6 +426,21 @@ fn holds_never_survive_a_restart_and_what_waited_is_merged_at_start() {
             .unwrap()
     });
     assert_eq!(holds, 0);
+}
+
+#[test]
+fn with_sync_off_the_editor_is_told_there_is_nothing_to_keep_renewing() {
+    let off = TestApp::new();
+    let e = create(&off, "2026-10-20", "first draft");
+    let ask = |app: &TestApp| -> bool {
+        app.invoke(
+            "editing_hold",
+            json!({ "entity": ENTRY, "entityId": e["id"], "scope": "*" }),
+        )
+        .unwrap()
+    };
+    assert!(!ask(&off));
+    assert!(ask(&Cluster::new(1)[0]));
 }
 
 #[test]

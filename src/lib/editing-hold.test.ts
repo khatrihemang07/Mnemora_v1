@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { EditingHold, HOLD_RENEW_MS } from './editing-hold';
 
-function setup(opts: { failHold?: boolean; failRelease?: boolean } = {}) {
+const settle = () => new Promise((r) => setTimeout(r, 0));
+
+function setup(opts: { failHold?: boolean; failRelease?: boolean; syncOn?: boolean } = {}) {
+  let visible = true;
+  const listeners = new Set<() => void>();
   const calls: string[] = [];
   const timers = new Map<number, () => void>();
   let next = 0;
@@ -9,19 +13,34 @@ function setup(opts: { failHold?: boolean; failRelease?: boolean } = {}) {
     hold: async (scope) => {
       calls.push(`hold ${scope}`);
       if (opts.failHold) throw new Error('down');
+      return opts.syncOn ?? true;
     },
     release: async (scope) => {
       calls.push(`release ${scope}`);
       if (opts.failRelease) throw new Error('down');
     },
-    every: (fn, ms) => {
+    repeat: (fn, ms) => {
       expect(ms).toBe(HOLD_RENEW_MS);
       const id = next++;
       timers.set(id, fn);
       return () => timers.delete(id);
     },
+    visible: () => visible,
+    onShown: (fn) => {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
   });
-  return { hold, calls, timers };
+  return {
+    hold,
+    calls,
+    timers,
+    listeners,
+    show: (v: boolean) => {
+      visible = v;
+      if (v) for (const fn of listeners) fn();
+    },
+  };
 }
 
 describe('EditingHold', () => {
@@ -29,6 +48,7 @@ describe('EditingHold', () => {
     const { hold, calls, timers } = setup();
     hold.take('*');
     expect(calls).toEqual(['hold *']);
+    await settle();
     for (const tick of timers.values()) tick();
     expect(calls).toEqual(['hold *', 'hold *']);
     await hold.release('*');
@@ -37,12 +57,13 @@ describe('EditingHold', () => {
     expect(hold.has('*')).toBe(false);
   });
 
-  it('takes a scope once however often it is asked (every keystroke asks)', () => {
+  it('takes a scope once however often it is asked (every keystroke asks)', async () => {
     const { hold, calls, timers } = setup();
     hold.take('title');
     hold.take('title');
     hold.take('title');
     expect(calls).toEqual(['hold title']);
+    await settle();
     expect(timers.size).toBe(1);
   });
 
@@ -69,5 +90,38 @@ describe('EditingHold', () => {
     await new Promise((r) => setTimeout(r, 0));
     process.off('unhandledRejection', unhandled);
     expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('starts no timer when Sync is off, and calls Rust only once', async () => {
+    const { hold, calls, timers } = setup({ syncOn: false });
+    hold.take('*');
+    hold.take('*');
+    await settle();
+    expect(timers.size).toBe(0);
+    expect(calls).toEqual(['hold *']);
+    await hold.release('*');
+    expect(calls).toEqual(['hold *', 'release *']);
+  });
+
+  it('starts no timer when released before Rust answered', async () => {
+    const { hold, timers } = setup();
+    hold.take('*');
+    const done = hold.release('*');
+    await done;
+    await settle();
+    expect(timers.size).toBe(0);
+  });
+
+  it('does not renew while the window is hidden, and renews at once when shown', async () => {
+    const { hold, calls, timers, show, listeners } = setup();
+    hold.take('*');
+    await settle();
+    show(false);
+    for (const tick of timers.values()) tick();
+    expect(calls).toEqual(['hold *']);
+    show(true);
+    expect(calls).toEqual(['hold *', 'hold *']);
+    await hold.release('*');
+    expect(listeners.size).toBe(0);
   });
 });
