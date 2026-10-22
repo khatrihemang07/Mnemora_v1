@@ -6,6 +6,8 @@ The Todo widget's + opens Quick add over the home screen without starting the ap
 
 **What exists twice.** The keyboard-side helpers that need no database: words kept as text, read again, "use instead", pruning, the word ⌫ keeps as text, the `#` query and its List suggestions, the marked stretches of the title and the multi-line paste split. They are `capture.ts` and `CaptureRules.kt`. The sheet's views, chips and pickers are Android views, not Svelte Components; they follow `docs/design/ui-system.md` by sharing the same tokens through the widget's theme resources, not by sharing code. The sheet has no When picker (calendar, time, Repeat): the When chip only shows what the words and the place give the Task.
 
+**Known differences from the app.** (1) The sheet has a tappable Add button, for keyboards whose Enter key does not add. (2) The reading chips keep showing the previous reading for the few milliseconds until the new reading arrives; the app hides them while the reading is stale. This is deliberate, because it flickers less.
+
 **How parity is kept.** Shared JSON fixtures, run on both sides, are the contract:
 
 - `capture-ui.json`: the helpers above. Vitest runs it against `capture.ts` (`capture-ui.test.ts`), JUnit against `CaptureRules.kt` (`CaptureRulesTest`).
