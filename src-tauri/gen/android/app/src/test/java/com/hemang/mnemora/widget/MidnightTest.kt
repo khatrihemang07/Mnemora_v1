@@ -34,7 +34,17 @@ class MidnightTest {
     }
 
     @Test
-    fun theAlarmWindowIsTenMinutes() {
-        assertEquals(10 * 60 * 1000L, Midnight.WINDOW_MS)
+    fun theJobWaitsUntilMidnightPlusSlack() {
+        val zone = ZoneId.of("Asia/Kolkata")
+        val now = ms("2026-10-22T23:58:00+05:30", "Asia/Kolkata")
+        // Two minutes to midnight and five seconds of slack.
+        assertEquals(125_000L, Midnight.delayFrom(now, zone))
+    }
+
+    @Test
+    fun theDelayAcrossASpringForwardDayIsTwentyThreeHoursLong() {
+        val zone = ZoneId.of("America/New_York")
+        val midnight = ms("2026-03-08T00:00:00-05:00", "America/New_York")
+        assertEquals(23 * 3_600_000L + 5_000L, Midnight.delayFrom(midnight, zone))
     }
 }

@@ -25,7 +25,8 @@ class TodoWidgetProvider : AppWidgetProvider() {
         id: Int,
         options: android.os.Bundle,
     ) {
-        WidgetUpdater.redrawAsync(context, goAsync())
+        // The responsive RemoteViews already handle the new size; see ResizeRedraw.
+        WidgetUpdater.redrawOnResize(context, goAsync())
     }
 
     /** A removed widget takes its settings with it. */

@@ -21,6 +21,16 @@ class UndoBarTest {
     }
 
     @Test
+    fun aStoredBarIsExpiredOnceItsTimeIsUpOrTheClockWentBack() {
+        val until = UndoBar.expiresAt(1_000_000L)
+        assertFalse(UndoBar.isExpired(until, 1_003_999L))
+        assertTrue(UndoBar.isExpired(until, 1_004_000L))
+        assertTrue(UndoBar.isExpired(until, 1_004_000L - 86_400_000L))
+        // Nothing stored is not "expired": there is nothing to clear.
+        assertFalse(UndoBar.isExpired(0L, 1_004_000L))
+    }
+
+    @Test
     fun aClockSetBackDoesNotKeepTheBarForever() {
         // The bar was due to end at 1_004_000; the clock jumped back a day.
         assertFalse(UndoBar.isShown(until = 1_004_000L, now = 1_004_000L - 86_400_000L))

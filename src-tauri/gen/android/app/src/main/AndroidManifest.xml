@@ -36,16 +36,25 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
-            <!-- Exempt from the implicit-broadcast limits: the day or clock changed. -->
+            <!-- Exempt from the implicit-broadcast limits: the clock or time zone changed. DATE_CHANGED is
+                 left out on purpose: it is never delivered to a manifest receiver (skipped by policy);
+                 the midnight job (WidgetJobService) covers the day change. -->
             <intent-filter>
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
-                <action android:name="android.intent.action.DATE_CHANGED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/todo_widget_info" />
         </receiver>
+
+        <!-- Midnight redraw and the Undo bar's backstop, as framework jobs: vivo's freezer deletes the
+             alarms of a frozen app, jobs survive it. Only the system can bind it; no permission is added. -->
+        <service
+            android:name=".widget.WidgetJobService"
+            android:enabled="@bool/todo_widget_enabled"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- The Todo widget's setup screen: the launcher starts it when a widget is dropped and from
              long-press > reconfigure, so it must be exported. It checks that the widget is ours. -->

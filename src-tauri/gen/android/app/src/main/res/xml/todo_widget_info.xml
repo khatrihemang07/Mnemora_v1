@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No updatePeriodMillis: the widget redraws after a Todo write and at local midnight, never on a timer. -->
+<!-- No updatePeriodMillis: the widget redraws after a Todo write and after local midnight (a job), never on a timer. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:configure="com.hemang.mnemora.widget.WidgetSetupActivity"
     android:description="@string/widget_description"

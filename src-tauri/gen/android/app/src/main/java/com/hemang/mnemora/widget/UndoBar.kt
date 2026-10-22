@@ -28,6 +28,9 @@ object UndoBar {
     /** Whether the bar is up at [now]. A clock set far back must not keep it up for hours. */
     fun isShown(until: Long, now: Long) = now < until && until - now <= DURATION_MS + DIALOG_GRACE_MS
 
+    /** Whether a stored bar ending at [until] should be cleared at [now]: nothing stored (0) is not. */
+    fun isExpired(until: Long, now: Long) = until != 0L && !isShown(until, now)
+
     private const val FILE = "todo_widget_undo"
 
     private fun prefs(context: Context) =
@@ -50,6 +53,16 @@ object UndoBar {
         val token = p.getString("token", null) ?: return null
         val until = p.getLong("until", 0L)
         return if (isShown(until, now)) UndoState(lead, p.getString("suffix", null), token, until) else null
+    }
+
+    /**
+     * Clears the stored bar if its time is up, so its Undo token (which may carry the Task's notes)
+     * does not outlive it. Returns whether a bar is still wanted.
+     */
+    fun settle(context: Context, now: Long): Boolean {
+        val until = prefs(context).getLong("until", 0L)
+        if (isExpired(until, now)) clear(context)
+        return until != 0L && !isExpired(until, now)
     }
 
     fun clear(context: Context) {
