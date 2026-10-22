@@ -124,6 +124,26 @@ pub fn observe(conn: &Connection, remote: Timestamp) -> AppResult<Timestamp> {
 }
 
 fn step(conn: &Connection, remote: Option<Timestamp>) -> AppResult<Tick> {
+    // The first statement writes, so this takes the database's write lock before the clock is
+    // read: a second connection (Sync gets its own) waits its turn instead of reading a stale
+    // clock, and the clock and sequence stay unique and monotonic across connections. The
+    // savepoint makes that hold outside a transaction too, and nests inside one.
+    conn.execute_batch("SAVEPOINT hlc_step")?;
+    match step_locked(conn, remote) {
+        Ok(tick) => {
+            conn.execute_batch("RELEASE hlc_step")?;
+            Ok(tick)
+        }
+        Err(e) => {
+            // Best effort: the original error is the one to report.
+            let _ = conn.execute_batch("ROLLBACK TO hlc_step; RELEASE hlc_step");
+            Err(e)
+        }
+    }
+}
+
+fn step_locked(conn: &Connection, remote: Option<Timestamp>) -> AppResult<Tick> {
+    conn.execute("UPDATE device_clock SET seq = seq + 1", [])?;
     let (ms, counter, seq): (i64, i64, i64) =
         conn.query_row("SELECT ms, counter, seq FROM device_clock", [], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -134,10 +154,9 @@ fn step(conn: &Connection, remote: Option<Timestamp>) -> AppResult<Tick> {
         Some(remote) => hlc.receive(physical_ms, remote),
         None => hlc.send(physical_ms),
     };
-    let seq = seq + 1;
     conn.execute(
-        "UPDATE device_clock SET ms = ?1, counter = ?2, seq = ?3",
-        rusqlite::params![clock.ms, clock.counter, seq],
+        "UPDATE device_clock SET ms = ?1, counter = ?2",
+        rusqlite::params![clock.ms, clock.counter],
     )?;
     Ok(Tick {
         clock,
@@ -221,5 +240,30 @@ mod tests {
             device: "a".into(),
         };
         assert!(later > stamp(99, "z"));
+    }
+
+    #[test]
+    fn two_connections_to_one_file_share_one_clock_and_sequence() {
+        use crate::db;
+        use crate::module::CoreModule;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m.db");
+        let mut a = db::open(&path).unwrap();
+        db::migrate::run(&mut a, &[&CoreModule], dir.path()).unwrap();
+        let b = db::open(&path).unwrap();
+        let frozen: db::TimeSource = std::sync::Arc::new(|| 7_000);
+        db::set_time_source(&a, frozen.clone()).unwrap();
+        db::set_time_source(&b, frozen).unwrap();
+        let mut seen = Vec::new();
+        for _ in 0..3 {
+            seen.push(tick(&a).unwrap());
+            seen.push(tick(&b).unwrap());
+        }
+        let seqs: Vec<_> = seen.iter().map(|t| t.seq).collect();
+        assert_eq!(seqs, vec![1, 2, 3, 4, 5, 6]);
+        assert!(
+            seen.windows(2).all(|w| w[0].clock < w[1].clock),
+            "one clock across both connections"
+        );
     }
 }
