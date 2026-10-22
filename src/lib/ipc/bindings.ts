@@ -21,6 +21,8 @@ export const commands = {
 	deviceSetSpellcheck: (enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("device_set_spellcheck", { enabled })),
 	/**  Version, environment, folders and the OS account's first name. */
 	appInfo: () => __TAURI_INVOKE<AppInfo>("app_info"),
+	/**  The links that opened the app since the last call, oldest first. */
+	appTakeLinks: () => __TAURI_INVOKE<string[]>("app_take_links"),
 	/**  Forwards a frontend error into the Rust log file. */
 	logUiError: (message: string, stack: string | null) => __TAURI_INVOKE<void>("log_ui_error", { message, stack }),
 	/**  Takes a database backup now and returns its path. */
@@ -279,6 +281,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
 };
@@ -566,6 +569,9 @@ export type InboxView = {
  *  fields stay `serde_json::Value`, which specta cannot export (recursive, i64 numbers).
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**  A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it. */
+export type LinkOpenedEvent = null;
 
 /**  What a List deletion did: hand it back to `todo_list_restore` to undo it. */
 export type ListDeletion = {

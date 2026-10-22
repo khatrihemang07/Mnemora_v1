@@ -30,7 +30,8 @@ use tempfile::TempDir;
 use crate::state::{AppState, DeviceStore, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    SettingsChangedEvent, TodoChangedEvent, commands, journal, modules, settings_store, todo,
+    LinkOpenedEvent, SettingsChangedEvent, TodoChangedEvent, commands, journal, links, modules,
+    settings_store, todo,
 };
 
 /// A mock Tauri app with every registered command, on an in-memory database migrated with every
@@ -70,6 +71,7 @@ impl TestApp {
         let app = mock_builder()
             .invoke_handler(specta_builder_for!(MockRuntime).invoke_handler())
             .manage(state)
+            .manage(crate::links::PendingLinks::default())
             .build(mock_context(noop_assets()))
             .unwrap();
         // Typed events can only be emitted once mounted, as in the real app.

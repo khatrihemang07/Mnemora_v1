@@ -153,6 +153,8 @@ export async function installMock() {
             log_dir: '/mock/Mnemora/sandbox/logs',
             os_first_name: 'Alex',
           };
+        case 'app_take_links':
+          return [];
         case 'log_ui_error':
           console.warn('[mock] logUiError', a.message);
           return null;

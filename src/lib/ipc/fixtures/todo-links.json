@@ -1,0 +1,97 @@
+{
+  "_doc": "Links the Todo widget opens the app with: mnemora://todo?view=today|upcoming|inbox|all|list:<id>&task=<id>. `canonical` cases are built by Kotlin (WidgetLinks.build, JUnit) and parsed by TypeScript (parseTodoLink, Vitest) to the same view and task; the `parse_only` cases are links only the parser sees. `view` is null when the link names none the app knows (Todo keeps the view it is on); `task` is null when none is named. Known gap, out of scope: ids are opaque, so no check that a Task or List exists is made here (the app falls back when it does not).",
+  "canonical": [
+    { "name": "Today", "view": "today", "task": null, "url": "mnemora://todo?view=today" },
+    { "name": "Upcoming", "view": "upcoming", "task": null, "url": "mnemora://todo?view=upcoming" },
+    { "name": "Inbox", "view": "inbox", "task": null, "url": "mnemora://todo?view=inbox" },
+    { "name": "All", "view": "all", "task": null, "url": "mnemora://todo?view=all" },
+    { "name": "a List", "view": "list:L1", "task": null, "url": "mnemora://todo?view=list:L1" },
+    {
+      "name": "a Task over Today",
+      "view": "today",
+      "task": "T1",
+      "url": "mnemora://todo?view=today&task=T1"
+    },
+    {
+      "name": "a Task over a List",
+      "view": "list:L1",
+      "task": "T9",
+      "url": "mnemora://todo?view=list:L1&task=T9"
+    },
+    {
+      "name": "ids with characters a URL must escape",
+      "view": "list:a b&c=d",
+      "task": "t#1/é",
+      "url": "mnemora://todo?view=list:a%20b%26c%3Dd&task=t%231%2F%C3%A9"
+    },
+    {
+      "name": "a UUID-like id",
+      "view": "list:0b9f6e0e-6f3a-4a52-9c6c-2d1c7f5a8e11",
+      "task": "5c1d2f3e-aaaa-bbbb-cccc-0123456789ab",
+      "url": "mnemora://todo?view=list:0b9f6e0e-6f3a-4a52-9c6c-2d1c7f5a8e11&task=5c1d2f3e-aaaa-bbbb-cccc-0123456789ab"
+    }
+  ],
+  "parse_only": [
+    { "name": "no query", "url": "mnemora://todo", "view": null, "task": null },
+    {
+      "name": "a Task alone keeps the view",
+      "url": "mnemora://todo?task=T1",
+      "view": null,
+      "task": "T1"
+    },
+    {
+      "name": "an unknown view is ignored",
+      "url": "mnemora://todo?view=done",
+      "view": null,
+      "task": null
+    },
+    {
+      "name": "an unknown view still opens its Task",
+      "url": "mnemora://todo?view=nope&task=T1",
+      "view": null,
+      "task": "T1"
+    },
+    {
+      "name": "a List with no id is ignored",
+      "url": "mnemora://todo?view=list:",
+      "view": null,
+      "task": null
+    },
+    {
+      "name": "an empty Task is ignored",
+      "url": "mnemora://todo?view=inbox&task=",
+      "view": "inbox",
+      "task": null
+    },
+    {
+      "name": "plus is a space",
+      "url": "mnemora://todo?view=list:a+b",
+      "view": "list:a b",
+      "task": null
+    },
+    {
+      "name": "view names are case sensitive",
+      "url": "mnemora://todo?view=Today",
+      "view": null,
+      "task": null
+    },
+    {
+      "name": "parameter order does not matter",
+      "url": "mnemora://todo?task=T1&view=all",
+      "view": "all",
+      "task": "T1"
+    },
+    {
+      "name": "a path after the host is ignored",
+      "url": "mnemora://todo/whatever?view=inbox",
+      "view": "inbox",
+      "task": null
+    },
+    {
+      "name": "extra parameters are ignored",
+      "url": "mnemora://todo?view=inbox&x=1",
+      "view": "inbox",
+      "task": null
+    }
+  ]
+}
