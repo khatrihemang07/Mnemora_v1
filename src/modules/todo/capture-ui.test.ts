@@ -23,7 +23,10 @@ import {
 // The Todo widget's native Quick add repeats these helpers in Kotlin (CaptureRules.kt); its JUnit
 // test runs the same fixture.
 
-const words = (w: { ignored: string[]; prefer: Record<string, string> }): CaptureWords => w;
+const words = (w: { ignored: string[]; prefer: object }): CaptureWords => ({
+  ignored: w.ignored,
+  prefer: w.prefer as Record<string, string>,
+});
 const spanOf = (s: { kind: string; key: string }) => s as Pick<ParseSpan, 'kind' | 'key'>;
 
 describe('capture-ui fixture, against the TypeScript helpers', () => {
