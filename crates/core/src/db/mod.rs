@@ -54,10 +54,11 @@ pub fn open(path: &Path) -> AppResult<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     // journal_mode returns a row, so it cannot go through `execute`.
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
     configure(&conn)?;
+    write_transactions_wait_their_turn(&mut conn);
     Ok(conn)
 }
 
@@ -72,6 +73,14 @@ pub fn open_existing(path: &Path) -> AppResult<Option<Connection>> {
         Connection::open_with_flags(path, OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE)?;
     configure(&conn)?;
     Ok(Some(conn))
+}
+
+/// Makes `conn.transaction()` take the write lock when it begins. A deferred transaction that
+/// reads first and writes later fails at once with `SQLITE_BUSY` (the busy timeout does not apply)
+/// when another connection committed in between, and Sync writes through a second connection;
+/// beginning with the lock makes it wait its turn instead. Only for the connections that write.
+fn write_transactions_wait_their_turn(conn: &mut Connection) {
+    conn.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
 }
 
 /// An in-memory database with the same pragmas that apply to memory databases; for tests.
@@ -111,6 +120,25 @@ mod tests {
         let conn = open(&dir.path().join("deep/er/x.db")).unwrap();
         assert_eq!(pragma_string(&conn, "journal_mode"), "wal");
         assert_eq!(pragma_string(&conn, "foreign_keys"), "1");
+    }
+
+    #[test]
+    fn a_transaction_holds_the_write_lock_from_its_start_so_a_second_connection_cannot_slip_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.db");
+        let mut app = open(&path).unwrap();
+        app.execute_batch("CREATE TABLE t(x)").unwrap();
+        let other = open(&path).unwrap();
+        other.busy_timeout(std::time::Duration::ZERO).unwrap();
+
+        let tx = app.transaction().unwrap();
+        tx.query_row("SELECT COUNT(*) FROM t", [], |r| r.get::<_, i64>(0))
+            .unwrap();
+        // Were the transaction deferred, this write would commit between the app's read and
+        // its write, and the app's write would then fail with a snapshot error.
+        assert!(other.execute("INSERT INTO t VALUES (1)", []).is_err());
+        tx.execute("INSERT INTO t VALUES (2)", []).unwrap();
+        tx.commit().unwrap();
     }
 
     #[test]

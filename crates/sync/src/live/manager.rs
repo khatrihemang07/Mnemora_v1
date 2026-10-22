@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use tokio::task::{JoinError, JoinHandle, JoinSet};
+use tokio::task::{self, JoinError, JoinHandle, JoinSet};
 use tokio::time::{Instant, sleep_until};
 
 use super::backoff::Backoff;
@@ -86,6 +86,8 @@ impl Live {
             pace,
             peers: HashMap::new(),
             set: JoinSet::new(),
+            tasks: HashMap::new(),
+            push_at: None,
             done_tx,
             next_id: 0,
         };
@@ -178,6 +180,12 @@ enum Done {
     },
 }
 
+/// What a task in the supervisor's set is doing, to put right what it was doing if it dies.
+enum Doing {
+    Dial(String),
+    Conn(String, u64),
+}
+
 struct Held {
     id: u64,
     by_me: bool,
@@ -201,6 +209,10 @@ struct Supervisor {
     pace: Pace,
     peers: HashMap<String, Peer>,
     set: JoinSet<Done>,
+    tasks: HashMap<task::Id, Doing>,
+    /// When the next session round starts for the open connections (the quiet period after a
+    /// change, local or just received).
+    push_at: Option<Instant>,
     done_tx: UnboundedSender<RoundDone>,
     next_id: u64,
 }
@@ -211,6 +223,12 @@ async fn next_found(browse: &mut Option<Browsing>) -> Option<Candidate> {
         Some(b) => b.found.recv().await,
         None => std::future::pending().await,
     }
+}
+
+/// Whether two lists name the same addresses. Discovery reports a device's addresses from a hash
+/// set, so the same set can come in any order; only a real change may cut a backoff short.
+fn same_addresses(a: &[SocketAddr], b: &[SocketAddr]) -> bool {
+    a.len() == b.len() && a.iter().all(|x| b.contains(x))
 }
 
 async fn wait_until(at: Option<Instant>) {
@@ -240,7 +258,6 @@ impl Supervisor {
         if self.automatic() {
             self.dial_all().await;
         }
-        let mut push_at: Option<Instant> = None;
         loop {
             self.shared
                 .tasks
@@ -249,14 +266,14 @@ impl Supervisor {
             tokio::select! {
                 Some(cmd) = cmds.recv() => self.command(cmd).await,
                 Some(round) = rounds.recv() => self.round_done(&round),
-                Some(done) = self.set.join_next() => self.finished(done).await,
-                () = changes.notified() => push_at = Some(Instant::now() + self.pace.debounce),
+                Some(done) = self.set.join_next_with_id() => self.finished(done).await,
+                () = changes.notified() => self.push_at = Some(Instant::now() + self.pace.debounce),
                 found = next_found(&mut browse) => match found {
                     Some(candidate) => self.discovered(candidate).await,
                     None => browse = None,
                 },
-                () = wait_until(push_at) => {
-                    push_at = None;
+                () = wait_until(self.push_at) => {
+                    self.push_at = None;
                     self.push();
                 }
                 () = wait_until(retry_at) => self.retry().await,
@@ -350,7 +367,7 @@ impl Supervisor {
         // The typed Address (#71) joins here as a third source.
         let addrs = candidates(&found, &remembered, &[]);
         let (config, each) = (self.config.clone(), self.pace.dial_each);
-        self.set.spawn(async move {
+        let handle = self.set.spawn(async move {
             let established = if addrs.is_empty() {
                 None
             } else {
@@ -361,6 +378,7 @@ impl Supervisor {
                 established,
             }
         });
+        self.tasks.insert(handle.id(), Doing::Dial(id.to_owned()));
     }
 
     fn dial_failed(&mut self, id: &str) {
@@ -396,9 +414,13 @@ impl Supervisor {
         }
     }
 
-    async fn finished(&mut self, done: Result<Done, JoinError>) {
-        let Ok(done) = done else {
-            return;
+    async fn finished(&mut self, done: Result<(task::Id, Done), JoinError>) {
+        let done = match done {
+            Ok((id, done)) => {
+                self.tasks.remove(&id);
+                done
+            }
+            Err(e) => return self.task_died(&e),
         };
         match done {
             Done::Dial { peer, established } => {
@@ -417,6 +439,19 @@ impl Supervisor {
                 }
             }
             Done::Conn { peer, id, result } => self.connection_ended(&peer, id, result),
+        }
+    }
+
+    /// A dial or connection task panicked (or was cancelled): its device must not stay marked as
+    /// dialling or connected for good.
+    fn task_died(&mut self, error: &JoinError) {
+        tracing::warn!(target: "sync", panicked = error.is_panic(), "a sync task ended unexpectedly");
+        match self.tasks.remove(&error.id()) {
+            Some(Doing::Dial(peer)) => self.dial_failed(&peer),
+            Some(Doing::Conn(peer, id)) => {
+                self.connection_ended(&peer, id, Err(SyncError::Disconnected));
+            }
+            None => {}
         }
     }
 
@@ -456,6 +491,12 @@ impl Supervisor {
         if let Some(peer) = self.peers.get_mut(&round.peer) {
             peer.backoff.reset();
             peer.manual = false;
+        }
+        if round.received > 0 {
+            // What arrived may be news to the other devices too (one of them may not reach the
+            // sender). Nothing hooks the sync connection's own writes, so say so here. A round
+            // that received nothing ends the chain.
+            self.push_at = Some(Instant::now() + self.pace.debounce);
         }
     }
 
@@ -542,7 +583,7 @@ impl Supervisor {
             keep_open: automatic,
         };
         let peer_id = id.clone();
-        self.set.spawn(async move {
+        let handle = self.set.spawn(async move {
             let result = conn::run(connection).await;
             Done::Conn {
                 peer: peer_id,
@@ -550,6 +591,7 @@ impl Supervisor {
                 result,
             }
         });
+        self.tasks.insert(handle.id(), Doing::Conn(id, conn_id));
         tracing::info!(target: "sync", by_me, "connected to a paired device");
     }
 
@@ -561,7 +603,7 @@ impl Supervisor {
         let Some(peer) = self.peers.get_mut(&candidate.device) else {
             return;
         };
-        let changed = !candidate.addrs.is_empty() && peer.found != candidate.addrs;
+        let changed = !candidate.addrs.is_empty() && !same_addresses(&peer.found, &candidate.addrs);
         if changed {
             peer.found.clone_from(&candidate.addrs);
         }
@@ -644,5 +686,27 @@ impl Supervisor {
                 let _ = held.tx.send(ConnCmd::Round);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn a(s: &str) -> SocketAddr {
+        s.parse().unwrap()
+    }
+
+    #[test]
+    fn the_same_addresses_in_another_order_are_not_a_change() {
+        let one = [a("192.168.1.9:1"), a("100.64.0.2:1")];
+        let other = [a("100.64.0.2:1"), a("192.168.1.9:1")];
+        assert!(same_addresses(&one, &other));
+        assert!(!same_addresses(&one, &other[..1]));
+        assert!(!same_addresses(
+            &one,
+            &[a("192.168.1.9:1"), a("10.0.0.5:1")]
+        ));
+        assert!(same_addresses(&[], &[]));
     }
 }

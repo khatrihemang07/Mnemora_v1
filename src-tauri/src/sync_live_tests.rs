@@ -268,3 +268,70 @@ async fn leaving_the_group_closes_the_connections() {
     tokio::time::sleep(Duration::from_millis(600)).await;
     assert_eq!(peer_of(&phone)["state"], "not_nearby");
 }
+
+fn row_named(device: &Device, name: &str) -> Value {
+    device.devices()["peers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == name)
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+#[tokio::test]
+async fn what_a_device_received_is_passed_on_to_the_others_it_is_connected_to() {
+    // Mac and Watch cannot reach each other; both reach the phone.
+    let (mac, phone) = paired_pair(quick()).await;
+    let watch = Device::with_pace("Watch", quick()).await;
+    pair(&phone, &watch).await;
+    meet(&mac, &phone);
+    meet(&watch, &phone);
+    until("both connected to the phone", || {
+        row_named(&phone, "Mac")["state"] == "up_to_date"
+            && row_named(&phone, "Watch")["state"] == "up_to_date"
+    })
+    .await;
+    // In the app, Sync writes through its own connection, which the change-log hook never sees:
+    // the phone learns nothing of what it stores from the Mac unless the manager passes it on.
+    phone
+        .app
+        .with_db(|c| mnemora_core::db::on_change_log_write(c, || {}).unwrap());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let id = create(&mac, "Reaches the watch through the phone");
+    until("the Task on the phone", || has(&phone, &id)).await;
+    until("the Task on the watch", || has(&watch, &id)).await;
+}
+
+#[tokio::test]
+async fn turning_sync_off_and_on_again_and_again_leaves_nothing_behind() {
+    let (mac, phone) = paired_pair(quick()).await;
+    meet(&mac, &phone);
+    until("connected", || peer_of(&mac)["state"] == "up_to_date").await;
+    let options = || mnemora_sync::NetworkOptions {
+        ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        port: 0,
+        timing: mnemora_sync::Timing::default(),
+        discovery: mac.found.clone(),
+        pace: quick(),
+    };
+    for _ in 0..4 {
+        mac.call::<()>("sync_set_enabled", json!({ "enabled": false }));
+        assert_eq!(mac.app.sync_probe().tasks, 0);
+        mac.call::<()>("sync_set_enabled", json!({ "enabled": true }));
+        crate::sync::start_network(&mac.app.handle(), options())
+            .await
+            .unwrap();
+        mac.found.announce(&phone.app.device_id(), phone.address());
+        phone.found.announce(&mac.app.device_id(), mac.address());
+    }
+    until("connected again", || peer_of(&mac)["state"] == "up_to_date").await;
+    // Only the supervisor, the accept loop and pairing's tasks, one connection: no pile-up.
+    let running = mac.app.sync_probe().tasks;
+    assert!(running <= 6, "{running} tasks after four restarts");
+    mac.call::<()>("sync_set_enabled", json!({ "enabled": false }));
+    assert_eq!(mac.app.sync_probe().tasks, 0);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(mac.found.active(), 0, "announcing or browsing is left over");
+}

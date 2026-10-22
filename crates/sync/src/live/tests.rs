@@ -2,6 +2,7 @@
 //! sync: what is tested here is which connection survives and that a session runs over it.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -27,6 +28,8 @@ const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 struct TestHost {
     device: String,
     conn: Mutex<Connection>,
+    /// The next session this device starts panics (a bug in a connection task).
+    fault: Arc<AtomicBool>,
 }
 
 impl PairingHost for TestHost {
@@ -63,6 +66,7 @@ impl Host for TestHost {
     }
 
     fn registry(&self) -> Registry {
+        assert!(!self.fault.swap(false, Ordering::SeqCst), "test fault");
         Registry::new(Arc::new(Vec::new()))
     }
 
@@ -86,6 +90,7 @@ struct Device {
     config: NetConfig,
     listener: Listener,
     live: Live,
+    fault: Arc<AtomicBool>,
 }
 
 impl Device {
@@ -94,9 +99,11 @@ impl Device {
         let dir = tempfile::tempdir().unwrap();
         migrate::run(&mut conn, &[&CoreModule, &SyncModule], dir.path()).unwrap();
         hlc::set_device_id(&conn, id).unwrap();
+        let fault = Arc::new(AtomicBool::new(false));
         let host = Arc::new(TestHost {
             device: id.to_owned(),
             conn: Mutex::new(conn),
+            fault: Arc::clone(&fault),
         });
         let local = LocalHandshake::new({
             let host = Arc::clone(&host);
@@ -129,6 +136,7 @@ impl Device {
             config,
             listener,
             live,
+            fault,
         }
     }
 
@@ -219,4 +227,25 @@ async fn when_both_devices_dial_the_connection_dialled_by_the_lower_id_is_kept()
 #[tokio::test]
 async fn the_same_holds_when_each_sees_the_other_connection_first() {
     both_dial(false).await;
+}
+
+#[tokio::test]
+async fn a_connection_task_that_panics_does_not_leave_its_device_marked_connected() {
+    let (a, mut b) = (Device::new("dev-a").await, Device::new("dev-b").await);
+    a.pair_with(&b);
+    b.pair_with(&a);
+    let a_to_b = dial(&a.config, b.addr()).await.unwrap();
+    let Some(Incoming::Peer(at_b)) = b.listener.accept().await else {
+        panic!("b did not get a's connection");
+    };
+    a.fault.store(true, Ordering::SeqCst);
+    a.live.adopt(a_to_b);
+    b.live.accept(*at_b);
+
+    until("the fault to strike", || !a.fault.load(Ordering::SeqCst)).await;
+    until("the dead connection to be let go", || {
+        a.live.dialled_by_me("dev-b").is_none()
+            && a.live.snapshot().get("dev-b").is_some_and(|l| !l.reachable)
+    })
+    .await;
 }

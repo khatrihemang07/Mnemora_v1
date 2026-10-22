@@ -119,6 +119,9 @@ pub fn all(conn: &Connection) -> AppResult<HashMap<String, Remembered>> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+/// How many addresses are kept for one device.
+const REMEMBERED_ADDRESSES: i64 = 8;
+
 /// Remembers addresses a device said it can be reached at (not yet known to work).
 pub fn learn(conn: &Connection, device: &str, addrs: &[SocketAddr]) -> AppResult<()> {
     let mut stmt = conn.prepare(
@@ -127,6 +130,15 @@ pub fn learn(conn: &Connection, device: &str, addrs: &[SocketAddr]) -> AppResult
     for addr in addrs.iter().filter(|a| addresses::shareable(a.ip())) {
         stmt.execute(params![device, addr.to_string()])?;
     }
+    // Every address is dialled at once, so a list that only ever grew (a new DHCP lease now and
+    // then) would make each attempt a crowd. Keep the ones that worked most recently, then the
+    // newest heard of.
+    conn.execute(
+        "DELETE FROM sync_peer_addresses WHERE device = ?1 AND rowid NOT IN (
+             SELECT rowid FROM sync_peer_addresses WHERE device = ?1
+             ORDER BY last_ok_at IS NULL, last_ok_at DESC, rowid DESC LIMIT ?2)",
+        params![device, REMEMBERED_ADDRESSES],
+    )?;
     Ok(())
 }
 
@@ -197,6 +209,24 @@ mod tests {
             addresses_of(&conn, "p").unwrap(),
             [addr("100.64.0.9:47311"), addr("192.168.1.5:47311")]
         );
+    }
+
+    #[test]
+    fn only_the_best_few_addresses_are_kept_for_a_device() {
+        let conn = conn();
+        let lease = |n: u8| addr(&format!("192.168.1.{n}:47311"));
+        learn(&conn, "p", &[lease(1), lease(2)]).unwrap();
+        worked(&conn, "p", lease(1)).unwrap();
+        let later: Vec<_> = (10..30).map(lease).collect();
+        learn(&conn, "p", &later).unwrap();
+        learn(&conn, "q", &[lease(99)]).unwrap();
+
+        let kept = addresses_of(&conn, "p").unwrap();
+        assert_eq!(kept.len(), 8);
+        assert_eq!(kept[0], lease(1), "the one that worked stays, first");
+        assert!(kept.contains(&lease(29)), "the newest heard of are kept");
+        assert!(!kept.contains(&lease(2)), "the oldest unproven one goes");
+        assert_eq!(addresses_of(&conn, "q").unwrap(), [lease(99)]);
     }
 
     #[test]

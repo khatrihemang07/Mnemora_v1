@@ -38,6 +38,8 @@ pub(super) enum ConnCmd {
 #[derive(Debug)]
 pub(super) struct RoundDone {
     pub peer: String,
+    /// Records the session stored.
+    pub received: usize,
 }
 
 pub(super) struct Conn {
@@ -120,6 +122,7 @@ impl Conn {
         });
         let _ = self.done.send(RoundDone {
             peer: self.peer.clone(),
+            received,
         });
         Ok(())
     }
