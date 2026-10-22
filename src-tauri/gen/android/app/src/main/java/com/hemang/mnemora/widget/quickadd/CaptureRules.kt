@@ -115,9 +115,11 @@ object CaptureRules {
     private val MARKS = Regex("\\p{M}")
     private val FOLD_EXTRA = mapOf('đ' to "d", 'ø' to "o", 'ł' to "l", 'ı' to "i")
 
-    // Java's \s is ASCII only unless (?U) says otherwise; JavaScript's is Unicode white space.
-    private val HASH_AT_END = Regex("(?U)(^|\\s)#([\\p{L}\\p{N}_-]*)\\z")
-    private val SPACE = Regex("(?U)\\s")
+    // JavaScript's \s, spelled out: Java's \s is ASCII only, Android's (ICU) is Unicode, and neither
+    // accepts the other's flags, so one explicit class keeps the JVM test and the phone alike.
+    private const val JS_SPACE = "\\t\\n\\u000B\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff"
+    private val HASH_AT_END = Regex("(^|[$JS_SPACE])#([\\p{L}\\p{N}_-]*)\\z")
+    private val SPACE = Regex("[$JS_SPACE]")
 
     /** Lowercase with accents removed, as Rust folds a List name. */
     fun foldTag(s: String): String {

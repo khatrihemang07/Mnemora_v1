@@ -44,4 +44,20 @@
     <string name="widget_steps_tick_all">Tick all and complete</string>
     <string name="widget_steps_complete">Complete</string>
     <string name="widget_steps_cancel">Cancel</string>
+    <string name="widget_add_task">Add a task\u2026</string>
+    <string name="widget_add_task_description">Add a Task</string>
+    <string name="widget_quick_add_hint">Quick add</string>
+    <string name="widget_quick_add_notes_hint">Notes (Markdown). - [ ] adds a checklist item</string>
+    <string name="widget_quick_add_add">Add</string>
+    <string name="widget_quick_add_notes">Notes</string>
+    <string name="widget_quick_add_inbox">Inbox</string>
+    <string name="widget_quick_add_priority">Priority</string>
+    <string name="widget_quick_add_use_instead">use instead</string>
+    <string name="widget_quick_add_keep_as_text">Keep \u201C%1$s\u201D as text</string>
+    <string name="widget_quick_add_new_list">New list \u201C%1$s\u201D</string>
+    <string name="widget_quick_add_failed">Couldn\'t add the Task</string>
+    <string name="widget_quick_add_priority_1">Priority 1</string>
+    <string name="widget_quick_add_priority_2">Priority 2</string>
+    <string name="widget_quick_add_priority_3">Priority 3</string>
+    <string name="widget_quick_add_priority_4">No priority</string>
 </resources>

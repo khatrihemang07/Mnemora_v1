@@ -75,6 +75,16 @@
             android:taskAffinity="${applicationId}.widgetdialog"
             android:theme="@style/Theme.TodoWidgetDialog" />
 
+        <!-- Quick add over home (ADR 0016): a translucent bottom sheet in its own task, kept out of
+             Recents, never started by anything but the Todo widget. The keyboard opens with it. -->
+        <activity
+            android:name=".widget.quickadd.QuickAddActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.quickadd"
+            android:theme="@style/Theme.TodoWidgetDialog"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize" />
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"

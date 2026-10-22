@@ -6,12 +6,14 @@ import android.content.Intent
 import android.appwidget.AppWidgetManager
 import android.content.res.ColorStateList
 import android.content.res.Configuration
+import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
 import androidx.annotation.RequiresApi
 import com.hemang.mnemora.BuildConfig
 import com.hemang.mnemora.MainActivity
 import com.hemang.mnemora.R
+import com.hemang.mnemora.widget.quickadd.QuickAddActivity
 
 /** Turns a bridge [Reply] into the RemoteViews the home screen shows. Android 12+ only (ADR 0015). */
 @RequiresApi(31)
@@ -25,6 +27,54 @@ object WidgetRenderer {
             Configuration.UI_MODE_NIGHT_YES
 
     /**
+     * What the home screen gets for a real widget: the card at 3x2 and up, an "Add a task..." pill
+     * from 100 dp wide and a plain + below that. The system picks one by the widget's size (see
+     * [SizeMode]), so a resize needs no redraw.
+     */
+    fun responsive(context: Context, reply: Reply, config: WidgetConfig, appWidgetId: Int): RemoteViews {
+        val sizes = LinkedHashMap<SizeF, RemoteViews>()
+        for (b in SizeMode.BREAKPOINTS) {
+            sizes[SizeF(b.widthDp, b.heightDp)] = when (b.mode) {
+                SizeMode.LIST -> render(context, reply, config, appWidgetId)
+                SizeMode.PILL, SizeMode.PLUS -> addButton(context, reply, config, appWidgetId, b.mode)
+            }
+        }
+        return RemoteViews(sizes)
+    }
+
+    /** The look a widget wears: its Theme setting, with "Same as app" read from the last reply. */
+    private fun lookOf(context: Context, reply: Reply, config: WidgetConfig): Look {
+        // The app's theme is known from a reply; failures use the last one seen.
+        val appTheme = (reply as? Reply.Ok)?.snapshot?.appTheme ?: WidgetConfigStore.appTheme(context)
+        return WidgetTheme.resolve(config.theme, appTheme, phoneNight(context))
+    }
+
+    /** The card's fill: the theme's surface, a faint wash when there is no background. */
+    private fun surfaceOf(palette: Palette, look: Look, background: Background): Int =
+        if (background == Background.NONE) Palette.scrim(look) else Palette.withAlpha(palette.background, background.alpha)
+
+    /** The pill or the plus: one tap opens the Quick add sheet for the widget's view. */
+    private fun addButton(context: Context, reply: Reply, config: WidgetConfig, appWidgetId: Int, mode: SizeMode): RemoteViews {
+        val look = lookOf(context, reply, config)
+        val palette = Palette.from(context, look, config.background)
+        val pill = mode == SizeMode.PILL
+        val views = RemoteViews(context.packageName, if (pill) R.layout.widget_add_pill else R.layout.widget_add_plus)
+        views.setColorStateList(R.id.root, "setBackgroundTintList", ColorStateList.valueOf(surfaceOf(palette, look, config.background)))
+        views.setColorStateList(R.id.add_icon, "setImageTintList", ColorStateList.valueOf(palette.todo))
+        if (pill) {
+            val field = if (config.background == Background.NONE) Palette.scrim(look) else palette.surface2
+            views.setColorStateList(R.id.add_field, "setBackgroundTintList", ColorStateList.valueOf(field))
+            views.setTextColor(R.id.add_label, palette.muted)
+        }
+        views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
+        views.setContentDescription(R.id.root, context.getString(R.string.widget_add_task_description))
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            views.setOnClickPendingIntent(R.id.root, QuickAddActivity.pending(context, config.view, appWidgetId))
+        }
+        return views
+    }
+
+    /**
      * Draws [reply] for the widget [appWidgetId] as its [config] says. The same function draws the
      * setup screen's preview, so what you pick is what you get.
      */
@@ -35,15 +85,12 @@ object WidgetRenderer {
         appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID,
         previewLines: Int? = null,
     ): RemoteViews {
-        // The app's theme is known from a reply; failures use the last one seen.
-        val appTheme = (reply as? Reply.Ok)?.snapshot?.appTheme ?: WidgetConfigStore.appTheme(context)
-        val look = WidgetTheme.resolve(config.theme, appTheme, phoneNight(context))
+        val look = lookOf(context, reply, config)
         val palette = Palette.from(context, look, config.background)
         val edge = TextEdge.of(config.background, look)
         val views = RemoteViews(context.packageName, edge.card)
         // With no background a faint wash still sits behind the text, so it reads on any wallpaper.
-        val surface = if (config.background == Background.NONE) Palette.scrim(look) else Palette.withAlpha(palette.background, config.background.alpha)
-        views.setColorStateList(R.id.root, "setBackgroundTintList", ColorStateList.valueOf(surface))
+        views.setColorStateList(R.id.root, "setBackgroundTintList", ColorStateList.valueOf(surfaceOf(palette, look, config.background)))
         val open = openApp(context)
         views.setOnClickPendingIntent(R.id.root, open)
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
@@ -169,6 +216,11 @@ object WidgetRenderer {
         views.setViewVisibility(R.id.header, View.VISIBLE)
         views.setColorStateList(R.id.gear, "setImageTintList", ColorStateList.valueOf(palette.faint))
         gearClick(context, views, R.id.gear, appWidgetId)
+        // The teal + sits right beside the gear and opens Quick add for this view.
+        views.setColorStateList(R.id.add, "setImageTintList", ColorStateList.valueOf(palette.todo))
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            views.setOnClickPendingIntent(R.id.add, QuickAddActivity.pending(context, snapshot.view, appWidgetId))
+        }
         views.setOnClickPendingIntent(R.id.header, linkIntent(context, WidgetLinks.build(snapshot.view), appWidgetId))
         views.setColorStateList(R.id.chip, "setBackgroundTintList", ColorStateList.valueOf(Palette.withAlpha(palette.todo, 0.16f)))
         views.setColorStateList(R.id.chip_icon, "setImageTintList", ColorStateList.valueOf(palette.todo))

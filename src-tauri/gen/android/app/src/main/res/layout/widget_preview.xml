@@ -63,6 +63,14 @@
             android:layout_weight="1" />
 
         <ImageView
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:importantForAccessibility="no"
+            android:padding="7dp"
+            android:src="@drawable/widget_plus"
+            android:tint="@color/widget_todo" />
+
+        <ImageView
             android:layout_width="30dp"
             android:layout_height="30dp"
             android:importantForAccessibility="no"

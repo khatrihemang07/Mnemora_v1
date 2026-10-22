@@ -111,7 +111,7 @@ object WidgetUpdater {
                 ReplyParser.parse(WidgetBridge.call(context, WidgetRequests.snapshot(config.view, now, zone)))
             }
             (reply as? Reply.Ok)?.let { WidgetConfigStore.rememberAppTheme(context, it.snapshot.appTheme) }
-            manager.updateAppWidget(id, WidgetRenderer.render(context, reply, config, id))
+            manager.updateAppWidget(id, WidgetRenderer.responsive(context, reply, config, id))
         }
         armMidnight(context, zone)
     }
