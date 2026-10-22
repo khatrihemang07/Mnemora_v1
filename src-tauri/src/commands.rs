@@ -187,6 +187,22 @@ mod tests {
     }
 
     #[test]
+    fn saving_a_preference_leaves_a_setting_record() {
+        let app = TestApp::new();
+        save_theme(&app, json!("dark")).unwrap();
+        let (id, snapshot): (String, String) = app.with_db(|c| {
+            c.query_row(
+                "SELECT entity_id, snapshot FROM change_log WHERE entity = 'setting'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        });
+        assert_eq!(id, "core.theme");
+        assert!(snapshot.contains("\"dark\""));
+    }
+
+    #[test]
     fn settings_get_all_returns_defaults_and_schema() {
         let app = TestApp::new();
         let snapshot: Value = app.invoke("settings_get_all", json!({})).unwrap();

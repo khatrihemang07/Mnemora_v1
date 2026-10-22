@@ -73,6 +73,42 @@ pub fn insert(conn: &Connection, t: &Task) -> AppResult<()> {
     Ok(())
 }
 
+/// Inserts an occurrence copy, or, when its derived id already exists (a reopened occurrence being
+/// completed again), rewrites that row and clears its deletion. Returns whether the row was there.
+pub fn upsert_occurrence(conn: &Connection, t: &Task) -> AppResult<bool> {
+    let existed = conn
+        .query_row(
+            "SELECT 1 FROM todo_tasks WHERE id = ?1",
+            [&t.id],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if existed {
+        conn.execute(
+            "UPDATE todo_tasks SET list_id = ?2, title = ?3, notes = ?4, due_date = ?5,
+                 due_time = ?6, priority = ?7, state = 'done', closed_at = ?8, sort_key = ?9,
+                 updated_at = MAX(?10, updated_at + 1), deleted_at = NULL
+             WHERE id = ?1",
+            params![
+                t.id,
+                t.list_id,
+                t.title,
+                t.notes,
+                t.due_date,
+                t.due_time,
+                t.priority,
+                t.closed_at,
+                t.sort_key,
+                t.updated_at
+            ],
+        )?;
+    } else {
+        insert(conn, t)?;
+    }
+    Ok(existed)
+}
+
 /// A live (not deleted) Task.
 pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Task>> {
     conn.query_row(
@@ -232,16 +268,18 @@ pub fn update_notes_and_due(conn: &Connection, t: &Task) -> AppResult<()> {
     Ok(())
 }
 
-/// Gives the Comments of one Task to another, and returns their ids (deleted ones too: they come
-/// back with Undo).
-pub fn move_comments(conn: &Connection, from: &str, to: &str) -> AppResult<Vec<String>> {
+/// Gives the Comments of one Task to another and stamps their `updated_at` (at least a
+/// millisecond past what it was, so the move always reads as newer). Returns their ids (deleted
+/// ones too: they come back with Undo).
+pub fn move_comments(conn: &Connection, from: &str, to: &str, now: i64) -> AppResult<Vec<String>> {
     let mut stmt = conn.prepare("SELECT id FROM todo_comments WHERE task_id = ?1 ORDER BY id")?;
     let ids: Vec<String> = stmt
         .query_map([from], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
     conn.execute(
-        "UPDATE todo_comments SET task_id = ?2 WHERE task_id = ?1",
-        params![from, to],
+        "UPDATE todo_comments SET task_id = ?2, updated_at = MAX(?3, updated_at + 1)
+         WHERE task_id = ?1",
+        params![from, to, now],
     )?;
     Ok(ids)
 }
@@ -252,7 +290,7 @@ pub fn latest_occurrence(conn: &Connection, task_id: &str) -> AppResult<Option<T
         &format!(
             "SELECT {COLUMNS} FROM todo_tasks
              WHERE repeat_of = ?1 AND state = 'done' AND deleted_at IS NULL
-             ORDER BY closed_at DESC, id DESC LIMIT 1"
+             ORDER BY closed_at DESC, due_date DESC, id DESC LIMIT 1"
         ),
         [task_id],
         from_row,
@@ -408,24 +446,6 @@ pub fn update_quick(conn: &Connection, t: &Task) -> AppResult<()> {
             t.updated_at
         ],
     )?;
-    Ok(())
-}
-
-/// Ids of Tasks deleted before `cutoff` (UTC milliseconds).
-pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT id FROM todo_tasks WHERE deleted_at < ?1 ORDER BY id")?;
-    Ok(stmt
-        .query_map([cutoff], |r| r.get(0))?
-        .collect::<Result<_, _>>()?)
-}
-
-/// Erases a Task row for good. Its occurrences stay, as plain done Tasks.
-pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
-    conn.execute(
-        "UPDATE todo_tasks SET repeat_of = NULL WHERE repeat_of = ?1",
-        [id],
-    )?;
-    conn.execute("DELETE FROM todo_tasks WHERE id = ?1", [id])?;
     Ok(())
 }
 

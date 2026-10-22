@@ -77,22 +77,6 @@ pub fn set_deleted_at(conn: &Connection, id: &str, at: Option<i64>, now: i64) ->
     Ok(())
 }
 
-/// Ids of Entries soft-deleted before `cutoff`.
-pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT id FROM journal_entries WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
-    )?;
-    Ok(stmt
-        .query_map([cutoff], |r| r.get(0))?
-        .collect::<Result<_, _>>()?)
-}
-
-/// Permanently removes the Entry.
-pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
-    conn.execute("DELETE FROM journal_entries WHERE id = ?1", [id])?;
-    Ok(())
-}
-
 /// Writes the body and the fields an update changes.
 pub fn update_body(conn: &Connection, e: &Entry) -> AppResult<()> {
     conn.execute(

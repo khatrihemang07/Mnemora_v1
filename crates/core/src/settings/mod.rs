@@ -13,6 +13,7 @@ use specta::Type;
 
 pub use schema::{JsonValue, SettingDef, SettingSchema, SettingsRegistry, Validator, validate};
 
+use crate::changelog::{self, Change, ChangeOp};
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::events::{EventBus, SettingsChanged};
 use crate::util::now_ms;
@@ -37,14 +38,40 @@ pub struct SettingsSnapshot {
     pub schema: Vec<SettingSchema>,
 }
 
+/// Change-log entity of a Preference; its id is the full `module.key`.
+pub const ENTITY: &str = "setting";
+
+/// Records a Preference as it now stands (ADR 0008). Every write to the `settings` table is
+/// followed by this, in the same transaction, so a sync sees it.
+pub fn record(conn: &Connection, module: &str, key: &str, value: &Value, at: i64) -> AppResult<()> {
+    changelog::record(
+        conn,
+        &Change {
+            module: module.to_owned(),
+            entity: ENTITY.to_owned(),
+            entity_id: format!("{module}.{key}"),
+            op: ChangeOp::Update,
+            session_id: None,
+            snapshot: serde_json::json!({
+                "module": module, "key": key, "value": value, "updated_at": at,
+            }),
+        },
+    )
+}
+
 /// Saves `value` for `module.key` only when nothing is saved for it yet; true when it wrote.
 /// For Modules pinning a value at upgrade time, so a new registered default cannot reach
-/// existing installs. The value is trusted: it is not validated and announces no event.
+/// existing installs. The value is trusted: it is not validated and announces no event. A write
+/// is recorded in the change log like any other.
 pub fn save_if_unset(conn: &Connection, module: &str, key: &str, value: &Value) -> AppResult<bool> {
+    let at = now_ms();
     let written = conn.execute(
         "INSERT OR IGNORE INTO settings(module, key, value, updated_at) VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![module, key, value.to_string(), now_ms()],
+        rusqlite::params![module, key, value.to_string(), at],
     )?;
+    if written > 0 {
+        record(conn, module, key, value, at)?;
+    }
     Ok(written > 0)
 }
 
@@ -135,13 +162,9 @@ impl SettingsStore {
             if !keys.contains(&def.key.as_str()) {
                 keys.push(def.key.as_str());
             }
-            rows.push((
-                def.module.as_str(),
-                def.key.as_str(),
-                change.value.to_string(),
-            ));
+            rows.push((def.module.as_str(), def.key.as_str(), change.value.clone()));
             if change.key == "core.phone_tabs" {
-                rows.push(("core", "phone_tabs_edited", "true".to_owned()));
+                rows.push(("core", "phone_tabs_edited", Value::Bool(true)));
             }
         }
 
@@ -153,8 +176,9 @@ impl SettingsStore {
                  ON CONFLICT(module, key) DO UPDATE
                  SET value = excluded.value, updated_at = excluded.updated_at",
             )?;
-            for (module, key, json) in &rows {
-                upsert.execute(rusqlite::params![module, key, json, now])?;
+            for (module, key, value) in &rows {
+                upsert.execute(rusqlite::params![module, key, value.to_string(), now])?;
+                record(&tx, module, key, value, now)?;
             }
         }
         tx.commit()?;
@@ -242,6 +266,23 @@ mod tests {
             f.store.get_all(&f.conn).unwrap().values["core.phone_tabs"],
             json!(["home"])
         );
+    }
+
+    #[test]
+    fn save_if_unset_records_only_when_it_writes() {
+        let f = fixture();
+        let records = |f: &Fixture| -> i64 {
+            f.conn
+                .query_row(
+                    "SELECT COUNT(*) FROM change_log WHERE entity = 'setting' AND entity_id = 'core.phone_tabs'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        save_if_unset(&f.conn, "core", "phone_tabs", &json!(["home"])).unwrap();
+        save_if_unset(&f.conn, "core", "phone_tabs", &json!(["a"])).unwrap();
+        assert_eq!(records(&f), 1);
     }
 
     #[test]

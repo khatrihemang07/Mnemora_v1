@@ -14,7 +14,12 @@ use crate::{comment_repo, repo};
 /// Change-log entity name for Comments.
 pub(crate) const ENTITY: &str = "todo_comment";
 
-fn record(conn: &Connection, c: &Comment, op: ChangeOp, deleted_at: Option<i64>) -> AppResult<()> {
+pub(crate) fn record(
+    conn: &Connection,
+    c: &Comment,
+    op: ChangeOp,
+    deleted_at: Option<i64>,
+) -> AppResult<()> {
     let mut snapshot = serde_json::to_value(c).map_err(TodoError::Snapshot)?;
     if let Some(fields) = snapshot.as_object_mut() {
         fields.insert("deleted_at".into(), deleted_at.into());
@@ -67,8 +72,7 @@ pub fn edit_comment(conn: &mut Connection, id: &str, body: &str) -> AppResult<Co
         return Ok(comment);
     }
     body.clone_into(&mut comment.body);
-    // "Edited" is `updated_at` later than `created_at`: an edit in the same millisecond still counts.
-    comment.updated_at = now_ms().max(comment.created_at + 1);
+    comment.updated_at = now_ms().max(comment.updated_at + 1);
     comment.edited = true;
     comment_repo::update_body(&tx, &comment)?;
     record(&tx, &comment, ChangeOp::Update, None)?;
@@ -76,12 +80,14 @@ pub fn edit_comment(conn: &mut Connection, id: &str, body: &str) -> AppResult<Co
     Ok(comment)
 }
 
-/// Soft-deletes a Comment (erased after 30 days); `restore_comment` is Undo.
+/// Soft-deletes a Comment; `restore_comment` is Undo. The row stays for good: it is its own
+/// tombstone.
 pub fn delete_comment(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
-    let comment = comment_repo::get(&tx, id)?.ok_or(TodoError::CommentNotFound)?;
-    let now = now_ms();
-    comment_repo::set_deleted(&tx, id, Some(now))?;
+    let mut comment = comment_repo::get(&tx, id)?.ok_or(TodoError::CommentNotFound)?;
+    let now = now_ms().max(comment.updated_at + 1);
+    comment_repo::set_deleted(&tx, id, Some(now), now)?;
+    comment.updated_at = now;
     record(&tx, &comment, ChangeOp::Delete, Some(now))?;
     tx.commit()?;
     Ok(())
@@ -90,12 +96,14 @@ pub fn delete_comment(conn: &mut Connection, id: &str) -> AppResult<()> {
 /// Brings a deleted Comment back, where it was.
 pub fn restore_comment(conn: &mut Connection, id: &str) -> AppResult<Comment> {
     let tx = conn.transaction()?;
-    let (comment, deleted_at) =
+    let (mut comment, deleted_at) =
         comment_repo::get_any(&tx, id)?.ok_or(TodoError::CommentNotFound)?;
-    if deleted_at.is_none() {
+    let Some(deleted_at) = deleted_at else {
         return Err(TodoError::Validation("That comment isn't deleted").into());
-    }
-    comment_repo::set_deleted(&tx, id, None)?;
+    };
+    let now = now_ms().max(deleted_at + 1);
+    comment_repo::set_deleted(&tx, id, None, now)?;
+    comment.updated_at = now;
     record(&tx, &comment, ChangeOp::Restore, None)?;
     tx.commit()?;
     Ok(comment)

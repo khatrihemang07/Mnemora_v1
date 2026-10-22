@@ -628,44 +628,23 @@ mod tests {
     }
 
     #[test]
-    fn purge_removes_only_entries_deleted_over_30_days_ago_and_their_history() {
+    fn an_entry_deleted_over_30_days_ago_survives_a_restart_with_its_history() {
         let app = TestApp::new();
         let old = create(&app, "2026-10-18", "old").unwrap();
-        let recent = create(&app, "2026-10-19", "recent").unwrap();
-        let live = create(&app, "2026-10-20", "live").unwrap();
-        for e in [&old, &recent] {
-            delete(&app, &e["id"]).unwrap();
-        }
+        delete(&app, &old["id"]).unwrap();
         deleted_days_ago(&app, &old["id"], 31);
-        deleted_days_ago(&app, &recent["id"], 29);
+        let log_before = row_count(&app, "change_log");
 
-        // The startup hook is what the app runs; it purges through the Module contract.
+        // The startup hook is what the app runs.
         app.with_db_mut(|c| {
             mnemora_journal::JournalModule
                 .on_startup(c, &MigrationReport::default())
                 .unwrap();
         });
 
-        assert_eq!(row_count(&app, "journal_entries"), 2);
-        let logged: Vec<String> = app.with_db(|c| {
-            let mut stmt = c
-                .prepare("SELECT DISTINCT entity_id FROM change_log ORDER BY entity_id")
-                .unwrap();
-            stmt.query_map([], |r| r.get(0))
-                .unwrap()
-                .map(Result::unwrap)
-                .collect()
-        });
-        assert!(!logged.contains(&old["id"].as_str().unwrap().to_owned()));
-        assert!(logged.contains(&recent["id"].as_str().unwrap().to_owned()));
-        assert!(logged.contains(&live["id"].as_str().unwrap().to_owned()));
-
-        // The recently deleted one can still be undone; a second purge finds nothing.
-        restore(&app, &recent["id"]).unwrap();
-        assert_eq!(
-            app.with_db_mut(|c| mnemora_journal::purge_deleted(c).unwrap()),
-            0
-        );
+        assert_eq!(row_count(&app, "journal_entries"), 1);
+        assert_eq!(row_count(&app, "change_log"), log_before);
+        assert!(restore(&app, &old["id"]).is_ok(), "Undo still works");
     }
 
     fn move_to(app: &TestApp, id: &Value, date: &str) -> Result<Value, Value> {
@@ -1199,20 +1178,6 @@ mod tests {
         let t = create(&app, "2026-10-20", "- [ ] tulip").unwrap();
         toggle(&app, &t["id"], 0).unwrap();
         assert_eq!(found(&app, "tulip", "exact"), ["- [x] tulip"]);
-    }
-
-    #[test]
-    fn purging_removes_the_entry_from_the_index_and_vocabulary() {
-        let app = TestApp::new();
-        let e = create(&app, "2026-10-20", "ephemeral thought").unwrap();
-        delete(&app, &e["id"]).unwrap();
-        deleted_days_ago(&app, &e["id"], 31);
-        app.with_db_mut(|c| mnemora_journal::purge_deleted(c).unwrap());
-        let terms: i64 = app.with_db(|c| {
-            c.query_row("SELECT COUNT(*) FROM journal_fts_vocab", [], |r| r.get(0))
-                .unwrap()
-        });
-        assert_eq!(terms, 0);
     }
 
     fn spans(app: &TestApp, query: &str) -> Vec<(String, bool)> {

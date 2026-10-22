@@ -175,21 +175,3 @@ pub fn set_deleted(
     )?;
     Ok(())
 }
-
-/// Ids of Lists deleted before `cutoff` (UTC milliseconds).
-pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT id FROM todo_lists WHERE deleted_at < ?1 ORDER BY id")?;
-    Ok(stmt
-        .query_map([cutoff], |r| r.get(0))?
-        .collect::<Result<_, _>>()?)
-}
-
-/// Erases a List row for good; any Task still pointing at it goes to the Inbox.
-pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
-    conn.execute(
-        "UPDATE todo_tasks SET list_id = NULL WHERE list_id = ?1",
-        [id],
-    )?;
-    conn.execute("DELETE FROM todo_lists WHERE id = ?1", [id])?;
-    Ok(())
-}

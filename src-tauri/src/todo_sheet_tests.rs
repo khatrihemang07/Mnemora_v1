@@ -3,7 +3,7 @@
 
 use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::module::Module;
-use mnemora_todo::{TodoModule, purge_deleted};
+use mnemora_todo::TodoModule;
 use serde_json::{Value, json};
 
 use crate::test_support::{TestApp, close_all_on, inbox_tasks_of, tasks_of};
@@ -502,136 +502,46 @@ fn age(app: &TestApp, table: &str, id: &Value, days: i64) {
 }
 
 #[test]
-fn purge_erases_what_was_deleted_over_thirty_days_ago_with_its_change_log() {
+fn what_was_deleted_over_thirty_days_ago_survives_a_restart_with_its_change_log() {
     let app = TestApp::new();
-    let old = create(&app, "old");
-    let fresh = create(&app, "fresh");
-    let live = create(&app, "live");
-    let old_list: Value = app
+    let task = create(&app, "old");
+    let list: Value = app
         .invoke("todo_list_create", json!({ "name": "Old" }))
         .unwrap();
-    let fresh_list: Value = app
-        .invoke("todo_list_create", json!({ "name": "Fresh" }))
-        .unwrap();
-    let on_old = app
+    let comment = app
         .invoke::<Value>(
             "todo_comment_add",
-            json!({ "taskId": old["id"], "body": "bye" }),
+            json!({ "taskId": create(&app, "host")["id"], "body": "gone" }),
         )
         .unwrap();
-    let on_live_old = app
-        .invoke::<Value>(
-            "todo_comment_add",
-            json!({ "taskId": live["id"], "body": "gone" }),
-        )
+    app.invoke::<()>("todo_task_delete", json!({ "id": task["id"] }))
         .unwrap();
-    let on_live_kept = app
-        .invoke::<Value>(
-            "todo_comment_add",
-            json!({ "taskId": live["id"], "body": "kept" }),
-        )
+    app.invoke::<Value>(
+        "todo_list_delete",
+        json!({ "id": list["id"], "choice": { "kind": "move_to_inbox" } }),
+    )
+    .unwrap();
+    app.invoke::<()>("todo_comment_delete", json!({ "id": comment["id"] }))
         .unwrap();
-    for id in [&old["id"], &fresh["id"]] {
-        app.invoke::<()>("todo_task_delete", json!({ "id": id }))
-            .unwrap();
-    }
-    for id in [&old_list["id"], &fresh_list["id"]] {
-        app.invoke::<Value>(
-            "todo_list_delete",
-            json!({ "id": id, "choice": { "kind": "move_to_inbox" } }),
-        )
-        .unwrap();
-    }
-    app.invoke::<()>("todo_comment_delete", json!({ "id": on_live_old["id"] }))
-        .unwrap();
-    app.invoke::<()>("todo_comment_delete", json!({ "id": on_live_kept["id"] }))
-        .unwrap();
-    // Old enough: a Task, a List and one Comment. Deleted a day ago: the others.
-    age(&app, "todo_tasks", &old["id"], 31);
-    age(&app, "todo_tasks", &fresh["id"], 1);
-    age(&app, "todo_lists", &old_list["id"], 31);
-    age(&app, "todo_lists", &fresh_list["id"], 1);
-    age(&app, "todo_comments", &on_live_old["id"], 31);
-    age(&app, "todo_comments", &on_live_kept["id"], 1);
+    age(&app, "todo_tasks", &task["id"], 31);
+    age(&app, "todo_lists", &list["id"], 31);
+    age(&app, "todo_comments", &comment["id"], 31);
+    let log_before = log_len(&app);
 
-    let purged = app.with_db_mut(|c| purge_deleted(c).unwrap());
-    assert_eq!((purged.tasks, purged.lists, purged.comments), (1, 1, 2));
-
-    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_tasks"), 2);
-    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_lists"), 1);
-    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_comments"), 1);
-    let rows = |entity: &str, id: &Value| {
-        count(
-            &app,
-            &format!(
-                "SELECT COUNT(*) FROM change_log WHERE entity = '{entity}' AND entity_id = '{}'",
-                id.as_str().unwrap()
-            ),
-        )
-    };
-    assert_eq!(
-        rows("todo_task", &old["id"]),
-        0,
-        "the purged Task's records go with it"
-    );
-    assert_eq!(rows("todo_list", &old_list["id"]), 0);
-    assert_eq!(
-        rows("todo_comment", &on_old["id"]),
-        0,
-        "a Task takes its Comments along"
-    );
-    assert_eq!(rows("todo_comment", &on_live_old["id"]), 0);
-    assert!(rows("todo_task", &fresh["id"]) > 0);
-    assert!(rows("todo_list", &fresh_list["id"]) > 0);
-    assert!(rows("todo_comment", &on_live_kept["id"]) > 0);
-    assert!(rows("todo_task", &live["id"]) > 0);
-
-    // Nothing is left to erase the next time.
-    let again = app.with_db_mut(|c| purge_deleted(c).unwrap());
-    assert_eq!((again.tasks, again.lists, again.comments), (0, 0, 0));
-}
-
-#[test]
-fn the_modules_startup_hook_purges() {
-    let app = TestApp::new();
-    let old = create(&app, "old");
-    let kept = create(&app, "kept");
-    app.invoke::<()>("todo_task_delete", json!({ "id": old["id"] }))
-        .unwrap();
-    age(&app, "todo_tasks", &old["id"], 31);
     app.with_db_mut(|c| {
         TodoModule
             .on_startup(c, &MigrationReport::default())
             .unwrap();
     });
-    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_tasks"), 1);
-    assert_eq!(inbox(&app), ["kept"]);
-    let _ = kept;
-}
 
-#[test]
-fn purging_a_repeating_task_keeps_its_occurrences_in_done() {
-    let app = TestApp::new();
-    let r = dated(&app, "r", TODAY, None);
-    app.invoke::<Value>(
-        "todo_task_set_when",
-        json!({ "id": r["id"], "date": TODAY, "time": null, "local": local(TODAY),
-                "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" } }),
-    )
-    .unwrap();
-    complete(&app, &r).unwrap();
-    app.invoke::<()>("todo_task_delete", json!({ "id": r["id"] }))
+    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_tasks"), 2);
+    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_lists"), 1);
+    assert_eq!(count(&app, "SELECT COUNT(*) FROM todo_comments"), 1);
+    assert_eq!(log_len(&app), log_before, "no record is erased");
+    let back: Value = app
+        .invoke("todo_task_restore", json!({ "id": task["id"] }))
         .unwrap();
-    age(&app, "todo_tasks", &r["id"], 31);
-    app.with_db_mut(|c| purge_deleted(c).unwrap());
-    let done: Value = app
-        .invoke(
-            "todo_done",
-            json!({ "before": null, "days": 7, "local": local(TODAY) }),
-        )
-        .unwrap();
-    assert_eq!(titles(&done["days"][0]["tasks"]), ["r"]);
-    assert_eq!(done["days"][0]["tasks"][0]["repeat_of"], Value::Null);
+    assert_eq!(back["title"], "old", "the old deletion can still be undone");
 }
 
 // ---------------------------------------------------------------- Comments
@@ -787,6 +697,103 @@ fn comments_move_with_the_occurrence_and_the_counts_follow() {
         .unwrap();
     assert_eq!(back["comment_count"], 3);
     assert_eq!(bodies(&app, &r), ["one", "two", "for the next one"]);
+}
+
+/// The Task's `updated_at` values of a Comment, from the table.
+fn comment_updated_at(app: &TestApp, id: &Value) -> i64 {
+    count(
+        app,
+        &format!(
+            "SELECT updated_at FROM todo_comments WHERE id = '{}'",
+            id.as_str().unwrap()
+        ),
+    )
+}
+
+/// Makes `r` a daily repeating Task due today.
+fn repeating(app: &TestApp, title: &str) -> Value {
+    let r = dated(app, title, TODAY, None);
+    app.invoke::<Value>(
+        "todo_task_set_when",
+        json!({ "id": r["id"], "date": TODAY, "time": null, "local": local(TODAY),
+                "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" } }),
+    )
+    .unwrap()
+}
+
+#[test]
+fn completing_the_same_occurrence_again_after_a_reopen_reuses_its_row() {
+    let app = TestApp::new();
+    let r = repeating(&app, "r");
+    comment(&app, &r, "one");
+    let first = complete(&app, &r).unwrap();
+    let id = first["occurrence"]["id"].clone();
+    app.invoke::<Value>("todo_task_reopen", json!({ "id": id }))
+        .unwrap();
+    let again = complete(&app, &r).unwrap();
+
+    assert_eq!(again["occurrence"]["id"], id, "one occurrence, one id");
+    assert_eq!(
+        count(
+            &app,
+            "SELECT COUNT(*) FROM todo_tasks WHERE repeat_of IS NOT NULL"
+        ),
+        1
+    );
+    assert_eq!(
+        count(
+            &app,
+            "SELECT COUNT(*) FROM todo_tasks WHERE deleted_at IS NOT NULL"
+        ),
+        0,
+        "the deletion is cleared"
+    );
+    assert_eq!(again["occurrence"]["comment_count"], 1);
+    assert_eq!(bodies(&app, &again["occurrence"]), ["one"]);
+}
+
+#[test]
+fn deleting_a_comment_and_completing_with_comments_record_and_stamp_them() {
+    let app = TestApp::new();
+    let r = repeating(&app, "r");
+    let gone = comment(&app, &r, "gone");
+    let moved = comment(&app, &r, "moved");
+    let comment_records = |app: &TestApp| {
+        log(app)
+            .into_iter()
+            .filter(|(_, e)| e == "todo_comment")
+            .map(|(op, _)| op)
+            .collect::<Vec<_>>()
+    };
+
+    let before = comment_updated_at(&app, &gone["id"]);
+    app.invoke::<()>("todo_comment_delete", json!({ "id": gone["id"] }))
+        .unwrap();
+    assert!(comment_updated_at(&app, &gone["id"]) > before);
+    assert_eq!(comment_records(&app), ["create", "create", "delete"]);
+
+    let before = comment_updated_at(&app, &moved["id"]);
+    complete(&app, &r).unwrap();
+    assert!(comment_updated_at(&app, &moved["id"]) > before);
+    let deleted_one = comment_updated_at(&app, &gone["id"]);
+    assert!(deleted_one > before - 1, "the deleted Comment moved too");
+    // Both Comments moved (the deleted one too: it comes back with Undo), each recorded.
+    assert_eq!(
+        comment_records(&app),
+        ["create", "create", "delete", "move", "move"]
+    );
+    let in_move: String = app.with_db(|c| {
+        c.query_row(
+            "SELECT snapshot FROM change_log WHERE op = 'move' ORDER BY rowid LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
+    });
+    assert!(
+        in_move.contains("\"body\""),
+        "a move carries the full state"
+    );
 }
 
 #[test]

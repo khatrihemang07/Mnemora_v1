@@ -26,7 +26,7 @@ pub use error::JournalError;
 pub use mnemora_core::search::Span;
 pub use search::{Hit, SearchResults, search};
 pub use service::{
-    create_entry, delete_entry, list_pages, month_days, move_entry, purge_deleted, restore_entry,
+    create_entry, delete_entry, list_pages, month_days, move_entry, restore_entry,
     toggle_task_line, update_entry,
 };
 pub use today::{TodayLatest, TodaySummary, today};
@@ -64,13 +64,6 @@ impl Module for JournalModule {
 
     fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
         upgrade::keep_existing_phone_tabs(conn, report)?;
-        match purge_deleted(conn)? {
-            0 => {}
-            n => tracing::info!(
-                entries = n,
-                "purged Journal Entries deleted over 30 days ago"
-            ),
-        }
         Ok(())
     }
 }

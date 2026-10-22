@@ -17,8 +17,6 @@ use crate::repo::{self, Window};
 
 /// Change-log entity name for Entries.
 const ENTITY: &str = "journal_entry";
-/// Deleted Entries are kept this long (for Undo and recovery), then erased for good.
-const PURGE_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// Most Pages one request may return.
 const MAX_PAGES: u32 = 100;
 /// Changes sooner than this after the written instant are typo fixes, not edits.
@@ -158,19 +156,6 @@ pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
     record(&tx, &entry, None, ChangeOp::Restore, None)?;
     tx.commit()?;
     Ok(entry)
-}
-
-/// Permanently removes Entries deleted over 30 days ago, with their change-log records, in one
-/// transaction. Returns how many Entries went. Run once at app start.
-pub fn purge_deleted(conn: &mut Connection) -> AppResult<usize> {
-    let tx = conn.transaction()?;
-    let ids = repo::deleted_before(&tx, now_ms() - PURGE_AFTER_MS)?;
-    for id in &ids {
-        repo::remove(&tx, id)?;
-    }
-    changelog::purge(&tx, ENTITY, &ids)?;
-    tx.commit()?;
-    Ok(ids.len())
 }
 
 /// Dates in the given month (`month` is 1-12) that hold live Entries, oldest first.

@@ -124,16 +124,6 @@ pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<R
     Ok(out)
 }
 
-/// Deletes all history of the given entities of one kind. Returns how many records went.
-pub fn purge(conn: &Connection, entity: &str, entity_ids: &[String]) -> AppResult<usize> {
-    let mut stmt = conn.prepare("DELETE FROM change_log WHERE entity = ?1 AND entity_id = ?2")?;
-    let mut removed = 0;
-    for id in entity_ids {
-        removed += stmt.execute([entity, id.as_str()])?;
-    }
-    Ok(removed)
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -220,25 +210,6 @@ mod tests {
         assert_eq!(seen, vec![json!({"v": 1}), json!({"v": 2})]);
         assert_eq!(read[1].session_id.as_deref(), Some("s1"));
         assert!(super::read(&conn, "entry", "nope").unwrap().is_empty());
-    }
-
-    #[test]
-    fn purge_removes_only_the_given_entities() {
-        let conn = migrated();
-        record(&conn, &change("e1", None, json!({}))).unwrap();
-        record(&conn, &change("e1", Some("s1"), json!({}))).unwrap();
-        record(&conn, &change("e2", None, json!({}))).unwrap();
-        record(&conn, &change("e3", None, json!({}))).unwrap();
-        let mut other_kind = change("e1", None, json!({}));
-        other_kind.entity = "tag".into();
-        record(&conn, &other_kind).unwrap();
-
-        let removed = purge(&conn, "entry", &["e1".into(), "e2".into()]).unwrap();
-        assert_eq!(removed, 3);
-        let left: i64 = conn
-            .query_row("SELECT COUNT(*) FROM change_log", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(left, 2, "e3 and the other entity kind survive");
     }
 
     #[test]

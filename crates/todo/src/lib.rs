@@ -73,9 +73,7 @@ pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use steps::{open_steps, tick_all_steps};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
-pub use task_service::{
-    Purged, delete_task, purge_deleted, restore_task, set_priority, task, update_task, wont_do,
-};
+pub use task_service::{delete_task, restore_task, set_priority, task, update_task, wont_do};
 pub use when::{LocalNow, NewWhen};
 pub use widget::{
     EmptyState, HeaderCount, Tone, WidgetGroup, WidgetList, WidgetLists, WidgetRow, WidgetSnapshot,
@@ -118,15 +116,6 @@ impl Module for TodoModule {
 
     fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
         upgrade::append_todo_tab(conn, report)?;
-        let purged = purge_deleted(conn)?;
-        if purged.tasks + purged.lists + purged.comments > 0 {
-            tracing::info!(
-                tasks = purged.tasks,
-                lists = purged.lists,
-                comments = purged.comments,
-                "purged Todo items deleted over 30 days ago"
-            );
-        }
         Ok(())
     }
 }

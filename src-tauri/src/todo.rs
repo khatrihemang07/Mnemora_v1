@@ -997,7 +997,7 @@ mod tests {
             .unwrap();
         assert_eq!(deletion["deleted_task_ids"].as_array().unwrap().len(), 2);
         assert_eq!(deletion["moved_task_ids"].as_array().unwrap().len(), 0);
-        // Soft delete: the rows stay, flagged, so Undo and the 30-day purge can find them.
+        // Soft delete: the rows stay, flagged, so Undo can find them (nothing is ever erased).
         app.with_db(|c| {
             let n: i64 = c
                 .query_row(
@@ -1890,11 +1890,11 @@ mod tests {
             .unwrap();
         assert_eq!(comment_owner(&app, &c1), id);
         assert_eq!(comment_owner(&app, &late), id);
-        // The moves are logged by id, never by text.
+        // Each move is logged with the Comment's full state.
         let moves: i64 = app.with_db(|c| {
             c.query_row(
                 "SELECT COUNT(*) FROM change_log WHERE entity = 'todo_comment' AND op = 'move'
-                 AND snapshot NOT LIKE '%body%'",
+                 AND snapshot LIKE '%body%'",
                 [],
                 |r| r.get(0),
             )

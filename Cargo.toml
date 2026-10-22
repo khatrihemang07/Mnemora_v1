@@ -30,7 +30,7 @@ toml = "=1.1.8"
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["env-filter", "fmt", "std", "ansi", "registry"] }
 tracing-appender = "=0.2.5"
-uuid = { version = "=1.28.0", features = ["v7"] }
+uuid = { version = "=1.28.0", features = ["v5", "v7"] }
 whoami = "=2.1.3"
 tempfile = "=3.27.0"
 # JNI glue for the Todo widget (ADR 0014); Android only.

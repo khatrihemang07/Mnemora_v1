@@ -2,7 +2,7 @@
 
 use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::error::AppResult;
-use mnemora_core::settings::stored;
+use mnemora_core::settings::{record, stored};
 use mnemora_core::util::now_ms;
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -42,9 +42,11 @@ pub fn append_todo_tab(conn: &Connection, report: &MigrationReport) -> AppResult
         return Ok(());
     }
     tabs.push(json!(MODULE_ID));
+    let (tabs, at) = (Value::Array(tabs), now_ms());
     conn.execute(
         "UPDATE settings SET value = ?1, updated_at = ?2 WHERE module = 'core' AND key = 'phone_tabs'",
-        rusqlite::params![Value::Array(tabs).to_string(), now_ms()],
+        rusqlite::params![tabs.to_string(), at],
     )?;
+    record(conn, "core", "phone_tabs", &tabs, at)?;
     Ok(())
 }

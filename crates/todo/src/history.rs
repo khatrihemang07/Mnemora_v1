@@ -314,7 +314,7 @@ fn record_lines(
     Ok(out)
 }
 
-/// A Task's History, newest line first. Records of a Task that has been purged are gone with it.
+/// A Task's History, newest line first.
 pub fn task_history(conn: &Connection, id: &str) -> AppResult<Vec<HistoryLine>> {
     repo::get(conn, id)?.ok_or(TodoError::TaskNotFound)?;
     let records = changelog::read(conn, ENTITY, id)?;
