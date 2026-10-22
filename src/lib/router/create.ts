@@ -19,12 +19,13 @@ export function createAppRouter(manifests: ModuleManifest[]) {
   return {
     // A path may carry a query (`/todo?task=‹id›`). Landing on the page already open with a query
     // swaps the history entry instead of adding one, so Back does not walk through a no-op.
-    navigate: (path: RoutePath) => {
+    navigate: (path: RoutePath, options?: { replace?: boolean }) => {
       const { pathname, search } = splitPath(path);
       const here = router.route.pathname === pathname;
       if (here && !search) return Promise.resolve();
+      const replace = here || options?.replace === true;
       return withViewTransition(() =>
-        router.navigate(pathname, search ? { search, replace: here } : undefined),
+        router.navigate(pathname, search || replace ? { search, replace } : undefined),
       );
     },
     href: (path: RoutePath) => router.p(path),

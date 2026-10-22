@@ -40,19 +40,37 @@ describe('startLinkBridge', () => {
   function bridge(queued: string[][]) {
     let announce = () => {};
     const navigated: string[] = [];
+    const replaced: boolean[] = [];
     const start = startLinkBridge({
       take: async () => queued.shift() ?? [],
       onOpened: async (handler) => {
         announce = handler;
         return () => {};
       },
-      navigate: (path) => navigated.push(path),
+      navigate: (path, replace) => {
+        navigated.push(path);
+        replaced.push(replace);
+      },
       manifests,
     });
-    return { start, navigated, announce: () => announce() };
+    return { start, navigated, replaced, announce: () => announce() };
   }
 
   it('follows the link that was waiting when the app started', async () => {
+    const b = bridge([['mnemora://todo?task=T1']]);
+    await b.start;
+    expect(b.navigated).toEqual(['/todo?task=T1']);
+  });
+
+  it('replaces Home for the link the app started with, and pushes the ones that come later', async () => {
+    const b = bridge([['mnemora://todo?task=T1'], ['mnemora://todo?task=T2']]);
+    await b.start;
+    b.announce();
+    await vi.waitFor(() => expect(b.navigated).toHaveLength(2));
+    expect(b.replaced).toEqual([true, false]);
+  });
+
+  it('is done only once the first link has been followed', async () => {
     const b = bridge([['mnemora://todo?task=T1']]);
     await b.start;
     expect(b.navigated).toEqual(['/todo?task=T1']);

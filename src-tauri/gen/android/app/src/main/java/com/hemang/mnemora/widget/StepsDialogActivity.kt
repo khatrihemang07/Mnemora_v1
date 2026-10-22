@@ -91,8 +91,10 @@ class StepsDialogActivity : Activity() {
     private fun answer(taskId: String, tickSteps: Boolean) {
         if (busy) return
         busy = true
-        sendBroadcast(WidgetActionReceiver.complete(this, taskId, tickSteps))
+        // Closing comes first and without an animation: nothing the receiver does may hold it up.
         finish()
+        overridePendingTransition(0, 0)
+        applicationContext.sendBroadcast(WidgetActionReceiver.complete(this, taskId, tickSteps))
     }
 
     companion object {

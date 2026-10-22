@@ -22,17 +22,23 @@ object WidgetActions {
      * the other widgets are right too.
      */
     fun complete(context: Context, id: String, tickSteps: Boolean?): TickReply {
+        // An answer from the dialog (tickSteps given) was asked for over a paused launcher.
+        val grace = if (tickSteps != null) UndoBar.DIALOG_GRACE_MS else 0L
         val now = System.currentTimeMillis()
         val reply = ReplyParser.parseTick(
             WidgetBridge.call(context, WidgetRequests.complete(id, tickSteps, now, ZoneId.systemDefault())),
         )
         when (reply) {
             is TickReply.Completed -> {
-                val until = UndoBar.expiresAt(System.currentTimeMillis())
-                UndoBar.put(context, UndoState(reply.lead, reply.suffix, reply.token, until))
-                lightTick(context)
+                val bar = UndoState(reply.lead, reply.suffix, reply.token, UndoBar.expiresAt(System.currentTimeMillis()))
+                UndoBar.put(context, bar)
                 WidgetUpdater.redrawNow(context)
-                WidgetUpdater.hideUndoAt(context, until)
+                lightTick(context)
+                // The four seconds run from when the bar was drawn: the read and the draw take a
+                // second or so, which must not come out of the time to Undo.
+                val shown = bar.startedAt(System.currentTimeMillis(), grace)
+                UndoBar.put(context, shown)
+                WidgetUpdater.hideUndoAt(context, shown.until)
             }
             // The Task changed or went away since the widget was drawn: show what is true now.
             TickReply.Failed -> WidgetUpdater.redrawNow(context)

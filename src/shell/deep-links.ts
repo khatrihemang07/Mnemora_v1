@@ -22,7 +22,8 @@ export function routeForLink(raw: string, manifests: readonly ModuleManifest[]):
 interface Deps {
   take: () => Promise<string[]>;
   onOpened: (handler: () => void) => Promise<() => void>;
-  navigate: (path: RoutePath) => void;
+  /** `replace`: swap the current history entry, for the link the app was started with. */
+  navigate: (path: RoutePath, replace: boolean) => void | Promise<unknown>;
   manifests: readonly ModuleManifest[];
 }
 
@@ -32,14 +33,16 @@ interface Deps {
  * Returns the unlisten function.
  */
 export async function startLinkBridge(deps: Deps): Promise<() => void> {
-  const drain = async () => {
+  const drain = async (replace: boolean) => {
     const links = await deps.take();
     const newest = links.at(-1);
-    if (newest !== undefined) deps.navigate(routeForLink(newest, deps.manifests));
+    if (newest !== undefined) await deps.navigate(routeForLink(newest, deps.manifests), replace);
   };
   // Listening first, so a link that lands during the first drain is not missed.
-  const unlisten = await deps.onOpened(() => void drain());
-  await drain();
+  const unlisten = await deps.onOpened(() => void drain(false));
+  // The first drain is the link the app was started with: it replaces Home in the history, so a
+  // cold open has no Home entry behind it, and App waits for this before drawing anything.
+  await drain(true);
   return unlisten;
 }
 
@@ -48,7 +51,7 @@ export function startAppLinkBridge(): Promise<() => void> {
   return startLinkBridge({
     take: () => commands.appTakeLinks(),
     onOpened: (handler) => events.linkOpenedEvent.listen(handler),
-    navigate: (path) => void router.navigate(path),
+    navigate: (path, replace) => router.navigate(path, { replace }),
     manifests: modules,
   });
 }

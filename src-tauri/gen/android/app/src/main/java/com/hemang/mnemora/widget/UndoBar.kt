@@ -3,7 +3,10 @@ package com.hemang.mnemora.widget
 import android.content.Context
 
 /** The Undo bar's text, what undoes the tick, and when the bar goes away. */
-data class UndoState(val lead: String, val suffix: String?, val token: String, val until: Long)
+data class UndoState(val lead: String, val suffix: String?, val token: String, val until: Long) {
+    /** The same bar with its time starting at [drawnAt], when it first showed rather than when it was asked for. */
+    fun startedAt(drawnAt: Long, grace: Long = 0L) = copy(until = UndoBar.expiresAt(drawnAt) + grace)
+}
 
 /**
  * The themed Undo bar at the bottom of the Todo widget after a tick. It lives for about four
@@ -13,11 +16,17 @@ data class UndoState(val lead: String, val suffix: String?, val token: String, v
 object UndoBar {
     const val DURATION_MS = 4_000L
 
+    /**
+     * Extra time when the tick was answered in the open-steps dialog: the launcher sits paused under
+     * the dialog and applies the redraw only once it is back, up to about 1.4 s after the draw.
+     */
+    const val DIALOG_GRACE_MS = 1_500L
+
     /** When a bar shown at [now] ends. */
     fun expiresAt(now: Long) = now + DURATION_MS
 
     /** Whether the bar is up at [now]. A clock set far back must not keep it up for hours. */
-    fun isShown(until: Long, now: Long) = now < until && until - now <= DURATION_MS
+    fun isShown(until: Long, now: Long) = now < until && until - now <= DURATION_MS + DIALOG_GRACE_MS
 
     private const val FILE = "todo_widget_undo"
 
