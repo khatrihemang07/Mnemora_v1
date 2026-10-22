@@ -15,11 +15,15 @@
   closes it and drops what was typed. Quick edit (mode "edit"): the box is pre-filled with the
   Task; words already in the old title are not read again, only new text; Enter or clicking away
   saves (with Undo), Esc cancels. `listId` and `date` are what a Task added here inherits.
+  At the end of the chip row, × does what Esc does and the round button (↑ add, ✓ save) does what
+  Enter does. It is dimmed, not disabled, while the title is empty, so a tap never blurs the title.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { onMount, tick } from 'svelte';
+  import ArrowUp from '~icons/lucide/arrow-up';
   import Calendar from '~icons/lucide/calendar';
+  import Check from '~icons/lucide/check';
   import Clock from '~icons/lucide/clock';
   import Flag from '~icons/lucide/flag';
   import Inbox from '~icons/lucide/inbox';
@@ -32,6 +36,7 @@
   import type { Parsed, ParseSpan, Task } from '../../lib/ipc/bindings';
   import { IpcError } from '../../lib/ipc/unwrap';
   import Chip from '../../lib/ui/Chip.svelte';
+  import IconButton from '../../lib/ui/IconButton.svelte';
   import type { WhenValue } from '../../lib/ui/WhenPicker.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
@@ -140,7 +145,7 @@
   let caret = $state(0);
   let suggestIndex = $state(0);
   let dismissedAt = $state<number | null>(null);
-  let busy = false;
+  let busy = $state(false);
   let cancelled = false;
   let justUnrecognised = false;
 
@@ -443,6 +448,8 @@
   }
 
   const submit = () => void (editing ? save() : add());
+  /** The round button does what Enter does: with # suggestions showing, it takes the highlighted one. */
+  const submitByTap = () => (suggestions.length > 0 ? accept(suggestions[suggestIndex]) : submit());
 
   function cancel() {
     cancelled = true;
@@ -763,6 +770,27 @@
           Notes
         </Chip>
       {/if}
+      <div class="ml-auto flex items-center gap-1">
+        <IconButton
+          icon={X}
+          label={editing ? 'Cancel' : 'Close'}
+          shortcut="Esc"
+          variant="quiet"
+          onpointerdown={keepFocus}
+          onclick={cancel}
+        />
+        <IconButton
+          icon={editing ? Check : ArrowUp}
+          label={editing ? 'Save' : 'Add'}
+          shortcut="↵"
+          variant="solid"
+          hue="--hue-todo"
+          aria-disabled={!text.trim() || busy}
+          class={!text.trim() || busy ? 'opacity-50' : ''}
+          onpointerdown={keepFocus}
+          onclick={submitByTap}
+        />
+      </div>
     </div>
 
     <div class="hidden flex-wrap gap-x-3 pt-1.5 text-[0.7rem] text-faint desktop:flex">

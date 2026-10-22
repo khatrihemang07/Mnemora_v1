@@ -106,6 +106,10 @@ object WidgetUpdater {
         }
         if (Build.VERSION.SDK_INT < 31) return
         val zone = ZoneId.systemDefault()
+        // Arm before drawing: if a read or a render throws below, the next-midnight job must still
+        // exist, or the Todo widget keeps yesterday's Today. (Re-arming replaces the pending job, so
+        // every redraw may do it. No pure seam to unit test: it needs JobScheduler.)
+        WidgetJobs.armMidnight(context, zone)
         val now = System.currentTimeMillis()
         // Widgets showing the same view share one read.
         val replies = HashMap<String, Reply>()
@@ -118,7 +122,6 @@ object WidgetUpdater {
             manager.updateAppWidget(id, WidgetRenderer.responsive(context, reply, config, id))
         }
         lastDrawAt = System.currentTimeMillis()
-        WidgetJobs.armMidnight(context, zone)
     }
 
     /** Called when the last widget is removed. */

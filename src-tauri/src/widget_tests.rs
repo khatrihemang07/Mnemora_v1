@@ -1805,6 +1805,23 @@ fn parse_reads_the_words_as_the_app_does_and_says_what_they_mean() {
 }
 
 #[test]
+fn parse_reports_a_read_repeat_in_the_fields_and_the_when_label() {
+    let (phone, _conn) = Phone::migrated();
+    let bridge = phone.bridge();
+
+    // The sheet swaps the When chip's icon for Repeat's when `fields.repeat` is an object.
+    let got = read(&bridge, "inbox", "water plants every week", json!({}));
+    assert_eq!(got["fields"]["repeat"]["freq"], "week", "{got}");
+    assert!(
+        got["when_label"].as_str().unwrap().contains("Every"),
+        "{got}"
+    );
+
+    let plain = read(&bridge, "inbox", "water plants", json!({}));
+    assert!(plain["fields"]["repeat"].is_null(), "{plain}");
+}
+
+#[test]
 fn parse_words_follow_the_time_format_and_offsets_count_utf16_units() {
     let (phone, conn) = Phone::migrated();
     set_pref(&conn, "core", "time_format", "12h");

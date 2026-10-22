@@ -16,12 +16,18 @@ class MainActivity : TauriActivity() {
     WidgetBridge.attach(this)
   }
 
-  // Exposes window.MnemoraAndroid so the web theme can restyle the system bars.
+  // Exposes window.MnemoraAndroid so the web side can restyle the system bars and leave the app.
   override fun onWebViewCreate(webView: WebView) {
-    webView.addJavascriptInterface(SystemBarsBridge(), "MnemoraAndroid")
+    webView.addJavascriptInterface(MnemoraBridge(), "MnemoraAndroid")
   }
 
-  private inner class SystemBarsBridge {
+  private inner class MnemoraBridge {
+    // Back at the root leaves like any Android app, keeping the process alive (see #51).
+    @JavascriptInterface
+    fun moveTaskToBack() {
+      runOnUiThread { this@MainActivity.moveTaskToBack(true) }
+    }
+
     // JavascriptInterface methods run on a WebView thread; window changes need the UI thread.
     @JavascriptInterface
     fun setSystemBars(dark: Boolean, colorHex: String) {

@@ -265,10 +265,10 @@ const S = {
   // list & ticking
   meta: 'right', clamp: '2', passed: 'never', overdueDate: 'short', groups: 'on', doneRows: 'hide', todayHead: 'leftOver', countOther: 'count',
   tick: 'vanish', openSteps: 'dialog', rowTap: 'sheet', headTap: 'view', emptyLook: 'next', upRange: '7', listEnd: 'none', allGroup: 'list',
-  // adding
-  build: 'nativefull', afterAdd: 'pill', dismiss: 'discard', sheetTheme: 'widget', hint: 'example', live: 'both',
+  // adding (afterAdd and sandboxMark default to what shipped: a toast after add, the SANDBOX tag; see ui-system.md)
+  build: 'nativefull', afterAdd: 'plain', dismiss: 'discard', sheetTheme: 'widget', hint: 'example', live: 'both',
   // setup & picker
-  cfgLook: 'full', pickName: 'Todo', pickPreview: 'live', sandboxMark: 'name',
+  cfgLook: 'full', pickName: 'Todo', pickPreview: 'live', sandboxMark: 'tag',
 };
 
 // [key, id, title, scenario, options, explain(value)]
