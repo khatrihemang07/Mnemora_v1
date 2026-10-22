@@ -12,7 +12,7 @@ use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
-use tokio::task::{AbortHandle, JoinHandle};
+use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use tokio_rustls::{TlsAcceptor, TlsConnector, TlsStream};
 
 use super::NetError;
@@ -29,8 +29,17 @@ pub const DEFAULT_PORT: u16 = 47311;
 
 /// How long a TCP connect (and each handshake step) may take.
 const STEP_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long one frame may take to write before the connection is given up on.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the whole TLS + Mnemora handshake may take.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The most inbound connections that may be between accept and "ready" at once. More are
+/// closed on arrival, so a flood of idle sockets cannot hold unbounded memory and tasks.
+pub const MAX_PENDING: usize = 16;
+/// The largest frame accepted before the peer is known to be a paired device (its handshake, or
+/// the first pairing message). Far below [`MAX_FRAME`](super::MAX_FRAME).
+pub const HANDSHAKE_MAX_FRAME: usize = 64 * 1024;
 
 /// A TLS connection carrying framed messages.
 pub type TlsChannel = Channel<TlsStream<TcpStream>>;
@@ -47,7 +56,8 @@ pub struct NetConfig {
 }
 
 /// A TLS connection to a peer whose key has been verified against the [`Trust`] set (pinned, or
-/// admitted because pairing is open) and which has said nothing else yet.
+/// admitted because pairing is open). From [`Listener`] an unpinned one has already sent its
+/// first frame, which `recv` still returns (it is never a [`Handshake`]).
 pub struct Secured {
     /// The connection.
     pub channel: TlsChannel,
@@ -152,7 +162,10 @@ async fn establish(config: &NetConfig, mut secured: Secured) -> Result<Establish
     }
     let exchange = async {
         secured.channel.send(&config.local).await?;
-        secured.channel.recv::<Handshake>().await
+        secured
+            .channel
+            .recv_max::<Handshake>(HANDSHAKE_MAX_FRAME)
+            .await
     };
     let remote = tokio::time::timeout(HANDSHAKE_TIMEOUT, exchange)
         .await
@@ -240,6 +253,9 @@ async fn accept_loop(
     config: NetConfig,
     out: UnboundedSender<Incoming>,
 ) {
+    // Owning the connection tasks here means aborting this task (the Listener dropped) also
+    // ends every connection still being set up.
+    let mut pending = JoinSet::new();
     loop {
         let (tcp, remote) = match socket.accept().await {
             Ok(pair) => pair,
@@ -250,8 +266,13 @@ async fn accept_loop(
                 continue;
             }
         };
+        while pending.try_join_next().is_some() {}
+        if pending.len() >= MAX_PENDING {
+            tracing::debug!(target: "sync", "too many connections being set up, closing one");
+            continue;
+        }
         let (acceptor, config, out) = (acceptor.clone(), config.clone(), out.clone());
-        tokio::spawn(async move {
+        pending.spawn(async move {
             match serve(tcp, remote, acceptor, &config).await {
                 Ok(incoming) => {
                     let _ = out.send(incoming);
@@ -275,12 +296,24 @@ async fn serve(
         .await
         .map_err(|_| NetError::Timeout)?
         .map_err(tls_error)?;
-    let secured = secured(TlsStream::Server(stream), &config.trust, remote)?;
+    let mut secured = secured(TlsStream::Server(stream), &config.trust, remote)?;
     if secured.pinned {
-        Ok(Incoming::Peer(Box::new(establish(config, secured).await?)))
-    } else {
-        Ok(Incoming::Unpinned(Box::new(secured)))
+        return Ok(Incoming::Peer(Box::new(establish(config, secured).await?)));
     }
+    // Admitted only because pairing was open, and it may have closed since.
+    if !config.trust.pairing_open() {
+        return Err(NetError::Refused(super::Refusal::Unpinned));
+    }
+    // A device that pinned us but that we no longer know (forgotten here) dials as a normal
+    // peer and sends its handshake first. Turn it away now instead of leaving it waiting on the
+    // pairing code; a pairing dialler's first frame is anything else and is kept for the hook.
+    let first = tokio::time::timeout(HANDSHAKE_TIMEOUT, secured.channel.peek(HANDSHAKE_MAX_FRAME))
+        .await
+        .map_err(|_| NetError::Timeout)??;
+    if serde_json::from_value::<Handshake>(first.clone()).is_ok() {
+        return Err(NetError::Refused(super::Refusal::Unpinned));
+    }
+    Ok(Incoming::Unpinned(Box::new(secured)))
 }
 
 /// One end of a network connection as a [`Transport`]. Dropping it closes the connection after
@@ -319,13 +352,21 @@ impl NetTransport {
         });
         tokio::spawn(async move {
             while let Some(message) = queued.recv().await {
-                if let Err(e) = write_frame(&mut write, &message).await {
-                    tracing::debug!(target: "sync", error = %e, "write failed");
-                    return;
+                // A peer that stops reading must not pin this task (and the socket) forever.
+                match tokio::time::timeout(WRITE_TIMEOUT, write_frame(&mut write, &message)).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        tracing::debug!(target: "sync", error = %e, "write failed");
+                        return;
+                    }
+                    Err(_) => {
+                        tracing::debug!(target: "sync", "write timed out");
+                        return;
+                    }
                 }
             }
             // The transport was dropped: say goodbye properly.
-            let _ = write.shutdown().await;
+            let _ = tokio::time::timeout(STEP_TIMEOUT, write.shutdown()).await;
         });
         Self {
             out,

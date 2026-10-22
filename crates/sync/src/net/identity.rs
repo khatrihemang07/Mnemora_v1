@@ -77,7 +77,10 @@ impl DeviceIdentity {
     pub fn load_or_create(dir: &Path) -> Result<Self, NetError> {
         let path = key_path(dir);
         match std::fs::read(&path) {
-            Ok(der) => Self::from_pkcs8(der),
+            Ok(der) => {
+                tighten(&path)?;
+                Self::from_pkcs8(der)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let pair = KeyPair::generate_for(&PKCS_ED25519).map_err(key_err)?;
                 let der = pair.serialize_der();
@@ -139,14 +142,36 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<(), NetError> {
         std::fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("tmp");
+    // A leftover from a crash keeps its old mode if reopened, so start from nothing.
+    match std::fs::remove_file(&tmp) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
     let mut file = options.open(&tmp)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Makes an existing key file private to this user again if something loosened it.
+#[cfg(unix)]
+fn tighten(path: &Path) -> Result<(), NetError> {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(path)?.permissions().mode();
+    if mode & 0o077 != 0 {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn tighten(_: &Path) -> Result<(), NetError> {
     Ok(())
 }
 
@@ -194,5 +219,36 @@ mod tests {
         assert_eq!(PublicKey::from_hex(&id.to_hex()), Some(id));
         assert_eq!(PublicKey::from_hex("zz"), None);
         assert_eq!(PublicKey::from_hex(&"g".repeat(64)), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_stale_temporary_file_never_decides_the_key_file_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = key_path(dir.path()).with_extension("tmp");
+        std::fs::write(&tmp, b"left over").unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644)).unwrap();
+        DeviceIdentity::load_or_create(dir.path()).unwrap();
+        let mode = std::fs::metadata(key_path(dir.path()))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_key_file_that_was_loosened_is_tightened_on_load() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        DeviceIdentity::load_or_create(dir.path()).unwrap();
+        let path = key_path(dir.path());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        DeviceIdentity::load_or_create(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }

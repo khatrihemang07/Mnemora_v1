@@ -28,8 +28,20 @@ where
     Ok(())
 }
 
-/// Reads one framed message. A clean close between frames is [`NetError::Closed`].
+/// Reads one framed message of at most [`MAX_FRAME`] bytes. A clean close between frames is
+/// [`NetError::Closed`].
 pub async fn read_frame<R, T>(reader: &mut R) -> Result<T, NetError>
+where
+    R: AsyncRead + Unpin,
+    T: DeserializeOwned,
+{
+    read_frame_max(reader, MAX_FRAME).await
+}
+
+/// Like [`read_frame`] with a lower limit, for what a peer says before it is trusted. The body
+/// buffer grows with the bytes that actually arrive, so a header that promises a lot costs
+/// nothing until the bytes follow.
+pub async fn read_frame_max<R, T>(reader: &mut R, max: usize) -> Result<T, NetError>
 where
     R: AsyncRead + Unpin,
     T: DeserializeOwned,
@@ -41,23 +53,31 @@ where
         Err(e) => return Err(e.into()),
     }
     let len = u32::from_be_bytes(header) as usize;
-    if len > MAX_FRAME {
+    if len > max.min(MAX_FRAME) {
         return Err(NetError::TooLarge(len));
     }
-    let mut body = vec![0u8; len];
-    reader.read_exact(&mut body).await?;
+    let mut body = Vec::new();
+    let got = reader.take(len as u64).read_to_end(&mut body).await?;
+    if got < len {
+        return Err(NetError::Io(std::io::ErrorKind::UnexpectedEof.into()));
+    }
     serde_json::from_slice(&body).map_err(|e| NetError::Malformed(e.to_string()))
 }
 
 /// A byte stream that carries framed messages both ways.
 pub struct Channel<S> {
     stream: S,
+    /// A frame read ahead by [`Channel::peek`], returned by the next `recv`.
+    ahead: Option<serde_json::Value>,
 }
 
 impl<S: AsyncRead + AsyncWrite + Unpin> Channel<S> {
     /// Frames messages over `stream`.
     pub fn new(stream: S) -> Self {
-        Self { stream }
+        Self {
+            stream,
+            ahead: None,
+        }
     }
 
     /// Sends one message.
@@ -67,10 +87,28 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Channel<S> {
 
     /// Waits for the next message.
     pub async fn recv<T: DeserializeOwned>(&mut self) -> Result<T, NetError> {
-        read_frame(&mut self.stream).await
+        self.recv_max(MAX_FRAME).await
     }
 
-    /// The underlying stream.
+    /// Waits for the next message, refusing one over `max` bytes.
+    pub async fn recv_max<T: DeserializeOwned>(&mut self, max: usize) -> Result<T, NetError> {
+        if let Some(value) = self.ahead.take() {
+            return serde_json::from_value(value).map_err(|e| NetError::Malformed(e.to_string()));
+        }
+        read_frame_max(&mut self.stream, max).await
+    }
+
+    /// Reads the next frame (at most `max` bytes) without consuming it: the following `recv`
+    /// returns it. Peeking again returns the same frame.
+    pub async fn peek(&mut self, max: usize) -> Result<&serde_json::Value, NetError> {
+        let frame = match self.ahead.take() {
+            Some(frame) => frame,
+            None => read_frame_max(&mut self.stream, max).await?,
+        };
+        Ok(&*self.ahead.insert(frame))
+    }
+
+    /// The underlying stream. A frame left by [`Channel::peek`] is lost.
     pub fn into_inner(self) -> S {
         self.stream
     }

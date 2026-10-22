@@ -69,6 +69,11 @@ impl Trust {
         self.write().pairing_open = open;
     }
 
+    /// Whether pairing is open.
+    pub fn pairing_open(&self) -> bool {
+        self.read().pairing_open
+    }
+
     fn admits(&self, key: &PublicKey) -> bool {
         let set = self.read();
         set.pairing_open || set.pinned.contains_key(key)
@@ -222,12 +227,16 @@ pub fn server_config(
 ) -> Result<Arc<ServerConfig>, NetError> {
     let provider = provider();
     let verifier = Arc::new(PinVerifier::new(trust.clone(), &provider));
-    let config = ServerConfig::builder_with_provider(provider)
+    let mut config = ServerConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(tls_err)?
         .with_client_cert_verifier(verifier)
         .with_single_cert(identity.cert_chain(), identity.private_key())
         .map_err(tls_err)?;
+    // A resumed session skips certificate verification, so a forgotten key could come back on
+    // an old ticket: never issue or accept one.
+    config.session_storage = Arc::new(rustls::server::NoServerSessionStorage {});
+    config.send_tls13_tickets = 0;
     Ok(Arc::new(config))
 }
 
@@ -238,13 +247,14 @@ pub fn client_config(
 ) -> Result<Arc<ClientConfig>, NetError> {
     let provider = provider();
     let verifier = Arc::new(PinVerifier::new(trust.clone(), &provider));
-    let config = ClientConfig::builder_with_provider(provider)
+    let mut config = ClientConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(tls_err)?
         .dangerous()
         .with_custom_certificate_verifier(verifier)
         .with_client_auth_cert(identity.cert_chain(), identity.private_key())
         .map_err(tls_err)?;
+    config.resumption = rustls::client::Resumption::disabled();
     Ok(Arc::new(config))
 }
 

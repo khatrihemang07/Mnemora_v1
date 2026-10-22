@@ -16,7 +16,7 @@ use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity, SyncField};
 use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
 use serde_json::{Value, json};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::*;
 use crate::registry::{Modules, Registry};
@@ -385,9 +385,10 @@ async fn while_pairing_is_open_an_unpinned_peer_reaches_the_pairing_hook_and_aft
     a.config.trust.set_pairing_open(true);
     let mut listener = listen(&a).await;
 
-    // B pinned A; A has not pinned B, but pairing is open.
-    let secured = secure_dial(&b.config, listener.local_addr()).await.unwrap();
+    // B pinned A; A has not pinned B, but pairing is open. The dialler speaks first.
+    let mut secured = secure_dial(&b.config, listener.local_addr()).await.unwrap();
     assert!(secured.pinned, "B pinned A");
+    secured.channel.send(&json!({"pake": 1})).await.unwrap();
     let Incoming::Unpinned(unpinned) =
         tokio::time::timeout(Duration::from_secs(5), listener.accept())
             .await
@@ -403,4 +404,214 @@ async fn while_pairing_is_open_an_unpinned_peer_reaches_the_pairing_hook_and_aft
     drop(unpinned);
     a.config.trust.set_pairing_open(false);
     assert!(dial(&b.config, listener.local_addr()).await.is_err());
+}
+
+#[tokio::test]
+async fn a_pinned_peer_gets_a_normal_session_while_pairing_is_open() {
+    let (a, b) = pinned_pair(Environment::Production);
+    a.config.trust.set_pairing_open(true);
+    b.config.trust.set_pairing_open(true);
+    a.add_task("t1", "buy milk");
+    let mut listener = listen(&a).await;
+
+    let (dialled, accepted) = tokio::join!(
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            dial(&b.config, listener.local_addr())
+        ),
+        next_peer(&mut listener)
+    );
+    let dialled = dialled.expect("no wait for pairing to drop us").unwrap();
+    let mut ea = a.endpoint(accepted.transport);
+    let mut eb = b.endpoint(dialled.transport);
+    run((&mut ea, &a.conn), (&mut eb, &b.conn)).await;
+    assert_eq!(b.titles(), ["buy milk"]);
+}
+
+/// A dialler that pinned the listener but is not pinned back, while pairing is open, must be told
+/// no straight away instead of waiting for the pairing code to drop it.
+#[tokio::test]
+async fn a_dialler_pinned_by_nobody_is_turned_away_at_once_even_while_pairing_is_open() {
+    let a = Device::new("alpha", Environment::Production);
+    let b = Device::new("bravo", Environment::Production);
+    b.pin(&a);
+    a.config.trust.set_pairing_open(true);
+    let mut listener = listen(&a).await;
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        dial(&b.config, listener.local_addr()),
+    )
+    .await
+    .expect("not left waiting");
+    assert!(result.is_err());
+    nothing_arrives(&mut listener).await;
+}
+
+/// A pairing dialler (nobody pinned) speaks first with something that is not a handshake; the
+/// pairing hook still gets that frame.
+#[tokio::test]
+async fn the_first_pairing_frame_is_not_lost_to_the_stale_peer_check() {
+    let a = Device::new("alpha", Environment::Production);
+    let b = Device::new("bravo", Environment::Production);
+    b.pin(&a);
+    a.config.trust.set_pairing_open(true);
+    let mut listener = listen(&a).await;
+    let addr = listener.local_addr();
+
+    let mut dialler = secure_dial(&b.config, addr).await.unwrap();
+    dialler
+        .channel
+        .send(&json!({"pake": "msg1"}))
+        .await
+        .unwrap();
+    let Incoming::Unpinned(mut unpinned) =
+        tokio::time::timeout(Duration::from_secs(5), listener.accept())
+            .await
+            .unwrap()
+            .unwrap()
+    else {
+        panic!("expected the pairing hook");
+    };
+    let first: Value = unpinned.channel.recv().await.unwrap();
+    assert_eq!(first, json!({"pake": "msg1"}));
+}
+
+/// TLS session resumption would skip the certificate check, so a forgotten key could come back
+/// on a ticket.
+#[tokio::test]
+async fn a_forgotten_peer_cannot_resume_an_earlier_tls_session() {
+    let (a, b) = pinned_pair(Environment::Production);
+    let mut listener = listen(&a).await;
+    let addr = listener.local_addr();
+    // One client config for both connections, so any ticket it was given is used.
+    let connector = tokio_rustls::TlsConnector::from(
+        tls::client_config(&b.config.identity, &b.config.trust).unwrap(),
+    );
+    let connect = || async {
+        let tcp = tokio::net::TcpStream::connect(addr)
+            .await
+            .map_err(|e| e.to_string())?;
+        let name = rustls::pki_types::ServerName::try_from(tls::SERVER_NAME).unwrap();
+        let stream = connector
+            .connect(name, tcp)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut channel = Channel::new(stream);
+        channel
+            .send(&b.config.local)
+            .await
+            .map_err(|e| e.to_string())?;
+        channel.recv::<Handshake>().await.map_err(|e| e.to_string())
+    };
+    let (first, _accepted) = tokio::join!(connect(), next_peer(&mut listener));
+    first.unwrap();
+
+    a.config.trust.unpin(&b.key());
+    assert!(
+        connect().await.is_err(),
+        "no ticket may let a forgotten key back in"
+    );
+    nothing_arrives(&mut listener).await;
+}
+
+#[tokio::test]
+async fn at_most_16_inbound_handshakes_are_in_flight() {
+    let a = Device::new("alpha", Environment::Production);
+    let listener = listen(&a).await;
+    let addr = listener.local_addr();
+    // Idle TCP connections that never start TLS.
+    let mut idle = Vec::new();
+    for _ in 0..link::MAX_PENDING {
+        idle.push(tokio::net::TcpStream::connect(addr).await.unwrap());
+    }
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut extra = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(2), extra.read(&mut byte))
+        .await
+        .expect("the surplus connection is dropped, not held");
+    assert!(matches!(read, Ok(0) | Err(_)));
+
+    // A slot frees up when one of the idle ones goes away.
+    idle.pop();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut again = tokio::net::TcpStream::connect(addr).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), again.read(&mut byte))
+            .await
+            .is_err(),
+        "held open again"
+    );
+}
+
+#[tokio::test]
+async fn dropping_the_listener_closes_the_port_and_its_pending_connections() {
+    let a = Device::new("alpha", Environment::Production);
+    let listener = listen(&a).await;
+    let addr = listener.local_addr();
+    let mut pending = tokio::net::TcpStream::connect(addr).await.unwrap();
+    drop(listener);
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(2), pending.read(&mut byte))
+        .await
+        .expect("the pending connection is closed with the listener");
+    assert!(matches!(read, Ok(0) | Err(_)));
+    assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+}
+
+#[tokio::test]
+async fn dropping_a_transport_ends_the_other_side() {
+    let (a, b) = pinned_pair(Environment::Production);
+    let mut listener = listen(&a).await;
+    let (dialled, accepted) = tokio::join!(
+        dial(&b.config, listener.local_addr()),
+        next_peer(&mut listener)
+    );
+    let mut theirs = dialled.unwrap().transport;
+    drop(accepted);
+    let outcome = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match theirs.try_recv() {
+                Ok(None) => tokio::time::sleep(Duration::from_millis(5)).await,
+                other => return other,
+            }
+        }
+    })
+    .await
+    .expect("the line closes");
+    assert!(matches!(outcome, Err(SyncError::Disconnected)));
+}
+
+#[tokio::test]
+async fn listening_on_all_interfaces_is_reachable_by_loopback() {
+    let (a, b) = pinned_pair(Environment::Production);
+    let mut listener = Listener::bind(a.config.clone(), IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
+        .await
+        .unwrap();
+    let addr = SocketAddr::new(LOCALHOST, listener.local_addr().port());
+    let (dialled, _accepted) = tokio::join!(dial(&b.config, addr), next_peer(&mut listener));
+    dialled.unwrap();
+}
+
+#[tokio::test]
+async fn a_handshake_frame_far_below_8_mb_is_the_most_a_stranger_may_send() {
+    let (a, b) = pinned_pair(Environment::Production);
+    let mut listener = listen(&a).await;
+    let addr = listener.local_addr();
+    let channel = secure_dial(&b.config, addr).await.unwrap().channel;
+    let header = u32::try_from(link::HANDSHAKE_MAX_FRAME + 1)
+        .unwrap()
+        .to_be_bytes();
+    let mut stream = channel.into_inner();
+    stream.write_all(&header).await.unwrap();
+    stream.flush().await.unwrap();
+    nothing_arrives(&mut listener).await;
+    // Our handshake may still arrive first; then the line must end.
+    let ended = tokio::time::timeout(Duration::from_secs(2), async {
+        let mut sink = Vec::new();
+        let _ = stream.read_to_end(&mut sink).await;
+    })
+    .await;
+    assert!(ended.is_ok(), "closed");
 }
