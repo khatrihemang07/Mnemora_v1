@@ -1812,7 +1812,10 @@ fn parse_reports_a_read_repeat_in_the_fields_and_the_when_label() {
     // The sheet swaps the When chip's icon for Repeat's when `fields.repeat` is an object.
     let got = read(&bridge, "inbox", "water plants every week", json!({}));
     assert_eq!(got["fields"]["repeat"]["freq"], "week", "{got}");
-    assert!(got["when_label"].as_str().unwrap().contains("Every"), "{got}");
+    assert!(
+        got["when_label"].as_str().unwrap().contains("Every"),
+        "{got}"
+    );
 
     let plain = read(&bridge, "inbox", "water plants", json!({}));
     assert!(plain["fields"]["repeat"].is_null(), "{plain}");
