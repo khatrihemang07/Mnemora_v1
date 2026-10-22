@@ -512,6 +512,100 @@ fn received_changes_are_remote_not_new_local_ones() {
     assert_eq!(history(&c[1], &id), history(&c[0], &id));
 }
 
+#[test]
+fn a_skip_reads_as_skipped_in_history_on_the_other_device_too() {
+    let c = Cluster::new(2);
+    let t = create_repeating(&c[0], "Water plants", "2026-10-22");
+    c.sync(0, 1);
+    c[0].clock().advance(1_000);
+    c[0].invoke::<Value>("todo_task_skip", json!({ "id": t["id"], "local": local() }))
+        .unwrap();
+    c.sync(0, 1);
+    let mine = history(&c[0], &t["id"]);
+    assert!(mine[0].starts_with("skip Skipped"), "{mine:?}");
+    assert_eq!(history(&c[1], &t["id"]), mine, "History reads the same");
+    // The marker is only on the skip: a later ordinary edit is not a skip.
+    c[1].clock().advance(1_000);
+    priority(&c[1], &t["id"], 1);
+    c.sync(0, 1);
+    assert_eq!(history(&c[1], &t["id"]), history(&c[0], &t["id"]));
+}
+
+#[test]
+fn a_session_does_not_claim_a_value_another_device_changed_since() {
+    let c = Cluster::new(3);
+    let t = create(&c[0], "Report");
+    let id = t["id"].clone();
+    c.sync_all();
+    // B opens the sheet and saves a title.
+    c[1].clock().advance(1_000);
+    update(&c[1], &id, "B title", "", "sheet-b");
+    // A sets a newer title; B receives it.
+    c[0].clock().advance(2_000);
+    update(&c[0], &id, "A title", "", "sheet-a");
+    c.sync(0, 1);
+    assert_eq!(task(&c[1], &id).unwrap()["title"], "A title");
+    // C, who has seen nobody, sets a title between A's and B's next save.
+    c[2].clock().advance(3_000);
+    update(&c[2], &id, "C title", "", "sheet-c");
+    // B's sheet goes on (it shows A's title now) and only the notes change.
+    c[1].clock().advance(4_000);
+    update(&c[1], &id, "A title", "some notes", "sheet-b");
+    c.sync_all();
+    for d in 0..3 {
+        assert_eq!(
+            task(&c[d], &id).unwrap()["title"],
+            "C title",
+            "the newest title edit wins on device {d}; B only edited notes"
+        );
+        assert_eq!(task(&c[d], &id).unwrap()["notes"], "some notes");
+    }
+}
+
+#[test]
+fn a_local_edit_made_between_two_exchanges_is_judged_by_its_own_clock() {
+    let c = Cluster::new(3);
+    let t = create(&c[0], "Clocks");
+    let id = t["id"].clone();
+    c.sync_all();
+    // C edits early, but its change only reaches B after B has synced once and edited since.
+    c[2].clock().advance(1_000);
+    priority(&c[2], &id, 3);
+    c[0].clock().advance(2_000);
+    priority(&c[0], &id, 2);
+    c.sync(0, 1);
+    assert_eq!(task(&c[1], &id).unwrap()["priority"], 2);
+    c[1].clock().advance(5_000);
+    priority(&c[1], &id, 1);
+    c.sync(2, 1);
+    assert_eq!(
+        task(&c[1], &id).unwrap()["priority"],
+        1,
+        "B's later edit is not beaten by C's older one"
+    );
+    c.sync_all();
+    for d in 0..3 {
+        assert_eq!(task(&c[d], &id).unwrap()["priority"], 1, "device {d}");
+    }
+}
+
+#[test]
+fn a_record_that_arrives_by_two_paths_is_stored_once() {
+    let c = Cluster::new(3);
+    let t = create(&c[0], "Twice");
+    c[0].clock().advance(10);
+    priority(&c[0], &t["id"], 2);
+    c.sync(0, 2);
+    c.sync(0, 1);
+    let (sent, got) = c.sync(2, 1);
+    assert_eq!((sent.sent, got.received), (0, 0), "B already holds both");
+    let rows: i64 = c[1].with_db(|db| {
+        db.query_row("SELECT COUNT(*) FROM change_log", [], |r| r.get(0))
+            .unwrap()
+    });
+    assert_eq!(rows, 2);
+}
+
 // ---------------------------------------------------------------- sync off
 
 #[test]
@@ -567,13 +661,13 @@ fn converge(seed: u64) {
     let c = Cluster::new(3);
     let mut rng = Rng(seed);
     let mut ids: Vec<Value> = Vec::new();
-    for step in 0..70 {
+    for step in 0..120 {
         let d = rng.below(3);
         c[d].clock()
             .advance(1 + i64::try_from(rng.below(40)).unwrap());
         let known: Vec<Value> = ids.clone();
         let pick = |rng: &mut Rng| known.get(rng.below(known.len().max(1))).cloned();
-        match (rng.below(9), pick(&mut rng)) {
+        match (rng.below(12), pick(&mut rng)) {
             (0, _) | (_, None) => {
                 let t = create(&c[d], &format!("t{step}"));
                 ids.push(t["id"].clone());
@@ -609,15 +703,32 @@ fn converge(seed: u64) {
             (7, Some(id)) => {
                 let _ = c[d].invoke::<Value>("todo_task_reopen", json!({ "id": id }));
             }
-            (_, Some(id)) => {
+            (8, Some(id)) => {
                 let _ = c[d]
                     .invoke::<Value>("todo_task_wont_do", json!({ "id": id, "local": local() }));
+            }
+            // An editing session that goes on across syncs: its record is rewritten in place.
+            (9, Some(id)) => {
+                let _ = c[d].invoke::<Value>(
+                    "todo_task_update",
+                    json!({ "id": id, "title": format!("r{}", rng.below(4)), "notes": format!("m{}", rng.below(3)), "sessionId": format!("d{d}-{}", rng.below(2)) }),
+                );
+            }
+            (10, _) => {
+                let t = create_repeating(&c[d], &format!("rep{step}"), "2026-10-22");
+                ids.push(t["id"].clone());
+            }
+            (_, Some(id)) => {
+                let _ =
+                    c[d].invoke::<Value>("todo_task_skip", json!({ "id": id, "local": local() }));
             }
         }
         if rng.below(4) == 0 {
             let (a, b) = (rng.below(3), rng.below(3));
             if a != b {
-                c.sync(a, b);
+                // Some exchanges drop part way: the next one must pick up exactly.
+                let cut = (rng.below(3) == 0).then(|| 2 + rng.below(4));
+                let _ = c.try_sync(a, b, cut);
             }
         }
     }
@@ -636,7 +747,7 @@ fn converge(seed: u64) {
 
 #[test]
 fn three_devices_with_random_edits_end_identical() {
-    for seed in [1, 7, 42, 2026, 99_991] {
+    for seed in [1, 7, 42, 2026, 99_991, 31_337] {
         converge(seed);
     }
 }

@@ -128,6 +128,7 @@ fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Option<Map<St
         .optional()?;
     let before: Option<Value> = latest.and_then(|s| serde_json::from_str(&s).ok());
     let mut keys: Vec<String> = diff_keys(&change.snapshot, before.as_ref());
+    let diff_now: Vec<String> = keys.clone();
     if let Some(session) = &change.session_id {
         let earlier: Option<Option<String>> = conn
             .query_row(
@@ -142,7 +143,15 @@ fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Option<Map<St
             Some(None) => return Ok(None),
             Some(Some(text)) => {
                 if let Ok(Value::Object(map)) = serde_json::from_str(&text) {
-                    keys.extend(map.into_iter().map(|(k, _)| k));
+                    // Still the session's own claim only while the value is still the one the
+                    // session left: if another device's change landed since, and this write did
+                    // not touch the key, the session must not re-stamp that value as its own.
+                    let held = before.as_ref().and_then(Value::as_object);
+                    keys.extend(map.into_iter().filter_map(|(k, v)| {
+                        let untouched =
+                            held.is_none_or(|h| h.get(&k).unwrap_or(&Value::Null) == &v);
+                        (untouched || diff_now.contains(&k)).then_some(k)
+                    }));
                 }
             }
             None => {}
@@ -622,6 +631,21 @@ mod tests {
                 json!({"a": 2, "c": 7}),
             ],
             "the session still says it changed a, and not b"
+        );
+    }
+
+    #[test]
+    fn a_session_does_not_keep_claiming_a_value_that_changed_since_and_it_did_not_touch() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"a": 1, "b": 1}))).unwrap();
+        record(&conn, &change("e1", Some("s"), json!({"a": 2, "b": 1}))).unwrap();
+        // Another change takes `a` on, then the session saves again without touching it.
+        record(&conn, &change("e1", None, json!({"a": 9, "b": 1}))).unwrap();
+        record(&conn, &change("e1", Some("s"), json!({"a": 9, "b": 2}))).unwrap();
+        assert_eq!(
+            stored_fields(&conn),
+            vec![json!({"a": 1, "b": 1}), json!({"a": 9}), json!({"b": 2})],
+            "the session now claims b only"
         );
     }
 

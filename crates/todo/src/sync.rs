@@ -9,6 +9,8 @@
 //!   time) are atomic groups.
 //! - `sort_key` is the manual order; `deleted_at` is an ordinary value, so a delete on one
 //!   device and an edit on another both stand.
+//! - `skipped` is not a column: it marks the `tick` of a Skip in the change log, and travels so
+//!   that History reads "Skipped" on every device, not "Done".
 //! - `updated_at` is recomputed here when values arrive.
 
 use mnemora_core::error::AppResult;
@@ -50,6 +52,7 @@ pub(crate) const ENTITIES: &[SyncEntity] = &[SyncEntity {
         SyncField::value("created_at"),
         SyncField::order("sort_key"),
         SyncField::value("deleted_at"),
+        SyncField::value("skipped"),
         SyncField::derived("updated_at"),
     ],
 }];
@@ -206,21 +209,23 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     write(conn, id, patch)?;
     keep_out_of_missing_lists(conn, id)?;
 
-    let snapshot_now = |conn: &Connection| -> AppResult<Value> {
+    // The record's own marker, not state: it shows in this record's snapshot only.
+    let skipped = change.fields.get("skipped") == Some(&Value::Bool(true));
+    let snapshot_now = |conn: &Connection, skipped: bool| -> AppResult<Value> {
         match repo::get_any(conn, id)? {
-            Some(task) => snapshot_of(&task, repo::deleted_at(conn, id)?, false),
+            Some(task) => snapshot_of(&task, repo::deleted_at(conn, id)?, skipped),
             None => Ok(Value::Null),
         }
     };
-    let changed =
-        before_snapshot.as_ref().map(strip_updated) != Some(strip_updated(&snapshot_now(conn)?));
+    let changed = before_snapshot.as_ref().map(strip_updated)
+        != Some(strip_updated(&snapshot_now(conn, false)?));
     if changed {
         // `updated_at` is derived: it says when this device last changed the row.
         let now = now_ms();
         repo::update_columns(conn, id, &[("updated_at", &now)])?;
     }
     Ok(Applied {
-        snapshot: snapshot_now(conn)?,
+        snapshot: snapshot_now(conn, skipped)?,
         changed,
     })
 }
