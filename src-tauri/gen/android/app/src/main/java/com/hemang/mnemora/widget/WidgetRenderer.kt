@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.appwidget.AppWidgetManager
 import android.content.res.Configuration
+import android.text.format.DateFormat
 import android.util.SizeF
 import android.view.View
 import android.widget.RemoteViews
@@ -34,7 +35,8 @@ object WidgetRenderer {
         val sizes = LinkedHashMap<SizeF, RemoteViews>()
         for (b in SizeMode.BREAKPOINTS) {
             sizes[SizeF(b.widthDp, b.heightDp)] = when (b.mode) {
-                SizeMode.LIST -> render(context, reply, config, appWidgetId)
+                SizeMode.LIST -> render(context, reply, config, appWidgetId, showDate = false)
+                SizeMode.LIST_DATE -> render(context, reply, config, appWidgetId)
                 SizeMode.PILL, SizeMode.PLUS -> addButton(context, reply, config, appWidgetId, b.mode)
             }
         }
@@ -83,6 +85,7 @@ object WidgetRenderer {
         config: WidgetConfig,
         appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID,
         previewLines: Int? = null,
+        showDate: Boolean = true,
     ): RemoteViews {
         val colors = colorsOf(context, reply, config)
         // The text edge is a layout choice, so it follows the look as drawn; a flip of night mode
@@ -95,7 +98,7 @@ object WidgetRenderer {
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
         undoBar(context, views, colors, config.background, appWidgetId)
         when (reply) {
-            is Reply.Ok -> ok(context, views, colors, edge, reply.snapshot, previewLines, appWidgetId)
+            is Reply.Ok -> ok(context, views, colors, edge, reply.snapshot, previewLines, appWidgetId, showDate)
             Reply.NotSetUp -> message(
                 views, colors,
                 context.getString(R.string.widget_not_set_up_title),
@@ -210,6 +213,7 @@ object WidgetRenderer {
         snapshot: Snapshot,
         previewLines: Int?,
         appWidgetId: Int,
+        showDate: Boolean,
     ) {
         views.setViewVisibility(R.id.header, View.VISIBLE)
         colors.tint(views, R.id.gear, "setImageTintList") { palette.faint }
@@ -232,6 +236,7 @@ object WidgetRenderer {
             views.setTextViewText(R.id.count, count.text)
             colors.text(views, R.id.count) { if (count.tone == Tone.OVERDUE) palette.danger else palette.faint }
         }
+        headerDate(context, views, colors, snapshot.view, showDate)
         val empty = snapshot.empty
         if (empty != null) {
             views.setViewVisibility(R.id.list, View.GONE)
@@ -245,6 +250,24 @@ object WidgetRenderer {
         // Row taps are broadcasts to the receiver; each row's fill-in says which part was tapped.
         views.setPendingIntentTemplate(R.id.list, actionIntent(context, WidgetActionReceiver.ACTION_ROW, 3, PendingIntent.FLAG_MUTABLE))
         views.setRemoteAdapter(R.id.list, items(context, colors, edge, appWidgetId, snapshot.view, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
+    }
+
+    /**
+     * The date next to the Today name: a TextClock the launcher ticks itself, so it is right at
+     * midnight even while the list waits for the midnight job. Other views, and widths without
+     * room, hide it.
+     */
+    private fun headerDate(context: Context, views: RemoteViews, colors: WidgetColors, view: String, showDate: Boolean) {
+        if (!HeaderDate.shows(view, showDate)) {
+            views.setViewVisibility(R.id.date, View.GONE)
+            return
+        }
+        val locale = context.resources.configuration.locales[0]
+        val pattern = HeaderDate.pattern(DateFormat.getBestDateTimePattern(locale, HeaderDate.SKELETON))
+        views.setViewVisibility(R.id.date, View.VISIBLE)
+        views.setCharSequence(R.id.date, "setFormat12Hour", pattern)
+        views.setCharSequence(R.id.date, "setFormat24Hour", pattern)
+        colors.text(views, R.id.date) { palette.faint }
     }
 
     private fun items(

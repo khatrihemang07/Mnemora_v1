@@ -73,6 +73,16 @@
                         android:layout_marginStart="6dp"
                         android:maxLines="1"
                         android:textSize="11.5sp" />
+
+                    <!-- The date: a TextClock, so the launcher ticks it over at midnight without our code
+                         running. The renderer sets its format and hides it at narrow widths. -->
+                    <TextClock
+                        android:id="@+id/date"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="6dp"
+                        android:maxLines="1"
+                        android:textSize="11.5sp" />
                 </LinearLayout>
             </LinearLayout>
 

@@ -9,12 +9,15 @@ class SizeModeTest {
         assertEquals(180f, SizeMode.LIST_MIN_WIDTH_DP, 0f)
         assertEquals(110f, SizeMode.LIST_MIN_HEIGHT_DP, 0f)
         assertEquals(100f, SizeMode.PILL_MIN_WIDTH_DP, 0f)
+        assertEquals(240f, SizeMode.DATE_MIN_WIDTH_DP, 0f)
     }
 
     @Test
     fun theListNeedsAtLeastThreeByTwo() {
         assertEquals(SizeMode.LIST, SizeMode.of(180f, 110f))
-        assertEquals(SizeMode.LIST, SizeMode.of(320f, 400f))
+        assertEquals(SizeMode.LIST_DATE, SizeMode.of(320f, 400f))
+        assertEquals(SizeMode.LIST, SizeMode.of(239f, 400f))
+        assertEquals(SizeMode.LIST_DATE, SizeMode.of(240f, 110f))
         // Wide but short (4x1) and tall but narrow (2x4) are not lists.
         assertEquals(SizeMode.PILL, SizeMode.of(320f, 109f))
         assertEquals(SizeMode.PILL, SizeMode.of(179f, 300f))
@@ -36,12 +39,14 @@ class SizeModeTest {
         assertEquals(SizeMode.PILL, SizeMode.of(130f, 220f))
         assertEquals(SizeMode.PILL, SizeMode.of(276f, 102f))
         assertEquals(SizeMode.LIST, SizeMode.of(203f, 220f))
-        assertEquals(SizeMode.LIST, SizeMode.of(276f, 340f))
+        assertEquals(SizeMode.LIST_DATE, SizeMode.of(276f, 340f))
+        // 4x2 gets the header date, 3x2 does not.
+        assertEquals(SizeMode.LIST_DATE, SizeMode.of(276f, 220f))
     }
 
     @Test
     fun eachLayoutBreakpointIsTheModeItStandsFor() {
-        assertEquals(listOf(SizeMode.PLUS, SizeMode.PILL, SizeMode.LIST), SizeMode.BREAKPOINTS.map { it.mode })
+        assertEquals(listOf(SizeMode.PLUS, SizeMode.PILL, SizeMode.LIST, SizeMode.LIST_DATE), SizeMode.BREAKPOINTS.map { it.mode })
         for (b in SizeMode.BREAKPOINTS) assertEquals(b.mode, SizeMode.of(b.widthDp, b.heightDp))
     }
 }
