@@ -18,7 +18,7 @@ use super::Timing;
 use super::code::{self, MAX_TRIES};
 use super::host::{Paired, PairingHost, Stored};
 use super::msg::{Reason, Who};
-use super::proto::{self, Decision, Failure, ShowerPort, TyperPort};
+use super::proto::{self, Attempt, Decision, Failure, ShowerPort, TyperPort};
 use super::view::{PairingError, PairingView};
 use crate::SyncError;
 use crate::discovery::{Advert, Discovery};
@@ -571,7 +571,7 @@ impl TyperPort for TypeSide<'_> {
 }
 
 /// The showing side's hooks into [`Pairing`].
-struct ShowSide<'a>(&'a Arc<Pairing>);
+pub(super) struct ShowSide<'a>(pub(super) &'a Arc<Pairing>);
 
 impl ShowerPort for ShowSide<'_> {
     fn code(&self) -> Option<String> {
@@ -582,12 +582,19 @@ impl ShowerPort for ShowSide<'_> {
             .map(|s| s.code.clone())
     }
 
-    fn wrong_try(&self) -> u8 {
+    fn attempt(&self, code: &str, proves: &dyn Fn() -> bool) -> Attempt {
         let left = {
             let mut g = self.0.lock();
-            let Some(show) = g.show.as_mut().filter(|s| s.dead.is_none()) else {
-                return 0;
+            let Some(show) = g
+                .show
+                .as_mut()
+                .filter(|s| s.dead.is_none() && s.code == code)
+            else {
+                return Attempt::Dead;
             };
+            if proves() {
+                return Attempt::Right;
+            }
             show.tries_left = show.tries_left.saturating_sub(1);
             show.notice = None;
             let left = show.tries_left;
@@ -604,7 +611,7 @@ impl ShowerPort for ShowSide<'_> {
         if left == 0 {
             self.0.refresh_advert();
         }
-        left
+        Attempt::Wrong(left)
     }
 
     fn ask(&self, who: &Who) -> impl Future<Output = Decision> + Send {

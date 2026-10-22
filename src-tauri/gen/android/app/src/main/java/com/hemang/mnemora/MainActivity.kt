@@ -8,11 +8,16 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
 import com.hemang.mnemora.widget.WidgetBridge
 
 class MainActivity : TauriActivity() {
   // Without it the Wi-Fi chip drops multicast, so mDNS (Sync finding the other device) hears nothing.
   private var multicastLock: WifiManager.MulticastLock? = null
+  // What the web side last asked for (page visible with Sync on). The lock itself is held only while
+  // this is true AND the activity is in front: the activity lifecycle is the authority, so the lock
+  // cannot outlive the screen even if the WebView never reports the page as hidden.
+  private var wantMulticast = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -21,9 +26,35 @@ class MainActivity : TauriActivity() {
     WidgetBridge.attach(this)
   }
 
+  override fun onResume() {
+    super.onResume()
+    applyMulticastLock(true)
+  }
+
+  override fun onPause() {
+    applyMulticastLock(false)
+    super.onPause()
+  }
+
   override fun onDestroy() {
-    multicastLock?.takeIf { it.isHeld }?.release()
+    wantMulticast = false
+    applyMulticastLock(false)
     super.onDestroy()
+  }
+
+  // Must run on the UI thread. `inFront` is false from onPause on.
+  private fun applyMulticastLock(inFront: Boolean) {
+    if (wantMulticast && inFront) {
+      val lock = multicastLock ?: (applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
+        ?.createMulticastLock("mnemora-sync")
+        ?.also {
+          it.setReferenceCounted(false)
+          multicastLock = it
+        }
+      if (lock != null && !lock.isHeld) lock.acquire()
+    } else {
+      multicastLock?.takeIf { it.isHeld }?.release()
+    }
   }
 
   // Exposes window.MnemoraAndroid so the web side can restyle the system bars and leave the app.
@@ -38,21 +69,13 @@ class MainActivity : TauriActivity() {
       runOnUiThread { this@MainActivity.moveTaskToBack(true) }
     }
 
-    // Held while the app is in front with Sync on (the web side decides); released otherwise.
+    // Held while the app is in front with Sync on (the web side says whether Sync is on and the page
+    // visible; onResume and onPause decide the rest); released otherwise.
     @JavascriptInterface
     fun holdMulticastLock(hold: Boolean) {
       runOnUiThread {
-        if (hold) {
-          val lock = multicastLock ?: (applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
-            ?.createMulticastLock("mnemora-sync")
-            ?.also {
-              it.setReferenceCounted(false)
-              multicastLock = it
-            }
-          if (lock != null && !lock.isHeld) lock.acquire()
-        } else {
-          multicastLock?.takeIf { it.isHeld }?.release()
-        }
+        wantMulticast = hold
+        applyMulticastLock(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
       }
     }
 

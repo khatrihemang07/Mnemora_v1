@@ -21,16 +21,16 @@
 </script>
 
 <Card>
-  <div class="flex items-center gap-3">
+  <div class="grid grid-cols-[2.5rem_1fr_auto] items-center gap-x-3 phone:grid-cols-[2.5rem_1fr]">
     <span class="relative grid size-10 shrink-0 place-items-center rounded-md bg-hue-sync-soft text-hue-sync">
       <Icon class="size-5" />
       {#if summary.listening}
         <span class="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-surface bg-success"></span>
       {/if}
     </span>
-    <div class="min-w-0 flex-1">
+    <div class="min-w-0">
       <div class="flex flex-wrap items-center gap-2">
-        <span class="truncate font-semibold">{device.name}</span>
+        <span class="font-semibold">{device.name}</span>
         <span class="rounded-full border border-line px-2 text-[11px] leading-5 font-medium text-muted">This device</span>
       </div>
       <button
@@ -46,7 +46,7 @@
         {/if}
       </button>
     </div>
-    <Button variant="primary" onclick={() => void pairing.start('show')}>
+    <Button variant="primary" class="phone:col-span-full phone:mt-3 phone:w-full phone:justify-center" onclick={() => void pairing.start('show')}>
       <Plus class="size-4" /> Pair a device
     </Button>
   </div>

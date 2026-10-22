@@ -636,3 +636,29 @@ async fn dropping_the_network_closes_the_port_and_stops_announcing() {
     );
     assert_eq!(found.advertised(), None);
 }
+
+/// The tries are spent under the same lock that checks the proof, so a proof checked after the
+/// last try went (a parallel connection) is never even looked at.
+#[tokio::test]
+async fn a_proof_is_not_checked_once_the_tries_are_spent() {
+    use super::hub::ShowSide;
+    use super::proto::{Attempt, ShowerPort};
+
+    let a = Dev::new("Mac", Environment::Production).await;
+    a.network.pairing().show().unwrap();
+    let code = a.code();
+    let side = ShowSide(a.network.pairing());
+    assert_eq!(side.attempt(&code, &|| false), Attempt::Wrong(2));
+    assert_eq!(side.attempt("00000000x", &|| true), Attempt::Dead);
+    assert_eq!(side.attempt(&code, &|| false), Attempt::Wrong(1));
+    assert_eq!(side.attempt(&code, &|| false), Attempt::Wrong(0));
+    let checked = std::cell::Cell::new(false);
+    assert_eq!(
+        side.attempt(&code, &|| {
+            checked.set(true);
+            true
+        }),
+        Attempt::Dead
+    );
+    assert!(!checked.get());
+}

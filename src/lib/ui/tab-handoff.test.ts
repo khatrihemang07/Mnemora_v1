@@ -16,4 +16,19 @@ describe('tab focus handoff', () => {
     noteTabChange(1000);
     expect(claimTabFocus(1000 + HANDOFF_MS + 1)).toBe(false);
   });
+
+  it('hands focus to each of the pages mounted by changes made before the first one mounted', () => {
+    noteTabChange(1000);
+    noteTabChange(1000 + 200);
+    expect(claimTabFocus(1000 + 300)).toBe(true);
+    expect(claimTabFocus(1000 + 500)).toBe(true);
+    expect(claimTabFocus(1000 + 600)).toBe(false);
+  });
+
+  it('does not carry an old change into a new burst', () => {
+    noteTabChange(1000);
+    noteTabChange(1000 + HANDOFF_MS + 100);
+    expect(claimTabFocus(1000 + HANDOFF_MS + 150)).toBe(true);
+    expect(claimTabFocus(1000 + HANDOFF_MS + 160)).toBe(false);
+  });
 });

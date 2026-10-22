@@ -16,5 +16,10 @@ export function listeningSummary(device: ThisDevice): ListeningSummary {
     ...device.addresses.map((a) => (a.includes(':') ? `[${a}]` : a)),
     `port ${device.port}`,
   ];
-  return { listening: true, text: 'Listening on Wi-Fi and Tailscale', detail: parts.join(' · ') };
+  // U+2011 is a hyphen that never breaks the line ("Wi-" / "Fi" on a phone).
+  return {
+    listening: true,
+    text: 'Listening on Wi\u2011Fi and Tailscale',
+    detail: parts.join(' · '),
+  };
 }

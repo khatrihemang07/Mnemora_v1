@@ -62,6 +62,17 @@ pub(crate) enum Decision {
     Busy,
 }
 
+/// What one proof from the typing device came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Attempt {
+    /// The proof matched.
+    Right,
+    /// It did not; this many tries are left (0: the code is dead).
+    Wrong(u8),
+    /// The code died or was replaced meanwhile.
+    Dead,
+}
+
 /// The typing device's side of what happens around the exchange.
 pub(crate) trait TyperPort: Sync {
     /// The code was right: the shower is `shower` and its person is being asked.
@@ -74,8 +85,10 @@ pub(crate) trait TyperPort: Sync {
 pub(crate) trait ShowerPort: Sync {
     /// The code that is valid right now, if any.
     fn code(&self) -> Option<String>;
-    /// Counts a wrong try; returns the tries left (0: the code is dead).
-    fn wrong_try(&self) -> u8;
+    /// Checks one proof against the code on display, atomically with counting it: `proves` runs
+    /// while the code's state is locked, so parallel connections cannot each get a look at the
+    /// code after its last try was spent.
+    fn attempt(&self, code: &str, proves: &dyn Fn() -> bool) -> Attempt;
     /// Asks the person; resolves when they answer, the code expires or pairing is cancelled.
     fn ask(&self, who: &Who) -> impl Future<Output = Decision> + Send;
     /// Records the pairing.
@@ -361,25 +374,22 @@ where
         return Err(Failure::Lost);
     };
     // From here the attempt costs a try, and the code may have died while we waited.
-    if port.code().as_deref() != Some(code.as_str()) {
-        return refuse_expired(ch).await;
-    }
-    if !proves(
-        &key,
-        &transcript("typer", &peer, &own, &a_msg, &b_msg),
-        &tag,
-    ) {
-        let tries_left = port.wrong_try();
-        let name = me.name.clone();
-        send(
-            ch,
-            &Msg::Wrong {
-                tries_left,
-                name: name.clone(),
-            },
-        )
-        .await?;
-        return Err(Failure::WrongCode { tries_left, name });
+    let data = transcript("typer", &peer, &own, &a_msg, &b_msg);
+    match port.attempt(&code, &|| proves(&key, &data, &tag)) {
+        Attempt::Dead => return refuse_expired(ch).await,
+        Attempt::Wrong(tries_left) => {
+            let name = me.name.clone();
+            send(
+                ch,
+                &Msg::Wrong {
+                    tries_left,
+                    name: name.clone(),
+                },
+            )
+            .await?;
+            return Err(Failure::WrongCode { tries_left, name });
+        }
+        Attempt::Right => {}
     }
     send(
         ch,

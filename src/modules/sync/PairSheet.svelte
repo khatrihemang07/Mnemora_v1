@@ -53,7 +53,14 @@
   const wrongCode = $derived(view.state === 'failed' && view.error.kind === 'wrong_code');
   const notice = $derived(view.state === 'showing' && view.notice ? problem(view.notice, false) : null);
   const stranger = (platform: Platform) => (platform === 'phone' ? Smartphone : Laptop);
-  const title = $derived(typing ? 'Enter a code' : 'Pair a device');
+  // The one title of the step: read out by screen readers and shown as its heading.
+  const title = $derived(
+    view.state === 'paired'
+      ? 'Paired'
+      : view.state === 'searching' || (typing && view.state !== 'waiting')
+        ? 'Enter a code'
+        : 'Pair a device',
+  );
   // "Pixel 8 (2)" was "Pixel 8" before the clash.
   const unnumbered = (name: string) => name.replace(/ \(\d+\)$/, '');
   const phrase = (n: number) => (n === 1 ? '1 try' : `${n} tries`);
@@ -70,9 +77,10 @@
   <h2 class="mb-1.5 text-base font-semibold text-ink">{text}</h2>
 {/snippet}
 
-<Sheet open={pairing.open} {title} onclose={() => void pairing.close()} centered>
-  <div class="px-2 pb-3" data-pairing={view.state}>
+<Sheet open={pairing.open} {title} onclose={() => void pairing.close()} centered bare>
+  <div class="px-5 pt-6 pb-5" data-pairing={view.state}>
     {#if pairing.commandError}
+      {@render heading(title)}
       {@render banner(
         pairing.commandError instanceof Error ? pairing.commandError.message : 'Pairing did not start.',
         'Try again in a moment.',
@@ -100,7 +108,7 @@
       </div>
     {:else if view.state === 'asking'}
       {@const Icon = stranger(view.platform)}
-      {@render heading('Pair a device')}
+      {@render heading(title)}
       <div class="flex items-center gap-3">
         <span class="grid size-10 shrink-0 place-items-center rounded-md bg-hue-sync-soft text-hue-sync"><Icon class="size-5" /></span>
         <div class="min-w-0">
@@ -116,18 +124,18 @@
         <Button variant="primary" onclick={() => void pairing.decide(true)}>Allow</Button>
       </div>
     {:else if view.state === 'finishing'}
-      {@render heading('Pair a device')}
+      {@render heading(title)}
       <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Pairing with {view.name}…</div>
     {:else if view.state === 'waiting'}
-      {@render heading('Pair a device')}
+      {@render heading(title)}
       <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Waiting for {view.name} to allow…</div>
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if view.state === 'searching'}
-      {@render heading('Enter a code')}
+      {@render heading(title)}
       <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Looking for the device showing the code…</div>
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if typing}
-      {@render heading('Enter a code')}
+      {@render heading(title)}
       <p class="mb-3 text-sm text-muted">Type the code shown on your other device.</p>
       <form
         onsubmit={(e) => {
@@ -149,7 +157,7 @@
         </div>
       </form>
     {:else}
-      {@render heading('Pair a device')}
+      {@render heading(title)}
       <p class="text-sm text-muted">On your other device, open Sync › Pair a device › <b>Enter a code</b>, and type:</p>
       {#if view.state === 'showing'}
         <div class="py-2 text-center font-mono text-[2.4rem] leading-tight font-semibold tracking-[0.08em] text-ink" aria-label="Code {view.code}">{view.code}</div>

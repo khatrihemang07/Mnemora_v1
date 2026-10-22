@@ -1,5 +1,6 @@
 import { commands, events, type PairingView } from '../../lib/ipc/bindings';
 import { unwrap } from '../../lib/ipc/unwrap';
+import { notify } from '../../lib/ui/toast';
 import { problem } from './pair-view';
 import { refreshSync } from './queries';
 
@@ -65,9 +66,14 @@ class Pairing {
   }
 
   async decide(allow: boolean) {
+    const asked = this.view.state === 'asking' ? this.view.name : null;
     await this.run(() => unwrap(commands.syncPairDecide(allow)));
-    // Deny ends the pairing, and there is nothing left for the sheet to show.
-    if (!allow) this.open = false;
+    // Deny ends the pairing (the other device is told it was declined), so the sheet has nothing
+    // left to show; a short note says what happened.
+    if (!allow) {
+      this.open = false;
+      if (!this.commandError) notify(asked ? `Declined ${asked}` : 'Declined');
+    }
   }
 
   /** Closes the sheet; whatever was going on stops, and whoever was asked is told. */
