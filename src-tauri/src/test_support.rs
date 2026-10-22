@@ -28,7 +28,11 @@ use tauri::{Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tempfile::TempDir;
 
 use crate::state::{AppState, DeviceStore, lock};
-use crate::{SettingsChangedEvent, commands, journal, modules, settings_store, todo};
+use crate::widget::signal::WidgetSignal;
+use crate::{
+    LinkOpenedEvent, SettingsChangedEvent, TodoChangedEvent, commands, journal, links, modules,
+    settings_store, todo,
+};
 
 /// A mock Tauri app with every registered command, on an in-memory database migrated with every
 /// Module. Device files and backups go to a temp folder that is removed on drop.
@@ -51,23 +55,30 @@ impl TestApp {
         let mut conn = db::open_in_memory().unwrap();
         db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
 
+        let bus = EventBus::new();
+        let widgets = Arc::new(WidgetSignal::silent());
+        crate::widget::signal::follow_settings(&bus, &widgets);
         let state = AppState {
             env: Environment::Production,
             db: Mutex::new(conn),
-            settings: settings_store(&modules, &EventBus::new()),
+            settings: settings_store(&modules, &bus),
             device: Arc::new(DeviceStore::new(
                 paths.device_file(),
                 DeviceSettings::default(),
             )),
             paths,
             log: LogHandle::detached(),
+            widgets,
         };
 
         let app = mock_builder()
             .invoke_handler(specta_builder_for!(MockRuntime).invoke_handler())
             .manage(state)
+            .manage(crate::links::PendingLinks::default())
             .build(mock_context(noop_assets()))
             .unwrap();
+        // Typed events can only be emitted once mounted, as in the real app.
+        specta_builder_for!(MockRuntime).mount_events(&app);
         let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
             .build()
             .unwrap();
@@ -109,6 +120,16 @@ impl TestApp {
             serde_json::json!({ "changes": [{ "key": key, "value": value }] }),
         )
         .unwrap();
+    }
+
+    /// The app's handle: what the Todo widget's bridge uses when the app is alive.
+    pub fn handle(&self) -> tauri::AppHandle<MockRuntime> {
+        self.app.handle().clone()
+    }
+
+    /// How many times the Todo widget has been told that Todo changed.
+    pub fn widget_signals(&self) -> u32 {
+        self.app.state::<AppState>().widgets.sent()
     }
 
     /// Runs `f` on the database, for assertions about state no command exposes (the change log).
@@ -153,4 +174,17 @@ fn flatten(view: &Value, overdue: bool) -> Value {
         .filter(|g| (g["key"]["kind"] == "overdue") == overdue)
         .flat_map(|g| g["tasks"].as_array().cloned().unwrap_or_default());
     Value::Array(tasks.collect())
+}
+
+/// Stamps every closed Task as closed at noon UTC on `date`. Completing stamps the real clock,
+/// which is never inside a pinned test day, so tests that read the Done window pin it here.
+pub fn close_all_on(app: &TestApp, date: &str) {
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE todo_tasks SET closed_at = CAST(strftime('%s', ?1 || ' 12:00:00') AS INTEGER) * 1000
+             WHERE state <> 'open'",
+            [date],
+        )
+        .unwrap();
+    });
 }

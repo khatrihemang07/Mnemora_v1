@@ -60,7 +60,7 @@ Add a new value by adding a semantic token (with light, dark and OLED values), t
 ## Themes
 
 - `data-theme` on `<html>` is `light`, `dark` or `oled`; `data-theme-pref` keeps the choice (including `system`). `data-density`, `data-text-size` and `data-reduce-motion` carry the other appearance Settings, and `data-env` carries the Environment.
-- **No flash**: Rust injects the attributes with the window initialization script before first paint (`src-tauri/src/theme_inject.rs`). On load, `applyAppearance` (`src/lib/theme/apply.ts`) keeps the same logic in sync; `system` is re-resolved when the OS theme changes.
+- **No flash**: Rust injects the attributes with the window initialization script before first paint (`src-tauri/src/theme_inject.rs`); an inline `<style>` in `index.html` turns them into the page background before `app.css` loads. On load, `applyAppearance` (`src/lib/theme/apply.ts`) keeps the same logic in sync; `system` is re-resolved when the OS theme changes.
 - Dark uses lighter surfaces for elevation, not shadows. True black sets `--bg` and `--side` to pure black and barely lifts surfaces.
 
 ## Density and text size
@@ -153,6 +153,42 @@ On desktop the feed's Entries are one stop each for the keyboard. ↑ / ↓ move
 ## Todo on a phone
 
 Under the large title a segment bar is pinned (`PhoneSegments`, handed to `PageHeader` as `pageHeader.phoneBar`): Today · Upcoming · Inbox and ☰, which opens `ListsSheet` (All, Done, Lists, New list). Swiping the title row (`data-view-swipe`) or the bar moves between the three (`swipedView`); rows own their sideways swipes (`RowTouch`: right completes or reopens, left opens When, a hold lifts the row, then a menu on release or a drag on move). The + button (teal, 56px, bottom right) opens the floating capture sheet for the view's place (`addPlaceFor`). The Todo tab, through the Module manifest's `phoneTab`, goes to Today at the top when tapped inside Todo and opens Quick add when held. Haptics use `navigator.vibrate` (`lib/haptic.ts`; the Android manifest holds VIBRATE) since there is no haptics plugin. `--line-strong` is the outline colour for chips and floating panels that must read on a True black surface; `--line` stays for hairlines.
+
+## Todo widget
+
+The Todo widget is native Android (RemoteViews, Android 12+ only; ADR 0014, 0015, 0016), not Svelte, so it does not use `src/lib/ui`. `docs/design/todo-widget-prototype.html` is the visual reference. It is the one place where tokens are copied by hand.
+
+**Card layout.** A 16 dp rounded card (the launcher's own widget radius on the phones tested). Header: a teal chip with a check, the view name (bold, one line, ellipsized first when space runs out), directly after it the count (11.5 sp, never ellipsized), and in the Today view only, from 240 dp wide (4x2 and up, `SizeMode.LIST_DATE`), the date after a dot ("· Thu 22", the locale's short `EEEd`, 11.5 sp in the count's calm grey, `faint`), then the teal + and the settings gear at the end. The gear exists because some launchers (vivo) have no long-press reconfigure. The list scrolls below. An Undo bar floats over the bottom for about 4 s after a tick; it starts when the bar is drawn, with a grace after the open-steps dialog.
+
+**Header date.** A `TextClock` (`HeaderDate`), so the launcher ticks it over at midnight with none of our code running: it is right even while the list waits for the midnight job. Only Today shows it; Upcoming, Inbox, All and a List do not, and 3x2 drops it. With the date shown the priority is name whole, then count whole, then the date (it ellipsizes or vanishes): the renderer swaps in a weightless name view (`title_fixed`) and the date takes the flexible weight, so a font-size change needs no redraw. Without the date (3x2, or a List name) the name ellipsizes first as before. Its colour follows the Theme like the count, in a day and a night value for Same as app + System. The setup preview shows it; the picker's static preview does not.
+
+**Header count.** Today says "N left", or a red "N overdue" when anything is Overdue; every other view shows its number of open Tasks.
+
+**Size modes** (`SizeMode`, pinned by a unit test, the system picks from a size-responsive RemoteViews): list from 180 x 110 dp (3x2 cells); an "Add a task..." pill from 100 dp wide; a plain teal + below that (1x1). The pill and + add by the Todo widget's view: Today due today, Upcoming tomorrow, a List into that List, Inbox and All into the Inbox.
+
+**Rows.** The diamond (the tick target is 48 dp) with its Priority ring (P1 danger, P2 warning, P3 accent), the title up to two lines then an ellipsis, a List chip in mixed views (Today, Upcoming, Inbox) and the time on the right in muted grey. A row not due today shows its day and time in grey ("Thu 12:00"); an Overdue row shows its due day in danger red. Group headers: a red Overdue, Today, Upcoming days ("Tomorrow · Thu 22"), All by List with the Inbox first. A list is cut at 80 lines; the last line then reads "+N more · Open Mnemora" (teal, group-header style) and opens the view in the app (`RowItems`, pinned by a unit test).
+
+**States.** All wording comes final from Rust. Empty views: "Nothing due today" with the next Task, "Inbox zero", "No open Tasks", "Nothing in the next 7 days". A deleted List: "This List was deleted", tap opens setup (the gear sits in the card's corner). Skeleton rows while loading. "Open Mnemora once to set up your Todo widget" before the app ever ran, "Open Mnemora to update" after an app update with pending migrations, "Couldn't load Tasks · Tap to open Mnemora" on a read error. The Todo widget never creates or migrates the database.
+
+**Themes.** Per Todo widget: Same as app (follows Settings ▸ Theme; System uses the phone's night mode, and then every colour is sent in a day and a night value (`WidgetColors`, API 31 `setColorInt` / `setColorStateList`), so the launcher flips the Todo widget with the phone and no redraw; only the no-background text edge, a layout choice, waits for the next draw), Light, Dark, True black, Material You, Material You dark. Colours are hand-converted from `tokens.css` into `widget_themes.xml` (one set per look):
+
+| Token | Android colour (`widget_<look>_*`) |
+|---|---|
+| `--surface` (the card; True black: the pure black `--bg`) | `bg` |
+| `--surface-2` (Undo bar, field, chips) | `surface2` |
+| `--ink`, `--muted`, `--faint` | `ink`, `muted`, `faint` |
+| `--danger` (P1, Overdue) | `danger` |
+| `--warning` (P2) | `warning` |
+| `--accent` (P3) | `accent` |
+| `--hue-todo` and its on-colour (chip, +, tick) | `todo`, `on_todo` |
+
+The Priority ring colours keep their meaning in every look. **Material You** reads the system dynamic palette on Android 12+ (`values-v31/widget_themes.xml`: `system_accent2_50` card and `system_accent1_600` for light, `system_accent2_800` and `system_accent1_200` for dark, neutral colours for text); the Priority colours stay fixed. The setup screen itself uses the app's theme.
+
+**Background.** Solid (the theme's surface), See-through (the surface at 72%; Android cannot blur behind a widget) and None. None keeps a faint wash behind the card so text reads on any wallpaper, and uses the `_shadow` layouts (dark looks) or `_glow` layouts (light looks) for the text.
+
+**Sandbox tag.** The Sandbox build labels the picker entry "Todo (Sandbox)" and shows an amber SANDBOX tab at the top centre of the card (`BuildConfig.SANDBOX`). Production never shows it.
+
+**Quick add.** The + opens a native translucent bottom sheet over the home screen in the Todo widget's theme, a copy of Todo's Quick add (placeholder, marked words, chips, # suggestions, List and Priority pickers, a read-only When chip, Notes). The chips and suggestions carry the app's Lucide icons as vector drawables (`qa_*`). Haptic on tick uses the notification usage, because touch-feedback vibration is dropped for background receivers.
 
 ## Todo keyboard
 

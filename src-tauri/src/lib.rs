@@ -19,6 +19,7 @@ macro_rules! specta_builder_for {
                 commands::device_set_log_level,
                 commands::device_set_spellcheck,
                 commands::app_info,
+                links::app_take_links,
                 commands::log_ui_error,
                 commands::backup_now,
                 commands::open_log_dir::<$runtime>,
@@ -75,13 +76,18 @@ macro_rules! specta_builder_for {
                 todo::todo_list_set_sort,
                 todo::todo_list_set_group,
             ])
-            .events(tauri_specta::collect_events![SettingsChangedEvent])
+            .events(tauri_specta::collect_events![
+                SettingsChangedEvent,
+                TodoChangedEvent,
+                LinkOpenedEvent
+            ])
     };
 }
 
 mod commands;
 mod env_guard;
 mod journal;
+mod links;
 mod state;
 #[cfg(test)]
 mod test_support;
@@ -95,6 +101,9 @@ mod todo_order_tests;
 mod todo_search_tests;
 #[cfg(test)]
 mod todo_sheet_tests;
+mod widget;
+#[cfg(test)]
+mod widget_tests;
 #[cfg(desktop)]
 mod window_state;
 
@@ -132,6 +141,15 @@ const BINDINGS_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/lib/ipc
 /// Typed IPC event mirroring core's `SettingsChanged`, emitted to the webview.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SettingsChangedEvent(pub SettingsChanged);
+
+/// Todo data was changed by something other than the app's own screens (the Todo widget), so
+/// whatever Todo shows is stale.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct TodoChangedEvent;
+
+/// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct LinkOpenedEvent;
 
 /// Every Module in the app, in migration order. The one place Modules are registered.
 fn modules() -> Vec<Box<dyn Module>> {
@@ -205,6 +223,9 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
 
     let bus = EventBus::new();
     let settings = settings_store(&modules, &bus);
+    // Settings that change what the Todo widget draws redraw it too.
+    let widgets = Arc::new(widget::signal::WidgetSignal::platform());
+    widget::signal::follow_settings(&bus, &widgets);
     let snapshot = settings.get_all(&conn)?;
 
     // Bridge core's in-process event to a typed IPC event.
@@ -223,8 +244,15 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         device: Arc::new(DeviceStore::new(paths.device_file(), device.clone())),
         paths,
         log,
+        widgets,
     };
     app.manage(state);
+    #[cfg(target_os = "android")]
+    widget::register_app(app.handle().clone());
+    // A Todo widget placed before the app ever ran (or before an update) shows a "open Mnemora"
+    // state; now that the database exists and is current, it should redraw without waiting for
+    // the next Todo write.
+    app.state::<AppState>().widgets.todo_changed();
 
     create_main_window(app, &snapshot.values, &device)?;
     Ok(())
@@ -268,11 +296,23 @@ pub fn run() {
     }
 
     let invoke_handler = builder.invoke_handler();
+    // Managed here, not in `setup`: a link can arrive before setup has finished.
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(links::PendingLinks::default())
         .invoke_handler(invoke_handler)
         .setup(move |app| setup(app, &builder))
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!())
+        .map(|app| {
+            app.run(|handle, event| {
+                #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+                if let tauri::RunEvent::Opened { urls } = &event {
+                    links::accept(handle, urls.iter().map(ToString::to_string));
+                }
+                #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+                let _ = (handle, event);
+            });
+        });
     if let Err(e) = result {
         tracing::error!(error = %e, "fatal");
         // Setup can fail before `logging::init` (e.g. environment mismatch), when tracing
@@ -300,6 +340,7 @@ mod tests {
             "deviceSetTodoOpen",
             "deviceSetLogLevel",
             "appInfo",
+            "appTakeLinks",
             "logUiError",
             "backupNow",
             "openLogDir",
@@ -357,6 +398,7 @@ mod tests {
             "todoListSetGroup",
             "deviceSetSpellcheck",
             "settingsChangedEvent",
+            "linkOpenedEvent",
         ] {
             assert!(ts.contains(name), "bindings are missing {name}");
         }

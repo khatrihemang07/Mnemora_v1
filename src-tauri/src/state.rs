@@ -11,6 +11,8 @@ use mnemora_core::logging::LogHandle;
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::SettingsStore;
 
+use crate::widget::signal::WidgetSignal;
+
 /// Locks a mutex, recovering the data if another thread panicked while holding it.
 /// A poisoned lock here would otherwise brick every command for the rest of the session.
 pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -54,4 +56,6 @@ pub struct AppState {
     pub settings: SettingsStore,
     pub device: Arc<DeviceStore>,
     pub log: LogHandle,
+    /// Tells the Todo widget that Todo data changed.
+    pub widgets: Arc<WidgetSignal>,
 }

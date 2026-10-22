@@ -33,6 +33,9 @@ tauri-specta.workspace = true
 tracing.workspace = true
 whoami.workspace = true
 
+[target.'cfg(target_os = "android")'.dependencies]
+jni.workspace = true
+
 [dev-dependencies]
 # `test` adds the mock runtime used by the command-layer test harness; tests only, never in a release build.
 tauri = { workspace = true, features = ["test"] }

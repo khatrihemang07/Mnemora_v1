@@ -9,6 +9,13 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#ff9f52" />
+    <!-- Paints the theme set by Rust's pre-paint script before app.css arrives (in dev it is
+         injected from JS). Keep these in step with --bg in src/lib/theme/tokens.css. -->
+    <style>
+      html { background: oklch(98.2% 0.006 70); color-scheme: light; }
+      html[data-theme="dark"] { background: oklch(16.5% 0.008 60); color-scheme: dark; }
+      html[data-theme="oled"] { background: oklch(0% 0 0); color-scheme: dark; }
+    </style>
   </head>
   <body>
     <div id="app"></div>

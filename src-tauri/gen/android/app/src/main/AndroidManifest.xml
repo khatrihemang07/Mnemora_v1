@@ -26,6 +26,74 @@
             </intent-filter>
         </activity>
 
+        <!-- The Todo widget (ADR 0014, 0015). Not exported: only the system's explicit update
+             broadcasts and this app's own package-scoped ones reach it. Enabled on Android 12+ only. -->
+        <receiver
+            android:name=".widget.TodoWidgetProvider"
+            android:enabled="@bool/todo_widget_enabled"
+            android:exported="false"
+            android:label="@string/todo_widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <!-- Exempt from the implicit-broadcast limits: the clock or time zone changed. DATE_CHANGED is
+                 left out on purpose: it is never delivered to a manifest receiver (skipped by policy);
+                 the midnight job (WidgetJobService) covers the day change. -->
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/todo_widget_info" />
+        </receiver>
+
+        <!-- Midnight redraw and the Undo bar's backstop, as framework jobs: vivo's freezer deletes the
+             alarms of a frozen app, jobs survive it. Only the system can bind it; no permission is added. -->
+        <service
+            android:name=".widget.WidgetJobService"
+            android:enabled="@bool/todo_widget_enabled"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- The Todo widget's setup screen: the launcher starts it when a widget is dropped and from
+             long-press > reconfigure, so it must be exported. It checks that the widget is ours. -->
+        <activity
+            android:name=".widget.WidgetSetupActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:label="@string/widget_setup_title"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Tick and Undo taps from the Todo widget. Only this app's own PendingIntents reach it. -->
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
+            android:enabled="@bool/todo_widget_enabled"
+            android:exported="false" />
+
+        <!-- The open-steps question over home: translucent, its own task, kept out of Recents, never
+             started by anything but the Todo widget. -->
+        <activity
+            android:name=".widget.StepsDialogActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.widgetdialog"
+            android:theme="@style/Theme.TodoWidgetDialog" />
+
+        <!-- Quick add over home (ADR 0016): a translucent bottom sheet in its own task, kept out of
+             Recents, never started by anything but the Todo widget. The keyboard opens with it. -->
+        <activity
+            android:name=".widget.quickadd.QuickAddActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="${applicationId}.quickadd"
+            android:theme="@style/Theme.TodoWidgetDialog"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize" />
+
         <provider
           android:name="androidx.core.content.FileProvider"
           android:authorities="${applicationId}.fileprovider"

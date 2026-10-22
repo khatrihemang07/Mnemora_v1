@@ -113,4 +113,10 @@ export interface ModuleManifest {
   bareKeys?: BareKey[];
   /** A component the shell mounts for as long as the Module is on (a floating box a key opens). */
   overlay?: () => Promise<{ default: Component }>;
+  /**
+   * A link that opens the app on this Module (`mnemora://‹id›?...`, from the Todo widget). It sets
+   * whatever the link names and returns the path to go to, with a query if the page takes one.
+   * Without it the link goes Home.
+   */
+  openLink?: (url: URL) => RoutePath;
 }

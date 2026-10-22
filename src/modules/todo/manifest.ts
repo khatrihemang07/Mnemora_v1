@@ -2,6 +2,7 @@ import Plus from '~icons/lucide/plus';
 import SquareCheckBig from '~icons/lucide/square-check-big';
 import type { ModuleAction, ModuleManifest } from '../../lib/router';
 import { useTodoBadge } from './badge.svelte';
+import { openTodoLink } from './deep-link';
 import { todoNav } from './nav.svelte';
 import { addTaskFromPalette, previewAddTask } from './palette-add';
 import { quickAdd } from './quick-add.svelte';
@@ -41,6 +42,8 @@ export const todoManifest: ModuleManifest = {
   // Q adds a Task from anywhere (ADR 0011): in place inside Todo, in a floating box elsewhere.
   bareKeys: [{ key: 'q', run: (ctx) => quickAdd.request(ctx.isActive('/todo')) }],
   overlay: () => import('./TodoOverlay.svelte'),
+  // The Todo widget's taps: mnemora://todo?view=...&task=...
+  openLink: openTodoLink,
   // The phone tab: tapped inside Todo it goes to Today at the top (L5); held, it opens Quick add
   // from any page, the phone's Q (C19d).
   phoneTab: {

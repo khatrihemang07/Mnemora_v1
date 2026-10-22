@@ -16,6 +16,7 @@ mod list_service;
 mod migrations;
 mod order;
 mod parse;
+mod quick_add;
 mod recurrence;
 mod reorder;
 mod repeat;
@@ -24,10 +25,13 @@ mod schedule;
 mod search;
 mod search_repo;
 mod service;
+mod steps;
 mod task;
 mod task_service;
 mod upgrade;
 mod when;
+mod widget;
+mod widget_text;
 
 use mnemora_core::db::migrate::MigrationReport;
 use mnemora_core::error::AppResult;
@@ -54,6 +58,10 @@ pub use list_service::{
     set_list_group, set_list_sort, sidebar,
 };
 pub use parse::{ParseAlternative, ParseRequest, ParseSpan, Parsed, TextRange};
+pub use quick_add::{
+    Added, Base, CaptureContext, Chip, Fields, Hand, Marked, Place, QuickRequest, Reading,
+    add_quick, capture_context, read_quick, resolve_fields,
+};
 pub use recurrence::{MAX_EVERY, RepeatRule};
 pub use reorder::{reorder_list, reorder_task};
 pub use repeat::{Completion, DoneDay, DoneView, done, skip_task};
@@ -63,11 +71,17 @@ pub use schedule::{
 };
 pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
+pub use steps::{open_steps, tick_all_steps};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
 pub use task_service::{
     Purged, delete_task, purge_deleted, restore_task, set_priority, task, update_task, wont_do,
 };
 pub use when::{LocalNow, NewWhen};
+pub use widget::{
+    EmptyState, HeaderCount, Tone, WidgetGroup, WidgetList, WidgetLists, WidgetRow, WidgetSnapshot,
+    WidgetView, lists as widget_lists, settings_affect_widget, snapshot,
+};
+pub use widget_text::{completed_message, completed_repeat_message, plain_title};
 
 /// The Todo Module.
 pub struct TodoModule;

@@ -1,0 +1,1111 @@
+{
+  "about": "Pure rules of the Quick add / Capture box (src/modules/todo/capture.ts) that the Todo widget's native sheet repeats in Kotlin (CaptureRules.kt). The same cases run in Vitest against the TypeScript helpers (capture.test.ts) and in JUnit against the Kotlin port (CaptureRulesTest.kt). Offsets are UTF-16 units. Quick edit helpers (unchangedRanges, pasteIntoTitle) and resolveFields are not ported here: resolveFields is Rust in the widget (capture-resolve.json).",
+  "ignore_word": [
+    {
+      "name": "keeps a word as text",
+      "words": {
+        "ignored": [],
+        "prefer": {}
+      },
+      "key": "date:tomorrow:1",
+      "expected": {
+        "ignored": ["date:tomorrow:1"],
+        "prefer": {}
+      }
+    },
+    {
+      "name": "once",
+      "words": {
+        "ignored": ["date:tomorrow:1"],
+        "prefer": {}
+      },
+      "key": "date:tomorrow:1",
+      "expected": {
+        "ignored": ["date:tomorrow:1"],
+        "prefer": {}
+      }
+    },
+    {
+      "name": "forgets a use-instead for that word",
+      "words": {
+        "ignored": [],
+        "prefer": {
+          "date": "date:fri:1",
+          "time": "time:9:1"
+        }
+      },
+      "key": "date:fri:1",
+      "expected": {
+        "ignored": ["date:fri:1"],
+        "prefer": {
+          "time": "time:9:1"
+        }
+      }
+    }
+  ],
+  "recognise_again": [
+    {
+      "name": "reads a kept word again",
+      "words": {
+        "ignored": ["a", "b"],
+        "prefer": {
+          "date": "c"
+        }
+      },
+      "key": "a",
+      "expected": {
+        "ignored": ["b"],
+        "prefer": {
+          "date": "c"
+        }
+      }
+    },
+    {
+      "name": "a word that was not kept changes nothing",
+      "words": {
+        "ignored": ["a"],
+        "prefer": {}
+      },
+      "key": "z",
+      "expected": {
+        "ignored": ["a"],
+        "prefer": {}
+      }
+    }
+  ],
+  "prefer_word": [
+    {
+      "name": "chooses a word over the winner",
+      "words": {
+        "ignored": [],
+        "prefer": {}
+      },
+      "span": {
+        "kind": "date",
+        "key": "date:fri:1"
+      },
+      "expected": {
+        "ignored": [],
+        "prefer": {
+          "date": "date:fri:1"
+        }
+      }
+    },
+    {
+      "name": "a later choice replaces an earlier one of the same kind",
+      "words": {
+        "ignored": [],
+        "prefer": {
+          "date": "date:fri:1",
+          "time": "t"
+        }
+      },
+      "span": {
+        "kind": "date",
+        "key": "date:mon:1"
+      },
+      "expected": {
+        "ignored": [],
+        "prefer": {
+          "date": "date:mon:1",
+          "time": "t"
+        }
+      }
+    }
+  ],
+  "ignore_kinds": [
+    {
+      "name": "the words of a hand-set kind become text",
+      "words": {
+        "ignored": [],
+        "prefer": {}
+      },
+      "spans": [
+        {
+          "kind": "prio",
+          "key": "prio:p1:1"
+        },
+        {
+          "kind": "date",
+          "key": "date:fri:1"
+        }
+      ],
+      "alternatives": [
+        {
+          "kind": "prio",
+          "key": "prio:p3:1"
+        }
+      ],
+      "kinds": ["prio"],
+      "expected": {
+        "ignored": ["prio:p1:1", "prio:p3:1"],
+        "prefer": {}
+      }
+    },
+    {
+      "name": "forgets a use-instead of those kinds, keeps the others",
+      "words": {
+        "ignored": ["x"],
+        "prefer": {
+          "list": "list:#a:1",
+          "date": "date:fri:1"
+        }
+      },
+      "spans": [],
+      "alternatives": [],
+      "kinds": ["list"],
+      "expected": {
+        "ignored": ["x"],
+        "prefer": {
+          "date": "date:fri:1"
+        }
+      }
+    },
+    {
+      "name": "no duplicates",
+      "words": {
+        "ignored": ["prio:p1:1"],
+        "prefer": {}
+      },
+      "spans": [
+        {
+          "kind": "prio",
+          "key": "prio:p1:1"
+        }
+      ],
+      "alternatives": [],
+      "kinds": ["prio"],
+      "expected": {
+        "ignored": ["prio:p1:1"],
+        "prefer": {}
+      }
+    }
+  ],
+  "prune_words": [
+    {
+      "name": "forgets words that left the text",
+      "words": {
+        "ignored": ["a", "b"],
+        "prefer": {
+          "date": "a",
+          "time": "gone"
+        }
+      },
+      "known": ["a"],
+      "expected": {
+        "ignored": ["a"],
+        "prefer": {
+          "date": "a"
+        }
+      }
+    },
+    {
+      "name": "nothing to forget",
+      "words": {
+        "ignored": ["a"],
+        "prefer": {
+          "date": "a"
+        }
+      },
+      "known": ["a", "b"],
+      "expected": {
+        "ignored": ["a"],
+        "prefer": {
+          "date": "a"
+        }
+      }
+    }
+  ],
+  "backspace_target": [
+    {
+      "name": "right after a word",
+      "text": "call mum tomorrow",
+      "selection_start": 17,
+      "selection_end": 17,
+      "spans": [
+        {
+          "key": "date:tomorrow:1",
+          "end": 17
+        }
+      ],
+      "just_unrecognised": false,
+      "expected": "date:tomorrow:1"
+    },
+    {
+      "name": "after the one space that follows it",
+      "text": "call mum tomorrow ",
+      "selection_start": 18,
+      "selection_end": 18,
+      "spans": [
+        {
+          "key": "date:tomorrow:1",
+          "end": 17
+        }
+      ],
+      "just_unrecognised": false,
+      "expected": "date:tomorrow:1"
+    },
+    {
+      "name": "two spaces after is a plain delete",
+      "text": "call mum tomorrow  ",
+      "selection_start": 19,
+      "selection_end": 19,
+      "spans": [
+        {
+          "key": "date:tomorrow:1",
+          "end": 17
+        }
+      ],
+      "just_unrecognised": false,
+      "expected": null
+    },
+    {
+      "name": "a selection deletes",
+      "text": "call mum tomorrow",
+      "selection_start": 10,
+      "selection_end": 17,
+      "spans": [
+        {
+          "key": "date:tomorrow:1",
+          "end": 17
+        }
+      ],
+      "just_unrecognised": false,
+      "expected": null
+    },
+    {
+      "name": "the second backspace deletes",
+      "text": "call mum tomorrow",
+      "selection_start": 17,
+      "selection_end": 17,
+      "spans": [
+        {
+          "key": "date:tomorrow:1",
+          "end": 17
+        }
+      ],
+      "just_unrecognised": true,
+      "expected": null
+    },
+    {
+      "name": "inside a word deletes",
+      "text": "call mum tomorrow",
+      "selection_start": 14,
+      "selection_end": 14,
+      "spans": [
+        {
+          "key": "date:tomorrow:1",
+          "end": 17
+        }
+      ],
+      "just_unrecognised": false,
+      "expected": null
+    },
+    {
+      "name": "no words, no target",
+      "text": "call mum",
+      "selection_start": 8,
+      "selection_end": 8,
+      "spans": [],
+      "just_unrecognised": false,
+      "expected": null
+    }
+  ],
+  "fold_tag": [
+    {
+      "input": "Home",
+      "expected": "home"
+    },
+    {
+      "input": "Café",
+      "expected": "cafe"
+    },
+    {
+      "input": "Straße",
+      "expected": "straße"
+    },
+    {
+      "input": "Đà Nẵng",
+      "expected": "da nang"
+    },
+    {
+      "input": "Łódź",
+      "expected": "lodz"
+    },
+    {
+      "input": "Øl",
+      "expected": "ol"
+    },
+    {
+      "input": "ı",
+      "expected": "i"
+    },
+    {
+      "input": "A_b-9",
+      "expected": "a_b-9"
+    }
+  ],
+  "tag_of": [
+    {
+      "input": "Home",
+      "expected": "Home"
+    },
+    {
+      "input": "Café Plans",
+      "expected": "CaféPlans"
+    },
+    {
+      "input": "🏠 House",
+      "expected": "House"
+    },
+    {
+      "input": "a/b: c",
+      "expected": "abc"
+    },
+    {
+      "input": "My-List_2",
+      "expected": "My-List_2"
+    }
+  ],
+  "hash_query": [
+    {
+      "text": "buy #ho",
+      "caret": 7,
+      "expected": {
+        "start": 4,
+        "query": "ho"
+      }
+    },
+    {
+      "text": "#",
+      "caret": 1,
+      "expected": {
+        "start": 0,
+        "query": ""
+      }
+    },
+    {
+      "text": "#ho",
+      "caret": 3,
+      "expected": {
+        "start": 0,
+        "query": "ho"
+      }
+    },
+    {
+      "text": "buy #ho more",
+      "caret": 7,
+      "expected": {
+        "start": 4,
+        "query": "ho"
+      }
+    },
+    {
+      "text": "buy #ho",
+      "caret": 4,
+      "expected": null
+    },
+    {
+      "text": "buy#ho",
+      "caret": 6,
+      "expected": null
+    },
+    {
+      "text": "buy #hox more",
+      "caret": 7,
+      "expected": null
+    },
+    {
+      "text": "fix #12 now",
+      "caret": 7,
+      "expected": {
+        "start": 4,
+        "query": "12"
+      }
+    },
+    {
+      "text": "buy #café",
+      "caret": 9,
+      "expected": {
+        "start": 4,
+        "query": "café"
+      }
+    },
+    {
+      "text": "buy ho",
+      "caret": 6,
+      "expected": null
+    },
+    {
+      "text": "a # b",
+      "caret": 3,
+      "expected": {
+        "start": 2,
+        "query": ""
+      }
+    },
+    {
+      "text": "a #🏠",
+      "caret": 3,
+      "expected": null
+    }
+  ],
+  "list_suggestions": [
+    {
+      "name": "lists that start with what was typed",
+      "query": "wo",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "kind": "list",
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        }
+      ]
+    },
+    {
+      "name": "exact names first",
+      "query": "Work",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "kind": "list",
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        }
+      ]
+    },
+    {
+      "name": "exact beats prefix even when later",
+      "query": "work",
+      "lists": [
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "kind": "list",
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        }
+      ]
+    },
+    {
+      "name": "a bare # shows every List",
+      "query": "",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "kind": "list",
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        }
+      ]
+    },
+    {
+      "name": "accents are folded",
+      "query": "cafe",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        }
+      ]
+    },
+    {
+      "name": "the tag skips spaces",
+      "query": "cafép",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        }
+      ]
+    },
+    {
+      "name": "offers a new List when none matches",
+      "query": "Garage",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "new",
+          "name": "Garage"
+        }
+      ]
+    },
+    {
+      "name": "digits only suggest nothing new",
+      "query": "99",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "but a List named with digits matches",
+      "query": "20",
+      "lists": [
+        {
+          "id": "l-home",
+          "name": "Home",
+          "emoji": "🏠"
+        },
+        {
+          "id": "l-work",
+          "name": "Work",
+          "emoji": null
+        },
+        {
+          "id": "l-wk",
+          "name": "Workout",
+          "emoji": "💪"
+        },
+        {
+          "id": "l-cafe",
+          "name": "Café Plans",
+          "emoji": null
+        },
+        {
+          "id": "l-ss",
+          "name": "Straße",
+          "emoji": null
+        },
+        {
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ],
+      "expected": [
+        {
+          "kind": "list",
+          "id": "l-2026",
+          "name": "2026 goals",
+          "emoji": null
+        }
+      ]
+    },
+    {
+      "name": "no Lists at all",
+      "query": "x",
+      "lists": [],
+      "expected": [
+        {
+          "kind": "new",
+          "name": "x"
+        }
+      ]
+    },
+    {
+      "name": "a bare # with no Lists suggests nothing",
+      "query": "",
+      "lists": [],
+      "expected": []
+    }
+  ],
+  "apply_suggestion": [
+    {
+      "name": "completes the tag and adds a space",
+      "text": "buy #ho",
+      "hash": {
+        "start": 4,
+        "query": "ho"
+      },
+      "suggestion": {
+        "kind": "list",
+        "id": "l-home",
+        "name": "Home",
+        "emoji": "🏠"
+      },
+      "expected": {
+        "text": "buy #Home ",
+        "caret": 10
+      }
+    },
+    {
+      "name": "keeps the text after it",
+      "text": "buy #ho milk",
+      "hash": {
+        "start": 4,
+        "query": "ho"
+      },
+      "suggestion": {
+        "kind": "list",
+        "id": "l-home",
+        "name": "Home",
+        "emoji": "🏠"
+      },
+      "expected": {
+        "text": "buy #Home milk",
+        "caret": 10
+      }
+    },
+    {
+      "name": "a name with spaces is spelled as its tag",
+      "text": "#caf",
+      "hash": {
+        "start": 0,
+        "query": "caf"
+      },
+      "suggestion": {
+        "kind": "list",
+        "id": "l-cafe",
+        "name": "Café Plans",
+        "emoji": null
+      },
+      "expected": {
+        "text": "#CaféPlans ",
+        "caret": 11
+      }
+    },
+    {
+      "name": "a new List keeps what was typed",
+      "text": "x #Gar",
+      "hash": {
+        "start": 2,
+        "query": "Gar"
+      },
+      "suggestion": {
+        "kind": "new",
+        "name": "Garage"
+      },
+      "expected": {
+        "text": "x #Garage ",
+        "caret": 10
+      }
+    },
+    {
+      "name": "never doubles the tag",
+      "text": "#Home",
+      "hash": {
+        "start": 0,
+        "query": "Home"
+      },
+      "suggestion": {
+        "kind": "list",
+        "id": "l-home",
+        "name": "Home",
+        "emoji": "🏠"
+      },
+      "expected": {
+        "text": "#Home ",
+        "caret": 6
+      }
+    }
+  ],
+  "mark_segments": [
+    {
+      "name": "plain text",
+      "text": "call mum",
+      "spans": [],
+      "expected": [
+        {
+          "text": "call mum",
+          "mark": false
+        }
+      ]
+    },
+    {
+      "name": "one word",
+      "text": "call mum tomorrow",
+      "spans": [
+        {
+          "start": 9,
+          "end": 17
+        }
+      ],
+      "expected": [
+        {
+          "text": "call mum ",
+          "mark": false
+        },
+        {
+          "text": "tomorrow",
+          "mark": true
+        }
+      ]
+    },
+    {
+      "name": "words in any order, in text order",
+      "text": "a tomorrow b p1",
+      "spans": [
+        {
+          "start": 13,
+          "end": 15
+        },
+        {
+          "start": 2,
+          "end": 10
+        }
+      ],
+      "expected": [
+        {
+          "text": "a ",
+          "mark": false
+        },
+        {
+          "text": "tomorrow",
+          "mark": true
+        },
+        {
+          "text": " b ",
+          "mark": false
+        },
+        {
+          "text": "p1",
+          "mark": true
+        }
+      ]
+    },
+    {
+      "name": "a word at the start and end",
+      "text": "p1 x tomorrow",
+      "spans": [
+        {
+          "start": 0,
+          "end": 2
+        },
+        {
+          "start": 5,
+          "end": 13
+        }
+      ],
+      "expected": [
+        {
+          "text": "p1",
+          "mark": true
+        },
+        {
+          "text": " x ",
+          "mark": false
+        },
+        {
+          "text": "tomorrow",
+          "mark": true
+        }
+      ]
+    },
+    {
+      "name": "overlapping and out-of-range words are skipped",
+      "text": "abc def",
+      "spans": [
+        {
+          "start": 0,
+          "end": 5
+        },
+        {
+          "start": 3,
+          "end": 6
+        },
+        {
+          "start": 4,
+          "end": 99
+        }
+      ],
+      "expected": [
+        {
+          "text": "abc d",
+          "mark": true
+        },
+        {
+          "text": "ef",
+          "mark": false
+        }
+      ]
+    }
+  ],
+  "paste_parts": [
+    {
+      "name": "one line is left to the field",
+      "pasted": "just one line",
+      "expected": null
+    },
+    {
+      "name": "a trailing newline is not a second line",
+      "pasted": "just one line\n",
+      "expected": null
+    },
+    {
+      "name": "first line is the title, the rest the notes",
+      "pasted": "Pack bag\n- [ ] tent\n- [ ] stove",
+      "expected": {
+        "title": "Pack bag",
+        "notes": "- [ ] tent\n- [ ] stove"
+      }
+    },
+    {
+      "name": "windows and old mac line breaks",
+      "pasted": "Title\r\nbody\rmore",
+      "expected": {
+        "title": "Title",
+        "notes": "body\nmore"
+      }
+    },
+    {
+      "name": "leading blank lines are skipped",
+      "pasted": "\n\n  Title  \nbody",
+      "expected": {
+        "title": "Title",
+        "notes": "body"
+      }
+    },
+    {
+      "name": "only blank lines",
+      "pasted": "\n \n \n",
+      "expected": null
+    },
+    {
+      "name": "a title over the limit spills into the notes",
+      "pasted": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nrest",
+      "expected": {
+        "title": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "notes": "aa\nrest"
+      }
+    },
+    {
+      "name": "notes are trimmed",
+      "pasted": "T\n\n\nbody\n\n",
+      "expected": {
+        "title": "T",
+        "notes": "body"
+      }
+    }
+  ]
+}

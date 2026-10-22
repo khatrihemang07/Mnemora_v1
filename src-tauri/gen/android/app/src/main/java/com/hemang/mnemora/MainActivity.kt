@@ -6,11 +6,14 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
+import com.hemang.mnemora.widget.WidgetBridge
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // Lets the Rust side redraw the Todo widgets after the app changes Todo data.
+    WidgetBridge.attach(this)
   }
 
   // Exposes window.MnemoraAndroid so the web theme can restyle the system bars.

@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Todo widget prototype</title>
+<!-- Throwaway prototype for the Todo widget design grill. Not shipped, not a Component. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fraunces:opsz,wght@9..144,560&display=swap" rel="stylesheet">
+<style>
+  :root { --page: #f3f1ee; --panel: #fff; --panel-ink: #222; --panel-muted: #6f6a64; --panel-line: #e4e0da; --teal: oklch(63% .12 182); }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 Inter, system-ui, sans-serif; background: var(--page); color: var(--panel-ink); }
+  .app { display: grid; grid-template-columns: 420px 1fr; min-height: 100vh; }
+  @media (max-width: 900px) { .app { grid-template-columns: 1fr; } }
+
+  /* ---------- control panel ---------- */
+  .ctl { background: var(--panel); border-right: 1px solid var(--panel-line); padding: 16px; overflow: auto; max-height: 100vh; position: sticky; top: 0; }
+  .ctl h1 { font: 560 22px Fraunces, serif; margin: 0 0 4px; }
+  .ctl p.lead { color: var(--panel-muted); margin: 0 0 10px; font-size: 12.5px; }
+  .sec { font: 600 11px Inter; letter-spacing: .08em; text-transform: uppercase; color: var(--teal); margin: 18px 0 4px; }
+  .grp { border-top: 1px solid var(--panel-line); padding: 10px 0; }
+  .grp > b { display: block; font-size: 13px; margin-bottom: 3px; }
+  .grp .scn { font-size: 12px; color: var(--panel-muted); margin: 0 0 6px; }
+  .grp .scn em { color: var(--panel-ink); font-style: normal; font-weight: 500; }
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; }
+  .seg button { border: 1px solid var(--panel-line); background: #faf9f7; border-radius: 8px; padding: 4px 9px; font: inherit; font-size: 12.5px; cursor: pointer; text-align: left; }
+  .seg button[aria-pressed="true"] { background: var(--teal); border-color: var(--teal); color: #fff; }
+  .qid { display: inline-block; font-size: 10px; font-weight: 600; background: #222; color: #fff; border-radius: 4px; padding: 0 5px; margin-right: 6px; vertical-align: 1px; }
+  .qid.done { background: var(--teal); }
+  details summary { cursor: pointer; font: 600 11px Inter; letter-spacing: .08em; text-transform: uppercase; color: var(--panel-muted); margin: 18px 0 4px; }
+  .clock { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .clock input { flex: 1; accent-color: var(--teal); }
+  .btn { border: 1px solid var(--panel-line); background: #faf9f7; border-radius: 8px; padding: 4px 9px; font: inherit; font-size: 12.5px; cursor: pointer; }
+
+  /* ---------- stage ---------- */
+  .stage { display: flex; flex-direction: column; gap: 10px; padding: 24px; align-items: center; }
+  .phone { width: 372px; height: 800px; border-radius: 44px; padding: 10px; background: #111; box-shadow: 0 30px 60px -20px #0006; position: relative; flex: none; }
+  .screen { width: 100%; height: 100%; border-radius: 36px; overflow: hidden; position: relative; }
+  .wall-a { background: radial-gradient(120% 80% at 20% 10%, #f6c79a, transparent 60%), radial-gradient(120% 90% at 90% 90%, #7b6fd6, transparent 60%), #3a5a7a; }
+  .wall-b { background: radial-gradient(100% 70% at 70% 20%, #d9e8e2, transparent 60%), #b9c9c3; }
+  .wall-c { background: #0b0b0d; }
+  .status { height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 26px; font-size: 13px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px #0005; }
+  .wall-b .status { color: #222; text-shadow: none; }
+  .home { position: absolute; inset: 34px 0 0; padding: 8px 12px; }
+  .grid { display: grid; grid-template-columns: repeat(var(--cols), 1fr); grid-auto-rows: var(--cellh); }
+  .appicon { display: grid; place-items: center; align-content: center; gap: 4px; font-size: 11px; color: #fff; text-shadow: 0 1px 2px #0007; }
+  .wall-b .appicon { color: #222; text-shadow: none; }
+  .appicon i { width: 52px; height: 52px; border-radius: 50%; display: block; background: #ffffffcc; box-shadow: 0 2px 6px #0002; }
+  .dock { position: absolute; left: 12px; right: 12px; bottom: 60px; display: grid; grid-template-columns: repeat(var(--cols), 1fr); }
+  .search { position: absolute; left: 20px; right: 20px; bottom: 18px; height: 40px; border-radius: 20px; background: #ffffffd9; }
+  .slot { position: relative; padding: 6px; }
+  .toosmall { width: 100%; height: 100%; border: 2px dashed #fffa; border-radius: 18px; display: grid; place-items: center; text-align: center; color: #fff; font-size: 11.5px; padding: 6px; text-shadow: 0 1px 2px #0008; }
+  .explain { width: 372px; font-size: 12.5px; color: #555; background: #fff; border: 1px solid var(--panel-line); border-radius: 12px; padding: 10px 12px; }
+  .explain b { color: #222; }
+  .explain .cur { background: #f6f3ee; border-radius: 8px; padding: 6px 8px; margin-bottom: 8px; }
+
+  /* ---------- theme tokens, shared by the widget and everything it opens over home ---------- */
+  .tk { --bg: oklch(100% 0 0); --surface-2: oklch(95.6% .01 70); --ink: oklch(21% .014 60); --muted: oklch(50% .016 60); --faint: oklch(62% .014 65);
+        --line: oklch(91% .011 70); --accent: oklch(55% .19 280); --accent-soft: oklch(55% .19 280 / .12); --danger: oklch(52% .2 27);
+        --danger-soft: oklch(52% .2 27 / .1); --warning: oklch(72% .15 65); --todo: oklch(63% .12 182); --on-todo: oklch(99% 0 0); --mark: oklch(63% .12 182 / .16); }
+  .tk.dark { --bg: oklch(19.8% .01 60); --surface-2: oklch(23.5% .011 60); --ink: oklch(94% .009 80); --muted: oklch(68% .013 70); --faint: oklch(58% .012 65);
+        --line: oklch(26% .01 60); --accent: oklch(72% .14 280); --accent-soft: oklch(72% .14 280 / .16); --danger: oklch(70% .17 27); --danger-soft: oklch(70% .17 27 / .14); --on-todo: oklch(18% .03 280); --mark: oklch(63% .12 182 / .25); }
+  .tk.oled { --bg: oklch(0% 0 0); --surface-2: oklch(18% .005 270); --line: oklch(22% .005 270); }
+  .tk.dynamic { --bg: oklch(95% .03 300); --surface-2: oklch(90% .045 300); --ink: oklch(25% .04 300); --muted: oklch(45% .04 300); --faint: oklch(58% .035 300); --line: oklch(86% .04 300); --todo: oklch(48% .12 300); --mark: oklch(48% .12 300 / .15); }
+  .tk.dynamic.dark { --bg: oklch(24% .035 300); --surface-2: oklch(30% .045 300); --ink: oklch(93% .02 300); --muted: oklch(75% .03 300); --faint: oklch(62% .03 300); --line: oklch(33% .04 300); --todo: oklch(80% .1 300); --on-todo: oklch(25% .05 300); --mark: oklch(80% .1 300 / .2); }
+
+  .w { position: relative; width: 100%; height: 100%; border-radius: var(--wr); background: var(--bg); color: var(--ink); overflow: hidden;
+       font: 14px/1.35 Inter, system-ui, sans-serif; display: flex; flex-direction: column; box-shadow: 0 2px 10px #0002; }
+  .w.bg-translucent { background: color-mix(in oklch, var(--bg) 72%, transparent); }
+  .w.bg-none { background: transparent; box-shadow: none; --ink: #fff; --muted: #fffd; --faint: #fffb; --line: #fff4; text-shadow: 0 1px 3px #0009; }
+  .w.sandbox::after { content: 'SANDBOX'; position: absolute; top: 0; right: 50%; transform: translateX(50%); font: 700 8.5px Inter; letter-spacing: .1em; color: oklch(20% .03 60); background: var(--warning); padding: 1px 6px; border-radius: 0 0 5px 5px; }
+
+  /* headers */
+  .hd { display: flex; align-items: center; gap: 8px; padding: 12px 12px 6px 14px; flex: none; cursor: pointer; }
+  .hd .chip { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklch, var(--todo) 16%, transparent); color: var(--todo); flex: none; }
+  .hd .ttl { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: 12px; color: var(--faint); white-space: nowrap; }
+  .sub.red { color: var(--danger); }
+  .hd .sp { flex: 1; }
+  .add { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--todo); color: var(--on-todo); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .hero { padding: 12px 12px 4px 14px; flex: none; cursor: pointer; }
+  .hero .top { display: flex; justify-content: space-between; align-items: center; }
+  .hero .day { font: 560 26px/1 Fraunces, Georgia, serif; letter-spacing: -.01em; }
+  .hero .meta { display: flex; justify-content: space-between; margin-top: 6px; }
+  .bar { height: 3px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--todo); }
+  .fab { position: absolute; right: 10px; bottom: 10px; width: 42px; height: 42px; border-radius: 14px; box-shadow: 0 3px 8px #0003; z-index: 2; }
+
+  /* list */
+  .list { flex: 1; overflow-y: auto; padding: 0 6px 6px; scrollbar-width: none; }
+  .bare .list { padding-top: 6px; }
+  .gh { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); padding: 8px 8px 2px; }
+  .gh.red { color: var(--danger); }
+  .row { display: flex; gap: 6px; align-items: flex-start; padding: 5px 6px; border-radius: 10px; }
+  .row:active { background: color-mix(in oklch, var(--ink) 6%, transparent); }
+  .row .body { flex: 1; min-width: 0; cursor: pointer; padding-top: 2px; }
+  .row .t { overflow-wrap: anywhere; }
+  .clamp1 .row .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .clamp2 .row .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .row .m { font-size: 11.5px; color: var(--faint); display: flex; gap: 8px; margin-top: 1px; flex-wrap: wrap; }
+  .row .m .red { color: var(--danger); }
+  .row .tm { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; padding-top: 3px; flex: none; }
+  .row .tm.red { color: var(--danger); }
+  .row .lchip { font-size: 11px; color: var(--muted); background: var(--surface-2); border-radius: 6px; padding: 1px 6px; flex: none; margin-top: 2px; white-space: nowrap; }
+  .row.done .t { text-decoration: line-through; color: var(--muted); }
+  .endrow { display: block; text-align: center; font-size: 12px; color: var(--todo); padding: 8px 0 4px; cursor: pointer; font-weight: 500; }
+  .endrow.quiet { color: var(--faint); font-weight: 400; cursor: default; }
+  .ft { flex: none; font-size: 12px; color: var(--faint); padding: 2px 14px 10px; }
+
+  /* diamond (TaskCheckbox at phone size) */
+  .cb { width: 30px; height: 30px; display: grid; place-items: center; flex: none; border: 0; background: none; padding: 0; cursor: pointer; }
+  .cb span { width: 18.9px; height: 18.9px; border-radius: 4px; transform: rotate(45deg); border: 1.6px solid var(--edge, var(--faint)); background: var(--fill, transparent);
+             display: grid; place-items: center; color: transparent; transition: background .14s, border-color .14s; }
+  .cb span svg { transform: rotate(-45deg); }
+  .cb.p1 span { --edge: var(--danger); --fill: var(--danger-soft); }
+  .cb.p2 span { --edge: var(--warning); --fill: color-mix(in oklch, var(--warning) 14%, transparent); }
+  .cb.p3 span { --edge: var(--accent); --fill: var(--accent-soft); }
+  .cb.overdue span { --edge: color-mix(in oklch, var(--danger) 70%, var(--faint)); }
+  .cb.on span { background: var(--todo); border-color: var(--todo); color: var(--on-todo); }
+
+  .undo { position: absolute; left: 8px; right: 8px; bottom: 8px; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+          border-radius: 12px; padding: 8px 12px; font-size: 12.5px; box-shadow: 0 4px 12px #0002; text-shadow: none; z-index: 3;
+          display: flex; justify-content: space-between; align-items: center; gap: 8px; animation: up .18s ease-out; }
+  .undo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .undo b { color: var(--todo); cursor: pointer; font-weight: 600; flex: none; }
+  .w.bg-none .undo { --ink: oklch(21% .014 60); background: oklch(100% 0 0 / .92); }
+  @keyframes up { from { transform: translateY(8px); opacity: 0; } }
+
+  /* empty states */
+  .empty { flex: 1; display: grid; place-items: center; text-align: center; padding: 12px; color: var(--muted); font-size: 13px; cursor: pointer; }
+  .empty .big { font: 560 18px Fraunces, Georgia, serif; color: var(--ink); margin-bottom: 4px; }
+  .empty .dia { margin: 0 auto 12px; }
+
+  /* small sizes: the Add button */
+  .btnw { display: grid; }
+  .bigadd { width: 100%; height: 100%; border: 0; background: none; color: var(--todo); display: flex; gap: 8px; align-items: center; justify-content: center; cursor: pointer; font: 600 14px Inter, sans-serif; }
+  .bigadd > svg { width: 28px; height: 28px; }
+  .look-label > svg, .look-view > svg { width: 22px; height: 22px; }
+  .look-pill { margin: auto; width: auto; height: auto; background: var(--todo); color: var(--on-todo); border-radius: 999px; padding: 10px 16px; max-width: calc(100% - 16px); }
+  .look-pill > svg { width: 20px; height: 20px; }
+  .w.tile { background: var(--todo); } .w.tile .bigadd { color: var(--on-todo); }
+  .dia { width: 34px; height: 34px; border: 2px solid var(--todo); border-radius: 7px; transform: rotate(45deg); display: grid; place-items: center; background: color-mix(in oklch, var(--todo) 12%, transparent); color: var(--todo); }
+  .dia > span { transform: rotate(-45deg); display: grid; } .dia svg { width: 20px; height: 20px; }
+  .look-diamond { flex-direction: column; gap: 12px; }
+  .bdg { position: relative; display: grid; } .bdg em { position: absolute; top: -8px; right: -14px; font: 600 11px Inter; font-style: normal; background: var(--danger); color: #fff; border-radius: 9px; padding: 1px 6px; }
+  .fld { display: flex; align-items: center; gap: 8px; width: calc(100% - 20px); background: var(--surface-2); border-radius: 999px; padding: 10px 14px; color: var(--muted); font-weight: 500; }
+  .fld svg { width: 18px; height: 18px; color: var(--todo); }
+  .spl { display: flex; align-items: center; width: 100%; height: 100%; } .spl > span { flex: 1; display: flex; justify-content: center; align-items: center; gap: 6px; }
+  .spl svg { width: 20px; height: 20px; } .spl i { width: 1px; align-self: stretch; margin: 14px 0; background: var(--line); }
+
+  /* things that open over the home screen */
+  .scrim { position: absolute; inset: 0; z-index: 10; display: flex; align-items: flex-end; }
+  .scrim.dim { background: #0006; }
+  .sheet { width: 100%; background: var(--bg); color: var(--ink); border-radius: 22px 22px 0 0; padding: 14px 16px 0; font: 14px/1.4 Inter, sans-serif; }
+  .sheet .grab { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 10px; }
+  .field { position: relative; font: 16px/1.4 Inter, sans-serif; }
+  .field .hl, .field input { font: inherit; padding: 6px 0; margin: 0; border: 0; width: 100%; letter-spacing: normal; white-space: pre; }
+  .field .hl { position: absolute; inset: 0; color: transparent; pointer-events: none; overflow: hidden; }
+  .field .hl mark { background: var(--mark); color: transparent; border-radius: 4px; box-shadow: 0 0 0 2px var(--mark); }
+  .field input { position: relative; background: transparent; color: var(--ink); outline: 0; caret-color: var(--todo); }
+  .field input::placeholder { color: var(--faint); }
+  .qa1 { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: center; }
+  .qa1 .cb { cursor: default; } .qa1 .cb span { opacity: .6; }
+  .qa2 { margin-left: 38px; }
+  .reads { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+  .rd { font-size: 12px; border-radius: 999px; padding: 2px 6px 2px 9px; background: color-mix(in oklch, var(--todo) 14%, transparent); color: var(--todo); }
+  .rd b { opacity: .6; margin-left: 2px; }
+  .props { display: flex; flex-wrap: wrap; gap: 6px; border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 6px; }
+  .props button { font: 12px Inter, sans-serif; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+  .legend { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+  .legend i { font-style: normal; background: var(--surface-2); border-radius: 5px; padding: 0 5px; margin-right: 2px; }
+  .live { font-size: 12px; color: var(--muted); min-height: 18px; margin-top: 4px; }
+  .live .w1 { color: var(--todo); font-weight: 500; }
+  .sheet .bar2 { display: flex; justify-content: flex-end; align-items: center; padding: 8px 0 10px; }
+  .go { background: var(--todo); color: var(--on-todo); border: 0; border-radius: 10px; padding: 7px 14px; font: 600 13px Inter, sans-serif; cursor: pointer; }
+  .go:disabled { opacity: .4; }
+  .kbd { height: 230px; background: #d1d4da; margin: 0 -16px; display: grid; place-items: center; color: #666; font-size: 12px; }
+  .tk.dark .kbd { background: #2b2b2e; color: #999; }
+  .appbg { position: absolute; inset: 0; z-index: 9; background: var(--bg); padding: 48px 18px; }
+  .apph { font: 560 24px Fraunces, serif; color: var(--ink); margin-bottom: 14px; }
+  .ghostrow { display: flex; gap: 12px; align-items: center; padding: 10px 0; }
+  .ghostrow i { width: 16px; height: 16px; border: 1.6px solid var(--faint); border-radius: 4px; transform: rotate(45deg); }
+  .ghostrow b { height: 10px; flex: 1; max-width: 220px; border-radius: 5px; background: var(--surface-2); }
+  .pill { position: absolute; left: 16px; right: 16px; bottom: 120px; z-index: 12; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line);
+          border-radius: 14px; padding: 10px 14px; font: 13px Inter, sans-serif; display: flex; justify-content: space-between; gap: 10px; box-shadow: 0 6px 18px #0003; animation: up .18s ease-out; }
+  .pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill b { color: var(--todo); cursor: pointer; flex: none; }
+  .dlg { margin: auto 20px; background: var(--bg); color: var(--ink); border-radius: 24px; padding: 20px 20px 12px; font: 14px/1.45 Inter, sans-serif; }
+  .dlg h3 { margin: 0 0 6px; font: 560 18px Fraunces, serif; }
+  .dlg p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .dlg .acts { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .dlg .acts button { border: 0; background: none; color: var(--todo); font: 600 13.5px Inter; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .toast { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); background: #222e; color: #fff; padding: 8px 14px; border-radius: 18px; font-size: 12.5px; white-space: nowrap; z-index: 20; max-width: 330px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* widget picker */
+  .picker { position: absolute; inset: 0; z-index: 14; background: oklch(96% .005 70); color: #222; overflow: auto; padding: 44px 16px 16px; }
+  .picker h2 { font: 600 20px Inter; margin: 0 0 12px; }
+  .papp { background: #fff; border-radius: 22px; padding: 14px; margin-bottom: 12px; }
+  .papp .nm { display: flex; align-items: center; gap: 10px; font-weight: 600; margin-bottom: 10px; }
+  .papp .nm i { width: 28px; height: 28px; border-radius: 50%; background: var(--teal); display: block; }
+  .pw { background: #3a5a7a; border-radius: 16px; padding: 12px; }
+  .pw .prev { height: 150px; }
+  .pw .icon { height: 110px; display: grid; place-items: center; }
+  .pmeta { font-size: 12.5px; margin-top: 8px; } .pmeta small { display: block; color: #777; }
+
+  /* configuration screen */
+  .cfg { position: absolute; inset: 0; z-index: 15; background: var(--bg); color: var(--ink); display: flex; flex-direction: column; font: 14px Inter, sans-serif; }
+  .cfg header { padding: 44px 18px 8px; font: 560 22px Fraunces, serif; }
+  .cfg .prev { margin: 4px 18px 10px; height: 190px; border-radius: 18px; overflow: hidden; padding: 10px; flex: none; }
+  .cfg .body { flex: 1; overflow: auto; padding: 0 18px; }
+  .cfg .opt { padding: 10px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 8px; cursor: pointer; }
+  .cfg .opt small { display: block; color: var(--faint); font-size: 12px; }
+  .cfg .radio { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--faint); flex: none; }
+  .cfg .radio.on { border-color: var(--todo); background: radial-gradient(circle, var(--todo) 45%, transparent 50%); }
+  .cfg footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 26px; }
+  .cfg footer button { border: 0; border-radius: 10px; padding: 9px 16px; font: 600 14px Inter; cursor: pointer; background: transparent; color: var(--ink); }
+  .cfg footer button.pri { background: var(--todo); color: var(--on-todo); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="ctl" id="ctl"></aside>
+  <main class="stage">
+    <div class="phone"><div class="screen" id="screen"></div></div>
+    <div class="explain" id="explain"></div>
+  </main>
+</div>
+
+<script>
+// ---------- mock data: today is Wed 21 Oct 2026 ----------
+const T = (id, title, o = {}) => ({ id, title, p: 4, ...o });
+const DATA = {
+  overdue: [T('o1', 'Renew passport photos', { p: 2, due: 'Mon 19 Oct', dueShort: 'Mon', ago: '2d' }),
+            T('o2', 'Reply to Aarav about the flat', { due: 'Tue 20 Oct', dueShort: 'Yesterday', ago: '1d' })],
+  today: [T('t1', 'Stand-up notes', { time: '09:30' }),
+          T('t2', 'Pay electricity bill', { p: 1, list: '🏠 Home' }),
+          T('t3', 'Call mum', { p: 2, time: '18:00', repeat: 'Every week' }),
+          T('t4', 'Groceries: oat milk, eggs, coriander', { list: '🛒 Groceries', steps: 2, stepsLabel: '1/3' }),
+          T('t5', 'Read 20 pages of *The Overstory*', { p: 3, time: '21:30', repeat: 'Every day' }),
+          T('t6', 'Water the plants on the balcony and check whether the basil needs repotting before the weekend')],
+  doneToday: [T('d1', 'Morning run'), T('d2', 'Take vitamins')],
+  upcoming: [['Tomorrow · Thu 22', 1, [T('u1', 'Dentist', { time: '11:00' }), T('u2', 'Send invoice to Kestrel Studio', { p: 2, list: '💼 Work' })]],
+             ['Fri 23', 2, [T('u3', 'Submit expense report', { p: 1, list: '💼 Work' })]],
+             ['Sat 24', 3, [T('u4', 'Clean the bike chain', { list: '🏠 Home' })]],
+             ['Mon 26', 5, [T('u6', 'Quarterly review prep', { p: 3, list: '💼 Work' })]],
+             ['Wed 4 Nov', 14, [T('u7', 'Car service', { time: '08:30' })]],
+             ['Tue 1 Dec', 41, [T('u8', 'Renew domain name', { p: 2 })]]],
+  inbox: [T('i1', 'Look into standing desks'), T('i2', 'Book recommendations from Riya'), T('i3', 'Fix the leaky tap', { p: 3 }),
+          T('i4', 'Idea: weekly review template'), T('i5', 'Cancel the old gym membership', { p: 2 })],
+  list: [T('l1', 'Pay electricity bill', { p: 1, due: 'Today' }), T('l2', 'Clean the bike chain', { due: 'Sat 24' }), T('l3', 'Replace hallway bulb'), T('l4', 'Sort the paper recycling')],
+};
+const LISTS = ['🏠 Home', '🛒 Groceries', '💼 Work'];
+const hm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+const mins = s => +s.slice(0, 2) * 60 + +s.slice(3);
+
+// ---------- state ----------
+const S = {
+  // stage
+  view: 'today', w: 4, h: 3, cols: 4, wall: 'a', scenario: 'normal', screen: 'home', sandbox: false,
+  now: mins('14:10'), lastDraw: mins('14:10'),
+  appTheme: 'light', drawnAppTheme: 'light', phoneDark: false, wtheme: 'app',
+  // look & sizes
+  layout: 'card', small: 'w3h2', btnLook: 'field', themeQ: 'override', bg: 'solid', radius: 'system',
+  // list & ticking
+  meta: 'right', clamp: '2', passed: 'never', overdueDate: 'short', groups: 'on', doneRows: 'hide', todayHead: 'leftOver', countOther: 'count',
+  tick: 'vanish', openSteps: 'dialog', rowTap: 'sheet', headTap: 'view', emptyLook: 'next', upRange: '7', listEnd: 'none', allGroup: 'list',
+  // adding
+  build: 'nativefull', afterAdd: 'pill', dismiss: 'discard', sheetTheme: 'widget', hint: 'example', live: 'both',
+  // setup & picker
+  cfgLook: 'full', pickName: 'Todo', pickPreview: 'live', sandboxMark: 'name',
+};
+
+// [key, id, title, scenario, options, explain(value)]
+const SECTIONS = [
+['Look & sizes', [
+  ['layout', 'L1', 'Overall layout',
+   'Look at the widget at 4×3, then flip the options.',
+   [['card', 'A · Card (like the Home card)'], ['hero', 'B · Big date on top'], ['bare', 'C · Just the list + floating +']],
+   v => ({ card: 'A: teal chip, view name and count in a slim header with + on the right. Matches the Todo card on Home.', hero: 'B: a large Fraunces “Wed 21 Oct” with “N of M done” and a progress bar. More personality, costs about two rows.', bare: 'C: no header, so the most rows fit. Nothing says which view it is, and + floats in the corner.' })[v]],
+  ['small', 'L2', 'What small sizes do',
+   'Set <em>Width</em>/<em>Height</em> to 1×1, 2×1, 2×2, 4×1 and 2×3.',
+   [['w3h2', 'A · Below 3 wide × 2 high: add button'], ['w3', 'B · Below 3 wide: add button (4×1 = one-line strip)'], ['either', 'C · List from 3 wide or 3 high'], ['never', 'D · No small sizes (min 3×2)']],
+   v => ({ w3h2: 'A: 3×2 and up show the list; 1×1, 2×1, 2×2, 3×1, 4×1 and 2×N are an add button.', w3: 'B: same, but 3×1/4×1 show a strip (count, first Task, +).', either: 'C: 2×3 and 2×4 show a narrow list too.', never: 'D: the launcher will not let it get smaller than 3×2; the dashed box shows “too small”.' })[v]],
+  ['btnLook', 'L3', 'How the add button looks',
+   'Only for small sizes (L2). Try each at 1×1, 2×1, 2×2 and 4×1.',
+   [['icon', '1 · Plus only'], ['label', '2 · + Add task'], ['view', '3 · + Add to ‹view›'], ['pill', '4 · Teal pill'], ['tile', '5 · Whole tile teal'], ['diamond', '6 · Diamond with +'], ['badge', '7 · + with count badge'], ['field', '8 · “Add a task…” field'], ['split', '9 · Add | 🎤 voice']],
+   v => `Look ${v}. At 1×1 the labels drop off where they would not fit.`],
+  ['themeQ', 'L4', 'Which themes a widget can have',
+   'Change <em>App theme (Settings)</em> and <em>Phone dark mode</em> in Stage, then open the <em>Configuration screen</em>. Note: changing the app theme only reaches the widget at its next redraw (round 4). Press “Make a change” to redraw.',
+   [['override', 'A · Follows the app; each widget can override (incl. Material You)'], ['app', 'B · Always the app’s theme'], ['you', 'C · Always Material You'], ['system', 'D · Phone light/dark only']],
+   v => ({ override: 'A: default is the app theme; the setup screen lets one widget be Light, Dark, True black, Material You or Material You dark.', app: 'B: no theme choice in setup.', you: 'C: wallpaper colours always; dark follows the phone.', system: 'D: app colours, but light/dark follows the phone, ignoring Settings ▸ Theme (and True black).' })[v]],
+  ['bg', 'L5', 'Background', 'Change the <em>Wallpaper</em> to judge each.',
+   [['solid', 'A · Solid'], ['translucent', 'B · See-through tint'], ['none', 'C · None (text on wallpaper)']],
+   v => ({ solid: 'A: opaque theme surface. Always readable.', translucent: 'B: surface at ~70%. Android cannot blur behind widgets, so no frosted glass.', none: 'C: text on the wallpaper with a shadow; breaks on busy wallpapers.' })[v]],
+  ['radius', 'L6', 'Corner radius', 'Compare with other widgets on your launcher.',
+   [['system', 'A · System (~24dp, matches other widgets)'], ['app', 'B · App card 16px'], ['square', 'C · 8px']],
+   v => ({ system: 'A: follows the launcher.', app: 'B: Mnemora’s own card radius.', square: 'C: tighter, more tool-like.' })[v]],
+]],
+['List & ticking', [
+  ['meta', 'R1', 'What a row shows besides the title', 'Today view at 4×3.',
+   [['right', 'A · Time on the right; List chip in mixed views'], ['line', 'B · Meta line under the title (date, time, ↻, ☑, List)'], ['none', 'C · Title only']],
+   v => ({ right: 'A: compact; Repeat, checklist and dates are not shown.', line: 'B: like the app’s rows; each row ~40% taller.', none: 'C: densest; time is lost.' })[v]],
+  ['clamp', 'R2', 'Long titles', 'See “Water the plants…”.',
+   [['1', 'A · 1 line …'], ['2', 'B · 2 lines …'], ['all', 'C · Wrap fully']],
+   v => ({ '1': 'A: every row the same height.', '2': 'B: most titles fit; a long one cannot take over.', all: 'C: nothing hidden; one Task can fill the widget.' })[v]],
+  ['passed', 'R3', 'A due time passes',
+   'Call mum is due <em>18:00</em>. Round 4 means no redraw at 18:00. Drag the <em>Phone clock</em> past 18:00.',
+   [['never', 'A · Times always grey on the widget'], ['stale', 'B · Red as of the last redraw']],
+   v => ({ never: 'A: never wrong; red stays an in-app signal.', stale: 'B: red if it had passed at the last redraw (shown above), so sometimes stale until “Make a change”.' })[v]],
+  ['overdueDate', 'R4', 'How late Overdue rows are', 'The two rows under the red Overdue header.',
+   [['short', 'A · Day on the right: “Mon”, “Yesterday”'], ['ago', 'B · Age: “2d”, “1d”'], ['none', 'C · Nothing']],
+   v => ({ short: 'A: the due day in red where the time would go.', ago: 'B: days late, in red.', none: 'C: only the red header and edge.' })[v]],
+  ['groups', 'R5', 'Group headers', 'Flip <em>View</em> between Today, Upcoming and All.',
+   [['on', 'A · Show everywhere'], ['todayoff', 'B · Hide in Today only'], ['off', 'C · Hide everywhere']],
+   v => ({ on: 'A: “Overdue” (red), “Today”, day names in Upcoming, List names in All.', todayoff: 'B: Today is one list (Overdue rows only marked by red edges/day); others keep headers.', off: 'C: one flat list; Upcoming loses its dates.' })[v]],
+  ['doneRows', 'R6', 'Tasks done today (Today view)', 'Two Tasks are already done today.',
+   [['hide', 'A · Hide them'], ['show', 'B · Struck through at the bottom (can reopen)'], ['count', 'C · Hidden, footer “2 of 10 done”']],
+   v => ({ hide: 'A: the widget is only what is left.', show: 'B: like the app’s “Completed today”; tap a filled diamond to reopen.', count: 'C: hidden but counted.' })[v]],
+  ['todayHead', 'R7', 'Today header text', 'After the word “Today” in the header (layout A).',
+   [['leftOver', 'A · “N left”, or red “N overdue” if any'], ['doneOf', 'B · “2 of 10 done”'], ['none', 'C · Nothing']],
+   v => ({ leftOver: 'A: overdue wins, so you notice it.', doneOf: 'B: progress instead of what is left.', none: 'C: just “Today”.' })[v]],
+  ['countOther', 'R8', 'Header count in other views', 'Set <em>View</em> to Upcoming, Inbox, All or the List.',
+   [['count', 'A · Number of open Tasks shown'], ['none', 'B · Nothing'], ['overdue', 'C · Only red “N overdue” when any']],
+   v => ({ count: 'A: “Inbox 5”, “🏠 Home 4”.', none: 'B: just the name.', overdue: 'C: silent unless something here is Overdue.' })[v]],
+  ['tick', 'R9', 'After you tick a diamond', 'Tick “Stand-up notes”.',
+   [['vanish', 'A · Row leaves at once + Undo bar ~4s'], ['linger', 'B · Struck through ~3s, tap again to undo, then leaves'], ['stay', 'C · Stays struck until the next redraw']],
+   v => ({ vanish: 'A: the Undo bar uses the widget’s theme.', linger: 'B: no bar; the row itself is the undo for 3 seconds.', stay: 'C: easy to undo, but done rows pile up until “Make a change”/midnight.' })[v]],
+  ['openSteps', 'R10', 'Ticking a Task with open steps', 'Tick the <em>Groceries</em> diamond (its notes have unticked items).',
+   [['dialog', 'A · Native dialog over home (same three choices)'], ['app', 'B · Opens the app to ask'], ['complete', 'C · Just complete']],
+   v => ({ dialog: 'A: Cancel · Tick all and complete · Complete, without leaving home.', app: 'B: opens the Task sheet with the question.', complete: 'C: breaks the rule that it asks every time.' })[v]],
+  ['rowTap', 'R11', 'Tapping a Task’s title', 'Tap the words of any row (not the diamond).',
+   [['sheet', 'A · Opens the app on that Task'], ['view', 'B · Opens the app on the view'], ['edit', 'C · Quick edit over home']],
+   v => ({ sheet: 'A: the Task sheet, over the view; Back returns to the view.', view: 'B: just the view.', edit: 'C: the Quick add sheet in edit mode, over the home screen.' })[v]],
+  ['headTap', 'R12', 'Tapping the header', 'Tap the view name.',
+   [['view', 'A · Opens the app on that view'], ['last', 'B · Opens Todo on its last view'], ['config', 'C · Reopens this widget’s setup']],
+   v => ({ view: 'A: Today, Upcoming, Inbox, All or the List.', last: 'B: wherever Todo was left.', config: 'C: the header is a settings shortcut.' })[v]],
+  ['emptyLook', 'R13', 'Nothing to show', 'Set <em>State</em> to “Nothing due” and flip <em>View</em>.',
+   [['next', 'A · Title + helpful line'], ['one', 'B · One quiet line'], ['mark', 'C · Teal diamond + title + line']],
+   v => ({ next: 'A: e.g. “Nothing due today / Next: Dentist, tomorrow 11:00”, “Inbox zero”.', one: 'B: a single faint line.', mark: 'C: friendlier; needs ≥3×3.' })[v]],
+  ['upRange', 'R14', 'How far ahead Upcoming looks', 'Set <em>View</em> to Upcoming.',
+   [['7', 'A · 7 days'], ['14', 'B · 14 days'], ['all', 'C · Everything']],
+   v => ({ '7': 'A: to Tue 27; 4 Nov and 1 Dec left out.', '14': 'B: to Tue 3 Nov.', all: 'C: every dated Task.' })[v]],
+  ['allGroup', 'R15', 'How All is grouped', 'Set <em>View</em> to All.',
+   [['list', 'A · By List, Inbox first (app default)'], ['due', 'B · By due date'], ['follow', 'C · Whatever the app’s All page is set to']],
+   v => ({ list: 'A: Inbox, 🏠 Home, 🛒 Groceries, 💼 Work.', due: 'B: Overdue, Today, Tomorrow, Later, No date.', follow: 'C: mirrors the app’s “Group:” choice for All (shown here as by List).' })[v]],
+  ['listEnd', 'R16', 'Bottom of the list', 'Scroll the widget list to the end.',
+   [['none', 'A · Nothing'], ['open', 'B · “Open in Mnemora →”'], ['quiet', 'C · Quiet “That’s all”']],
+   v => ({ none: 'A: it just ends.', open: 'B: a teal link to the view in the app.', quiet: 'C: a faint end marker.' })[v]],
+]],
+['Adding', [
+  ['build', 'A1', 'How + gives you Quick add', 'Tap <em>+</em> after each option.',
+   [['appopen', 'A · Open Mnemora with its Quick add'], ['webover', 'B · Real Quick add over home'], ['nativefull', 'C · Native copy of Quick add over home'], ['nativelite', 'D · Cut-down native (typing only)']],
+   v => ({ appopen: 'A: the real one, inside the app on that view; ~1 s cold. Goes back to home after Add.', webover: 'B: the real one floating over home; unofficial Tauri path, ~1–1.5 s cold, can stop a running Mnemora.', nativefull: 'C: looks the same over home, ~0.3 s, but every part (pickers too) is rebuilt in Kotlin and kept in step.', nativelite: 'D: just a text box; everything set by typing. A5/A6 apply.' })[v]],
+  ['afterAdd', 'A2', 'After Add', 'Add a Task.',
+   [['pill', 'A · Close; themed Undo pill ~4s'], ['stay', 'B · Stay open for the next one'], ['plain', 'C · Close; plain “Added” toast'], ['silent', 'D · Close silently']],
+   v => ({ pill: 'A: “Added “…” · Today · Undo” floats over home; taps elsewhere pass through.', stay: 'B: box clears, keyboard stays; Back closes.', plain: 'C: Android toasts cannot hold an Undo button.', silent: 'D: the widget list updating is the only sign.' })[v]],
+  ['dismiss', 'A3', 'Closing with text typed', 'Type something, then tap the dark area above the sheet.',
+   [['discard', 'A · Throw it away'], ['draft', 'B · Keep it for next time'], ['ask', 'C · Ask “Discard?”']],
+   v => ({ discard: 'A: matches the app’s Quick add (Esc drops what was typed).', draft: 'B: next + reopens with the text.', ask: 'C: one more tap every time.' })[v]],
+  ['sheetTheme', 'A4', 'Theme of the sheet, pill and dialogs', 'Set the widget to Material You in setup, then tap +.',
+   [['widget', 'A · The widget’s theme'], ['app', 'B · The app’s theme']],
+   v => ({ widget: 'A: looks like it grew out of the widget.', app: 'B: always Settings ▸ Theme.' })[v]],
+  ['hint', 'A5', 'Empty-box hint (only A1 D)', 'Choose A1 D, tap +.',
+   [['example', 'A · Example as placeholder'], ['legend', 'B · “New task” + legend'], ['plain', 'C · Plain']],
+   v => `Only matters for A1 D.`],
+  ['live', 'A6', 'Shown while typing (only A1 D)', 'Choose A1 D, tap +, type “Call plumber tomorrow 9am p2 #Home”.',
+   [['both', 'A · Highlight + readings + destination'], ['dest', 'B · Highlight + destination'], ['dest0', 'C · Destination only'], ['none', 'D · Nothing']],
+   v => `Only matters for A1 D.`],
+]],
+['Setup, picker, Sandbox', [
+  ['cfgLook', 'P1', 'Setup screen contents', 'Press <em>Configuration screen</em>.',
+   [['full', 'A · View + Theme + Background'], ['viewtheme', 'B · View + Theme'], ['view', 'C · View only']],
+   v => ({ full: 'A: every per-widget choice with a live preview.', viewtheme: 'B: background fixed by L5.', view: 'C: theme per L4 only.' })[v]],
+  ['pickName', 'P2', 'Name in the widget picker', 'Press <em>Widget picker</em>.',
+   [['Todo', 'A · “Todo”'], ['Todo list', 'B · “Todo list”'], ['Tasks', 'C · “Tasks”']],
+   v => ({ Todo: 'A: matches the Module and the glossary.', 'Todo list': 'B: “list” clashes with List.', Tasks: 'C: a Task is one item; clashes with the glossary.' })[v]],
+  ['pickPreview', 'P3', 'Picker preview', 'On the <em>Widget picker</em>.',
+   [['live', 'A · Real layout with sample Tasks'], ['icon', 'B · Teal diamond image']],
+   v => ({ live: 'A: Android 12+ draws the real layout with sample Tasks, never your data.', icon: 'B: a simple image.' })[v]],
+  ['sandboxMark', 'P4', 'Telling Sandbox apart', 'Turn on <em>Sandbox build</em>; check the picker and the widget.',
+   [['name', 'A · Picker name “Todo (Sandbox)” only'], ['tag', 'B · + amber SANDBOX tag on the widget'], ['nothing', 'C · No difference']],
+   v => ({ name: 'A: identical on the home screen.', tag: 'B: you can never tick a Sandbox Task by mistake.', nothing: 'C: only the app name in the picker differs.' })[v]],
+]],
+];
+
+const DECIDED = [
+  ['1', 'See + tick + add from the home screen'],
+  ['1', 'One widget that changes with size'],
+  ['1', 'View chosen when placing; changeable later'],
+  ['1', 'Both builds; tested on Sandbox first'],
+  ['2', 'Views: Today, Upcoming, Inbox, All, or one List'],
+  ['2', 'Android 12+ only; name “Todo widget”'],
+  ['3', 'Calls the app’s Rust code directly'],
+  ['3', 'After an app update: “Open Mnemora to update”'],
+  ['3', 'App open in background: updates instantly + on return'],
+  ['3', 'Before first app launch: “Open Mnemora once to set up”'],
+  ['4', 'Redraws only after Todo changes and at midnight'],
+  ['4', 'Material You app theme stays separate (#43)'],
+];
+
+// ---------- helpers ----------
+const ICON = {
+  check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  plus: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  sq: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.5"/><path d="m9 11 3 3L22 4"/></svg>',
+};
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+const md = s => esc(s).replace(/\*(.+?)\*/g, '<i>$1</i>');
+const gone = new Set(), struck = new Set(), reopened = new Set();
+let undoTask = null, undoTimer, pill = null, pillTimer, toastTimer, overlay = '', draft = '';
+const live = t => !gone.has(t.id);
+const title = () => ({ today: 'Today', upcoming: 'Upcoming', inbox: 'Inbox', all: 'All', list: '🏠 Home' })[S.view];
+
+// Widget theme after L4: the app's theme only changes on the widget at a redraw (round 4).
+function resolveApp(t) { return t === 'system' ? (S.phoneDark ? 'dark' : 'light') : t; }
+function widgetTheme() {
+  if (S.themeQ === 'you') return S.phoneDark ? 'dynamicdark' : 'dynamic';
+  if (S.themeQ === 'system') return S.phoneDark ? 'dark' : 'light';
+  if (S.themeQ === 'override' && S.wtheme !== 'app') return S.wtheme;
+  return resolveApp(S.drawnAppTheme);
+}
+const CLS = { light: '', dark: 'dark', oled: 'dark oled', dynamic: 'dynamic', dynamicdark: 'dynamic dark' };
+const themeCls = () => CLS[widgetTheme()];
+const sheetCls = () => S.sheetTheme === 'widget' ? themeCls() : CLS[resolveApp(S.appTheme)];
+
+function model() {
+  if (S.scenario === 'empty') return [];
+  const overdue = ['Overdue', DATA.overdue.filter(live).map(t => ({ ...t, overdue: true })), true];
+  if (S.view === 'today') return [overdue, ['Today', DATA.today.filter(live)]];
+  if (S.view === 'upcoming') {
+    const lim = S.upRange === 'all' ? 999 : +S.upRange;
+    return [overdue, ...DATA.upcoming.filter(g => g[1] <= lim).map(g => [g[0], g[2].filter(live)])];
+  }
+  if (S.view === 'all') {
+    const every = [...DATA.overdue.map(t => ({ ...t, overdue: true })), ...DATA.today, ...DATA.inbox, ...DATA.upcoming.flatMap(g => g[2])].filter(live);
+    if (S.allGroup === 'due') return [overdue, ['Today', DATA.today.filter(live)], ['Tomorrow', DATA.upcoming[0][2].filter(live)], ['Later', DATA.upcoming.slice(1).flatMap(g => g[2]).filter(live)], ['No date', DATA.inbox.filter(live)]];
+    const by = l => every.filter(t => (t.list || 'Inbox') === l).map(t => ({ ...t, list: undefined }));
+    return [['Inbox', by('Inbox')], ...LISTS.map(l => [l, by(l)])];
+  }
+  return [['', (S.view === 'inbox' ? DATA.inbox : DATA.list).filter(live)]];
+}
+
+function rowHTML(t, isDone) {
+  const done = isDone || struck.has(t.id);
+  const tone = done ? 'on' : t.p < 4 ? 'p' + t.p : t.overdue ? 'overdue' : '';
+  const red = t.time && S.view === 'today' && S.passed === 'stale' && mins(t.time) < S.lastDraw;
+  let right = '', meta = '';
+  if (S.meta === 'right') {
+    if (t.overdue && S.overdueDate !== 'none') right = `<span class="tm red">${S.overdueDate === 'short' ? t.dueShort : t.ago}</span>`;
+    else if (t.time) right = `<span class="tm ${red ? 'red' : ''}">${t.time}</span>`;
+    if (t.list && !['list', 'all'].includes(S.view)) right = `<span class="lchip">${t.list}</span>` + right;
+  } else if (S.meta === 'line') {
+    const b = [];
+    if (t.overdue) b.push(`<span class="red">📅 ${S.overdueDate === 'ago' ? t.ago + ' late' : t.due}</span>`);
+    else if (t.due && S.view !== 'today') b.push(`<span>📅 ${t.due}</span>`);
+    if (t.time) b.push(`<span class="${red ? 'red' : ''}">🕑 ${t.time}</span>`);
+    if (t.repeat) b.push(`<span>↻ ${t.repeat}</span>`);
+    if (t.stepsLabel) b.push(`<span>☑ ${t.stepsLabel}</span>`);
+    if (t.list && !['list', 'all'].includes(S.view)) b.push(`<span>${t.list}</span>`);
+    if (b.length) meta = `<div class="m">${b.join('')}</div>`;
+  }
+  return `<div class="row ${done ? 'done' : ''}"><button class="cb ${tone}" data-tick="${t.id}" ${isDone ? 'data-wasdone' : ''} aria-label="Complete"><span>${ICON.check}</span></button>
+    <div class="body" data-open="${t.id}"><div class="t">${md(t.title)}</div>${meta}</div>${right}</div>`;
+}
+
+function emptyHTML() {
+  const msg = {
+    today: ['Nothing due today', 'Next: Dentist, tomorrow 11:00'],
+    upcoming: ['Nothing coming up', S.upRange === 'all' ? 'No dated Tasks' : `Nothing in the next ${S.upRange} days`],
+    inbox: ['Inbox zero', 'Everything has a List'], all: ['No open Tasks', 'Everything is done'], list: ['No open Tasks', 'in 🏠 Home'],
+  }[S.view];
+  if (S.emptyLook === 'one') return `<div class="empty" data-head><div>${msg[0]}</div></div>`;
+  const mark = S.emptyLook === 'mark' ? `<div class="dia" style="width:30px;height:30px"><span>${ICON.check}</span></div>` : '';
+  return `<div class="empty" data-head><div>${mark}<div class="big">${msg[0]}</div>${msg[1]}</div></div>`;
+}
+
+function addButtonHTML(cls, style, w, h) {
+  const roomy = w > 1 || h > 1, L = S.btnLook;
+  const n = DATA.overdue.filter(live).length + DATA.today.filter(live).length;
+  const word = L === 'view' ? `Add to ${title()}` : 'Add task';
+  let inner;
+  if (L === 'diamond') inner = `<span class="dia"><span>${ICON.plus}</span></span>${roomy ? '<span>Add task</span>' : ''}`;
+  else if (L === 'badge') inner = `<span class="bdg">${ICON.plus}<em>${n}</em></span>${roomy ? '<span>Add task</span>' : ''}`;
+  else if (L === 'field') inner = roomy ? `<span class="fld">${ICON.plus}<span>Add a task…</span></span>` : ICON.plus;
+  else if (L === 'split') inner = roomy && w > 1 ? `<span class="spl"><span>${ICON.plus} Add task</span><i></i><span data-voice>🎤</span></span>` : ICON.plus;
+  else inner = ICON.plus + (roomy && L !== 'icon' ? `<span>${word}</span>` : '');
+  return `<div class="${cls} btnw ${L === 'tile' ? 'tile' : ''}" style="${style}"><button class="bigadd look-${L}" data-add aria-label="Add a Task">${inner}</button></div>`;
+}
+
+function widgetHTML(forPreview) {
+  const cls = `w tk ${themeCls()} bg-${S.bg} clamp${S.clamp} ${S.sandbox && S.sandboxMark === 'tag' ? 'sandbox' : ''} ${S.layout === 'bare' ? 'bare' : ''}`;
+  const style = `--wr:${{ system: '24px', app: '16px', square: '8px' }[S.radius]}`;
+  const box = inner => `<div class="${cls}" style="${style}">${inner}</div>`;
+  if (S.scenario === 'fresh') return box(`<div class="empty" data-head><div><div class="big">Open Mnemora once</div>to set up your Todo widget.</div></div>`);
+  if (S.scenario === 'migrate') return box(`<div class="empty" data-head><div><div class="big">Open Mnemora to update</div>Mnemora was updated. Open it once and the widget comes back.</div></div>`);
+
+  const w = Math.min(S.w, S.cols), h = S.h;
+  if (!forPreview) {
+    const fits = { w3h2: w >= 3 && h >= 2, w3: w >= 3, either: w >= 3 || h >= 3, never: w >= 3 && h >= 2 }[S.small];
+    if (!fits && S.small === 'never') return `<div class="toosmall">Too small: the launcher stops this widget at 3×2</div>`;
+    if (!fits) return addButtonHTML(cls, style, w, h);
+  }
+
+  const groups = model();
+  const open = groups.reduce((n, g) => n + g[1].length, 0);
+  const overdue = S.scenario === 'empty' ? 0 : DATA.overdue.filter(live).length;
+  const doneN = (S.scenario === 'empty' ? 0 : DATA.doneToday.length) + DATA.today.filter(t => gone.has(t.id)).length + DATA.overdue.filter(t => gone.has(t.id)).length;
+  const total = doneN + (S.view === 'today' ? open : 0);
+
+  if (!forPreview && S.small === 'w3' && h === 1) {
+    const first = groups.flatMap(g => g[1])[0];
+    return box(`<div class="hd" style="height:100%;padding:0 10px 0 14px" data-head><div style="min-width:0;flex:1"><div class="ttl" style="font-size:13.5px">${first ? md(first.title) : 'Nothing due'}</div>
+      <span class="sub ${overdue ? 'red' : ''}">${title()} · ${overdue ? overdue + ' overdue' : open + ' left'}</span></div><button class="add" data-add>${ICON.plus}</button></div>`);
+  }
+
+  let sub = '';
+  if (S.view === 'today') {
+    if (S.todayHead === 'leftOver') sub = overdue ? `<span class="sub red">${overdue} overdue</span>` : `<span class="sub">${open} left</span>`;
+    if (S.todayHead === 'doneOf') sub = `<span class="sub">${doneN} of ${total} done</span>`;
+  } else if (S.countOther === 'count') sub = `<span class="sub">${open}</span>`;
+  else if (S.countOther === 'overdue' && overdue && ['upcoming', 'all'].includes(S.view)) sub = `<span class="sub red">${overdue} overdue</span>`;
+  const addBtn = `<button class="add" data-add aria-label="Add a Task">${ICON.plus}</button>`;
+  let head = '';
+  if (S.layout === 'card') head = `<div class="hd" data-head><span class="chip">${ICON.sq}</span><span class="ttl">${title()}</span>${sub}<span class="sp"></span>${addBtn}</div>`;
+  if (S.layout === 'hero') head = `<div class="hero" data-head><div class="top"><div class="day">${S.view === 'today' ? 'Wed 21 Oct' : title()}</div>${addBtn}</div>
+      ${S.view === 'today' ? `<div class="meta">${S.todayHead === 'leftOver' && overdue ? `<span class="sub red">${overdue} overdue</span>` : `<span class="sub">${doneN} of ${total} done</span>`}</div><div class="bar"><i style="width:${total ? doneN / total * 100 : 0}%"></i></div>` : `<div class="meta">${sub}</div>`}</div>`;
+
+  let body;
+  if (!open) body = emptyHTML();
+  else {
+    body = '<div class="list">';
+    const showHeads = S.groups === 'on' || (S.groups === 'todayoff' && S.view !== 'today');
+    for (const [name, tasks, red] of groups) {
+      if (!tasks.length) continue;
+      if (name && showHeads) body += `<div class="gh ${red ? 'red' : ''}">${name}</div>`;
+      body += tasks.map(t => rowHTML(t)).join('');
+    }
+    if (S.view === 'today' && S.doneRows === 'show') {
+      const done = [...DATA.doneToday.filter(t => !reopened.has(t.id)), ...DATA.today.filter(t => gone.has(t.id))];
+      if (done.length) body += (showHeads ? '<div class="gh">Completed today</div>' : '') + done.map(t => rowHTML(t, true)).join('');
+    }
+    if (S.listEnd === 'open') body += `<span class="endrow" data-head>Open in Mnemora →</span>`;
+    if (S.listEnd === 'quiet') body += `<span class="endrow quiet">That’s all</span>`;
+    body += '</div>';
+  }
+  const foot = S.view === 'today' && S.doneRows === 'count' && open ? `<div class="ft">${doneN} of ${total} done</div>` : '';
+  const fab = S.layout === 'bare' ? `<button class="add fab" data-add aria-label="Add a Task">${ICON.plus}</button>` : '';
+  const undo = undoTask ? `<div class="undo"><span>Completed “${esc(undoTask.title)}”</span><b data-undo>Undo</b></div>` : '';
+  return box(head + body + foot + fab + undo);
+}
+
+function homeHTML() {
+  const cols = S.cols, cellh = cols === 4 ? 112 : 100, w = Math.min(S.w, cols);
+  const names = ['Photos', 'Maps', 'Mail', 'Notes', 'Clock', 'Music', 'Camera', 'Files', 'Chat', 'Bank', 'Docs', 'Fit', 'Shop', 'Paint', 'Radio', 'News', 'Pay', 'Books', 'Home'];
+  let cells = '';
+  for (let i = 0; i < cols * 5 - w * S.h; i++) cells += `<div class="appicon"><i></i>${names[i % names.length]}</div>`;
+  let dock = '';
+  for (let i = 0; i < cols; i++) dock += `<div class="appicon"><i></i></div>`;
+  return `<div class="status"><span>${hm(S.now)}</span><span>▾ ▴ 87%</span></div>
+    <div class="home"><div class="grid" style="--cols:${cols};--cellh:${cellh}px">
+      <div class="slot" style="grid-column: span ${w}; grid-row: span ${S.h}">${widgetHTML()}</div>${cells}</div></div>
+    <div class="dock" style="--cols:${cols}">${dock}</div><div class="search"></div>`;
+}
+
+// ---------- recognised words (a toy stand-in for crates/todo/src/parse.rs) ----------
+const RULES = [
+  [/\b(today|tonight)\b/gi, m => [m, m.toLowerCase() === 'tonight' ? 'Wed 21 Oct, 20:00' : 'Wed 21 Oct'], 'date'],
+  [/\btomorrow\b/gi, m => [m, 'Thu 22 Oct'], 'date'],
+  [/\bnext week\b/gi, m => [m, 'Mon 26 Oct'], 'date'],
+  [/\b(mon|tue|tues|wed|thu|thurs|fri|sat|sun)(day)?\b/gi, m => [m, { mon: 'Mon 26 Oct', tue: 'Tue 27 Oct', wed: 'Wed 28 Oct', thu: 'Thu 22 Oct', fri: 'Fri 23 Oct', sat: 'Sat 24 Oct', sun: 'Sun 25 Oct' }[m.slice(0, 3).toLowerCase()]], 'date'],
+  [/\b\d{1,2}(:\d\d)?\s?(am|pm)\b|\b\d{1,2}:\d\d\b/gi, m => [m, 'time'], 'time'],
+  [/\bevery (day|week|weekday|month|year)\b/gi, m => [m, 'Repeat'], 'repeat'],
+  [/\bp[1-4]\b/gi, m => [m, 'Priority ' + m[1]], 'prio'],
+  [/#[\p{L}\d_-]+/gu, m => [m, 'List'], 'list'],
+];
+function parse(text) {
+  const hits = [];
+  for (const [re, fn, kind] of RULES) {
+    re.lastIndex = 0;
+    let m; while ((m = re.exec(text))) hits.push({ start: m.index, end: m.index + m[0].length, kind, read: fn(m[0]) });
+  }
+  return hits.sort((a, b) => a.start - b.start);
+}
+function where(hits) {
+  const list = hits.find(h => h.kind === 'list');
+  const date = [...hits].reverse().find(h => h.kind === 'date');
+  const time = hits.find(h => h.kind === 'time');
+  const listName = list ? (LISTS.find(l => l.toLowerCase().includes(list.read[0].slice(1).toLowerCase())) || `new List ${list.read[0]}`) : (S.view === 'list' ? '🏠 Home' : 'Inbox');
+  const d = date ? date.read[1] : ({ today: 'today', upcoming: 'tomorrow' }[S.view] || '');
+  return `${listName}${d || time ? `, ${d}${time ? ' ' + time.read[0] : ''}` : ''}`;
+}
+function marked(v, hits) {
+  let out = '', i = 0;
+  for (const h of hits) { if (h.start < i) continue; out += esc(v.slice(i, h.start)) + `<mark>${esc(v.slice(h.start, h.end))}</mark>`; i = h.end; }
+  return out + esc(v.slice(i));
+}
+function renderLive() {
+  const inp = document.getElementById('cap'); if (!inp) return;
+  const v = inp.value, hits = parse(v), lite = S.build === 'nativelite';
+  document.getElementById('hl').innerHTML = !lite || ['both', 'dest'].includes(S.live) ? marked(v, hits) : '';
+  if (!lite) document.getElementById('reads').innerHTML = hits.map(h => `<span class="rd">${esc(h.read[0])} → ${esc(h.read[1])} <b>×</b></span>`).join('');
+  else {
+    const line = document.getElementById('live');
+    line.innerHTML = !v || S.live === 'none' ? '' : (S.live === 'both' && hits.length ? hits.map(h => `<span class="w1">${esc(h.read[0])}</span> → ${esc(h.read[1])}`).join(' · ') + '<br>' : '') + 'Adds to ' + esc(where(hits));
+  }
+  document.getElementById('go').disabled = !v.trim();
+  draft = v;
+}
+
+function sheetHTML() {
+  const t = sheetCls();
+  const behind = S.build === 'appopen'
+    ? `<div class="appbg tk ${CLS[resolveApp(S.appTheme)]}"><div class="apph">${title()}</div>${[1, 2, 3, 4, 5].map(() => '<div class="ghostrow"><i></i><b></b></div>').join('')}</div>` : '';
+  let inner;
+  if (S.build === 'nativelite') {
+    const ph = S.hint === 'example' ? 'Call mum tomorrow 6pm p2 #Home' : 'New task';
+    const legend = S.hint === 'legend' ? `<div class="legend"><i>tomorrow</i><i>fri</i><i>6pm</i><i>every week</i><i>#List</i><i>p1–p4</i></div>` : '';
+    inner = `<div class="field"><div class="hl" id="hl"></div><input id="cap" placeholder="${ph}" autocomplete="off"></div>${legend}<div class="live" id="live"></div>`;
+  } else {
+    const ph = { today: 'Quick add, due today', upcoming: 'Quick add, due tomorrow', inbox: 'Quick add to Inbox', all: 'Quick add to Inbox', list: 'Quick add to 🏠 Home' }[S.view];
+    const whenChip = { today: '📅 Today', upcoming: '📅 Tomorrow' }[S.view] || '📅 When';
+    inner = `<div class="qa1"><span class="cb"><span></span></span><div class="field"><div class="hl" id="hl"></div><input id="cap" placeholder="${ph}" autocomplete="off"></div></div>
+      <div class="qa2"><div class="reads" id="reads"></div><div class="props"><button data-chip="List picker">${S.view === 'list' ? '🏠 Home' : '📥 Inbox'}</button><button data-chip="When picker (calendar, time, Repeat)">${whenChip}</button><button data-chip="Priority menu">⚑ Priority</button><button data-chip="Notes field">✎ Notes</button></div></div>`;
+  }
+  return `${behind}<div class="scrim dim" data-close><div class="sheet tk ${t}"><div class="grab"></div>${inner}
+    <div class="bar2"><button class="go" id="go" data-save disabled>Add</button></div><div class="kbd">keyboard (Enter adds)</div></div></div>`;
+}
+function stepsHTML() {
+  return `<div class="scrim dim" data-close><div class="dlg tk ${sheetCls()}"><h3>2 open steps</h3>
+    <p>“Groceries: oat milk, eggs, coriander” still has unticked items in its notes.</p>
+    <div class="acts"><button data-steps="tick">Tick all and complete</button><button data-steps="complete">Complete</button><button data-steps="cancel">Cancel</button></div></div></div>`;
+}
+function pickerHTML() {
+  const entry = sb => `<div class="pw">${S.pickPreview === 'live' ? `<div class="prev">${widgetHTML(true)}</div>` : `<div class="icon"><div class="dia" style="width:48px;height:48px;border-radius:10px"><span>${ICON.check}</span></div></div>`}</div>
+      <div class="pmeta">${S.pickName}${sb && S.sandboxMark !== 'nothing' ? ' (Sandbox)' : ''}<small>4 × 3 · resizable</small></div>`;
+  return `<div class="picker"><h2>Widgets</h2><div class="papp"><div class="nm"><i></i>Mnemora</div>${entry(false)}</div>
+    ${S.sandbox ? `<div class="papp"><div class="nm"><i style="background:oklch(72% .15 65)"></i>Mnemora Sandbox</div>${entry(true)}</div>` : ''}
+    <div class="papp" style="opacity:.5"><div class="nm"><i style="background:#999"></i>Clock</div></div></div>`;
+}
+function cfgHTML() {
+  const opt = (k, v, label, small) => `<div class="opt" data-set="${k}" data-val="${v}"><span>${label}${small ? `<small>${small}</small>` : ''}</span><span class="radio ${S[k] === v ? 'on' : ''}"></span></div>`;
+  const head = t => `<div class="gh" style="padding:14px 0 0">${t}</div>`;
+  let body = head('Show') + opt('view', 'today', 'Today', 'Overdue and due today') + opt('view', 'upcoming', 'Upcoming', 'Overdue, then each day') +
+    opt('view', 'inbox', 'Inbox', 'Tasks with no List') + opt('view', 'all', 'All', 'Every open Task') + opt('view', 'list', '🏠 Home', 'List') + `<div class="opt" style="color:var(--faint)">🛒 Groceries · 💼 Work</div>`;
+  if (S.cfgLook !== 'view' && S.themeQ === 'override') body += head('Theme') + opt('wtheme', 'app', 'Same as the app', 'Settings ▸ Theme') + opt('wtheme', 'light', 'Light') + opt('wtheme', 'dark', 'Dark') + opt('wtheme', 'oled', 'True black') + opt('wtheme', 'dynamic', 'Material You') + opt('wtheme', 'dynamicdark', 'Material You dark');
+  if (S.cfgLook === 'full') body += head('Background') + opt('bg', 'solid', 'Solid') + opt('bg', 'translucent', 'See-through') + opt('bg', 'none', 'None');
+  return `<div class="cfg tk ${themeCls()}"><header>Todo widget</header><div class="prev wall-${S.wall}">${widgetHTML(true)}</div>
+    <div class="body">${body}</div><footer><button data-screen="home">Cancel</button><button class="pri" data-screen="home">Done</button></footer></div>`;
+}
+
+function render() {
+  const scr = document.getElementById('screen');
+  scr.className = 'screen wall-' + S.wall;
+  let html = homeHTML();
+  if (overlay === 'sheet') html += sheetHTML();
+  if (overlay === 'steps') html += stepsHTML();
+  if (pill) html += `<div class="pill tk ${sheetCls()}"><span>Added “${esc(pill.text)}” · ${esc(pill.where)}</span>${S.afterAdd === 'pill' ? '<b data-unadd>Undo</b>' : ''}</div>`;
+  if (S.screen === 'picker') html += pickerHTML();
+  if (S.screen === 'cfg') html += cfgHTML();
+  scr.innerHTML = html;
+  const cap = document.getElementById('cap');
+  if (cap) {
+    cap.value = draft; cap.focus(); renderLive();
+    cap.oninput = renderLive;
+    cap.onkeydown = e => { if (e.key === 'Enter') save(); };
+    cap.onscroll = () => { document.getElementById('hl').scrollLeft = cap.scrollLeft; };
+  }
+  explain();
+}
+function explain() {
+  const cur = `<div class="cur"><b>${Math.min(S.w, S.cols)}×${S.h}</b> · ${title()} · phone ${hm(S.now)} · last redraw ${hm(S.lastDraw)}${S.drawnAppTheme !== S.appTheme ? ` · <b>app theme changed, widget not redrawn yet</b>` : ''}</div>`;
+  const lines = SECTIONS.flatMap(([, qs]) => qs.map(([k, id, , , , fn]) => `<div style="margin-bottom:5px"><b>${id}</b> ${fn(S[k])}</div>`));
+  document.getElementById('explain').innerHTML = cur + lines.join('');
+}
+function toast(msg) {
+  clearTimeout(toastTimer);
+  document.querySelector('.toast')?.remove();
+  const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg;
+  document.getElementById('screen').appendChild(d);
+  toastTimer = setTimeout(() => d.remove(), 2600);
+}
+function redraw() { S.lastDraw = S.now; S.drawnAppTheme = S.appTheme; struck.forEach(id => gone.add(id)); struck.clear(); }
+function find(id) { return [...DATA.overdue, ...DATA.today, ...DATA.doneToday, ...DATA.inbox, ...DATA.list, ...DATA.upcoming.flatMap(g => g[2])].find(t => t.id === id); }
+function complete(t) {
+  if (S.tick === 'vanish') {
+    redraw(); gone.add(t.id); undoTask = t;
+    clearTimeout(undoTimer); undoTimer = setTimeout(() => { undoTask = null; render(); }, 4000);
+  } else if (S.tick === 'linger') {
+    struck.add(t.id);
+    setTimeout(() => { if (struck.has(t.id)) { struck.delete(t.id); gone.add(t.id); render(); } }, 3000);
+  } else struck.add(t.id);
+  render();
+}
+function save() {
+  const v = document.getElementById('cap').value.trim(); if (!v) return;
+  const hits = parse(v), id = 'n' + Date.now();
+  const target = S.view === 'list' ? DATA.list : ['inbox', 'all'].includes(S.view) ? DATA.inbox : S.view === 'upcoming' ? DATA.upcoming[0][2] : DATA.today;
+  const p = hits.find(h => h.kind === 'prio');
+  target.push(T(id, v, { p: p ? +p.read[0][1] : 4 }));
+  redraw();
+  if (S.afterAdd === 'stay') { draft = ''; render(); return toast(`Added to ${where(hits)}`); }
+  draft = ''; overlay = '';
+  if (S.afterAdd === 'pill' || S.afterAdd === 'plain') {
+    pill = { text: v.length > 28 ? v.slice(0, 28) + '…' : v, where: where(hits), id, target };
+    clearTimeout(pillTimer); pillTimer = setTimeout(() => { pill = null; render(); }, 4000);
+  }
+  render();
+}
+
+document.getElementById('screen').addEventListener('click', e => {
+  const el = e.target.closest('[data-tick],[data-open],[data-head],[data-add],[data-undo],[data-unadd],[data-close],[data-save],[data-set],[data-screen],[data-steps],[data-chip]');
+  if (!el) return;
+  const d = el.dataset;
+  if (d.tick) {
+    const t = find(d.tick);
+    if (d.wasdone !== undefined) { reopened.add(t.id); gone.delete(t.id); render(); return toast('Reopened'); }
+    if (struck.has(t.id)) { struck.delete(t.id); render(); return toast('Reopened'); }
+    if (t.steps && S.openSteps !== 'complete') { if (S.openSteps === 'app') return toast('Opens Mnemora on this Task with the open-steps question'); overlay = 'steps'; return render(); }
+    return complete(t);
+  }
+  if (d.steps) { overlay = ''; if (d.steps === 'cancel') return render(); return complete(find('t4')); }
+  if (d.undo !== undefined) { gone.delete(undoTask.id); undoTask = null; return render(); }
+  if (d.unadd !== undefined) { pill.target.splice(pill.target.findIndex(t => t.id === pill.id), 1); pill = null; return render(); }
+  if (d.chip) return toast('Opens the ' + d.chip + ' (as in the app)');
+  if (d.open) {
+    if (S.rowTap === 'edit') { draft = find(d.open).title; overlay = 'sheet'; return render(); }
+    return toast(S.rowTap === 'sheet' ? 'Opens Mnemora on this Task’s sheet' : 'Opens Mnemora on Todo ▸ ' + title());
+  }
+  if (d.head !== undefined) {
+    if (S.headTap === 'config') { S.screen = 'cfg'; buildCtl(); return render(); }
+    return toast(S.headTap === 'view' ? 'Opens Mnemora on Todo ▸ ' + title() : 'Opens Mnemora on Todo, last view');
+  }
+  if (d.add !== undefined) { overlay = 'sheet'; draft = S.dismiss === 'draft' ? draft : ''; return render(); }
+  if (d.save !== undefined) return save();
+  if (d.close !== undefined && e.target === el) {
+    if (S.dismiss === 'ask' && draft) { if (!confirm('Discard this task?')) return; }
+    overlay = ''; if (S.dismiss !== 'draft') draft = ''; return render();
+  }
+  if (d.set) { S[d.set] = d.val; buildCtl(); return render(); }
+  if (d.screen) { S.screen = d.screen; buildCtl(); return render(); }
+});
+
+// ---------- control panel ----------
+const STAGE = [
+  ['view', 'View', [['today', 'Today'], ['upcoming', 'Upcoming'], ['inbox', 'Inbox'], ['all', 'All'], ['list', 'List 🏠 Home']]],
+  ['w', 'Width (cells)', [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']]],
+  ['h', 'Height (cells)', [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']]],
+  ['scenario', 'State', [['normal', 'Normal'], ['empty', 'Nothing due'], ['fresh', 'Never opened app'], ['migrate', 'Update pending']]],
+  ['appTheme', 'App theme (Settings)', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'True black']]],
+  ['phoneDark', 'Phone dark mode', [[false, 'Off'], [true, 'On']]],
+  ['wtheme', 'This widget’s theme (setup, L4 A only)', [['app', 'Same as app'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'True black'], ['dynamic', 'Material You'], ['dynamicdark', 'Material You dark']]],
+  ['wall', 'Wallpaper', [['a', 'Gradient'], ['b', 'Light'], ['c', 'Black']]],
+  ['cols', 'Launcher grid', [[4, '4 columns'], [5, '5 columns']]],
+];
+const seg = (k, vals) => `<div class="seg">${vals.map(([v, l]) => `<button data-k="${k}" data-v="${v}" aria-pressed="${S[k] === v}">${l}</button>`).join('')}</div>`;
+function buildCtl() {
+  let h = `<h1>Todo widget</h1><p class="lead">Questions are grouped in the order we will go through them. Each says what to try; the box under the phone explains what you see. Tap diamonds, rows, the header and +. The Groceries diamond has open steps.</p>
+    <details open><summary>Stage</summary>
+    <div class="grp"><b>Screens</b><div class="seg">
+      <button data-k="screen" data-v="home" aria-pressed="${S.screen === 'home'}">Home screen</button>
+      <button data-k="screen" data-v="cfg" aria-pressed="${S.screen === 'cfg'}">Configuration screen</button>
+      <button data-k="screen" data-v="picker" aria-pressed="${S.screen === 'picker'}">Widget picker</button>
+      <button data-k="sandbox" data-v="${!S.sandbox}" aria-pressed="${S.sandbox}">Sandbox build</button></div></div>
+    <div class="grp"><b>Phone clock</b><div class="clock"><span>08:00</span><input id="clk" type="range" min="480" max="1435" step="5" value="${S.now}"><span id="clkv">${hm(S.now)}</span></div>
+      <div class="seg" style="margin-top:6px"><button class="btn" data-write>Make a change (widget redraws)</button><button class="btn" data-reset>Bring ticked Tasks back</button></div></div>`;
+  for (const [k, label, vals] of STAGE) h += `<div class="grp"><b>${label}</b>${seg(k, vals)}</div>`;
+  h += `</details>`;
+  for (const [name, qs] of SECTIONS) {
+    h += `<div class="sec">${name}</div>`;
+    for (const [k, id, t, scn, vals] of qs) h += `<div class="grp"><b><span class="qid">${id}</span>${t}</b><p class="scn">${scn}</p>${seg(k, vals)}</div>`;
+  }
+  h += `<details><summary>Decided in rounds 1–4 (${DECIDED.length})</summary>${DECIDED.map(([r, s]) => `<div class="grp"><b><span class="qid done">R${r}</span>${s}</b></div>`).join('')}</details>`;
+  document.getElementById('ctl').innerHTML = h;
+  document.getElementById('clk').oninput = e => { S.now = +e.target.value; document.getElementById('clkv').textContent = hm(S.now); render(); };
+}
+document.getElementById('ctl').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.write !== undefined) { redraw(); return render(); }
+  if (b.dataset.reset !== undefined) { gone.clear(); struck.clear(); reopened.clear(); undoTask = null; return render(); }
+  if (!b.dataset.k) return;
+  let v = b.dataset.v;
+  if (v === 'true' || v === 'false') v = v === 'true'; else if (['w', 'h', 'cols'].includes(b.dataset.k)) v = +v;
+  S[b.dataset.k] = v;
+  buildCtl(); render();
+});
+buildCtl(); render();
+</script>
+</body>
+</html>

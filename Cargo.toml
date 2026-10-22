@@ -33,6 +33,8 @@ tracing-appender = "=0.2.5"
 uuid = { version = "=1.28.0", features = ["v7"] }
 whoami = "=2.1.3"
 tempfile = "=3.27.0"
+# JNI glue for the Todo widget (ADR 0014); Android only.
+jni = "=0.21.1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -67,3 +69,9 @@ codegen-units = 16
 strip = true
 opt-level = "s"
 panic = "abort"
+
+# Proc-macros and build scripts run at build time and never ship. Stripping them breaks release
+# builds on macOS: with MACOSX_DEPLOYMENT_TARGET=12.0 (set by `cargo tauri build` from
+# minimumSystemVersion), a stripped proc-macro dylib loses the metadata rustc needs (E0463).
+[profile.release.build-override]
+strip = false

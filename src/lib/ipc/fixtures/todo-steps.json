@@ -1,0 +1,94 @@
+{
+  "about": "Open steps and Tick all and complete: the Todo widget's Rust (crates/todo/src/steps.rs) and the app's TypeScript (src/modules/todo/notes.ts) run the same cases (todo-steps.test.ts). open: unticked Checklist items; ticked: the notes after Tick all. known_gaps are written down, not run: the Rust port reads lines, the app reads a Markdown tree, and they differ on these.",
+  "cases": [
+    {
+      "name": "none",
+      "notes": "",
+      "open": 0,
+      "ticked": ""
+    },
+    {
+      "name": "prose only",
+      "notes": "nothing to do",
+      "open": 0,
+      "ticked": "nothing to do"
+    },
+    {
+      "name": "one open",
+      "notes": "- [ ] a",
+      "open": 1,
+      "ticked": "- [x] a"
+    },
+    {
+      "name": "mixed, nested, other bullets",
+      "notes": "Pack:\n- [x] tent\n- [ ] stove\n  * [ ] gas\n  + [ ] fuel\ntext - [ ] x",
+      "open": 3,
+      "ticked": "Pack:\n- [x] tent\n- [x] stove\n  * [x] gas\n  + [x] fuel\ntext - [ ] x"
+    },
+    {
+      "name": "all done",
+      "notes": "- [x] a\n- [X] b",
+      "open": 0,
+      "ticked": "- [x] a\n- [X] b"
+    },
+    {
+      "name": "ordered items",
+      "notes": "1. [ ] first\n2) [ ] second\n3. [x] third",
+      "open": 2,
+      "ticked": "1. [x] first\n2) [x] second\n3. [x] third"
+    },
+    {
+      "name": "inside a quote",
+      "notes": "> - [ ] quoted\n> - [x] done",
+      "open": 1,
+      "ticked": "> - [x] quoted\n> - [x] done"
+    },
+    {
+      "name": "look-alikes",
+      "notes": "-[ ] no space\n- [] empty\n[ ] bare\n- [ ]x glued\n- [y] other",
+      "open": 0,
+      "ticked": "-[ ] no space\n- [] empty\n[ ] bare\n- [ ]x glued\n- [y] other"
+    },
+    {
+      "name": "fenced code is not a step",
+      "notes": "```\n- [ ] in code\n```\n- [ ] real",
+      "open": 1,
+      "ticked": "```\n- [ ] in code\n```\n- [x] real"
+    },
+    {
+      "name": "tilde fence",
+      "notes": "~~~\n- [ ] in code\n~~~",
+      "open": 0,
+      "ticked": "~~~\n- [ ] in code\n~~~"
+    },
+    {
+      "name": "windows line ends",
+      "notes": "- [ ] a\r\n- [x] b\r\n- [ ] c",
+      "open": 2,
+      "ticked": "- [x] a\r\n- [x] b\r\n- [x] c"
+    },
+    {
+      "name": "a bare box is not a step",
+      "notes": "- [ ]\n- [ ] b",
+      "open": 1,
+      "ticked": "- [ ]\n- [x] b"
+    },
+    {
+      "name": "unicode text",
+      "notes": "- [ ] ünï ✓\n- [ ] 日本",
+      "open": 2,
+      "ticked": "- [x] ünï ✓\n- [x] 日本"
+    },
+    {
+      "name": "blank lines between items",
+      "notes": "- [ ] a\n\n\n- [ ] b",
+      "open": 2,
+      "ticked": "- [x] a\n\n\n- [x] b"
+    }
+  ],
+  "known_gaps": [
+    "A first line indented by a tab (or four spaces) with nothing before it is an indented code block in the app, and a step in the Rust port.",
+    "A fence opened inside a list item or a quote is only recognised at the start of a line in the Rust port.",
+    "Checklist-looking lines inside an HTML block."
+  ]
+}

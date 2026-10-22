@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colours for the static layouts (the loading skeleton and the picker preview): the light theme
+     here, the dark one in values-night/. The live widget uses the themes in widget_themes.xml. -->
+<resources>
+    <color name="widget_bg">@color/widget_light_bg</color>
+    <color name="widget_surface2">@color/widget_light_surface2</color>
+    <color name="widget_ink">@color/widget_light_ink</color>
+    <color name="widget_muted">@color/widget_light_muted</color>
+    <color name="widget_faint">@color/widget_light_faint</color>
+    <color name="widget_danger">@color/widget_light_danger</color>
+    <color name="widget_warning">@color/widget_light_warning</color>
+    <color name="widget_accent">@color/widget_light_accent</color>
+    <color name="widget_todo">@color/widget_light_todo</color>
+    <color name="widget_on_todo">@color/widget_light_on_todo</color>
+    <color name="widget_sandbox_tag_text">#FF1D1712</color>
+</resources>

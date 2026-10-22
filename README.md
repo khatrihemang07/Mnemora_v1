@@ -27,6 +27,8 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make sandbox` | Hot-reload app on separate **Sandbox** data, with an orange SANDBOX badge |
 | `make build` | Release build for this machine (`.app` / `.dmg`) |
 | `make android-dev` | Hot reload on a USB-connected phone (Sandbox data) |
+| `make android-sandbox` | Debug Sandbox APK (no hot reload) installed on the phone |
+| `make android-test` | Kotlin unit tests for the Todo widget |
 | `make android` | Signed arm64 release APK, installed on the connected phone |
 | `make test` | Rust tests plus Vitest |
 | `make lint` | clippy (`-D warnings`), rustfmt check, Biome, svelte-check |
@@ -36,6 +38,17 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make icons` | Regenerate every app icon and the favicon from `src-tauri/icons/source/*.svg` |
 
 Every target runs with `CARGO_BUILD_JOBS=2` and cleans up the processes it started.
+
+## Trying the Todo widget
+
+The Todo widget (Android 12+) is a native home-screen widget for the Todo Module. Try it on a USB-connected phone with USB debugging on:
+
+1. `make android-sandbox` builds a debug **Sandbox** app and installs it (no hot reload). An installed Sandbox signed with the release key must be uninstalled first.
+2. Open the Sandbox app once, so it creates its data, and add a few Tasks in Todo.
+3. On the phone, long-press the home screen, choose Widgets, and drag **Todo (Sandbox)** from Mnemora onto a page. Setup opens: pick the view, theme and background, then Done. The gear in the Todo widget's header reopens setup.
+4. Resize it: 3x2 and larger shows the list, smaller sizes become an "Add a task..." button, and 1x1 a plain +.
+
+`make android-test` runs the Kotlin unit tests. The phone checklist is in [standards](docs/engineering/standards.md#todo-widget-phone).
 
 ## Environments
 

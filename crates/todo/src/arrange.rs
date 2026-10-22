@@ -452,6 +452,17 @@ pub const DONE_IN_LISTS: (&str, &[&str]) = (
     &["today_shown", "folded", "shown", "hidden"],
 );
 
+/// The keys of every view Preference above.
+pub const PREF_KEYS: [&str; 7] = [
+    GROUP_TODAY.0,
+    GROUP_UPCOMING.0,
+    GROUP_INBOX.0,
+    GROUP_ALL.0,
+    INBOX_SORT.0,
+    LISTS_SORT.0,
+    DONE_IN_LISTS.0,
+];
+
 /// One Preference: the saved text if it is one of the allowed values, else the default.
 fn pref<T>(
     conn: &Connection,
