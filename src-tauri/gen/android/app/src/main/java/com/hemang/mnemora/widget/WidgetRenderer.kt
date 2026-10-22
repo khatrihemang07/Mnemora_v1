@@ -169,7 +169,7 @@ object WidgetRenderer {
         views.setViewVisibility(R.id.header, View.VISIBLE)
         views.setColorStateList(R.id.gear, "setImageTintList", ColorStateList.valueOf(palette.faint))
         gearClick(context, views, R.id.gear, appWidgetId)
-        views.setOnClickPendingIntent(R.id.header, open)
+        views.setOnClickPendingIntent(R.id.header, linkIntent(context, WidgetLinks.build(snapshot.view), appWidgetId))
         views.setColorStateList(R.id.chip, "setBackgroundTintList", ColorStateList.valueOf(Palette.withAlpha(palette.todo, 0.16f)))
         views.setColorStateList(R.id.chip_icon, "setImageTintList", ColorStateList.valueOf(palette.todo))
         views.setTextViewText(R.id.title, snapshot.title)
@@ -194,7 +194,7 @@ object WidgetRenderer {
         views.setScrollPosition(R.id.list, 0)
         // Row taps are broadcasts to the receiver; each row's fill-in says which part was tapped.
         views.setPendingIntentTemplate(R.id.list, actionIntent(context, WidgetActionReceiver.ACTION_ROW, 3, PendingIntent.FLAG_MUTABLE))
-        views.setRemoteAdapter(R.id.list, items(context, palette, edge, appWidgetId, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
+        views.setRemoteAdapter(R.id.list, items(context, palette, edge, appWidgetId, snapshot.view, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
     }
 
     private fun items(
@@ -202,6 +202,7 @@ object WidgetRenderer {
         palette: Palette,
         edge: TextEdge,
         appWidgetId: Int,
+        view: String,
         lines: List<Item>,
     ): RemoteViews.RemoteCollectionItems {
         val builder = RemoteViews.RemoteCollectionItems.Builder()
@@ -210,7 +211,7 @@ object WidgetRenderer {
         lines.forEachIndexed { index, line ->
             when (line) {
                 is Item.Heading -> builder.addItem(-(index + 1L), heading(context, palette, edge, line))
-                is Item.Task -> builder.addItem(line.row.id.hashCode().toLong(), task(context, palette, edge, appWidgetId, line.row))
+                is Item.Task -> builder.addItem(line.row.id.hashCode().toLong(), task(context, palette, edge, appWidgetId, view, line.row))
             }
         }
         return builder.build()
@@ -223,7 +224,7 @@ object WidgetRenderer {
         return views
     }
 
-    private fun task(context: Context, palette: Palette, edge: TextEdge, appWidgetId: Int, row: TaskRow): RemoteViews {
+    private fun task(context: Context, palette: Palette, edge: TextEdge, appWidgetId: Int, view: String, row: TaskRow): RemoteViews {
         val views = RemoteViews(context.packageName, edge.row)
         views.setTextViewText(R.id.row_title, row.title)
         views.setTextColor(R.id.row_title, palette.ink)
@@ -254,7 +255,9 @@ object WidgetRenderer {
         }
         views.setOnClickFillInIntent(
             R.id.row_root,
-            Intent().putExtra(WidgetActionReceiver.EXTRA_KIND, WidgetActionReceiver.KIND_OPEN),
+            Intent()
+                .putExtra(WidgetActionReceiver.EXTRA_KIND, WidgetActionReceiver.KIND_OPEN)
+                .putExtra(WidgetActionReceiver.EXTRA_LINK, WidgetLinks.build(view, row.id)),
         )
         // The diamond ticks; TalkBack says what it ticks.
         views.setContentDescription(R.id.diamond, context.getString(R.string.widget_complete_task, row.title))
@@ -267,6 +270,13 @@ object WidgetRenderer {
         )
         return views
     }
+
+    /** Opens the app at [url] (a Todo link). Explicit and immutable: nothing can redirect it. */
+    private fun linkIntent(context: Context, url: String, appWidgetId: Int): PendingIntent =
+        PendingIntent.getActivity(
+            context, appWidgetId, WidgetLinks.intent(context, url),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     /** Opens the app. The explicit component keeps Production and Sandbox apart. */
     private fun openApp(context: Context): PendingIntent {

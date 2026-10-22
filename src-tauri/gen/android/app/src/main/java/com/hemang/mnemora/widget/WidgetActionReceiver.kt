@@ -44,13 +44,18 @@ class WidgetActionReceiver : BroadcastReceiver() {
                     context.startActivity(StepsDialogActivity.intent(context, reply, widgetId))
                 }
             }
-            // Any other part of a row opens the app (what it shows is for the row-tap ticket).
-            else -> context.startActivity(
-                Intent(context, MainActivity::class.java)
-                    .setAction(Intent.ACTION_MAIN)
-                    .addCategory(Intent.CATEGORY_LAUNCHER)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
+            // Any other part of a row opens that Task over the widget's view.
+            else -> {
+                val link = intent.getStringExtra(EXTRA_LINK)
+                val open = if (link != null && WidgetLinks.isLink(link)) {
+                    WidgetLinks.intent(context, link)
+                } else {
+                    Intent(context, MainActivity::class.java)
+                        .setAction(Intent.ACTION_MAIN)
+                        .addCategory(Intent.CATEGORY_LAUNCHER)
+                }
+                context.startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
         }
     }
 
@@ -60,6 +65,7 @@ class WidgetActionReceiver : BroadcastReceiver() {
         const val ACTION_UNDO = "com.hemang.mnemora.widget.UNDO"
         const val EXTRA_KIND = "kind"
         const val EXTRA_TASK_ID = "task_id"
+        const val EXTRA_LINK = "link"
         const val KIND_TICK = "tick"
         const val KIND_OPEN = "open"
         const val KIND_COMPLETE = "complete"
