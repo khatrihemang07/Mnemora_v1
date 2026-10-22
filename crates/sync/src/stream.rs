@@ -84,6 +84,34 @@ pub fn next_batch(
     Ok((batch, more))
 }
 
+/// How many records `peer` lacks that this device holds: the size of the stream it is about to
+/// receive, for progress.
+pub fn pending(
+    conn: &Connection,
+    registry: &Registry,
+    me: &str,
+    peer: &Vector,
+) -> Result<usize, SyncError> {
+    let mut total: i64 = 0;
+    for entity in registry.entities() {
+        let Some(peer_entity) = peer.get(entity) else {
+            continue;
+        };
+        for (device, newest) in vector::of_entity(conn, me, entity)? {
+            let from = peer_entity.get(&device).copied().unwrap_or(0);
+            if newest > from {
+                total += conn.query_row(
+                    "SELECT COUNT(*) FROM change_log
+                     WHERE entity = ?1 AND origin_device = ?2 AND origin_seq > ?3",
+                    params![entity, device, from],
+                    |r| r.get::<_, i64>(0),
+                )?;
+            }
+        }
+    }
+    Ok(usize::try_from(total).unwrap_or(0))
+}
+
 /// Clock order, then device, then sequence: the same on every device.
 fn order_key(r: &WireRecord) -> (i64, i64, String, i64) {
     (

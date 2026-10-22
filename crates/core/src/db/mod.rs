@@ -28,6 +28,20 @@ pub fn set_time_source(conn: &Connection, source: TimeSource) -> AppResult<()> {
     Ok(())
 }
 
+/// Calls `notify` whenever a row of the change log is written (or rewritten) through this
+/// connection. It fires before the transaction commits, so a listener should wait a moment
+/// before reading. Replaces any earlier hook on the connection.
+pub fn on_change_log_write(conn: &Connection, notify: impl Fn() + Send + 'static) -> AppResult<()> {
+    conn.update_hook(Some(
+        move |_action: rusqlite::hooks::Action, _db: &str, table: &str, _row: i64| {
+            if table == "change_log" {
+                notify();
+            }
+        },
+    ))?;
+    Ok(())
+}
+
 /// Wall-clock milliseconds as this connection's time source says; the system clock when none
 /// was set.
 pub fn physical_now(conn: &Connection) -> i64 {
@@ -97,6 +111,26 @@ mod tests {
         let conn = open(&dir.path().join("deep/er/x.db")).unwrap();
         assert_eq!(pragma_string(&conn, "journal_mode"), "wal");
         assert_eq!(pragma_string(&conn, "foreign_keys"), "1");
+    }
+
+    #[test]
+    fn the_change_log_hook_fires_for_that_table_only() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let conn = open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE change_log(x); CREATE TABLE other(x)")
+            .unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&hits);
+        on_change_log_write(&conn, move || {
+            seen.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+        conn.execute("INSERT INTO other VALUES (1)", []).unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+        conn.execute("INSERT INTO change_log VALUES (1)", [])
+            .unwrap();
+        conn.execute("UPDATE change_log SET x = 2", []).unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
     }
 
     #[test]

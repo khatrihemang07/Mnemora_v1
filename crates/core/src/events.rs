@@ -69,6 +69,14 @@ pub struct RemoteChanged {
     pub module: String,
 }
 
+/// A sync session with another device ended, having changed these Modules' data. Sent once per
+/// session, not per batch, for things that only need to know at the end (the Todo widget).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteSessionEnded {
+    /// Ids of the Modules whose data the session changed.
+    pub modules: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;

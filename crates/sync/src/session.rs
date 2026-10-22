@@ -8,13 +8,13 @@
 
 use std::collections::BTreeSet;
 
-use mnemora_core::events::{EventBus, RemoteChanged};
+use mnemora_core::events::{EventBus, RemoteChanged, RemoteSessionEnded};
 use rusqlite::Connection;
 
 use crate::apply::apply_batch;
 use crate::error::SyncError;
 use crate::registry::Registry;
-use crate::stream::{Cursor, next_batch};
+use crate::stream::{Cursor, next_batch, pending};
 use crate::transport::Transport;
 use crate::vector;
 use crate::wire::{Message, Vector};
@@ -51,6 +51,14 @@ pub struct Session {
     outbound: Outbound,
     inbound_done: bool,
     stats: SessionStats,
+    /// Records the other side said it will send, and this side will send.
+    in_total: usize,
+    out_total: usize,
+    /// Records of the batch in flight, counted once acknowledged.
+    in_flight: usize,
+    acked: usize,
+    announced: bool,
+    first_sent: bool,
 }
 
 impl Session {
@@ -64,6 +72,12 @@ impl Session {
             outbound: Outbound::Idle,
             inbound_done: false,
             stats: SessionStats::default(),
+            in_total: 0,
+            out_total: 0,
+            in_flight: 0,
+            acked: 0,
+            announced: false,
+            first_sent: false,
         }
     }
 
@@ -85,6 +99,14 @@ impl Session {
         self.inbound_done && self.outbound == Outbound::Finished
     }
 
+    /// How far the exchange has got: records moved (either way) of the records it will move.
+    pub fn progress(&self) -> (usize, usize) {
+        (
+            self.stats.received + self.acked,
+            self.in_total + self.out_total,
+        )
+    }
+
     /// What has moved so far.
     pub fn stats(&self) -> &SessionStats {
         &self.stats
@@ -97,6 +119,24 @@ impl Session {
         conn: &Connection,
         message: Message,
     ) -> Result<Vec<Message>, SyncError> {
+        let replies = self.step(conn, message)?;
+        self.announce_end();
+        Ok(replies)
+    }
+
+    /// Tells the bus once, when the exchange is over, which Modules it changed.
+    fn announce_end(&mut self) {
+        if self.is_done() && !self.announced {
+            self.announced = true;
+            if !self.stats.changed.is_empty() {
+                self.bus.publish(&RemoteSessionEnded {
+                    modules: self.stats.changed.iter().cloned().collect(),
+                });
+            }
+        }
+    }
+
+    fn step(&mut self, conn: &Connection, message: Message) -> Result<Vec<Message>, SyncError> {
         match message {
             Message::Hello { device, vector } => {
                 if self.peer.is_some() || self.outbound != Outbound::Idle {
@@ -107,12 +147,20 @@ impl Session {
                         "this device is talking to itself".into(),
                     ));
                 }
+                self.out_total = pending(conn, &self.registry, &self.me, &vector)?;
                 self.peer = Some((device, vector));
                 Ok(vec![self.next_outbound(conn)?])
             }
-            Message::Batch { records, last } => {
+            Message::Batch {
+                records,
+                last,
+                total,
+            } => {
                 if self.peer.is_none() || self.inbound_done {
                     return Err(SyncError::Protocol("a batch out of turn".into()));
+                }
+                if let Some(total) = total {
+                    self.in_total = total;
                 }
                 let applied = apply_batch(conn, &self.registry, &self.me, records)?;
                 self.stats.received += applied.stored;
@@ -127,10 +175,15 @@ impl Session {
             }
             Message::Ack => match self.outbound {
                 Outbound::AwaitingAck { last: true } => {
+                    self.acked += self.in_flight;
+                    self.in_flight = 0;
                     self.outbound = Outbound::Finished;
                     Ok(Vec::new())
                 }
-                Outbound::AwaitingAck { last: false } => Ok(vec![self.next_outbound(conn)?]),
+                Outbound::AwaitingAck { last: false } => {
+                    self.acked += self.in_flight;
+                    Ok(vec![self.next_outbound(conn)?])
+                }
                 _ => Err(SyncError::Protocol("an Ack out of turn".into())),
             },
         }
@@ -148,10 +201,14 @@ impl Session {
             &mut self.cursor,
         )?;
         self.stats.sent += records.len();
+        self.in_flight = records.len();
+        let first = !self.first_sent;
+        self.first_sent = true;
         self.outbound = Outbound::AwaitingAck { last: !more };
         Ok(Message::Batch {
             records,
             last: !more,
+            total: first.then_some(self.out_total),
         })
     }
 }

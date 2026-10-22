@@ -6,20 +6,24 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mnemora_sync::discovery::Fixed;
-use mnemora_sync::{NetworkOptions, Timing};
+use mnemora_sync::{NetworkOptions, Pace, Timing};
 use serde_json::{Value, json};
 
 use crate::sync::start_network;
 use crate::test_support::TestApp;
 
 /// A device with Sync on, a name, and its network up on a loopback port.
-struct Device {
-    app: TestApp,
-    found: Arc<Fixed>,
+pub(crate) struct Device {
+    pub(crate) app: TestApp,
+    pub(crate) found: Arc<Fixed>,
 }
 
 impl Device {
-    async fn new(name: &str) -> Self {
+    pub(crate) async fn new(name: &str) -> Self {
+        Self::with_pace(name, Pace::default()).await
+    }
+
+    pub(crate) async fn with_pace(name: &str, pace: Pace) -> Self {
         let app = TestApp::syncing();
         app.invoke::<()>("sync_rename", json!({ "name": name }))
             .unwrap();
@@ -32,20 +36,21 @@ impl Device {
                 ..Timing::default()
             },
             discovery: found.clone(),
+            pace,
         };
         start_network(&app.handle(), options).await.unwrap();
         Self { app, found }
     }
 
-    fn call<T: serde::de::DeserializeOwned>(&self, command: &str, args: Value) -> T {
+    pub(crate) fn call<T: serde::de::DeserializeOwned>(&self, command: &str, args: Value) -> T {
         self.app.invoke(command, args).unwrap()
     }
 
-    fn pairing(&self) -> Value {
+    pub(crate) fn pairing(&self) -> Value {
         self.call("sync_pair_state", json!({}))
     }
 
-    async fn until(&self, state: &str) -> Value {
+    pub(crate) async fn until(&self, state: &str) -> Value {
         for _ in 0..600 {
             let view = self.pairing();
             if view["state"] == state {
@@ -56,11 +61,11 @@ impl Device {
         panic!("never reached {state}; at {}", self.pairing());
     }
 
-    fn devices(&self) -> Value {
+    pub(crate) fn devices(&self) -> Value {
         self.call("sync_devices", json!({}))
     }
 
-    fn listed(&self) -> Vec<String> {
+    pub(crate) fn listed(&self) -> Vec<String> {
         self.devices()["peers"]
             .as_array()
             .unwrap()
@@ -69,7 +74,7 @@ impl Device {
             .collect()
     }
 
-    fn address(&self) -> SocketAddr {
+    pub(crate) fn address(&self) -> SocketAddr {
         let port = self.devices()["this_device"]["port"].as_u64().unwrap();
         SocketAddr::new(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -150,7 +155,7 @@ async fn the_network_exists_only_while_sync_is_on() {
     let mac = Device::new("Mac").await;
     let probe = mac.app.sync_probe();
     assert!(
-        probe.running && probe.listeners == 1 && probe.advertisements == 1 && probe.tasks >= 1,
+        probe.running && probe.listeners == 1 && probe.advertisements == 2 /* the announcement and the paired-device browse */ && probe.tasks >= 1,
         "{probe:?}"
     );
     let addr = mac.address();

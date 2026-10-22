@@ -2,14 +2,17 @@
 //! discovery advertisement or a background task may live, so "inert when off" is a property of
 //! this type and can be asserted through [`SyncRuntime::probe`].
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use mnemora_core::events::EventBus;
 use mnemora_core::hlc;
 use rusqlite::Connection;
+use tokio::sync::Notify;
 
 use crate::error::SyncError;
+use crate::live::PeerLive;
 use crate::network::Network;
 use crate::pair::Pairing;
 use crate::registry::Registry;
@@ -44,6 +47,9 @@ pub struct RuntimeProbe {
 #[derive(Default)]
 pub struct SyncRuntime {
     services: Mutex<Option<Services>>,
+    /// Signalled when this device records a change of its own. It outlives the services: a change
+    /// made while Sync is off is pushed as soon as it turns on.
+    local_changes: Arc<Notify>,
 }
 
 impl SyncRuntime {
@@ -70,6 +76,43 @@ impl SyncRuntime {
         }
     }
 
+    /// The signal a write to the change log raises; the session manager waits on it.
+    pub fn local_changes(&self) -> Arc<Notify> {
+        Arc::clone(&self.local_changes)
+    }
+
+    fn with_network<R>(&self, f: impl FnOnce(&Network) -> R) -> Option<R> {
+        let services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        services.as_ref()?.network.as_ref().map(f)
+    }
+
+    /// "Sync now": every reachable paired device is synced now, whatever "Sync automatically" says.
+    /// Does nothing while Sync is off or still starting.
+    pub fn sync_now(&self) {
+        self.with_network(|n| n.live().sync_now());
+    }
+
+    /// The network changed or the app came back: unreachable devices are tried again from the
+    /// start of the backoff.
+    pub fn resume(&self) {
+        self.with_network(|n| n.live().resume());
+    }
+
+    /// The set of paired devices changed (a pairing, or leaving the group).
+    pub fn peers_changed(&self) {
+        self.with_network(|n| n.live().refresh_peers());
+    }
+
+    /// "Sync automatically" was switched.
+    pub fn options_changed(&self) {
+        self.with_network(|n| n.live().options_changed());
+    }
+
+    /// What is happening with each paired device; empty while Sync is off.
+    pub fn peers_live(&self) -> HashMap<String, PeerLive> {
+        self.with_network(Network::peers_live).unwrap_or_default()
+    }
+
     /// What is running right now.
     pub fn probe(&self) -> RuntimeProbe {
         let services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
@@ -86,7 +129,7 @@ impl SyncRuntime {
                 listeners: usize::from(s.network.is_some()),
                 advertisements: s.network.as_ref().map_or(0, Network::discovery_active),
                 tasks: s.network.as_ref().map_or(0, Network::tasks),
-                sessions: s.sessions,
+                sessions: s.sessions + s.network.as_ref().map_or(0, Network::sessions),
             },
         )
     }

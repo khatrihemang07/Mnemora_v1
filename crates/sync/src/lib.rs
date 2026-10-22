@@ -10,12 +10,14 @@ mod clocks;
 mod devices;
 pub mod discovery;
 mod error;
+mod live;
 mod merge;
 mod migrations;
 mod name;
 pub mod net;
 mod network;
 pub mod pair;
+mod peer_state;
 mod peers;
 mod registry;
 mod runtime;
@@ -33,12 +35,14 @@ use rusqlite_migration::Migrations;
 pub use addresses::{is_tailscale, local as local_addresses, shareable as shareable_address};
 pub use devices::{DevicesView, ThisDevice, view as devices_view};
 pub use error::SyncError;
+pub use live::{Host, Pace, PeerLive, Progress, Schedule};
 pub use name::{MAX_NAME_CHARS, default_device_name, validate_name};
 pub use network::{Network, NetworkOptions};
 pub use pair::msg::{Member, Who};
 pub use pair::{
     Older, Paired, Pairing, PairingError, PairingHost, PairingView, Platform, Stored, Timing,
 };
+pub use peer_state::Route;
 pub use peers::{
     PeerRow, forget_all, group, list as list_peers, members, paired_count, pinned, store_paired,
 };
@@ -47,6 +51,7 @@ pub use runtime::{RuntimeProbe, SyncRuntime};
 pub use session::{Endpoint, Session, SessionStats, pump};
 pub use state::{SyncOption, SyncState, current, rename, set_enabled, set_option};
 pub use stream::{BATCH_BYTES, BATCH_RECORDS};
+pub use tokio::sync::Notify;
 pub use transport::Transport;
 pub use wire::{Message, Vector, WireRecord};
 

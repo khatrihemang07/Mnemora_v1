@@ -107,6 +107,7 @@ export async function installMock() {
     Number(query.get('paired') ?? 0) || 0,
     (view) => void events.syncPairingEvent.emit(view),
     pairFlags,
+    () => void events.syncPeersEvent.emit(),
   );
 
   applyPrePaintAttributes(values);

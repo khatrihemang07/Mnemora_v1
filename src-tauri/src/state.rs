@@ -34,17 +34,8 @@ pub struct AppState {
     /// The app opens a real port and announces itself when Sync is on. False in tests, which
     /// start their own network on loopback.
     pub live_network: bool,
-    /// Every Module, for the Sync engine to reach through the `Module` contract. Read by the
-    /// sync sessions (today only the `TestApp` cluster starts them; the live runtime comes next).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the live sync runtime (#61)")
-    )]
+    /// Every Module, for the Sync engine to reach through the `Module` contract.
     pub modules: Modules,
-    /// The in-process event bus Sync publishes on. Read like `modules`.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by the live sync runtime (#61)")
-    )]
+    /// The in-process event bus Sync publishes on.
     pub bus: EventBus,
 }

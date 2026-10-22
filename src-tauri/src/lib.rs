@@ -87,12 +87,15 @@ macro_rules! specta_builder_for {
                 sync::sync_pair_enter,
                 sync::sync_pair_decide,
                 sync::sync_pair_cancel,
+                sync::sync_now,
+                sync::sync_resume,
             ])
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
                 TodoChangedEvent,
                 LinkOpenedEvent,
-                SyncPairingEvent
+                SyncPairingEvent,
+                SyncPeersEvent
             ])
     };
 }
@@ -105,6 +108,8 @@ mod state;
 mod sync;
 #[cfg(test)]
 mod sync_cluster_tests;
+#[cfg(test)]
+mod sync_live_tests;
 #[cfg(test)]
 mod sync_pairing_tests;
 #[cfg(test)]
@@ -131,7 +136,7 @@ use std::sync::{Arc, Mutex};
 use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
-use mnemora_core::events::{EventBus, RemoteChanged, SettingsChanged};
+use mnemora_core::events::{EventBus, RemoteChanged, RemoteSessionEnded, SettingsChanged};
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
@@ -170,6 +175,10 @@ pub struct TodoChangedEvent;
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SyncPairingEvent(pub mnemora_sync::PairingView);
 
+/// A paired device's status or sync progress changed: the Devices tab reads `sync_devices` again.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncPeersEvent;
+
 /// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct LinkOpenedEvent;
@@ -185,19 +194,24 @@ fn modules() -> Vec<Box<dyn Module>> {
 }
 
 /// Turns "Sync changed a Module's data" into that Module's own change event: Todo's screens
-/// refresh as they do after a Todo widget write, and the Todo widget redraws.
+/// refresh in place after every batch, silently. The Todo widget redraws once per sync session,
+/// not per batch, so a big sync does not flood it.
 fn follow_remote<R: tauri::Runtime>(
     bus: &EventBus,
     handle: tauri::AppHandle<R>,
     widgets: &Arc<widget::signal::WidgetSignal>,
 ) {
-    let widgets = Arc::clone(widgets);
     bus.subscribe(move |event: &RemoteChanged| {
-        if event.module == mnemora_todo::MODULE_ID {
+        if event.module == mnemora_todo::MODULE_ID
+            && let Err(e) = TodoChangedEvent.emit(&handle)
+        {
+            tracing::warn!(target: "sync", error = %e, "could not emit the Todo change event");
+        }
+    });
+    let widgets = Arc::clone(widgets);
+    bus.subscribe(move |event: &RemoteSessionEnded| {
+        if event.modules.iter().any(|m| m == mnemora_todo::MODULE_ID) {
             widgets.todo_changed();
-            if let Err(e) = TodoChangedEvent.emit(&handle) {
-                tracing::warn!(target: "sync", error = %e, "could not emit the Todo change event");
-            }
         }
     });
 }
@@ -277,6 +291,9 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     // Sync starts only when this device has it on; off, nothing is started at all.
     let sync = SyncRuntime::new();
     sync.reconcile(device.get().sync.enabled);
+    // A change this device records wakes the session manager (a no-op while Sync is off).
+    let changes = sync.local_changes();
+    db::on_change_log_write(&conn, move || changes.notify_one())?;
     // Look and feel comes from the device file alone, so the first paint never waits on the database.
     let first_paint = settings.device_values();
 
@@ -469,6 +486,9 @@ mod tests {
             "syncPairEnter",
             "syncPairDecide",
             "syncPairCancel",
+            "syncNow",
+            "syncResume",
+            "syncPeersEvent",
             "syncPairingEvent",
             "settingsChangedEvent",
             "linkOpenedEvent",

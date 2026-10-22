@@ -5,12 +5,12 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::time::Duration;
 
 use rustls::pki_types::ServerName;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use tokio_rustls::{TlsAcceptor, TlsConnector, TlsStream};
@@ -44,6 +44,28 @@ pub const HANDSHAKE_MAX_FRAME: usize = 64 * 1024;
 /// A TLS connection carrying framed messages.
 pub type TlsChannel = Channel<TlsStream<TcpStream>>;
 
+/// Builds this device's handshake for each connection, so the group and the addresses it says are
+/// the current ones, not those of the moment the port was bound.
+#[derive(Clone)]
+pub struct LocalHandshake(Arc<dyn Fn() -> Result<Handshake, SyncError> + Send + Sync>);
+
+impl LocalHandshake {
+    /// A handshake built by `build` each time one is needed.
+    pub fn new(build: impl Fn() -> Result<Handshake, SyncError> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(build))
+    }
+
+    /// Always the same handshake.
+    pub fn fixed(handshake: Handshake) -> Self {
+        Self::new(move || Ok(handshake.clone()))
+    }
+
+    /// The handshake to send now. May read the database: call it off the async threads.
+    pub fn get(&self) -> Result<Handshake, SyncError> {
+        (self.0)()
+    }
+}
+
 /// Everything a connection needs: who we are, who we trust, and what we say first.
 #[derive(Clone)]
 pub struct NetConfig {
@@ -51,8 +73,8 @@ pub struct NetConfig {
     pub identity: Arc<DeviceIdentity>,
     /// The keys we accept.
     pub trust: Trust,
-    /// Our handshake.
-    pub local: Handshake,
+    /// Our handshake, built per connection.
+    pub local: LocalHandshake,
 }
 
 /// A TLS connection to a peer whose key has been verified against the [`Trust`] set (pinned, or
@@ -160,8 +182,15 @@ async fn establish(config: &NetConfig, mut secured: Secured) -> Result<Establish
     if !secured.pinned {
         return Err(NetError::Refused(super::Refusal::Unpinned));
     }
+    let local = {
+        let build = config.local.clone();
+        tokio::task::spawn_blocking(move || build.get())
+            .await
+            .map_err(|e| NetError::Local(e.to_string()))?
+            .map_err(|e| NetError::Local(e.to_string()))?
+    };
     let exchange = async {
-        secured.channel.send(&config.local).await?;
+        secured.channel.send(&local).await?;
         secured
             .channel
             .recv_max::<Handshake>(HANDSHAKE_MAX_FRAME)
@@ -175,7 +204,7 @@ async fn establish(config: &NetConfig, mut secured: Secured) -> Result<Establish
             other => other,
         })?;
     let mismatch =
-        check(&config.local, &remote, &secured.key, &config.trust).map_err(NetError::Refused)?;
+        check(&local, &remote, &secured.key, &config.trust).map_err(NetError::Refused)?;
     Ok(Established {
         peer: PeerInfo {
             key: secured.key,
@@ -320,7 +349,7 @@ async fn serve(
 /// what was already sent has been written.
 pub struct NetTransport {
     out: UnboundedSender<Message>,
-    inbox: Receiver<Message>,
+    inbox: UnboundedReceiver<Message>,
     reader: AbortHandle,
 }
 
@@ -332,7 +361,7 @@ impl NetTransport {
     {
         let (mut read, mut write) = tokio::io::split(stream);
         let (out, mut queued) = unbounded_channel::<Message>();
-        let (to_inbox, inbox) = channel::<Message>();
+        let (to_inbox, inbox) = unbounded_channel::<Message>();
         let reader = tokio::spawn(async move {
             loop {
                 match read_frame::<_, Message>(&mut read).await {
@@ -373,6 +402,14 @@ impl NetTransport {
             inbox,
             reader: reader.abort_handle(),
         }
+    }
+}
+
+impl NetTransport {
+    /// Waits for the next message; fails with [`SyncError::Disconnected`] once the connection is
+    /// gone and everything received has been taken.
+    pub async fn recv(&mut self) -> Result<Message, SyncError> {
+        self.inbox.recv().await.ok_or(SyncError::Disconnected)
     }
 }
 

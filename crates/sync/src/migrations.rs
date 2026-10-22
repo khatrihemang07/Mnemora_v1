@@ -52,5 +52,24 @@ pub fn all() -> Migrations<'static> {
              id TEXT NOT NULL
          ) STRICT;",
         ),
+        // Live syncing (#63), all local to this device and not synced: what the last session with a
+        // paired device moved and by which route, when it was last reached, and the addresses
+        // remembered for it with when each last worked.
+        M::up(
+            "CREATE TABLE sync_peer_status(
+             device TEXT PRIMARY KEY NOT NULL,
+             last_seen_at INTEGER,
+             last_synced_at INTEGER,
+             last_in INTEGER,
+             last_out INTEGER,
+             route TEXT
+         ) STRICT;
+         CREATE TABLE sync_peer_addresses(
+             device TEXT NOT NULL,
+             address TEXT NOT NULL,
+             last_ok_at INTEGER,
+             PRIMARY KEY(device, address)
+         ) STRICT;",
+        ),
     ])
 }

@@ -18,7 +18,8 @@
  *   90000000  right, but the name clashes ("Pixel 8 (simulated) (2)")
  *   91000000  right, and two devices of its group join too           99999999  cancelled from the other device
  */
-import type { AppError, PairingError, PairingView, PeerRow } from './bindings';
+import type { AppError, PairingError, PairingView, PeerState } from './bindings';
+import type { PairedBase } from './mock-sync-live';
 
 export interface PairingFlags {
   pixel: 'right' | 'wrong' | 'never' | 'joins';
@@ -28,6 +29,8 @@ export interface PairingFlags {
   lifeMs: number;
   /** One step of the simulated exchange. */
   stepMs: number;
+  /** Console helper (set by the Sync mock): puts a paired device in a state. */
+  setPeer?: (state: PeerState, name?: string) => void;
 }
 
 export const defaultPairingFlags = (): PairingFlags => ({
@@ -78,7 +81,7 @@ export const PAIRING_COMMANDS = [
 ];
 
 interface Deps {
-  peers: PeerRow[];
+  peers: PairedBase[];
   emit: (view: PairingView) => void;
   myName: () => string;
   enabled: () => boolean;

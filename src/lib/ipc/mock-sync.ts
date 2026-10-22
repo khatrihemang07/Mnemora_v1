@@ -7,10 +7,11 @@ import type {
   DeviceSettings,
   DevicesView,
   PairingView,
-  PeerRow,
+  PeerState,
   SyncOption,
   SyncState,
 } from './bindings';
+import { createLiveMock, type PairedBase } from './mock-sync-live';
 import { createPairingMock, defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
 
 const MAX_NAME_CHARS = 40;
@@ -34,10 +35,12 @@ const COMMANDS = [
   'sync_set_option',
   'sync_leave',
   'sync_devices',
+  'sync_now',
+  'sync_resume',
 ];
 
 /** Two devices already paired, for `?paired=2`. */
-const FAKE_PEERS: PeerRow[] = [
+const FAKE_PEERS: PairedBase[] = [
   {
     id: 'mock-pixel',
     name: 'Pixel 8 (simulated)',
@@ -58,8 +61,9 @@ export function createSyncMock(
   pairedDevices = 0,
   emit: (view: PairingView) => void = () => {},
   flags: PairingFlags = defaultPairingFlags(),
+  emitPeers: () => void = () => {},
 ) {
-  const peers: PeerRow[] = FAKE_PEERS.slice(0, pairedDevices).map((p) => ({ ...p }));
+  const peers: PairedBase[] = FAKE_PEERS.slice(0, pairedDevices).map((p) => ({ ...p }));
   const sync = () => {
     device.sync = {
       enabled: false,
@@ -93,6 +97,10 @@ export function createSyncMock(
     visible: () => sync().visible,
   });
 
+  const live = createLiveMock(peers, emitPeers, () => sync().enabled);
+  // Console: `__syncMock.setPeer('syncing')` (see mock-sync-live.ts).
+  flags.setPeer = (state: PeerState, name?: string) => live.setPeer(state, name);
+
   const devices = (): DevicesView => ({
     this_device: {
       name: state().name,
@@ -100,7 +108,7 @@ export function createSyncMock(
       port: 47311,
       addresses: ['192.168.1.20', '100.101.4.7'],
     },
-    peers: JSON.parse(JSON.stringify(peers)),
+    peers: live.rows(),
   });
 
   return {
@@ -116,7 +124,10 @@ export function createSyncMock(
           // The first time it is turned on, the device is named after the computer.
           if (s.enabled && s.name === null) s.name = COMPUTER_NAME;
           // Off stops everything, pairing included.
-          if (!s.enabled) pairing.handle('sync_pair_cancel', {});
+          if (!s.enabled) {
+            pairing.handle('sync_pair_cancel', {});
+            live.reset();
+          }
           return null;
         case 'sync_rename':
           s.name = validateName(String(a.name));
@@ -128,6 +139,12 @@ export function createSyncMock(
         }
         case 'sync_leave':
           peers.length = 0;
+          live.reset();
+          return null;
+        case 'sync_now':
+          live.syncNow();
+          return null;
+        case 'sync_resume':
           return null;
         case 'sync_devices':
           return devices();

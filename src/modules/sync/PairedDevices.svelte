@@ -4,10 +4,21 @@
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import PeerList from './PeerList.svelte';
-  import { devicesQuery } from './queries';
+  import { devicesQuery, watchDevices } from './queries';
   import ThisDeviceCard from './ThisDeviceCard.svelte';
 
   const devices = createQuery(() => devicesQuery);
+
+  // Status and progress arrive as events while this is on screen.
+  $effect(() => {
+    let stop: (() => void) | undefined;
+    let gone = false;
+    void watchDevices().then((off) => (gone ? off() : (stop = off)));
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  });
 </script>
 
 {#if devices.isError}

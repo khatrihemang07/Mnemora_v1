@@ -85,6 +85,34 @@ impl PairingHost for Host {
     }
 }
 
+/// Pairing tests do not sync anything: an empty registry, and no changes to push.
+impl crate::Host for Host {
+    fn with_db(
+        &self,
+        f: &mut dyn FnMut(&Connection) -> Result<(), SyncError>,
+    ) -> Result<(), SyncError> {
+        f(&self.conn())
+    }
+
+    fn registry(&self) -> crate::Registry {
+        crate::Registry::new(Arc::new(Vec::new()))
+    }
+
+    fn bus(&self) -> mnemora_core::events::EventBus {
+        mnemora_core::events::EventBus::new()
+    }
+
+    fn automatic(&self) -> bool {
+        true
+    }
+
+    fn local_changes(&self) -> Arc<tokio::sync::Notify> {
+        Arc::default()
+    }
+
+    fn status_changed(&self) {}
+}
+
 struct Dev {
     host: Arc<Host>,
     network: Network,
@@ -125,6 +153,7 @@ impl Dev {
                 ..timing
             },
             discovery: found.clone(),
+            pace: crate::Pace::default(),
         };
         let identity = Arc::new(DeviceIdentity::generate().unwrap());
         let network = Network::start(host.clone(), identity, options)

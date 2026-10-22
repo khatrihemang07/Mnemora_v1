@@ -405,6 +405,7 @@ impl Pairing {
             self.config.trust.pin(*key, device);
         }
         tracing::info!(target: "sync", also_joined = stored.also_joined.len(), "paired a device");
+        self.host.paired();
         Ok(stored)
     }
 

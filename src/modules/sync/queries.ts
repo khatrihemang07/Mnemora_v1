@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/svelte-query';
-import { commands } from '../../lib/ipc/bindings';
+import { commands, events } from '../../lib/ipc/bindings';
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
 import { deviceQuery } from '../../lib/settings/queries';
@@ -25,3 +25,10 @@ export const devicesQuery = queryOptions({
   queryFn: () => unwrap(commands.syncDevices()),
   staleTime: Number.POSITIVE_INFINITY,
 });
+
+/** Reads the Devices tab again whenever a paired device's status or progress changes. Returns what stops listening. */
+export async function watchDevices(): Promise<() => void> {
+  return events.syncPeersEvent.listen(() => {
+    void queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey });
+  });
+}

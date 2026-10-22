@@ -8,11 +8,13 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::SyncError;
+use crate::live::Progress;
 use crate::name::MAX_NAME_CHARS;
 use crate::net::PublicKey;
 use crate::pair::msg::Member;
 use crate::pair::view::Platform;
 use crate::pair::{Paired, Stored};
+use crate::peer_state::Route;
 
 /// How many other devices this one is paired with.
 pub fn paired_count(conn: &Connection) -> AppResult<u32> {
@@ -24,8 +26,25 @@ pub fn paired_count(conn: &Connection) -> AppResult<u32> {
 pub fn forget_all(conn: &Connection) -> AppResult<()> {
     conn.execute("DELETE FROM sync_peers", [])?;
     conn.execute("DELETE FROM sync_group", [])?;
+    crate::peer_state::forget_all(conn)?;
     tracing::info!(target: "sync", "left the group, all paired devices forgotten");
     Ok(())
+}
+
+/// Where a paired device stands, in the words the Devices tab uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerState {
+    /// Connected and nothing left to exchange.
+    UpToDate,
+    /// A session is running.
+    Syncing,
+    /// Not reachable right now.
+    NotNearby,
+    /// Sync with it is paused (its data version differs).
+    Paused,
+    /// It was forgotten group-wide (#69).
+    Removed,
 }
 
 /// A paired device as the Devices tab lists it.
@@ -40,6 +59,22 @@ pub struct PeerRow {
     /// When it was paired: UTC milliseconds.
     #[specta(type = u32)]
     pub paired_at: i64,
+    /// Where it stands now.
+    pub state: PeerState,
+    /// When it was last reached: UTC milliseconds.
+    #[specta(type = Option<u32>)]
+    pub last_seen_at: Option<i64>,
+    /// When a session with it last finished.
+    #[specta(type = Option<u32>)]
+    pub last_synced_at: Option<i64>,
+    /// Changes the last session that moved anything received from it.
+    pub last_in: Option<u32>,
+    /// Changes that session sent to it.
+    pub last_out: Option<u32>,
+    /// How it was reached the last time.
+    pub route: Option<Route>,
+    /// How far the running session has got.
+    pub progress: Option<Progress>,
 }
 
 /// The paired devices, most recently paired first.
@@ -53,6 +88,13 @@ pub fn list(conn: &Connection) -> AppResult<Vec<PeerRow>> {
             name: r.get(1)?,
             platform: Platform::parse(&r.get::<_, String>(2)?),
             paired_at: r.get(3)?,
+            state: PeerState::NotNearby,
+            last_seen_at: None,
+            last_synced_at: None,
+            last_in: None,
+            last_out: None,
+            route: None,
+            progress: None,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

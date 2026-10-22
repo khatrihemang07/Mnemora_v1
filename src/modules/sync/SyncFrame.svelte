@@ -7,6 +7,7 @@
   import type { Snippet } from 'svelte';
   import RadioTower from '~icons/lucide/radio-tower';
   import RefreshCw from '~icons/lucide/refresh-cw';
+  import { commands } from '../../lib/ipc/bindings';
   import Button from '../../lib/ui/Button.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Tabs from '../../lib/ui/Tabs.svelte';
@@ -24,7 +25,7 @@
 <div data-sync class="selectable h-full overflow-y-auto p-(--pad)">
   <PageHeader title="Sync" icon={RadioTower} hue="--hue-sync">
     {#snippet actions()}
-      <Button variant="ghost" size="sm" disabled={alone} aria-label="Sync now">
+      <Button variant="ghost" size="sm" disabled={alone} aria-label="Sync now" onclick={() => void commands.syncNow()}>
         <RefreshCw class="size-3.5" />
         <span class="phone:sr-only">Sync now</span>
       </Button>

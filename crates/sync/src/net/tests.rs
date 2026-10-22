@@ -90,7 +90,7 @@ impl Device {
             config: NetConfig {
                 identity: Arc::new(DeviceIdentity::generate().unwrap()),
                 trust: Trust::new(),
-                local,
+                local: LocalHandshake::fixed(local),
             },
         }
     }
@@ -217,7 +217,8 @@ async fn two_pinned_peers_exchange_a_todo_sync_over_real_sockets() {
     assert_eq!(accepted.peer.handshake.device, "bravo");
     assert!(accepted.peer.data_version_mismatch.is_empty());
     assert_eq!(
-        accepted.peer.handshake.data_versions, b.config.local.data_versions,
+        accepted.peer.handshake.data_versions,
+        b.config.local.get().unwrap().data_versions,
         "per-Module data versions travel"
     );
 
@@ -315,7 +316,7 @@ async fn a_frame_over_8_mb_closes_the_connection() {
     // Be a well-behaved peer through the handshake, then lie about a frame's size.
     let liar = async {
         let mut channel = secure_dial(&b.config, listener_addr).await.unwrap().channel;
-        channel.send(&b.config.local).await.unwrap();
+        channel.send(&b.config.local.get().unwrap()).await.unwrap();
         let _: Handshake = channel.recv().await.unwrap();
         let mut stream = channel.into_inner();
         let header = u32::try_from(MAX_FRAME + 1).unwrap().to_be_bytes();
@@ -499,7 +500,7 @@ async fn a_forgotten_peer_cannot_resume_an_earlier_tls_session() {
             .map_err(|e| e.to_string())?;
         let mut channel = Channel::new(stream);
         channel
-            .send(&b.config.local)
+            .send(&b.config.local.get().unwrap())
             .await
             .map_err(|e| e.to_string())?;
         channel.recv::<Handshake>().await.map_err(|e| e.to_string())

@@ -1,0 +1,222 @@
+//! The session manager over real loopback sockets, between two in-memory devices with nothing to
+//! sync: what is tested here is which connection survives and that a session runs over it.
+
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
+
+use mnemora_core::db::{self, migrate};
+use mnemora_core::env::Environment;
+use mnemora_core::events::EventBus;
+use mnemora_core::hlc;
+use mnemora_core::module::CoreModule;
+use rusqlite::Connection;
+use tokio::sync::Notify;
+
+use super::{Host, Live, Pace, Schedule};
+use crate::discovery::Fixed;
+use crate::net::{
+    DeviceIdentity, Handshake, Incoming, Listener, LocalHandshake, NetConfig, PublicKey, Trust,
+    dial,
+};
+use crate::pair::{Paired, PairingHost, PairingView, Stored};
+use crate::{Registry, SyncError, SyncModule, Who};
+
+const LOCALHOST: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+
+struct TestHost {
+    device: String,
+    conn: Mutex<Connection>,
+}
+
+impl PairingHost for TestHost {
+    fn me(&self) -> Result<Who, SyncError> {
+        Err(SyncError::NotReady)
+    }
+
+    fn handshake(&self) -> Result<Handshake, SyncError> {
+        let conn = self.conn.lock().unwrap_or_else(PoisonError::into_inner);
+        Handshake::local(&conn, Environment::Production, &self.device, None, vec![])
+    }
+
+    fn visible(&self) -> bool {
+        false
+    }
+
+    fn pinned(&self) -> Vec<(PublicKey, String)> {
+        Vec::new()
+    }
+
+    fn store(&self, _: &Paired) -> Result<Stored, SyncError> {
+        Err(SyncError::NotReady)
+    }
+
+    fn show(&self, _: &PairingView) {}
+}
+
+impl Host for TestHost {
+    fn with_db(
+        &self,
+        f: &mut dyn FnMut(&Connection) -> Result<(), SyncError>,
+    ) -> Result<(), SyncError> {
+        f(&self.conn.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    fn registry(&self) -> Registry {
+        Registry::new(Arc::new(Vec::new()))
+    }
+
+    fn bus(&self) -> EventBus {
+        EventBus::new()
+    }
+
+    fn automatic(&self) -> bool {
+        true
+    }
+
+    fn local_changes(&self) -> Arc<Notify> {
+        Arc::default()
+    }
+
+    fn status_changed(&self) {}
+}
+
+struct Device {
+    id: &'static str,
+    config: NetConfig,
+    listener: Listener,
+    live: Live,
+}
+
+impl Device {
+    async fn new(id: &'static str) -> Self {
+        let mut conn = db::open_in_memory().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        migrate::run(&mut conn, &[&CoreModule, &SyncModule], dir.path()).unwrap();
+        hlc::set_device_id(&conn, id).unwrap();
+        let host = Arc::new(TestHost {
+            device: id.to_owned(),
+            conn: Mutex::new(conn),
+        });
+        let local = LocalHandshake::new({
+            let host = Arc::clone(&host);
+            move || host.handshake()
+        });
+        let config = NetConfig {
+            identity: Arc::new(DeviceIdentity::generate().unwrap()),
+            trust: Trust::new(),
+            local,
+        };
+        let listener = Listener::bind(config.clone(), LOCALHOST, 0).await.unwrap();
+        let pace = Pace {
+            // No retries during the test.
+            retry: Schedule {
+                steps: vec![Duration::from_secs(600)],
+                steady: Duration::from_secs(600),
+            },
+            ..Pace::default()
+        };
+        let live = Live::start(
+            host,
+            config.clone(),
+            Fixed::new(),
+            pace,
+            id.to_owned(),
+            &tokio::runtime::Handle::current(),
+        );
+        Self {
+            id,
+            config,
+            listener,
+            live,
+        }
+    }
+
+    fn addr(&self) -> SocketAddr {
+        SocketAddr::new(LOCALHOST, self.listener.local_addr().port())
+    }
+
+    fn pair_with(&self, other: &Self) {
+        self.config
+            .trust
+            .pin(other.config.identity.public_key(), other.id);
+        self.live
+            .host()
+            .with_db(&mut |conn| {
+                conn.execute(
+                "INSERT INTO sync_peers(id, name, paired_at, public_key) VALUES (?1, ?1, 1, ?2)",
+                rusqlite::params![other.id, other.config.identity.public_key().to_hex()],
+            )?;
+                Ok(())
+            })
+            .unwrap();
+        self.live.refresh_peers();
+    }
+}
+
+async fn until(what: &str, mut done: impl FnMut() -> bool) {
+    for _ in 0..300 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("never saw {what}");
+}
+
+/// Both devices dial each other at the same moment, so each holds two connections to the other.
+/// `own_first`: whether each sees the connection it dialled before the one it accepted.
+async fn both_dial(own_first: bool) {
+    let (mut a, mut b) = (Device::new("dev-a").await, Device::new("dev-b").await);
+    a.pair_with(&b);
+    b.pair_with(&a);
+
+    let a_to_b = dial(&a.config, b.addr()).await.unwrap();
+    let b_to_a = dial(&b.config, a.addr()).await.unwrap();
+    let Some(Incoming::Peer(at_b)) = b.listener.accept().await else {
+        panic!("b did not get a's connection");
+    };
+    let Some(Incoming::Peer(at_a)) = a.listener.accept().await else {
+        panic!("a did not get b's connection");
+    };
+    if own_first {
+        a.live.adopt(a_to_b);
+        a.live.accept(*at_a);
+        b.live.adopt(b_to_a);
+        b.live.accept(*at_b);
+    } else {
+        a.live.accept(*at_a);
+        a.live.adopt(a_to_b);
+        b.live.accept(*at_b);
+        b.live.adopt(b_to_a);
+    }
+
+    // "dev-a" is the lower id: the connection it dialled stays on both devices.
+    until("the lower id's connection kept on both", || {
+        a.live.dialled_by_me("dev-b") == Some(true) && b.live.dialled_by_me("dev-a") == Some(false)
+    })
+    .await;
+    until("a session over it", || {
+        let up = |live: &Live, peer: &str| {
+            live.snapshot()
+                .get(peer)
+                .is_some_and(|l| l.reachable && !l.syncing)
+        };
+        a.live.sessions() >= 1 && up(&a.live, "dev-b") && up(&b.live, "dev-a")
+    })
+    .await;
+    // Nothing flips back later.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(a.live.dialled_by_me("dev-b"), Some(true));
+    assert_eq!(b.live.dialled_by_me("dev-a"), Some(false));
+}
+
+#[tokio::test]
+async fn when_both_devices_dial_the_connection_dialled_by_the_lower_id_is_kept() {
+    both_dial(true).await;
+}
+
+#[tokio::test]
+async fn the_same_holds_when_each_sees_the_other_connection_first() {
+    both_dial(false).await;
+}

@@ -1,5 +1,6 @@
 //! What the Devices tab lists: this device and the paired ones.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use mnemora_core::device::DeviceSettings;
@@ -9,9 +10,11 @@ use serde::Serialize;
 use specta::Type;
 
 use crate::addresses;
+use crate::live::PeerLive;
 use crate::name::default_device_name;
 use crate::pair::Platform;
-use crate::peers::{self, PeerRow};
+use crate::peer_state::{self, Remembered};
+use crate::peers::{self, PeerRow, PeerState};
 
 /// This device, as the This-device card shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
@@ -35,11 +38,56 @@ pub struct DevicesView {
     pub peers: Vec<PeerRow>,
 }
 
-/// The Devices tab's data. `listening` is where the listener is bound, if it is.
+/// Where a device stands, from what the session manager says about it right now.
+fn state_of(live: Option<&PeerLive>) -> PeerState {
+    match live {
+        Some(l) if l.paused => PeerState::Paused,
+        Some(l) if l.syncing => PeerState::Syncing,
+        Some(l) if l.reachable => PeerState::UpToDate,
+        _ => PeerState::NotNearby,
+    }
+}
+
+/// The paired devices with their live state and what was remembered of the last sessions:
+/// devices that can be reached now first, then the most recently seen.
+fn enrich(
+    mut rows: Vec<PeerRow>,
+    remembered: &HashMap<String, Remembered>,
+    live: &HashMap<String, PeerLive>,
+) -> Vec<PeerRow> {
+    for row in &mut rows {
+        let kept = remembered.get(&row.id).cloned().unwrap_or_default();
+        let now = live.get(&row.id);
+        row.state = state_of(now);
+        row.last_seen_at = kept.last_seen_at;
+        row.last_synced_at = kept.last_synced_at;
+        row.last_in = kept.last_in;
+        row.last_out = kept.last_out;
+        row.route = kept.route;
+        row.progress = now.filter(|l| l.syncing).and_then(|l| l.progress);
+    }
+    let reachable = |r: &PeerRow| r.state != PeerState::NotNearby;
+    rows.sort_by(|a, b| {
+        reachable(b)
+            .cmp(&reachable(a))
+            .then(b.last_seen_at.cmp(&a.last_seen_at))
+            .then(b.paired_at.cmp(&a.paired_at))
+            .then(a.name.cmp(&b.name))
+    });
+    rows
+}
+
+/// The Devices tab's data. `listening` is where the listener is bound, if it is; `live` is what
+/// the session manager says about each paired device.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "the one caller passes the manager's plain map"
+)]
 pub fn view(
     device: &DeviceSettings,
     conn: &Connection,
     listening: Option<SocketAddr>,
+    live: &HashMap<String, PeerLive>,
 ) -> AppResult<DevicesView> {
     Ok(DevicesView {
         this_device: ThisDevice {
@@ -52,6 +100,102 @@ pub fn view(
                 Vec::new()
             },
         },
-        peers: peers::list(conn)?,
+        peers: enrich(peers::list(conn)?, &peer_state::all(conn)?, live),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::live::Progress;
+
+    fn row(id: &str, paired_at: i64) -> PeerRow {
+        PeerRow {
+            id: id.into(),
+            name: id.into(),
+            platform: Platform::Phone,
+            paired_at,
+            state: PeerState::NotNearby,
+            last_seen_at: None,
+            last_synced_at: None,
+            last_in: None,
+            last_out: None,
+            route: None,
+            progress: None,
+        }
+    }
+
+    fn seen(at: i64) -> Remembered {
+        Remembered {
+            last_seen_at: Some(at),
+            ..Remembered::default()
+        }
+    }
+
+    const REACHED: PeerLive = PeerLive {
+        reachable: true,
+        syncing: false,
+        progress: None,
+        paused: false,
+    };
+
+    #[test]
+    fn the_state_follows_what_the_manager_says() {
+        assert_eq!(state_of(None), PeerState::NotNearby);
+        assert_eq!(state_of(Some(&REACHED)), PeerState::UpToDate);
+        let syncing = PeerLive {
+            syncing: true,
+            ..REACHED
+        };
+        assert_eq!(state_of(Some(&syncing)), PeerState::Syncing);
+        let paused = PeerLive {
+            paused: true,
+            ..syncing
+        };
+        assert_eq!(state_of(Some(&paused)), PeerState::Paused);
+        assert_eq!(state_of(Some(&PeerLive::default())), PeerState::NotNearby);
+    }
+
+    #[test]
+    fn devices_that_can_be_reached_come_first_then_the_most_recently_seen() {
+        let rows = vec![
+            row("old", 1),
+            row("recent", 2),
+            row("here", 3),
+            row("never", 4),
+        ];
+        let remembered = HashMap::from([
+            ("old".to_owned(), seen(100)),
+            ("recent".to_owned(), seen(900)),
+            ("here".to_owned(), seen(50)),
+        ]);
+        let live = HashMap::from([("here".to_owned(), REACHED)]);
+        let ids: Vec<String> = enrich(rows, &remembered, &live)
+            .into_iter()
+            .map(|r| r.id)
+            .collect();
+        assert_eq!(ids, ["here", "recent", "old", "never"]);
+    }
+
+    #[test]
+    fn progress_is_shown_only_while_syncing() {
+        let progress = Some(Progress {
+            done: 120,
+            total: 340,
+        });
+        let busy = PeerLive {
+            syncing: true,
+            progress,
+            ..REACHED
+        };
+        let idle = PeerLive {
+            progress,
+            ..REACHED
+        };
+        let live = HashMap::from([("a".to_owned(), busy), ("b".to_owned(), idle)]);
+        let rows = enrich(vec![row("a", 1), row("b", 2)], &HashMap::new(), &live);
+        let by_id = |id: &str| rows.iter().find(|r| r.id == id).unwrap().progress;
+        assert_eq!(by_id("a"), progress);
+        assert_eq!(by_id("b"), None);
+    }
 }

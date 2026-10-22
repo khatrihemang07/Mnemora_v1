@@ -304,6 +304,16 @@ export const commands = {
 	syncPairDecide: (allow: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_decide", { allow })),
 	/**  Closes the pairing sheet's pairing: no code, no search; whoever was asked is told. */
 	syncPairCancel: () => __TAURI_INVOKE<void>("sync_pair_cancel"),
+	/**
+	 *  "Sync now": syncs with every reachable paired device now, even with Sync automatically off.
+	 *  Returns at once; each device's row shows how it goes.
+	 */
+	syncNow: () => __TAURI_INVOKE<void>("sync_now"),
+	/**
+	 *  The network changed or the app came back to the foreground: devices that could not be reached
+	 *  are tried again from the start of the retry schedule.
+	 */
+	syncResume: () => __TAURI_INVOKE<void>("sync_resume"),
 };
 
 /** Events */
@@ -311,6 +321,7 @@ export const events = {
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
 	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
+	syncPeersEvent: makeEvent<SyncPeersEvent>("sync-peers-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
 };
 
@@ -955,7 +966,34 @@ export type PeerRow = {
 	platform: Platform,
 	/**  When it was paired: UTC milliseconds. */
 	paired_at: number,
+	/**  Where it stands now. */
+	state: PeerState,
+	/**  When it was last reached: UTC milliseconds. */
+	last_seen_at: number | null,
+	/**  When a session with it last finished. */
+	last_synced_at: number | null,
+	/**  Changes the last session that moved anything received from it. */
+	last_in: number | null,
+	/**  Changes that session sent to it. */
+	last_out: number | null,
+	/**  How it was reached the last time. */
+	route: Route | null,
+	/**  How far the running session has got. */
+	progress: Progress | null,
 };
+
+/**  Where a paired device stands, in the words the Devices tab uses. */
+export type PeerState = 
+/**  Connected and nothing left to exchange. */
+"up_to_date" | 
+/**  A session is running. */
+"syncing" | 
+/**  Not reachable right now. */
+"not_nearby" | 
+/**  Sync with it is paused (its data version differs). */
+"paused" | 
+/**  It was forgotten group-wide (#69). */
+"removed";
 
 /**  What kind of device: decides the icon, and nothing else. */
 export type Platform = 
@@ -963,6 +1001,14 @@ export type Platform =
 "desktop" | 
 /**  A phone. */
 "phone";
+
+/**  How far a running session has got. */
+export type Progress = {
+	/**  Changes moved so far, in either direction. */
+	done: number,
+	/**  Changes the session will move. */
+	total: number,
+};
 
 /**
  *  Everything Quick edit can change, as the Task should be afterwards. What the box left alone is
@@ -1000,6 +1046,13 @@ export type RepeatRule = {
 	/**  `fixed` (from the Due date) or `after` (from the day it was done). */
 	mode: string,
 };
+
+/**  How a connection reached the other device. */
+export type Route = 
+/**  Over the local network. */
+"wifi" | 
+/**  Over Tailscale. */
+"tailscale";
 
 /**  The outcome of a search. */
 export type SearchResults = {
@@ -1122,6 +1175,9 @@ export type SyncOption =
 
 /**  The pairing sheet's state changed (a code is shown, someone asks, it worked or failed). */
 export type SyncPairingEvent = PairingView;
+
+/**  A paired device's status or sync progress changed: the Devices tab reads `sync_devices` again. */
+export type SyncPeersEvent = null;
 
 /**  What the Sync screens show. */
 export type SyncState = {

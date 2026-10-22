@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use mnemora_core::env::Environment;
 use ring::digest;
-use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio::task::JoinHandle;
 
 use crate::SyncError;
@@ -244,6 +244,9 @@ pub struct Fixed {
     found: Mutex<Vec<SocketAddr>>,
     advert: Mutex<Option<Advert>>,
     browses: Arc<AtomicUsize>,
+    /// Paired devices that "announced themselves": told to every browse, now and later.
+    seen: Mutex<Vec<Candidate>>,
+    watchers: Mutex<Vec<UnboundedSender<Candidate>>>,
 }
 
 impl Fixed {
@@ -255,6 +258,25 @@ impl Fixed {
     /// The devices every later browse finds, all showing a code.
     pub fn set(&self, addrs: Vec<SocketAddr>) {
         *self.found.lock().unwrap_or_else(PoisonError::into_inner) = addrs;
+    }
+
+    /// A device announces itself on the network, as a paired device would over mDNS: every
+    /// browse, running or started later, is told.
+    pub fn announce(&self, device: &str, addr: SocketAddr) {
+        let candidate = Candidate {
+            device: device.to_owned(),
+            addrs: vec![addr],
+            port: addr.port(),
+            pairing_open: false,
+        };
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(candidate.clone());
+        self.watchers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|w| w.send(candidate.clone()).is_ok());
     }
 
     /// What was last announced, if anything.
@@ -294,6 +316,18 @@ impl Discovery for Fixed {
                 pairing_open: true,
             });
         }
+        for candidate in self
+            .seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+        {
+            let _ = tx.send(candidate.clone());
+        }
+        self.watchers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(tx);
         self.browses.fetch_add(1, Ordering::SeqCst);
         Ok(Browsing {
             found,

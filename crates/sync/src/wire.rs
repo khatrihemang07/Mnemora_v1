@@ -56,6 +56,9 @@ pub enum Message {
         records: Vec<WireRecord>,
         /// Nothing follows this batch.
         last: bool,
+        /// On the first batch: how many records the whole stream holds, for progress.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total: Option<usize>,
     },
     /// The batch before was applied and stored.
     Ack,

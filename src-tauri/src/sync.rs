@@ -1,20 +1,21 @@
 //! Sync commands. Thin: the rules live in `mnemora-sync`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use mnemora_core::db::migrate;
+use mnemora_core::db::{self, Connection, migrate};
 use mnemora_core::error::AppError;
+use mnemora_core::events::EventBus;
 use mnemora_sync::discovery::{Discovery, Fixed, Mdns};
 use mnemora_sync::net::{DeviceIdentity, Handshake, PublicKey};
 use mnemora_sync::{
-    DevicesView, Network, NetworkOptions, Paired, PairingHost, PairingView, Platform, Stored,
-    SyncError, SyncOption, SyncState, Who,
+    DevicesView, Host, Network, NetworkOptions, Paired, PairingHost, PairingView, Platform,
+    Registry, Stored, SyncError, SyncOption, SyncState, Who,
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_specta::Event;
 
-use crate::SyncPairingEvent;
 use crate::state::{AppState, lock};
+use crate::{SyncPairingEvent, SyncPeersEvent};
 
 /// Sync's state for this device: on or off, its name and options, and how many devices are paired.
 #[tauri::command]
@@ -57,8 +58,10 @@ pub fn sync_set_option(
     enabled: bool,
 ) -> Result<(), AppError> {
     mnemora_sync::set_option(&state.device, option, enabled)?;
-    if option == SyncOption::Visible {
-        state.sync.refresh_advert();
+    match option {
+        SyncOption::Visible => state.sync.refresh_advert(),
+        SyncOption::Automatic => state.sync.options_changed(),
+        SyncOption::MobileData => {}
     }
     Ok(())
 }
@@ -69,6 +72,7 @@ pub fn sync_set_option(
 pub fn sync_leave(state: State<'_, AppState>) -> Result<(), AppError> {
     mnemora_sync::forget_all(&lock(&state.db))?;
     state.sync.unpin_all();
+    state.sync.peers_changed();
     state.sync.refresh_advert();
     Ok(())
 }
@@ -81,7 +85,24 @@ pub fn sync_devices(state: State<'_, AppState>) -> Result<DevicesView, AppError>
         &state.device.get(),
         &lock(&state.db),
         state.sync.listening(),
+        &state.sync.peers_live(),
     )
+}
+
+/// "Sync now": syncs with every reachable paired device now, even with Sync automatically off.
+/// Returns at once; each device's row shows how it goes.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_now(state: State<'_, AppState>) {
+    state.sync.sync_now();
+}
+
+/// The network changed or the app came back to the foreground: devices that could not be reached
+/// are tried again from the start of the retry schedule.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_resume(state: State<'_, AppState>) {
+    state.sync.resume();
 }
 
 /// Where pairing stands. Idle while Sync is off or still starting.
@@ -136,11 +157,21 @@ pub fn sync_pair_cancel(state: State<'_, AppState>) {
 /// written to the database, and the pairing state sent to the window as an event.
 pub struct AppHost<R: Runtime> {
     app: AppHandle<R>,
+    /// Sync's own connection to the database file, so a big sync never holds a command up and
+    /// a command never holds a sync up. `None` where the database is in memory (tests), which
+    /// can only be reached through the app's one connection.
+    own_db: Option<Mutex<Connection>>,
 }
 
 impl<R: Runtime> AppHost<R> {
-    pub fn new(app: AppHandle<R>) -> Self {
-        Self { app }
+    pub fn new(app: AppHandle<R>, own_connection: bool) -> Result<Self, SyncError> {
+        let own_db = if own_connection {
+            let state = app.state::<AppState>();
+            Some(Mutex::new(db::open(&state.paths.db_file)?))
+        } else {
+            None
+        };
+        Ok(Self { app, own_db })
     }
 }
 
@@ -205,6 +236,44 @@ impl<R: Runtime> PairingHost for AppHost<R> {
             tracing::warn!(target: "sync", error = %e, "could not emit the pairing state");
         }
     }
+
+    fn paired(&self) {
+        self.app.state::<AppState>().sync.peers_changed();
+    }
+}
+
+impl<R: Runtime> Host for AppHost<R> {
+    fn with_db(
+        &self,
+        f: &mut dyn FnMut(&Connection) -> Result<(), SyncError>,
+    ) -> Result<(), SyncError> {
+        match &self.own_db {
+            Some(own) => f(&lock(own)),
+            None => f(&lock(&self.app.state::<AppState>().db)),
+        }
+    }
+
+    fn registry(&self) -> Registry {
+        Registry::new(Arc::clone(&self.app.state::<AppState>().modules))
+    }
+
+    fn bus(&self) -> EventBus {
+        self.app.state::<AppState>().bus.clone()
+    }
+
+    fn automatic(&self) -> bool {
+        self.app.state::<AppState>().device.get().sync.automatic
+    }
+
+    fn local_changes(&self) -> Arc<mnemora_sync::Notify> {
+        self.app.state::<AppState>().sync.local_changes()
+    }
+
+    fn status_changed(&self) {
+        if let Err(e) = SyncPeersEvent.emit(&self.app) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the device status");
+        }
+    }
 }
 
 /// Starts the network side of Sync: this device's key, the listener, discovery and pairing. A no-op
@@ -247,7 +316,7 @@ pub async fn start_network<R: Runtime>(
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
     let identity = Arc::new(DeviceIdentity::load_or_create(&dir).map_err(SyncError::from)?);
-    let host = Arc::new(AppHost::new(app.clone()));
+    let host = Arc::new(AppHost::new(app.clone(), state.live_network)?);
     let network = Network::start(host, identity, options).await?;
     // Turned off meanwhile: the network has no owner and is dropped here, closing its port.
     let _ = state.sync.attach(network);

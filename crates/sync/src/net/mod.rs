@@ -33,8 +33,8 @@ pub use frame::{Channel, MAX_FRAME};
 pub use handshake::{Handshake, PROTOCOL_VERSION, Refusal};
 pub use identity::{DeviceIdentity, PublicKey};
 pub use link::{
-    DEFAULT_PORT, Established, Incoming, Listener, NetConfig, NetTransport, PeerInfo, Secured,
-    TlsChannel, dial, secure_dial,
+    DEFAULT_PORT, Established, Incoming, Listener, LocalHandshake, NetConfig, NetTransport,
+    PeerInfo, Secured, TlsChannel, dial, secure_dial,
 };
 pub use tls::Trust;
 
@@ -62,6 +62,9 @@ pub enum NetError {
     /// Nothing happened in time.
     #[error("timed out")]
     Timeout,
+    /// This device's own handshake could not be built.
+    #[error("could not build this device's handshake: {0}")]
+    Local(String),
     /// This device's key file could not be read or made.
     #[error("device key: {0}")]
     Key(String),
