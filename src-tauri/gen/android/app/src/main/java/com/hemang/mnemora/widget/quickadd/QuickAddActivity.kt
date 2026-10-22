@@ -361,7 +361,7 @@ class QuickAddActivity : Activity() {
 
     private fun textChanged() {
         if (vetoed) vetoed = false else justUnrecognised = false
-        dismissedHashAt = dismissedHashAt?.takeIf { CaptureRules.hashQuery(field.text.toString(), field.selectionStart)?.start == it }
+        dismissedHashAt = dismissedHashAt?.takeIf { hashAtCaret()?.start == it }
         updateAddButton()
         showSuggestions()
         requestReading()
@@ -440,11 +440,25 @@ class QuickAddActivity : Activity() {
 
     // --- #List suggestions -------------------------------------------------------------------------
 
-    private fun currentSuggestions(): List<Suggestion> {
+    private fun hashAtCaret(): HashQuery? = try {
+        CaptureRules.hashQuery(field.text.toString(), field.selectionStart)
+    } catch (e: Throwable) {
+        null
+    }
+
+    /** Never throws: a failure in the rules means no suggestions, not a crash. */
+    private fun currentSuggestions(): List<Suggestion> = try {
+        suggestionsFor()
+    } catch (e: Throwable) {
+        android.util.Log.w("TodoWidget", "suggestions failed", e)
+        emptyList()
+    }
+
+    private fun suggestionsFor(): List<Suggestion> {
         val ctx = context ?: return emptyList()
         if (!ctx.parseDates) return emptyList()
         val text = field.text.toString()
-        val hash = CaptureRules.hashQuery(text, field.selectionStart) ?: return emptyList()
+        val hash = hashAtCaret() ?: return emptyList()
         if (hash.start == dismissedHashAt) return emptyList()
         return CaptureRules.listSuggestions(hash.query, ctx.lists.map { SuggestList(it.id, it.name, it.emoji) })
     }
@@ -456,11 +470,20 @@ class QuickAddActivity : Activity() {
         suggestionBox.visibility = if (items.isEmpty()) View.GONE else View.VISIBLE
         items.forEachIndexed { i, s ->
             val label = when (s) {
-                is Suggestion.Existing -> listOfNotNull(s.emoji, s.name).joinToString(" ")
+                is Suggestion.Existing -> listOfNotNull(s.emoji?.takeIf { it.isNotEmpty() }, s.name).joinToString(" ")
                 is Suggestion.New -> getString(R.string.widget_quick_add_new_list, s.name)
             }
-            val row = text(label, 14f, if (s is Suggestion.New) palette.todo else palette.ink).apply {
+            val ink = if (s is Suggestion.New) palette.todo else palette.ink
+            // The app's glyph: an emoji in the label, else the list icon; a new List has list-plus.
+            val glyph = when {
+                s is Suggestion.New -> R.drawable.qa_list_plus
+                (s as Suggestion.Existing).emoji.isNullOrEmpty() -> R.drawable.qa_list
+                else -> null
+            }
+            val row = text(label, 14f, ink).apply {
                 gravity = Gravity.CENTER_VERTICAL
+                compoundDrawablePadding = dp(8)
+                if (glyph != null) setCompoundDrawablesRelative(icon(glyph, if (s is Suggestion.New) palette.todo else palette.muted).apply { setBounds(0, 0, dp(16), dp(16)) }, null, null, null)
                 setPadding(dp(12), 0, dp(12), 0)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -474,7 +497,7 @@ class QuickAddActivity : Activity() {
 
     private fun accept(s: Suggestion) {
         val text = field.text.toString()
-        val hash = CaptureRules.hashQuery(text, field.selectionStart) ?: return
+        val hash = hashAtCaret() ?: return
         val (next, caret) = CaptureRules.applySuggestion(text, hash, s)
         field.setText(next)
         field.setSelection(minOf(caret, field.text.length))
@@ -482,14 +505,38 @@ class QuickAddActivity : Activity() {
 
     // --- Chips -------------------------------------------------------------------------------------
 
-    private fun chip(label: CharSequence, fill: Int, ink: Int, stroke: Int? = null, dashed: Boolean = false) =
-        text(label, 12f, ink).apply {
-            background = round(fill, 14, stroke, dashed)
-            setPadding(dp(10), dp(5), dp(10), dp(5))
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            maxWidth = dp(260)
+    private fun icon(res: Int, color: Int): android.graphics.drawable.Drawable =
+        getDrawable(res)!!.mutate().apply {
+            setTint(color)
+            setBounds(0, 0, dp(14), dp(14))
         }
+
+    /** A chip with the app's icon before its label and, when it opens something, a chevron after. */
+    private fun chip(
+        label: CharSequence,
+        fill: Int,
+        ink: Int,
+        stroke: Int? = null,
+        dashed: Boolean = false,
+        iconRes: Int? = null,
+        chevron: Boolean = false,
+    ) = text(label, 12f, ink).apply {
+        background = round(fill, 14, stroke, dashed)
+        setPadding(dp(10), dp(5), dp(10), dp(5))
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        maxWidth = dp(260)
+        gravity = Gravity.CENTER_VERTICAL
+        compoundDrawablePadding = dp(4)
+        if (iconRes != null || chevron) {
+            setCompoundDrawablesRelative(
+                iconRes?.let { icon(it, ink) },
+                null,
+                if (chevron) icon(R.drawable.qa_chevron, Palette.withAlpha(ink, 0.7f)) else null,
+                null,
+            )
+        }
+    }
 
     /** The "word → meaning ×" chips, then the alternatives and the words kept as text. */
     private fun renderChips() {
@@ -559,29 +606,37 @@ class QuickAddActivity : Activity() {
         propsBox.removeAllViews()
         val r = reading ?: return
         val listChosen = r.listIsNew || r.fields.listId != null
+        val listEmoji = context?.lists?.firstOrNull { it.id == r.fields.listId }?.emoji
+        // The app's glyph: the List's emoji (already in the label), else the list icon; Inbox and a new List have their own.
+        val listIcon = when {
+            r.listIsNew -> R.drawable.qa_list_plus
+            r.fields.listId == null -> R.drawable.qa_inbox
+            listEmoji.isNullOrEmpty() -> R.drawable.qa_list
+            else -> null
+        }
         propsBox.addView(
-            (if (listChosen) chip(r.listLabel, todoSoft, palette.todo) else chip(r.listLabel, 0, palette.ink, line)).apply {
+            (if (listChosen) chip(r.listLabel, todoSoft, palette.todo, iconRes = listIcon, chevron = true) else chip(r.listLabel, 0, palette.ink, line, iconRes = listIcon, chevron = true)).apply {
                 contentDescription = "List: ${r.listLabel}. Choose a List"
                 setOnClickListener { showPicker(if (picker == Picker.LIST) Picker.NONE else Picker.LIST) }
             },
         )
         val dated = r.fields.date != null || r.fields.time != null
-        // Not tappable: the calendar, time and Repeat panels are not in the sheet.
+        // Not tappable, so no chevron: the calendar, time and Repeat panels are not in the sheet.
         propsBox.addView(
-            (if (dated) chip(r.whenLabel, todoSoft, palette.todo) else chip(r.whenLabel, 0, palette.faint, line)).apply {
+            (if (dated) chip(r.whenLabel, todoSoft, palette.todo, iconRes = R.drawable.qa_calendar) else chip(r.whenLabel, 0, palette.faint, line, iconRes = R.drawable.qa_calendar)).apply {
                 contentDescription = "When: ${r.whenLabel}"
             },
         )
         val p = r.fields.priority
         propsBox.addView(
-            (if (p < 4) chip("P$p", Palette.withAlpha(priorityInk(p), 0.14f), priorityInk(p)) else chip(getString(R.string.widget_quick_add_priority), 0, palette.ink, line)).apply {
+            (if (p < 4) chip("P$p", Palette.withAlpha(priorityInk(p), 0.14f), priorityInk(p), iconRes = R.drawable.qa_flag, chevron = true) else chip(getString(R.string.widget_quick_add_priority), 0, palette.ink, line, iconRes = R.drawable.qa_flag, chevron = true)).apply {
                 contentDescription = "Priority: ${priorityName(p)}"
                 setOnClickListener { showPicker(if (picker == Picker.PRIORITY) Picker.NONE else Picker.PRIORITY) }
             },
         )
         if (!notesOpen) {
             propsBox.addView(
-                chip(getString(R.string.widget_quick_add_notes), 0, palette.ink, line).apply {
+                chip(getString(R.string.widget_quick_add_notes), 0, palette.ink, line, iconRes = R.drawable.qa_note).apply {
                     contentDescription = "Add notes"
                     setOnClickListener { openNotes() }
                 },
