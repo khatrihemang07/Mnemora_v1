@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.appwidget.AppWidgetManager
-import android.content.res.ColorStateList
 import android.content.res.Configuration
 import android.util.SizeF
 import android.view.View
@@ -42,11 +41,11 @@ object WidgetRenderer {
         return RemoteViews(sizes)
     }
 
-    /** The look a widget wears: its Theme setting, with "Same as app" read from the last reply. */
-    private fun lookOf(context: Context, reply: Reply, config: WidgetConfig): Look {
+    /** The colours a widget wears: its Theme setting, with "Same as app" read from the last reply. */
+    private fun colorsOf(context: Context, reply: Reply, config: WidgetConfig): WidgetColors {
         // The app's theme is known from a reply; failures use the last one seen.
         val appTheme = (reply as? Reply.Ok)?.snapshot?.appTheme ?: WidgetConfigStore.appTheme(context)
-        return WidgetTheme.resolve(config.theme, appTheme, phoneNight(context))
+        return WidgetColors.of(context, appTheme, config, phoneNight(context))
     }
 
     /** The card's fill: the theme's surface, a faint wash when there is no background. */
@@ -55,16 +54,16 @@ object WidgetRenderer {
 
     /** The pill or the plus: one tap opens the Quick add sheet for the widget's view. */
     private fun addButton(context: Context, reply: Reply, config: WidgetConfig, appWidgetId: Int, mode: SizeMode): RemoteViews {
-        val look = lookOf(context, reply, config)
-        val palette = Palette.from(context, look, config.background)
+        val colors = colorsOf(context, reply, config)
         val pill = mode == SizeMode.PILL
         val views = RemoteViews(context.packageName, if (pill) R.layout.widget_add_pill else R.layout.widget_add_plus)
-        views.setColorStateList(R.id.root, "setBackgroundTintList", ColorStateList.valueOf(surfaceOf(palette, look, config.background)))
-        views.setColorStateList(R.id.add_icon, "setImageTintList", ColorStateList.valueOf(palette.todo))
+        colors.tint(views, R.id.root, "setBackgroundTintList") { surfaceOf(palette, look, config.background) }
+        colors.tint(views, R.id.add_icon, "setImageTintList") { palette.todo }
         if (pill) {
-            val field = if (config.background == Background.NONE) Palette.scrim(look) else palette.surface2
-            views.setColorStateList(R.id.add_field, "setBackgroundTintList", ColorStateList.valueOf(field))
-            views.setTextColor(R.id.add_label, palette.muted)
+            colors.tint(views, R.id.add_field, "setBackgroundTintList") {
+                if (config.background == Background.NONE) Palette.scrim(look) else palette.surface2
+            }
+            colors.text(views, R.id.add_label) { palette.muted }
         }
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
         views.setContentDescription(R.id.root, context.getString(R.string.widget_add_task_description))
@@ -85,31 +84,31 @@ object WidgetRenderer {
         appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID,
         previewLines: Int? = null,
     ): RemoteViews {
-        val look = lookOf(context, reply, config)
-        val palette = Palette.from(context, look, config.background)
-        val edge = TextEdge.of(config.background, look)
+        val colors = colorsOf(context, reply, config)
+        // The text edge is a layout choice, so it follows the look as drawn; a flip of night mode
+        // changes it only at the next draw.
+        val edge = TextEdge.of(config.background, colors.current.look)
         val views = RemoteViews(context.packageName, edge.card)
         // With no background a faint wash still sits behind the text, so it reads on any wallpaper.
-        views.setColorStateList(R.id.root, "setBackgroundTintList", ColorStateList.valueOf(surfaceOf(palette, look, config.background)))
-        val open = openApp(context)
-        views.setOnClickPendingIntent(R.id.root, open)
+        colors.tint(views, R.id.root, "setBackgroundTintList") { surfaceOf(palette, look, config.background) }
+        views.setOnClickPendingIntent(R.id.root, openApp(context))
         views.setViewVisibility(R.id.sandbox_tag, if (BuildConfig.SANDBOX) View.VISIBLE else View.GONE)
-        undoBar(context, views, palette, look, config.background, appWidgetId)
+        undoBar(context, views, colors, config.background, appWidgetId)
         when (reply) {
-            is Reply.Ok -> ok(context, views, palette, edge, reply.snapshot, open, previewLines, appWidgetId)
+            is Reply.Ok -> ok(context, views, colors, edge, reply.snapshot, previewLines, appWidgetId)
             Reply.NotSetUp -> message(
-                views, palette,
+                views, colors,
                 context.getString(R.string.widget_not_set_up_title),
                 context.getString(R.string.widget_not_set_up_line),
             )
             Reply.NeedsUpdate -> message(
-                views, palette,
+                views, colors,
                 context.getString(R.string.widget_needs_update_title),
                 context.getString(R.string.widget_needs_update_line),
             )
             Reply.ListMissing -> {
                 message(
-                    views, palette,
+                    views, colors,
                     context.getString(R.string.widget_list_deleted_title),
                     context.getString(R.string.widget_list_deleted_line),
                 )
@@ -119,11 +118,11 @@ object WidgetRenderer {
                 }
                 // No header here, so the gear sits in the corner.
                 views.setViewVisibility(R.id.gear_corner, View.VISIBLE)
-                views.setColorStateList(R.id.gear_corner, "setImageTintList", ColorStateList.valueOf(palette.faint))
+                colors.tint(views, R.id.gear_corner, "setImageTintList") { palette.faint }
                 gearClick(context, views, R.id.gear_corner, appWidgetId)
             }
             Reply.Failed -> message(
-                views, palette,
+                views, colors,
                 context.getString(R.string.widget_failed_title),
                 context.getString(R.string.widget_failed_line),
             )
@@ -132,7 +131,7 @@ object WidgetRenderer {
     }
 
     /** The Undo bar after a tick, in the widget's own theme; hidden once its time is up. */
-    private fun undoBar(context: Context, views: RemoteViews, palette: Palette, look: Look, background: Background, appWidgetId: Int) {
+    private fun undoBar(context: Context, views: RemoteViews, colors: WidgetColors, background: Background, appWidgetId: Int) {
         // The setup screen's preview is not a real widget: no bar there.
         val state = if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) null else UndoBar.get(context, System.currentTimeMillis())
         if (state == null) {
@@ -141,22 +140,22 @@ object WidgetRenderer {
         }
         // Over a bare wallpaper the bar is its own light card, whatever the theme.
         val bare = background == Background.NONE
-        // On a dark card surface-2 is barely lighter than the card, so the bar lifts with a wash of the ink.
-        val fill = when {
-            bare -> Palette.withAlpha(0xFFFFFFFF.toInt(), 0.92f)
-            WidgetTheme.isDark(look) -> Palette.blend(palette.ink, palette.background, 0.16f)
-            else -> palette.surface2
-        }
-        val ink = if (bare) 0xFF1D1712.toInt() else palette.ink
         views.setViewVisibility(R.id.undo_bar, View.VISIBLE)
-        views.setColorStateList(R.id.undo_bar, "setBackgroundTintList", ColorStateList.valueOf(fill))
+        // On a dark card surface-2 is barely lighter than the card, so the bar lifts with a wash of the ink.
+        colors.tint(views, R.id.undo_bar, "setBackgroundTintList") {
+            when {
+                bare -> Palette.withAlpha(0xFFFFFFFF.toInt(), 0.92f)
+                WidgetTheme.isDark(look) -> Palette.blend(palette.ink, palette.background, 0.16f)
+                else -> palette.surface2
+            }
+        }
         views.setTextViewText(R.id.undo_text, state.lead)
-        views.setTextColor(R.id.undo_text, ink)
+        colors.text(views, R.id.undo_text) { if (bare) 0xFF1D1712.toInt() else palette.ink }
         // The title gives way; "· next Thu 29 Oct" stays whole.
         views.setViewVisibility(R.id.undo_suffix, if (state.suffix == null) View.GONE else View.VISIBLE)
         views.setTextViewText(R.id.undo_suffix, state.suffix.orEmpty())
-        views.setTextColor(R.id.undo_suffix, ink)
-        views.setTextColor(R.id.undo_action, palette.todo)
+        colors.text(views, R.id.undo_suffix) { if (bare) 0xFF1D1712.toInt() else palette.ink }
+        colors.text(views, R.id.undo_action) { palette.todo }
         views.setOnClickPendingIntent(R.id.undo_action, actionIntent(context, WidgetActionReceiver.ACTION_UNDO, 2, FLAG_IMMUTABLE_ONLY))
     }
 
@@ -189,55 +188,54 @@ object WidgetRenderer {
     }
 
     /** A status or error: the card without its header, one centred message that opens the app. */
-    private fun message(views: RemoteViews, palette: Palette, title: String, line: String) {
+    private fun message(views: RemoteViews, colors: WidgetColors, title: String, line: String) {
         views.setViewVisibility(R.id.header, View.GONE)
         views.setViewVisibility(R.id.list, View.GONE)
-        showMessage(views, palette, title, line)
+        showMessage(views, colors, title, line)
     }
 
-    private fun showMessage(views: RemoteViews, palette: Palette, title: String, line: String) {
+    private fun showMessage(views: RemoteViews, colors: WidgetColors, title: String, line: String) {
         views.setViewVisibility(R.id.message, View.VISIBLE)
         views.setTextViewText(R.id.message_title, title)
-        views.setTextColor(R.id.message_title, palette.ink)
+        colors.text(views, R.id.message_title) { palette.ink }
         views.setTextViewText(R.id.message_line, line)
-        views.setTextColor(R.id.message_line, palette.muted)
+        colors.text(views, R.id.message_line) { palette.muted }
     }
 
     private fun ok(
         context: Context,
         views: RemoteViews,
-        palette: Palette,
+        colors: WidgetColors,
         edge: TextEdge,
         snapshot: Snapshot,
-        open: PendingIntent,
         previewLines: Int?,
         appWidgetId: Int,
     ) {
         views.setViewVisibility(R.id.header, View.VISIBLE)
-        views.setColorStateList(R.id.gear, "setImageTintList", ColorStateList.valueOf(palette.faint))
+        colors.tint(views, R.id.gear, "setImageTintList") { palette.faint }
         gearClick(context, views, R.id.gear, appWidgetId)
         // The teal + sits right beside the gear and opens Quick add for this view.
-        views.setColorStateList(R.id.add, "setImageTintList", ColorStateList.valueOf(palette.todo))
+        colors.tint(views, R.id.add, "setImageTintList") { palette.todo }
         if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
             views.setOnClickPendingIntent(R.id.add, QuickAddActivity.pending(context, snapshot.view, appWidgetId))
         }
         views.setOnClickPendingIntent(R.id.header, linkIntent(context, WidgetLinks.build(snapshot.view), appWidgetId))
-        views.setColorStateList(R.id.chip, "setBackgroundTintList", ColorStateList.valueOf(Palette.withAlpha(palette.todo, 0.16f)))
-        views.setColorStateList(R.id.chip_icon, "setImageTintList", ColorStateList.valueOf(palette.todo))
+        colors.tint(views, R.id.chip, "setBackgroundTintList") { Palette.withAlpha(palette.todo, 0.16f) }
+        colors.tint(views, R.id.chip_icon, "setImageTintList") { palette.todo }
         views.setTextViewText(R.id.title, snapshot.title)
-        views.setTextColor(R.id.title, palette.ink)
+        colors.text(views, R.id.title) { palette.ink }
         val count = snapshot.count
         if (count == null) {
             views.setViewVisibility(R.id.count, View.GONE)
         } else {
             views.setViewVisibility(R.id.count, View.VISIBLE)
             views.setTextViewText(R.id.count, count.text)
-            views.setTextColor(R.id.count, if (count.tone == Tone.OVERDUE) palette.danger else palette.faint)
+            colors.text(views, R.id.count) { if (count.tone == Tone.OVERDUE) palette.danger else palette.faint }
         }
         val empty = snapshot.empty
         if (empty != null) {
             views.setViewVisibility(R.id.list, View.GONE)
-            showMessage(views, palette, empty.title, empty.line)
+            showMessage(views, colors, empty.title, empty.line)
             return
         }
         views.setViewVisibility(R.id.message, View.GONE)
@@ -246,12 +244,12 @@ object WidgetRenderer {
         views.setScrollPosition(R.id.list, 0)
         // Row taps are broadcasts to the receiver; each row's fill-in says which part was tapped.
         views.setPendingIntentTemplate(R.id.list, actionIntent(context, WidgetActionReceiver.ACTION_ROW, 3, PendingIntent.FLAG_MUTABLE))
-        views.setRemoteAdapter(R.id.list, items(context, palette, edge, appWidgetId, snapshot.view, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
+        views.setRemoteAdapter(R.id.list, items(context, colors, edge, appWidgetId, snapshot.view, previewLines?.let { RowItems.preview(snapshot.groups, it) } ?: RowItems.flatten(snapshot.groups)))
     }
 
     private fun items(
         context: Context,
-        palette: Palette,
+        colors: WidgetColors,
         edge: TextEdge,
         appWidgetId: Int,
         view: String,
@@ -262,32 +260,45 @@ object WidgetRenderer {
             .setViewTypeCount(2)
         lines.forEachIndexed { index, line ->
             when (line) {
-                is Item.Heading -> builder.addItem(-(index + 1L), heading(context, palette, edge, line))
-                is Item.Task -> builder.addItem(line.row.id.hashCode().toLong(), task(context, palette, edge, appWidgetId, view, line.row))
+                is Item.Heading -> builder.addItem(-(index + 1L), heading(context, colors, edge, line))
+                is Item.Task -> builder.addItem(line.row.id.hashCode().toLong(), task(context, colors, edge, appWidgetId, view, line.row))
+                is Item.More -> builder.addItem(-(index + 1L), more(context, colors, edge, view, line))
             }
         }
         return builder.build()
     }
 
-    private fun heading(context: Context, palette: Palette, edge: TextEdge, line: Item.Heading): RemoteViews {
+    private fun heading(context: Context, colors: WidgetColors, edge: TextEdge, line: Item.Heading): RemoteViews {
         val views = RemoteViews(context.packageName, edge.group)
         views.setTextViewText(R.id.group_title, line.text.uppercase())
-        views.setTextColor(R.id.group_title, if (line.tone == Tone.OVERDUE) palette.danger else palette.faint)
+        colors.text(views, R.id.group_title) { if (line.tone == Tone.OVERDUE) palette.danger else palette.faint }
         return views
     }
 
-    private fun task(context: Context, palette: Palette, edge: TextEdge, appWidgetId: Int, view: String, row: TaskRow): RemoteViews {
+    /** "+N more · Open Mnemora": the end of a list that was cut; a tap opens the view in the app. */
+    private fun more(context: Context, colors: WidgetColors, edge: TextEdge, view: String, line: Item.More): RemoteViews {
+        val views = RemoteViews(context.packageName, edge.group)
+        views.setTextViewText(R.id.group_title, context.getString(R.string.widget_more_open, line.hidden))
+        colors.text(views, R.id.group_title) { palette.todo }
+        views.setOnClickFillInIntent(
+            R.id.group_title,
+            Intent()
+                .putExtra(WidgetActionReceiver.EXTRA_KIND, WidgetActionReceiver.KIND_OPEN)
+                .putExtra(WidgetActionReceiver.EXTRA_LINK, WidgetLinks.build(view)),
+        )
+        return views
+    }
+
+    private fun task(context: Context, colors: WidgetColors, edge: TextEdge, appWidgetId: Int, view: String, row: TaskRow): RemoteViews {
         val views = RemoteViews(context.packageName, edge.row)
         views.setTextViewText(R.id.row_title, row.title)
-        views.setTextColor(R.id.row_title, palette.ink)
+        colors.text(views, R.id.row_title) { palette.ink }
         // A tint (not setColorFilter) keeps a translucent fill translucent over the drawable's white.
-        views.setColorStateList(
-            R.id.diamond_edge, "setImageTintList",
-            ColorStateList.valueOf(palette.ringEdge(row.ring, row.overdue)),
-        )
-        val fill = palette.ringFill(row.ring)
-        views.setViewVisibility(R.id.diamond_fill, if (fill == 0) View.INVISIBLE else View.VISIBLE)
-        if (fill != 0) views.setColorStateList(R.id.diamond_fill, "setImageTintList", ColorStateList.valueOf(fill))
+        colors.tint(views, R.id.diamond_edge, "setImageTintList") { palette.ringEdge(row.ring, row.overdue) }
+        // Whether a ring has a fill is the same in every look.
+        val filled = colors.current.palette.ringFill(row.ring) != 0
+        views.setViewVisibility(R.id.diamond_fill, if (filled) View.VISIBLE else View.INVISIBLE)
+        if (filled) colors.tint(views, R.id.diamond_fill, "setImageTintList") { palette.ringFill(row.ring) }
         // An Overdue row shows the day it was due in red where the time would go.
         val right = row.day ?: row.time
         if (right == null) {
@@ -295,15 +306,15 @@ object WidgetRenderer {
         } else {
             views.setViewVisibility(R.id.row_time, View.VISIBLE)
             views.setTextViewText(R.id.row_time, right)
-            views.setTextColor(R.id.row_time, if (row.day != null) palette.danger else palette.faint)
+            colors.text(views, R.id.row_time) { if (row.day != null) palette.danger else palette.faint }
         }
         if (row.list == null) {
             views.setViewVisibility(R.id.row_chip, View.GONE)
         } else {
             views.setViewVisibility(R.id.row_chip, View.VISIBLE)
             views.setTextViewText(R.id.row_chip, row.list)
-            views.setTextColor(R.id.row_chip, palette.muted)
-            views.setColorStateList(R.id.row_chip, "setBackgroundTintList", ColorStateList.valueOf(palette.surface2))
+            colors.text(views, R.id.row_chip) { palette.muted }
+            colors.tint(views, R.id.row_chip, "setBackgroundTintList") { palette.surface2 }
         }
         views.setOnClickFillInIntent(
             R.id.row_root,
@@ -335,9 +346,9 @@ object WidgetRenderer {
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
-        // Mutable so list rows can fill in their own details later; explicit, so safe.
+        // Immutable: rows use their own mutable template (ACTION_ROW), not this one.
         return PendingIntent.getActivity(
-            context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
+            context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 }

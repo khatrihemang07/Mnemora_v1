@@ -28,11 +28,36 @@ class RowItemsTest {
     }
 
     @Test
-    fun isCutAtTheCap() {
+    fun isCutAtTheCapWithAMoreLineSayingHowManyAreLeftOff() {
         val rows = (1..200).map { row("t$it") }
         val items = RowItems.flatten(listOf(Group("Today", Tone.NORMAL, rows)))
         assertEquals(RowItems.MAX_ITEMS, items.size)
         assertTrue(items.first() is Item.Heading)
+        // The heading and 78 Tasks stay, the More line takes the last place.
+        assertEquals(Item.More(200 - 78), items.last())
+        assertEquals(78, items.count { it is Item.Task })
+    }
+
+    @Test
+    fun exactlyTheCapNeedsNoMoreLine() {
+        val rows = (1..RowItems.MAX_ITEMS - 1).map { row("t$it") }
+        val items = RowItems.flatten(listOf(Group("Today", Tone.NORMAL, rows)))
+        assertEquals(RowItems.MAX_ITEMS, items.size)
+        assertTrue(items.none { it is Item.More })
+    }
+
+    @Test
+    fun theMoreLineNeverFollowsAHeadingWithNothingUnderIt() {
+        val first = (1..RowItems.MAX_ITEMS - 3).map { row("a$it") }
+        val groups = listOf(
+            Group("Overdue", Tone.OVERDUE, first),
+            Group("Today", Tone.NORMAL, listOf(row("b1"), row("b2"), row("b3"))),
+        )
+        // Overdue heading + 77 Tasks = 78 lines, then the Today heading would be line 79, then the cut.
+        val items = RowItems.flatten(groups)
+        assertTrue(items.last() is Item.More)
+        assertTrue(items[items.size - 2] is Item.Task)
+        assertEquals(3, (items.last() as Item.More).hidden)
     }
 
     @Test
@@ -46,5 +71,7 @@ class RowItemsTest {
         assertEquals(3, RowItems.preview(groups, 4).size)
         assertEquals(5, RowItems.preview(groups, 5).size)
         assertTrue(RowItems.preview(groups, 5).last() is Item.Task)
+        // A preview is cut for space, so it never gets the More line.
+        assertTrue(RowItems.preview(groups, 2).none { it is Item.More })
     }
 }

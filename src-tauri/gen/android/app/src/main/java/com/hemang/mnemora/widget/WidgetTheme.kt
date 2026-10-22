@@ -58,6 +58,14 @@ object WidgetTheme {
         }
     }
 
+    /**
+     * Whether the look follows the phone's night mode: "Same as app" while the app's own theme is
+     * System (or unknown). Such a widget is drawn in both looks, and the launcher picks one itself
+     * when night mode flips, with no redraw.
+     */
+    fun followsPhone(choice: ThemeChoice, appTheme: String?): Boolean =
+        choice == ThemeChoice.APP && appTheme !in setOf("light", "dark", "oled")
+
     /** Whether a look is a dark one (its Priority colours are the lighter set). */
     fun isDark(look: Look): Boolean = look != Look.LIGHT && look != Look.MATERIAL_YOU
 }

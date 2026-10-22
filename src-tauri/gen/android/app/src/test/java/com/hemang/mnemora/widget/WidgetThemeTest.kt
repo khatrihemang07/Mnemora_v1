@@ -81,4 +81,15 @@ class TextEdgeTest {
         assertEquals(TextEdge.SHADOW, TextEdge.of(Background.NONE, Look.TRUE_BLACK))
         assertEquals(TextEdge.SHADOW, TextEdge.of(Background.NONE, Look.MATERIAL_YOU_DARK))
     }
+
+    @Test
+    fun onlySameAsAppOnSystemFollowsThePhoneLive() {
+        assertTrue(WidgetTheme.followsPhone(ThemeChoice.APP, "system"))
+        assertTrue(WidgetTheme.followsPhone(ThemeChoice.APP, null))
+        assertFalse(WidgetTheme.followsPhone(ThemeChoice.APP, "dark"))
+        assertFalse(WidgetTheme.followsPhone(ThemeChoice.APP, "light"))
+        assertFalse(WidgetTheme.followsPhone(ThemeChoice.APP, "oled"))
+        assertFalse(WidgetTheme.followsPhone(ThemeChoice.DARK, "system"))
+        assertFalse(WidgetTheme.followsPhone(ThemeChoice.MATERIAL_YOU, null))
+    }
 }
