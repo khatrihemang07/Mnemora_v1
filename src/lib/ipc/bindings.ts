@@ -35,7 +35,7 @@ export const commands = {
 	journalEntryUpdate: (id: string, text: string, sessionId: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_update", { id, text, sessionId })),
 	/**  Ticks or unticks the checklist item on the 0-based source `line`. Never marks the Entry edited. */
 	journalEntryToggleTask: (id: string, line: number) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_toggle_task", { id, line })),
-	/**  Deletes an Entry. It can be restored for 30 days, then it is erased. */
+	/**  Deletes an Entry. It can be restored at any time. */
 	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
 	/**  Brings a deleted Entry back to its place on its Page. */
 	journalEntryRestore: (id: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_restore", { id })),
@@ -160,7 +160,7 @@ export const commands = {
 	 */
 	todoTaskWontDo: (id: string, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_wont_do", { id, local })),
 	/**
-	 *  Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
+	 *  Deletes a Task at once; the row stays for good. Occurrences of a repeating Task
 	 *  stay in Done. Records a `delete` change.
 	 */
 	todoTaskDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("todo_task_delete", { id })),
@@ -175,7 +175,7 @@ export const commands = {
 	todoCommentAdd: (taskId: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_add", { taskId, body })),
 	/**  Replaces a Comment's text; it then shows "edited". */
 	todoCommentEdit: (id: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_edit", { id, body })),
-	/**  Deletes a Comment (erased after 30 days); `todo_comment_restore` is Undo. */
+	/**  Deletes a Comment (the row stays for good); `todo_comment_restore` is Undo. */
 	todoCommentDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("todo_comment_delete", { id })),
 	/**  Undoes `todo_comment_delete`. */
 	todoCommentRestore: (id: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_restore", { id })),

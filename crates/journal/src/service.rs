@@ -135,7 +135,7 @@ pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult
     Ok(entry)
 }
 
-/// Soft-deletes an Entry: it leaves its Page at once and is erased after 30 days.
+/// Soft-deletes an Entry: it leaves its Page at once and stays as its own tombstone.
 pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
     let entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;

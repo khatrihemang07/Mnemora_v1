@@ -91,7 +91,7 @@ pub fn wont_do(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<T
     Ok(task)
 }
 
-/// Deletes a Task at once (soft: it is erased after 30 days); `restore_task` is Undo. Only this
+/// Deletes a Task at once (soft: the row stays for good); `restore_task` is Undo. Only this
 /// row goes: the occurrences of a repeating Task stay in Done, and Comments stay with their Task.
 pub fn delete_task(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;

@@ -39,7 +39,7 @@ pub fn journal_entry_toggle_task(
     mnemora_journal::toggle_task_line(&mut lock(&state.db), &id, line as usize)
 }
 
-/// Deletes an Entry. It can be restored for 30 days, then it is erased.
+/// Deletes an Entry. It can be restored at any time.
 #[tauri::command]
 #[specta::specta]
 pub fn journal_entry_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {

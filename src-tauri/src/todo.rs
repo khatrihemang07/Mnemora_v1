@@ -313,7 +313,7 @@ pub fn todo_task_wont_do(
     write(&state, |db| mnemora_todo::wont_do(db, &id, &local))
 }
 
-/// Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
+/// Deletes a Task at once; the row stays for good. Occurrences of a repeating Task
 /// stay in Done. Records a `delete` change.
 #[tauri::command]
 #[specta::specta]
@@ -361,7 +361,7 @@ pub fn todo_comment_edit(
     mnemora_todo::edit_comment(&mut lock(&state.db), &id, &body)
 }
 
-/// Deletes a Comment (erased after 30 days); `todo_comment_restore` is Undo.
+/// Deletes a Comment (the row stays for good); `todo_comment_restore` is Undo.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_comment_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
