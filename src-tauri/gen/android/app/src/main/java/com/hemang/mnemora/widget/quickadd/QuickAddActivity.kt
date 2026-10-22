@@ -257,7 +257,6 @@ class QuickAddActivity : Activity() {
         body.addView(propsBox, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(8) })
         sheet.addView(body, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { marginStart = dp(30) })
 
-        // Adding by tap, for a keyboard without an Enter that adds.
         // A close and a submit button, right-aligned: the same pair as the app's capture box.
         val closeButton = ImageView(this).apply {
             setImageResource(R.drawable.qa_x)

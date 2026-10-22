@@ -14,8 +14,9 @@
   Adding (mode "add"): Enter adds and the box stays open for the next one; Esc or clicking away
   closes it and drops what was typed. Quick edit (mode "edit"): the box is pre-filled with the
   Task; words already in the old title are not read again, only new text; Enter or clicking away
-  saves (with Undo), Esc cancels. At the end of the chip row, × does what Esc does and a round submit
-  button (↑ add, ✓ save) does what Enter does; it is dimmed while the title is empty. `listId` and `date` are what a Task added here inherits.
+  saves (with Undo), Esc cancels. `listId` and `date` are what a Task added here inherits.
+  At the end of the chip row, × does what Esc does and the round button (↑ add, ✓ save) does what
+  Enter does. It is dimmed, not disabled, while the title is empty, so a tap never blurs the title.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
@@ -447,6 +448,8 @@
   }
 
   const submit = () => void (editing ? save() : add());
+  /** The round button does what Enter does: with # suggestions showing, it takes the highlighted one. */
+  const submitByTap = () => (suggestions.length > 0 ? accept(suggestions[suggestIndex]) : submit());
 
   function cancel() {
     cancelled = true;
@@ -782,9 +785,10 @@
           shortcut="↵"
           variant="solid"
           hue="--hue-todo"
-          disabled={!text.trim() || busy}
+          aria-disabled={!text.trim() || busy}
+          class={!text.trim() || busy ? 'opacity-50' : ''}
           onpointerdown={keepFocus}
-          onclick={submit}
+          onclick={submitByTap}
         />
       </div>
     </div>

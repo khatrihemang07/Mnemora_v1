@@ -52,9 +52,9 @@
       bind:this={ref}
       type="button"
       {...props}
+      style={variant === 'solid' ? `--icon-hue: var(${hue})` : undefined}
       {...rest}
       aria-label={label}
-      style="--icon-hue: var({hue})"
       class="inline-flex items-center justify-center {variant === 'solid' ? '' : 'hover:text-ink hover:bg-hover'} cursor-pointer select-none
         transition-[transform,background-color,color] duration-(--dur) ease-out active:scale-[0.96] disabled:opacity-50 {dim} {look} {cls}"
     >
