@@ -33,9 +33,9 @@
   <h2 class="font-display text-xl" style="font-weight: var(--display-weight); letter-spacing: var(--display-track)">
     Keep your devices in step
   </h2>
-  <ul class="mt-2.5 flex flex-col gap-2">
+  <ul class="mt-2.5 flex flex-col">
     {#each lines as l (l.text)}
-      <li class="flex items-start gap-2.5">
+      <li class="flex items-start gap-2.5 border-line py-2 not-first:border-t">
         <l.icon class="mt-0.5 size-4 shrink-0 text-faint" />
         <span>{l.text}</span>
       </li>

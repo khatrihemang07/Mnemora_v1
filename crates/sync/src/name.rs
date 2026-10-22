@@ -42,14 +42,17 @@ fn platform_name() -> Option<String> {
     whoami::devicename().ok()
 }
 
-/// The phone's model, which Android keeps in a system property.
+/// The phone's model, which Android keeps in a system property that `getprop` (in /system/bin,
+/// runnable by any app) prints; if that fails, whatever `whoami` reports.
 #[cfg(target_os = "android")]
 fn platform_name() -> Option<String> {
-    let out = std::process::Command::new("getprop")
+    std::process::Command::new("getprop")
         .arg("ro.product.model")
         .output()
-        .ok()?;
-    String::from_utf8(out.stdout).ok()
+        .ok()
+        .and_then(|out| String::from_utf8(out.stdout).ok())
+        .filter(|s| !s.trim().is_empty())
+        .or_else(|| whoami::devicename().ok())
 }
 
 #[cfg(test)]

@@ -8,7 +8,8 @@
 -->
 <script lang="ts" generics="T extends string">
   import { Tabs } from 'bits-ui';
-  import type { Snippet } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
+  import { claimTabFocus, noteTabChange } from './tab-handoff';
 
   interface Tab {
     value: T;
@@ -29,19 +30,37 @@
     children?: Snippet;
   }
   let { value, tabs, label, onchange, hue, onHue, children }: Props = $props();
+  let list = $state<HTMLElement | null>(null);
+
+  onMount(() => {
+    if (!claimTabFocus()) return;
+    list?.querySelector<HTMLElement>('[role="tab"][data-state="active"]')?.focus();
+  });
+
+  function change(v: string) {
+    noteTabChange();
+    onchange(v as T);
+  }
 </script>
 
 <Tabs.Root
   {value}
-  onValueChange={(v) => onchange(v as T)}
+  onValueChange={change}
   class="min-w-0"
   style="--tab-hue: var({hue ?? '--accent'}); --tab-on: var({onHue ?? '--on-accent'})"
 >
-  <Tabs.List aria-label={label} class="mb-4 flex gap-5 overflow-x-auto border-b border-line">
+  <!-- The hairline is on the wrapper and the list overlaps it by 1px, so the list never scrolls
+    vertically; its padding leaves room for the focus ring that overflow-x would clip. -->
+  <div class="mb-4 border-b border-line">
+  <Tabs.List
+    bind:ref={list}
+    aria-label={label}
+    class="-mx-1.5 -mt-1.5 -mb-px flex gap-5 overflow-x-auto px-1.5 pt-1.5"
+  >
     {#each tabs as t (t.value)}
       <Tabs.Trigger
         value={t.value}
-        class="relative -mb-px inline-flex h-(--row) min-h-9 shrink-0 cursor-pointer items-center gap-1.5 px-px text-sm whitespace-nowrap text-muted select-none
+        class="relative inline-flex h-(--row) min-h-9 shrink-0 cursor-pointer items-center gap-1.5 px-px text-sm whitespace-nowrap text-muted select-none
           transition-colors duration-(--dur) ease-out hover:text-ink
           after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-left after:scale-x-0 after:rounded-full after:bg-(--tab-hue)
           after:transition-transform after:duration-(--dur) after:ease-out
@@ -58,6 +77,7 @@
       </Tabs.Trigger>
     {/each}
   </Tabs.List>
+  </div>
   {#if children}
     <Tabs.Content {value} class="min-w-0">{@render children()}</Tabs.Content>
   {/if}
