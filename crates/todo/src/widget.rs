@@ -270,6 +270,17 @@ pub fn lists(conn: &Connection) -> AppResult<WidgetLists> {
     })
 }
 
+/// Whether saving `keys` of Module `module` changes what the Todo widget draws: the app's theme,
+/// the time format and week start, and how Todo views group and sort.
+pub fn settings_affect_widget(module: &str, keys: &[String]) -> bool {
+    let draws = |key: &str| match module {
+        "core" => matches!(key, "theme" | "time_format" | "week_start"),
+        crate::MODULE_ID => crate::arrange::PREF_KEYS.contains(&key),
+        _ => false,
+    };
+    keys.iter().any(|k| draws(k))
+}
+
 /// Builds `view` for the widget as of `local`. A List that no longer exists is `NotFound`.
 pub fn snapshot(
     conn: &Connection,
@@ -277,11 +288,7 @@ pub fn snapshot(
     local: &LocalNow,
 ) -> AppResult<WidgetSnapshot> {
     local.check()?;
-    let format = TimeFormat::from_setting(
-        settings::stored(conn, "core", "time_format")?
-            .as_ref()
-            .and_then(|v| v.as_str()),
-    );
+    let format = TimeFormat::read(conn)?;
     let lists = list_repo::all(conn)?
         .iter()
         .map(|l| (l.id.clone(), list_chip(l)))

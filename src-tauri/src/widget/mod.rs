@@ -83,7 +83,11 @@ fn reply(outcome: Outcome) -> String {
         Outcome::Ok(payload) => json!({ "ok": payload }),
         Outcome::Status(Status::NotSetUp) => json!({ "status": "not_set_up" }),
         Outcome::Status(Status::NeedsUpdate) => json!({ "status": "needs_update" }),
-        Outcome::Err(e) => json!({ "err": { "code": e.code, "message": e.message } }),
+        Outcome::Err(e) => {
+            // The code only: the message and details may carry the user's own text.
+            tracing::warn!(code = ?e.code, "todo widget request failed");
+            json!({ "err": { "code": e.code, "message": e.message } })
+        }
     };
     value.to_string()
 }

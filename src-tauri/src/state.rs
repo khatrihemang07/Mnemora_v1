@@ -57,5 +57,5 @@ pub struct AppState {
     pub device: Arc<DeviceStore>,
     pub log: LogHandle,
     /// Tells the Todo widget that Todo data changed.
-    pub widgets: WidgetSignal,
+    pub widgets: Arc<WidgetSignal>,
 }

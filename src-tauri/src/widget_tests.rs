@@ -1168,12 +1168,41 @@ fn todo_reads_comments_and_settings_never_signal_the_widget() {
             "today": TODAY, "now": "14:05", "week_start": "mon",
         } }),
     );
-    silent(
-        &app,
-        "settings_save",
-        json!({ "changes": [{ "key": "core.theme", "value": "dark" }] }),
-    );
     assert_eq!(app.widget_signals(), before);
+}
+
+#[test]
+fn settings_that_change_the_drawing_signal_once_and_others_do_not() {
+    let app = TestApp::new();
+    for (key, value) in [
+        ("core.theme", json!("dark")),
+        ("core.time_format", json!("12h")),
+        ("core.week_start", json!("sun")),
+        ("todo.group_today", json!("list")),
+        ("todo.inbox_sort", json!("title")),
+    ] {
+        let before = app.widget_signals();
+        app.set_pref(key, value);
+        assert_eq!(app.widget_signals() - before, 1, "{key} redraws the widget once");
+    }
+    // A batch of several is still one signal per Module saved: here, one.
+    let before = app.widget_signals();
+    app.invoke::<()>(
+        "settings_save",
+        json!({ "changes": [
+            { "key": "core.theme", "value": "light" },
+            { "key": "core.time_format", "value": "24h" },
+        ] }),
+    )
+    .unwrap();
+    assert_eq!(app.widget_signals() - before, 1);
+
+    let before = app.widget_signals();
+    app.set_pref("core.density", json!("compact"));
+    app.set_pref("core.display_name", json!("Hemang"));
+    app.set_pref("core.reduce_motion", json!(true));
+    app.set_pref("todo.parse_dates", json!(false));
+    assert_eq!(app.widget_signals(), before, "unrelated Settings stay quiet");
 }
 
 #[test]

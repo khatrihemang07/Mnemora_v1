@@ -21,7 +21,7 @@ use crate::task::{Task, validate_priority};
 use crate::when::{LocalNow, NewWhen, add_days};
 use crate::widget::{WidgetList, WidgetView, list_chip, lists as widget_lists};
 use crate::widget_text::{
-    TimeFormat, landed_in, meaning_text, quick_added_message, when_chip_label,
+    TimeFormat, WeekStart, landed_in, meaning_text, quick_added_message, when_chip_label,
 };
 use crate::{NewTaskDetails, create_task};
 
@@ -246,10 +246,6 @@ fn place_for(conn: &Connection, view: &WidgetView, local: &LocalNow) -> AppResul
     })
 }
 
-fn setting_str(conn: &Connection, module: &str, key: &str) -> AppResult<Option<String>> {
-    Ok(settings::stored(conn, module, key)?.and_then(|v| v.as_str().map(str::to_owned)))
-}
-
 /// Everything the sheet needs before the first key: the placeholder, where it opened, the Lists to
 /// pick from and the Settings that shape the reading.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -281,29 +277,13 @@ pub fn capture_context(
         place,
         lists: widget_lists(conn)?.lists,
         parse_dates: parse_dates(conn)?,
-        week_start: week_start(conn)?,
-        time_format: time_format_name(conn)?,
+        week_start: WeekStart::read(conn)?.as_str().to_owned(),
+        time_format: TimeFormat::read(conn)?.as_str().to_owned(),
     })
 }
 
 fn parse_dates(conn: &Connection) -> AppResult<bool> {
     Ok(settings::stored(conn, "todo", "parse_dates")?.and_then(|v| v.as_bool()) != Some(false))
-}
-
-fn week_start(conn: &Connection) -> AppResult<String> {
-    Ok(match setting_str(conn, "core", "week_start")?.as_deref() {
-        Some("sun") => "sun",
-        _ => "mon",
-    }
-    .to_owned())
-}
-
-fn time_format_name(conn: &Connection) -> AppResult<String> {
-    Ok(match setting_str(conn, "core", "time_format")?.as_deref() {
-        Some("12h") => "12h",
-        _ => "24h",
-    }
-    .to_owned())
 }
 
 // --- Reading and adding --------------------------------------------------------------------------
@@ -411,7 +391,7 @@ fn read_text(
                 frozen: Vec::new(),
                 today: req.local.today.clone(),
                 now: req.local.now.clone(),
-                week_start: week_start(conn)?,
+                week_start: WeekStart::read(conn)?.as_str().to_owned(),
             },
         )?)
     } else {
@@ -437,7 +417,7 @@ fn base_of(conn: &Connection, req: &QuickRequest) -> AppResult<Base> {
 pub fn read_quick(conn: &Connection, req: &QuickRequest) -> AppResult<Reading> {
     let base = base_of(conn, req)?;
     let (parsed, fields) = read_text(conn, req, &base)?;
-    let format = TimeFormat::from_setting(setting_str(conn, "core", "time_format")?.as_deref());
+    let format = TimeFormat::read(conn)?;
     let today = req.local.today.as_str();
     let all = |spans: &[ParseSpan]| -> Vec<Marked> {
         spans

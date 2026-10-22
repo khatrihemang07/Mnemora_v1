@@ -55,17 +55,20 @@ impl TestApp {
         let mut conn = db::open_in_memory().unwrap();
         db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
 
+        let bus = EventBus::new();
+        let widgets = Arc::new(WidgetSignal::silent());
+        crate::widget::signal::follow_settings(&bus, &widgets);
         let state = AppState {
             env: Environment::Production,
             db: Mutex::new(conn),
-            settings: settings_store(&modules, &EventBus::new()),
+            settings: settings_store(&modules, &bus),
             device: Arc::new(DeviceStore::new(
                 paths.device_file(),
                 DeviceSettings::default(),
             )),
             paths,
             log: LogHandle::detached(),
-            widgets: WidgetSignal::silent(),
+            widgets,
         };
 
         let app = mock_builder()

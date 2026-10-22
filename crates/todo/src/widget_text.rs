@@ -2,6 +2,10 @@
 //! no date or wording logic. `src/lib/ipc/fixtures/widget-text.json` runs the same cases here and
 //! in Vitest.
 
+use mnemora_core::error::AppResult;
+use mnemora_core::settings;
+use rusqlite::Connection;
+
 use crate::history::repeat_label;
 use crate::recurrence::RepeatRule;
 use crate::when::epoch_day;
@@ -27,6 +31,47 @@ impl TimeFormat {
             Self::H12
         } else {
             Self::H24
+        }
+    }
+
+    /// The saved `core.time_format`; the one place it is read for the Todo widget and Quick add.
+    pub fn read(conn: &Connection) -> AppResult<Self> {
+        let stored = settings::stored(conn, "core", "time_format")?;
+        Ok(Self::from_setting(stored.as_ref().and_then(|v| v.as_str())))
+    }
+
+    /// The Setting's value for this format: `12h` or `24h`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::H12 => "12h",
+            Self::H24 => "24h",
+        }
+    }
+}
+
+/// The first day of the week: the `core.week_start` Setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WeekStart {
+    Mon,
+    Sun,
+}
+
+impl WeekStart {
+    /// The saved `core.week_start`; anything but `sun` is Monday.
+    pub fn read(conn: &Connection) -> AppResult<Self> {
+        let stored = settings::stored(conn, "core", "week_start")?;
+        Ok(if stored.as_ref().and_then(|v| v.as_str()) == Some("sun") {
+            Self::Sun
+        } else {
+            Self::Mon
+        })
+    }
+
+    /// The Setting's value: `mon` or `sun`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Mon => "mon",
+            Self::Sun => "sun",
         }
     }
 }

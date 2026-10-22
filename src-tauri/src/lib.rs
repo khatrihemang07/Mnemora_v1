@@ -223,6 +223,9 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
 
     let bus = EventBus::new();
     let settings = settings_store(&modules, &bus);
+    // Settings that change what the Todo widget draws redraw it too.
+    let widgets = Arc::new(widget::signal::WidgetSignal::platform());
+    widget::signal::follow_settings(&bus, &widgets);
     let snapshot = settings.get_all(&conn)?;
 
     // Bridge core's in-process event to a typed IPC event.
@@ -241,7 +244,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         device: Arc::new(DeviceStore::new(paths.device_file(), device.clone())),
         paths,
         log,
-        widgets: widget::signal::WidgetSignal::platform(),
+        widgets,
     };
     app.manage(state);
     #[cfg(target_os = "android")]

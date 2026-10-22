@@ -79,7 +79,7 @@ pub use task_service::{
 pub use when::{LocalNow, NewWhen};
 pub use widget::{
     EmptyState, HeaderCount, Tone, WidgetGroup, WidgetList, WidgetLists, WidgetRow, WidgetSnapshot,
-    WidgetView, lists as widget_lists, snapshot,
+    WidgetView, lists as widget_lists, settings_affect_widget, snapshot,
 };
 pub use widget_text::{completed_message, completed_repeat_message, plain_title};
 
