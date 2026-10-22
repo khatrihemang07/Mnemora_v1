@@ -3,7 +3,7 @@ import type { ResolvedTheme } from './resolve';
 /** Does what the Android MainActivity exposes to the WebView; absent everywhere else. */
 export interface AndroidBridge {
   setSystemBars?: (dark: boolean, colorHex: string) => void;
-  /** Sends the app to the background like Home, keeping the process alive. */
+  /** Sends the app to the background like Home, keeping the process alive (Back at the root). */
   moveTaskToBack?: () => void;
 }
 

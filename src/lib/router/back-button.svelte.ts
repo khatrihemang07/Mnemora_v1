@@ -1,5 +1,4 @@
 import { os } from '../platform';
-import type { AndroidBridge } from '../theme/system-bars';
 
 /** Screens that take Back for themselves (an open editor), newest last. */
 const interceptors: (() => void)[] = [];
@@ -29,8 +28,8 @@ export function closeOnBack(isOpen: () => boolean, close: () => void): void {
 
 interface BackDeps {
   goBack: () => void;
-  exitApp: () => void;
-  bridge: AndroidBridge | undefined;
+  /** Leaves the app at the root. */
+  leave: () => void;
 }
 
 /**
@@ -42,8 +41,7 @@ export function handleBack({ canGoBack }: { canGoBack: boolean }, deps: BackDeps
   const intercepted = interceptors.at(-1);
   if (intercepted) intercepted();
   else if (canGoBack) deps.goBack();
-  else if (typeof deps.bridge?.moveTaskToBack === 'function') deps.bridge.moveTaskToBack();
-  else deps.exitApp();
+  else deps.leave();
 }
 
 /**
@@ -53,11 +51,9 @@ export function handleBack({ canGoBack }: { canGoBack: boolean }, deps: BackDeps
 export async function installBackButton(): Promise<void> {
   if (os !== 'android' || !('__TAURI_INTERNALS__' in window)) return;
   const { onBackButtonPress, exit } = await import('@tauri-apps/api/app');
+  const bridge = window.MnemoraAndroid;
+  const leave = bridge?.moveTaskToBack ? () => bridge.moveTaskToBack?.() : () => void exit(0);
   await onBackButtonPress((state) =>
-    handleBack(state, {
-      goBack: () => window.history.back(),
-      exitApp: () => void exit(0),
-      bridge: window.MnemoraAndroid,
-    }),
+    handleBack(state, { goBack: () => window.history.back(), leave }),
   );
 }

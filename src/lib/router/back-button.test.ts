@@ -1,40 +1,36 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleBack, interceptBack } from './back-button.svelte';
 
-const setup = (bridge: { moveTaskToBack?: () => void } | undefined) => ({
-  goBack: vi.fn(),
-  exitApp: vi.fn(),
-  bridge,
-});
+const makeDeps = () => ({ goBack: vi.fn(), leave: vi.fn() });
 
 describe('handleBack', () => {
+  let off: (() => void) | undefined;
+  afterEach(() => {
+    off?.();
+    off = undefined;
+  });
+
   it('lets an open editor take Back', () => {
     const handler = vi.fn();
-    const off = interceptBack(handler);
-    const d = setup({ moveTaskToBack: vi.fn() });
-    handleBack({ canGoBack: true }, d);
+    off = interceptBack(handler);
+    const deps = makeDeps();
+    handleBack({ canGoBack: true }, deps);
     expect(handler).toHaveBeenCalledOnce();
-    expect(d.goBack).not.toHaveBeenCalled();
-    off();
+    expect(deps.goBack).not.toHaveBeenCalled();
+    expect(deps.leave).not.toHaveBeenCalled();
   });
 
   it('goes back in history when it can', () => {
-    const d = setup({ moveTaskToBack: vi.fn() });
-    handleBack({ canGoBack: true }, d);
-    expect(d.goBack).toHaveBeenCalledOnce();
-    expect(d.exitApp).not.toHaveBeenCalled();
+    const deps = makeDeps();
+    handleBack({ canGoBack: true }, deps);
+    expect(deps.goBack).toHaveBeenCalledOnce();
+    expect(deps.leave).not.toHaveBeenCalled();
   });
 
-  it('moves the task to the back at the root, without exiting the process', () => {
-    const d = setup({ moveTaskToBack: vi.fn() });
-    handleBack({ canGoBack: false }, d);
-    expect(d.bridge?.moveTaskToBack).toHaveBeenCalledOnce();
-    expect(d.exitApp).not.toHaveBeenCalled();
-  });
-
-  it('falls back to exiting when the native bridge is missing', () => {
-    const d = setup(undefined);
-    handleBack({ canGoBack: false }, d);
-    expect(d.exitApp).toHaveBeenCalledOnce();
+  it('leaves the app at the root', () => {
+    const deps = makeDeps();
+    handleBack({ canGoBack: false }, deps);
+    expect(deps.leave).toHaveBeenCalledOnce();
+    expect(deps.goBack).not.toHaveBeenCalled();
   });
 });
