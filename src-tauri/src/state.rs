@@ -31,6 +31,8 @@ pub struct AppState {
     pub widgets: Arc<WidgetSignal>,
     /// Sync's services: nothing runs in them while Sync is off.
     pub sync: SyncRuntime,
+    /// What lets Sync's network run: in front or flushing, and the kind of network (#74).
+    pub power: crate::sync_power::Power,
     /// The app opens a real port and announces itself when Sync is on. False in tests, which
     /// start their own network on loopback.
     pub live_network: bool,

@@ -156,6 +156,25 @@ fn secured(
     })
 }
 
+/// Idle time before the first keepalive probe, the gap between probes and how many go unanswered
+/// before the line is given up on: a device that vanished without closing (Wi-Fi off, out of
+/// range) makes the connection fail about 14 s after its last word, so the row reads "Not nearby"
+/// quickly instead of after the 60 s a session may stay silent.
+const KEEPALIVE_IDLE: Duration = Duration::from_secs(5);
+const KEEPALIVE_EVERY: Duration = Duration::from_secs(3);
+const KEEPALIVE_PROBES: u32 = 3;
+
+/// Turns on TCP keepalive for a connection. A socket that refuses it is simply left as it is.
+fn keep_alive(tcp: &TcpStream) {
+    let probe = socket2::TcpKeepalive::new()
+        .with_time(KEEPALIVE_IDLE)
+        .with_interval(KEEPALIVE_EVERY)
+        .with_retries(KEEPALIVE_PROBES);
+    if let Err(e) = socket2::SockRef::from(tcp).set_tcp_keepalive(&probe) {
+        tracing::debug!(target: "sync", error = %e, "could not turn on keepalive");
+    }
+}
+
 /// Connects and completes TLS, without any handshake. The peer is pinned or, with pairing open,
 /// merely admitted: check [`Secured::pinned`].
 pub async fn secure_dial(config: &NetConfig, addr: SocketAddr) -> Result<Secured, NetError> {
@@ -164,6 +183,7 @@ pub async fn secure_dial(config: &NetConfig, addr: SocketAddr) -> Result<Secured
         .await
         .map_err(|_| NetError::Timeout)??;
     tcp.set_nodelay(true)?;
+    keep_alive(&tcp);
     let name = ServerName::try_from(SERVER_NAME).map_err(|e| NetError::Tls(e.to_string()))?;
     let stream = tokio::time::timeout(HANDSHAKE_TIMEOUT, tls.connect(name, tcp))
         .await
@@ -394,6 +414,7 @@ async fn serve(
     config: &NetConfig,
 ) -> Result<Incoming, NetError> {
     tcp.set_nodelay(true)?;
+    keep_alive(&tcp);
     let stream = tokio::time::timeout(HANDSHAKE_TIMEOUT, acceptor.accept(tcp))
         .await
         .map_err(|_| NetError::Timeout)?
@@ -503,5 +524,27 @@ impl Transport for NetTransport {
             Err(TryRecvError::Empty) => Ok(None),
             Err(TryRecvError::Disconnected) => Err(SyncError::Disconnected),
         }
+    }
+}
+
+#[cfg(test)]
+mod keepalive_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_connection_probes_an_idle_line_so_a_vanished_device_is_noticed_in_seconds() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let tcp = TcpStream::connect(listener.local_addr().unwrap())
+            .await
+            .unwrap();
+        keep_alive(&tcp);
+        let socket = socket2::SockRef::from(&tcp);
+        assert!(socket.keepalive().unwrap());
+        assert_eq!(socket.tcp_keepalive_time().unwrap(), KEEPALIVE_IDLE);
+        assert_eq!(socket.tcp_keepalive_interval().unwrap(), KEEPALIVE_EVERY);
+        assert_eq!(socket.tcp_keepalive_retries().unwrap(), KEEPALIVE_PROBES);
+        // 5 s idle + 3 unanswered probes 3 s apart: well inside the 15 s the spec asks for.
+        let worst = KEEPALIVE_IDLE + KEEPALIVE_EVERY * KEEPALIVE_PROBES;
+        assert!(worst <= Duration::from_secs(15));
     }
 }

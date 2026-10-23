@@ -72,7 +72,8 @@ pub fn sync_rename(state: State<'_, AppState>, name: String) -> Result<(), AppEr
 /// Sets "Sync automatically", "Allow over mobile data" or "Visible on this network".
 #[tauri::command]
 #[specta::specta]
-pub fn sync_set_option(
+pub fn sync_set_option<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     option: SyncOption,
     enabled: bool,
@@ -81,7 +82,9 @@ pub fn sync_set_option(
     match option {
         SyncOption::Visible => state.sync.refresh_advert(),
         SyncOption::Automatic => state.sync.options_changed(),
-        SyncOption::MobileData | SyncOption::ToastConflicts => {}
+        // On mobile data this starts or stops the whole network.
+        SyncOption::MobileData => crate::sync_power::settle(&app),
+        SyncOption::ToastConflicts => {}
     }
     Ok(())
 }
@@ -497,7 +500,11 @@ impl<R: Runtime> Host for AppHost<R> {
 /// Starts the network side of Sync: this device's key, the listener, discovery and pairing. A no-op
 /// where the app does not run a live network (tests start their own).
 pub fn launch_network<R: Runtime>(app: &AppHandle<R>) {
-    if !app.state::<AppState>().live_network {
+    let state = app.state::<AppState>();
+    if !state.live_network
+        || !crate::sync_power::should_run(state.power.conditions(&state.device.get().sync))
+        || !state.power.begin_start()
+    {
         return;
     }
     let app = app.clone();
@@ -511,10 +518,23 @@ pub fn launch_network<R: Runtime>(app: &AppHandle<R>) {
                 Fixed::new()
             }
         };
-        if let Err(e) = start_network(&app, NetworkOptions::app(discovery)).await {
-            tracing::warn!(target: "sync", error = %e, "could not start Sync's network");
+        let started = start_network(&app, NetworkOptions::app(discovery)).await;
+        state.power.end_start();
+        match started {
+            // The app may have left the front or the phone changed network while the port was
+            // being bound.
+            Ok(()) => crate::sync_power::settle(&app),
+            Err(e) => tracing::warn!(target: "sync", error = %e, "could not start Sync's network"),
         }
+        announce_peers(&app);
     });
+}
+
+/// Tells the window to read the Devices tab again.
+pub fn announce_peers<R: Runtime>(app: &AppHandle<R>) {
+    if let Err(e) = SyncPeersEvent.emit(app) {
+        tracing::warn!(target: "sync", error = %e, "could not emit the device status");
+    }
 }
 
 /// Binds the port and hands the running [`Network`] to the runtime, unless Sync was turned off

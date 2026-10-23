@@ -142,6 +142,7 @@ impl TestApp {
             log: LogHandle::detached(),
             widgets: Arc::clone(&widgets),
             sync,
+            power: crate::sync_power::Power::with_grace(std::time::Duration::from_millis(600)),
             live_network: false,
             modules,
             bus: bus.clone(),

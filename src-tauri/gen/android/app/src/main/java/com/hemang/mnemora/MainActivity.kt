@@ -21,6 +21,8 @@ class MainActivity : TauriActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
+    // Before the Rust side starts: Sync never dials over mobile data it was not allowed to use.
+    SyncBridge.watch(this)
     super.onCreate(savedInstanceState)
     // Lets the Rust side redraw the Todo widgets after the app changes Todo data.
     WidgetBridge.attach(this)
@@ -29,16 +31,21 @@ class MainActivity : TauriActivity() {
   override fun onResume() {
     super.onResume()
     applyMulticastLock(true)
+    // Rust starts Sync's network (or keeps it, back inside the flush window) and runs a round.
+    SyncBridge.foreground(true)
   }
 
   override fun onPause() {
     applyMulticastLock(false)
+    // Rust flushes pending changes for up to 5 s on its own timer, then stops everything.
+    SyncBridge.foreground(false)
     super.onPause()
   }
 
   override fun onDestroy() {
     wantMulticast = false
     applyMulticastLock(false)
+    SyncBridge.unwatch()
     super.onDestroy()
   }
 

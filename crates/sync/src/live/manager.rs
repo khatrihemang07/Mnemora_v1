@@ -58,6 +58,8 @@ enum Cmd {
     /// "Sync now" for one device.
     SyncNowOne(String),
     Resume,
+    /// Push now, without waiting out the debounce (the app is going to the background).
+    Flush,
     Refresh,
     Reconfigure,
 }
@@ -132,6 +134,17 @@ impl Live {
     /// the backoff.
     pub fn resume(&self) {
         let _ = self.cmds.send(Cmd::Resume);
+    }
+
+    /// Starts a session on every open connection now instead of after the debounce, if Sync
+    /// automatically is on: the app is going to the background and pending changes should get out.
+    pub fn flush(&self) {
+        let _ = self.cmds.send(Cmd::Flush);
+    }
+
+    /// A session is running with some device right now.
+    pub fn busy(&self) -> bool {
+        self.shared.snapshot().values().any(|p| p.syncing)
     }
 
     /// The set of paired devices changed.
@@ -301,6 +314,10 @@ impl Supervisor {
             Cmd::SyncNow => self.sync_now().await,
             Cmd::SyncNowOne(id) => self.sync_now_one(&id).await,
             Cmd::Resume => self.resume().await,
+            Cmd::Flush => {
+                self.push_at = None;
+                self.push();
+            }
             Cmd::Refresh => {
                 self.reload().await;
                 if self.automatic() {

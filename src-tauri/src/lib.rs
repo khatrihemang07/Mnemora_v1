@@ -80,7 +80,7 @@ macro_rules! specta_builder_for {
                 sync::sync_get,
                 sync::sync_set_enabled::<$runtime>,
                 sync::sync_rename,
-                sync::sync_set_option,
+                sync::sync_set_option::<$runtime>,
                 sync::sync_leave,
                 sync::sync_devices,
                 sync::sync_device,
@@ -153,6 +153,9 @@ mod sync_merge_preview_tests;
 mod sync_pairing_tests;
 #[cfg(test)]
 mod sync_pause_tests;
+mod sync_power;
+#[cfg(test)]
+mod sync_power_tests;
 #[cfg(test)]
 mod sync_resolutions_tests;
 #[cfg(test)]
@@ -463,6 +466,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         log,
         widgets,
         sync,
+        power: sync_power::Power::new(),
         live_network: true,
         modules,
         bus,
@@ -473,7 +477,10 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         sync::launch_network(app.handle());
     }
     #[cfg(target_os = "android")]
-    widget::register_app(app.handle().clone());
+    {
+        widget::register_app(app.handle().clone());
+        sync_power::android::register_app(app.handle().clone());
+    }
     // A Todo widget placed before the app ever ran (or before an update) shows a "open Mnemora"
     // state; now that the database exists and is current, it should redraw without waiting for
     // the next Todo write.

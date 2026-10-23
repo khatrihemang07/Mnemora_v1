@@ -98,6 +98,29 @@ impl SyncRuntime {
         self.with_network(|n| n.live().resume());
     }
 
+    /// The app is going to the background: pending changes are pushed now, not after the debounce.
+    pub fn flush(&self) {
+        self.with_network(|n| n.live().flush());
+    }
+
+    /// A session is running with some device right now (false while Sync is off).
+    pub fn busy(&self) -> bool {
+        self.with_network(|n| n.live().busy()).unwrap_or(false)
+    }
+
+    /// The network side (listener, discovery, connections, timers) is up.
+    pub fn network_running(&self) -> bool {
+        self.with_network(|_| ()).is_some()
+    }
+
+    /// Takes the network side away to be dropped (the app went to the background, or the phone
+    /// is on mobile data and that is not allowed). Sync stays on; the network is started again
+    /// when conditions allow.
+    pub fn take_network(&self) -> Option<Network> {
+        let mut services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
+        services.as_mut()?.network.take()
+    }
+
     /// The set of paired devices changed (a pairing, or leaving the group).
     pub fn peers_changed(&self) {
         self.with_network(|n| n.live().refresh_peers());

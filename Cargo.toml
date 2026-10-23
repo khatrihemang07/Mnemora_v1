@@ -49,8 +49,9 @@ mdns-sd = { version = "=0.21.6", default-features = false, features = ["async"] 
 ring = { version = "=0.17.14", default-features = false }
 if-addrs = "=0.15.0"
 # Tailscale reach (#71): an IPv6 listener on the same port as the IPv4 one needs IPV6_V6ONLY, which
-# tokio does not expose. Already in the tree through tokio and mdns-sd.
-socket2 = "=0.6.5"
+# tokio does not expose. Already in the tree through tokio and mdns-sd. `all` (already turned on
+# there by tokio, so no new code) is for the TCP keepalive probe count (Android, #74).
+socket2 = { version = "=0.6.5", features = ["all"] }
 # Three-way text merge (#66): Myers diff of lines and words. No default features: the slice diff
 # is all we use, and it then has no dependencies.
 similar = { version = "=2.7.0", default-features = false }
