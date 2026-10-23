@@ -24,15 +24,16 @@ pub fn paired_count(conn: &Connection) -> AppResult<u32> {
 
 /// Forgets every paired device and leaves the group. Synced data stays; this device just stops
 /// belonging to the group.
-pub fn forget_all(conn: &Connection) -> AppResult<()> {
+pub fn forget_all(conn: &Connection, my_name: &str, told: bool) -> AppResult<()> {
     let had_group = group(conn)?.is_some();
-    if had_group {
+    // `told`: the members were sent the notice (`revoke::leave`), which wrote the line already.
+    if had_group && !told {
         let me = mnemora_core::hlc::device_id(conn)?;
         crate::activity::log_left(
             conn,
             crate::activity::Local {
                 device: &me,
-                name: "",
+                name: my_name,
             },
         )?;
     }

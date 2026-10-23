@@ -32,6 +32,29 @@ describe('the Activity mock', () => {
     expect(page(m, { kind: 'all' }, null).rows).toHaveLength(100);
   });
 
+  it('words a device leaving plainly for itself and by name for the others', () => {
+    const m = mock();
+    const left = (device: string, id: string) => ({
+      id,
+      kind: 'left',
+      at: NOW + 1,
+      device,
+      peer: '',
+      n_in: 0,
+      n_out: 0,
+      breakdown: null,
+      extra: {},
+    });
+    m.add(left('mock-me', 'left-me'), left('mock-pixel', 'left-pixel'));
+    const text = (id: string) =>
+      everything(m, { kind: 'all' })
+        .find((r) => r.id === id)
+        ?.text.map((p) => p.text)
+        .join('');
+    expect(text('left-me')).toBe('Left the group');
+    expect(text('left-pixel')).toBe('Pixel 8 (simulated) left the group');
+  });
+
   it('offers Review only while the Conflict waits', () => {
     const open = new Set(['mock-conflict-notes', 'mock-conflict-entry']);
     const m = createActivityMock(1200, NOW, (id) => open.has(id));

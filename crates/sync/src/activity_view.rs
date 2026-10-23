@@ -254,7 +254,8 @@ fn describe(conn: &Connection, v: Viewer<'_>, row: &Row) -> ActivityRow {
             piece(name_of(&row.peer, &row.peer_name), true),
             piece(" joined", false),
         ],
-        Some(Kind::Left) => vec![piece("Left the group", false)],
+        Some(Kind::Left) if row.device == v.device => vec![piece("Left the group", false)],
+        Some(Kind::Left) => vec![piece(logger.clone(), true), piece(" left the group", false)],
         Some(Kind::Forgot) => vec![
             piece("Forgot ", false),
             piece(name_of(&row.peer, &row.peer_name), true),

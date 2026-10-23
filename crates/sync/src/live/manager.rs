@@ -10,6 +10,7 @@ use std::sync::atomic::Ordering;
 
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::oneshot;
 use tokio::task::{self, JoinError, JoinHandle, JoinSet};
 use tokio::time::{Instant, sleep_until};
 
@@ -48,6 +49,35 @@ impl Acceptor {
     }
 }
 
+/// What leaving the group needs of the supervisor.
+#[derive(Clone)]
+pub struct Leaver(UnboundedSender<Cmd>);
+
+impl Leaver {
+    /// Pushes what this device has written to every connected device, one session each, and waits
+    /// for them (at most `limit` in all). Returns how many finished. With nobody connected, or
+    /// nobody answering in time, it returns at once or at the limit with 0.
+    pub async fn farewell(&self, limit: std::time::Duration) -> usize {
+        let deadline = Instant::now() + limit;
+        let (tx, rx) = oneshot::channel();
+        if self.0.send(Cmd::Farewell(tx)).is_err() {
+            return 0;
+        }
+        let Ok(Ok(pending)) = tokio::time::timeout_at(deadline, rx).await else {
+            return 0;
+        };
+        // The sessions run side by side, so waiting for them one after the other costs no more
+        // than the slowest.
+        let mut finished = 0;
+        for done in pending {
+            if matches!(tokio::time::timeout_at(deadline, done).await, Ok(Ok(()))) {
+                finished += 1;
+            }
+        }
+        finished
+    }
+}
+
 enum Cmd {
     /// A connection another device opened to us.
     Accept(Box<Established>),
@@ -62,6 +92,9 @@ enum Cmd {
     Flush,
     Refresh,
     Reconfigure,
+    /// This device is leaving: every open connection runs one more session; the reply holds one
+    /// receiver per connection, each ready when that session has finished.
+    Farewell(oneshot::Sender<Vec<oneshot::Receiver<()>>>),
 }
 
 impl Live {
@@ -140,6 +173,11 @@ impl Live {
     /// automatically is on: the app is going to the background and pending changes should get out.
     pub fn flush(&self) {
         let _ = self.cmds.send(Cmd::Flush);
+    }
+
+    /// A cheap handle to say farewell with (see [`Leaver::farewell`]); it does not borrow `self`.
+    pub fn leaver(&self) -> Leaver {
+        Leaver(self.cmds.clone())
     }
 
     /// A session is running with some device right now.
@@ -325,6 +363,18 @@ impl Supervisor {
                 }
             }
             Cmd::Reconfigure => self.reconfigure().await,
+            Cmd::Farewell(reply) => {
+                let mut waits = Vec::new();
+                for peer in self.peers.values() {
+                    if let Some(held) = &peer.conn {
+                        let (tx, rx) = oneshot::channel();
+                        if held.tx.send(ConnCmd::Farewell(tx)).is_ok() {
+                            waits.push(rx);
+                        }
+                    }
+                }
+                let _ = reply.send(waits);
+            }
         }
     }
 

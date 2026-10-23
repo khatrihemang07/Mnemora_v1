@@ -102,7 +102,10 @@ pub use resolutions::{
     plan_use as resolution_plan_use,
 };
 pub use resolved_view::{ResolvedIcon, ResolvedKind, ResolvedRow};
-pub use revoke::{Forgotten, forget as forget_peer, lift as lift_revocation, revoked_keys};
+pub use revoke::{
+    Forgotten, forget as forget_peer, leave as announce_leaving, lift as lift_revocation,
+    revoked_keys,
+};
 pub use runtime::{RuntimeProbe, SyncRuntime};
 pub use session::{Endpoint, Session, SessionStats, pump};
 pub use state::{SyncOption, SyncState, current, rename, set_enabled, set_option};

@@ -126,6 +126,20 @@ impl SyncRuntime {
         self.with_network(|n| n.live().refresh_peers());
     }
 
+    /// Leaving: pushes what was just written to every connected device and waits for it, at most
+    /// `limit`. Returns how many devices it reached; 0 with nothing connected or Sync off.
+    pub async fn farewell(&self, limit: std::time::Duration) -> usize {
+        let Some(leaver) = self.with_network(|n| n.live().leaver()) else {
+            return 0;
+        };
+        leaver.farewell(limit).await
+    }
+
+    /// Whether any paired device is connected right now.
+    pub fn anyone_connected(&self) -> bool {
+        self.peers_live().values().any(|p| p.reachable)
+    }
+
     /// "Sync now" for one device.
     pub fn sync_now_with(&self, device: &str) {
         self.with_network(|n| n.live().sync_now_with(device));

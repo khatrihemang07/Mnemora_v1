@@ -262,6 +262,11 @@ impl TestApp {
         f(&lock(&self.app.state::<AppState>().db))
     }
 
+    /// Runs `f` with the database connection, for what needs `&mut` (a transaction).
+    pub fn with_db_mut<R>(&self, f: impl FnOnce(&mut Connection) -> R) -> R {
+        f(&mut lock(&self.app.state::<AppState>().db))
+    }
+
     /// What the app does at every start, after the Modules' own startup work: no editor
     /// survives, and what was held back for one is merged. Call after dropping the Modules'
     /// holds with [`run_startup`](Self::run_startup) of the core Module, or as is.

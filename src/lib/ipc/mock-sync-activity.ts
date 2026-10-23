@@ -201,6 +201,13 @@ export function describe(
         piece(e.extra.new ?? '', true),
       ];
       break;
+    case 'left':
+      // Plain on the device that left; the others name it (Rust: activity_view.rs).
+      text =
+        e.device === viewer
+          ? [piece('Left the group')]
+          : [piece(name(e.device), true), piece(' left the group')];
+      break;
     case 'conflict_raised':
       text = [piece(`Conflict in ${e.extra.subject} needs you`)];
       break;
@@ -216,7 +223,7 @@ export function describe(
         piece(e.extra.into ?? '', true),
       ];
   }
-  const named = e.kind === 'renamed';
+  const named = e.kind === 'renamed' || e.kind === 'left';
   return {
     id: e.id,
     kind: e.kind,

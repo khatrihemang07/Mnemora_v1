@@ -93,11 +93,27 @@ pub fn sync_set_option<R: Runtime>(
     Ok(())
 }
 
-/// Leaves the group: forgets every paired device. This device keeps its data.
+/// How long Leave waits for the members to hear that this device is going.
+const FAREWELL: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Leaves the group. If a member is connected it is told first (a signed revocation of this
+/// device and a "left" line, pushed now), waiting at most a few seconds; with nobody reachable
+/// this is local only and never blocks. Either way every paired device is then forgotten here.
+/// This device keeps its data.
 #[tauri::command]
 #[specta::specta]
-pub fn sync_leave(state: State<'_, AppState>) -> Result<(), AppError> {
-    mnemora_sync::forget_all(&lock(&state.db))?;
+pub async fn sync_leave(state: State<'_, AppState>) -> Result<(), AppError> {
+    let name = my_name(&state);
+    let mut told = false;
+    if state.sync.anyone_connected() {
+        let identity = identity(&state)?;
+        mnemora_sync::announce_leaving(&mut lock(&state.db), &identity, &name)?;
+        // The "left" line is written; whether anyone heard in time is up to the network.
+        told = true;
+        let heard = state.sync.farewell(FAREWELL).await;
+        tracing::debug!(target: "sync", heard, "the members were told this device is leaving");
+    }
+    mnemora_sync::forget_all(&lock(&state.db), &name, told)?;
     state.sync.unpin_all();
     state.sync.peers_changed();
     state.sync.refresh_advert();

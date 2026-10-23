@@ -162,8 +162,103 @@ async fn leaving_stops_syncing_for_good_and_keeps_the_data() {
     meet(&a, &b);
     tokio::time::sleep(Duration::from_millis(1_800)).await;
     assert!(!has(&b, &after) && !has(&a, &theirs));
-    assert_eq!(peer_of(&b)["state"], "not_nearby");
+    assert!(b.listed().is_empty(), "Bob was told and dropped it");
     assert_eq!(task_count(&a), 2);
+}
+
+/// The lines of Activity that say someone left, as the screen reads them.
+fn left_lines(d: &Device) -> Vec<String> {
+    let page: Value = d.call(
+        "sync_activity",
+        json!({ "filter": { "kind": "all" }, "cursor": null, "limit": 100 }),
+    );
+    page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["kind"] == "left")
+        .map(|r| {
+            r["text"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| p["text"].as_str().unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn leaving_while_connected_tells_every_member_before_forgetting() {
+    let (a, b, c) = trio().await;
+    // Alice reaches Bob only; Carol can hear it through Bob.
+    meet(&a, &b);
+    meet(&b, &c);
+    until("Alice and Bob connected", || {
+        row_named(&a, "Bob")["state"] == "up_to_date"
+    })
+    .await;
+
+    a.call::<()>("sync_leave", json!({}));
+    assert!(a.listed().is_empty());
+    until("Bob and Carol to drop Alice", || {
+        b.listed() == ["Carol"] && c.listed() == ["Bob"]
+    })
+    .await;
+    // One line each, naming Alice on the others and plain on Alice's own.
+    until("the line on both", || {
+        left_lines(&b).len() == 1 && left_lines(&c).len() == 1
+    })
+    .await;
+    assert_eq!(left_lines(&a), ["Left the group"]);
+    assert_eq!(left_lines(&b), ["Alice left the group"]);
+    assert_eq!(left_lines(&c), ["Alice left the group"]);
+
+    // Nobody dials her or answers her any more.
+    let after = create(&b, "Written after Alice left");
+    meet(&a, &b);
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert!(!has(&a, &after));
+    assert_eq!(left_lines(&b).len(), 1, "told once, however many rounds");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn leaving_with_nobody_reachable_is_local_only_and_quick() {
+    let (a, b) = crate::sync_live_tests::paired_pair(quick()).await;
+    // Never met: no one is connected.
+    let started = std::time::Instant::now();
+    a.call::<()>("sync_leave", json!({}));
+    assert!(started.elapsed() < Duration::from_secs(2), "Leave waited");
+    assert!(a.listed().is_empty());
+    assert_eq!(left_lines(&a), ["Left the group"]);
+    // Bob was never told: it still lists Alice and holds no revocation.
+    assert_eq!(b.listed(), ["Mac"]);
+    let revocations: i64 = b.app.with_db(|c| {
+        c.query_row("SELECT COUNT(*) FROM sync_revocations", [], |r| r.get(0))
+            .unwrap()
+    });
+    assert_eq!(revocations, 0);
+    assert!(left_lines(&b).is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pairing_again_after_leaving_works() {
+    let (a, b) = crate::sync_live_tests::paired_pair(quick()).await;
+    meet(&a, &b);
+    until("connected", || peer_of(&a)["state"] == "up_to_date").await;
+    a.call::<()>("sync_leave", json!({}));
+    until("Bob to drop Mac", || b.listed().is_empty()).await;
+
+    crate::sync_live_tests::pair(&a, &b).await;
+    assert_eq!(a.listed(), ["Pixel 8"]);
+    assert_eq!(b.listed(), ["Mac"], "the revocation no longer stands");
+    meet(&a, &b);
+    until("connected again", || {
+        peer_of(&a)["state"] == "up_to_date" && peer_of(&b)["state"] == "up_to_date"
+    })
+    .await;
+    let made = create(&b, "After the return");
+    until("Mac to get it", || has(&a, &made)).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

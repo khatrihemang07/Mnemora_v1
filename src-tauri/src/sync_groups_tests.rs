@@ -169,6 +169,69 @@ fn an_introduction_signed_by_a_device_outside_the_group_changes_nothing() {
     assert_eq!(kept, 1);
 }
 
+#[test]
+fn a_leave_notice_reaches_a_member_that_never_met_the_leaver_through_another() {
+    let c = Cluster::new(3);
+    let keys: Vec<DeviceIdentity> = (0..3)
+        .map(|_| DeviceIdentity::generate().unwrap())
+        .collect();
+    let ids: Vec<String> = (0..3).map(|i| c[i].device_id()).collect();
+    for i in 0..3 {
+        c[i].with_db(|db| {
+            db.execute("INSERT INTO sync_group(one, id) VALUES (1, 'g')", [])
+                .unwrap();
+            for j in (0..3).filter(|j| *j != i) {
+                db.execute(
+                    "INSERT INTO sync_peers(id, name, paired_at, public_key, platform) VALUES (?1, ?2, 1, ?3, 'phone')",
+                    [
+                        ids[j].clone(),
+                        format!("Device {j}"),
+                        keys[j].public_key().to_hex(),
+                    ],
+                )
+                .unwrap();
+            }
+        });
+    }
+    c[0].with_db_mut(|db| mnemora_sync::announce_leaving(db, &keys[0], "Device 0").unwrap());
+    c[0].with_db(|db| mnemora_sync::forget_all(db, "Device 0", true).unwrap());
+
+    // Only the second device hears from the leaver; the third hears from the second.
+    c.sync(0, 1);
+    c.sync(1, 2);
+    for i in [1, 2] {
+        let listed: Vec<String> = c[i].with_db(|db| {
+            mnemora_sync::list_peers(db)
+                .unwrap()
+                .into_iter()
+                .map(|p| p.id)
+                .collect()
+        });
+        assert!(
+            !listed.contains(&ids[0]),
+            "device {i} still lists the leaver"
+        );
+        let lines: i64 = c[i].with_db(|db| {
+            db.query_row(
+                "SELECT COUNT(*) FROM sync_activity WHERE kind = 'left'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        });
+        assert_eq!(lines, 1, "device {i}: one line");
+    }
+    // Its own key is refused from now on.
+    let revoked: Vec<String> = c[2].with_db(|db| {
+        mnemora_sync::revoked_keys(db)
+            .unwrap()
+            .into_iter()
+            .map(|(_, d)| d)
+            .collect()
+    });
+    assert_eq!(revoked, [ids[0].clone()]);
+}
+
 // ---------------------------------------------------------------- joining the group (loopback)
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

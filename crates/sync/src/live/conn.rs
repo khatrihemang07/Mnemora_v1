@@ -32,6 +32,9 @@ pub(super) enum ConnCmd {
     Round,
     /// Close the connection.
     Close,
+    /// Start a session now, a fresh one even if one is running, and say when it has finished:
+    /// this device is leaving and what it wrote just before must reach the other side.
+    Farewell(tokio::sync::oneshot::Sender<()>),
 }
 
 /// What a connection tells the supervisor.
@@ -179,6 +182,9 @@ impl Conn {
 pub(super) async fn run(mut conn: Conn) -> Result<(), SyncError> {
     let mut round = Some(conn.start_round().await?);
     let mut again = false;
+    // A farewell asked for: waiting for the next session to start, and the session it started.
+    let mut farewell = None;
+    let mut farewell_round: Option<tokio::sync::oneshot::Sender<()>> = None;
     loop {
         tokio::select! {
             message = conn.transport.recv() => {
@@ -195,6 +201,10 @@ pub(super) async fn run(mut conn: Conn) -> Result<(), SyncError> {
             }
             cmd = conn.cmds.recv() => match cmd {
                 Some(ConnCmd::Round) => again = true,
+                Some(ConnCmd::Farewell(tx)) => {
+                    again = true;
+                    farewell = Some(tx);
+                }
                 Some(ConnCmd::Close) | None => return Ok(()),
             },
             () = tokio::time::sleep(SILENCE), if round.is_some() => {
@@ -202,12 +212,17 @@ pub(super) async fn run(mut conn: Conn) -> Result<(), SyncError> {
             }
         }
         if round.is_none() {
-            if !conn.keep_open {
+            if let Some(tx) = farewell_round.take() {
+                let _ = tx.send(());
+            }
+            if !conn.keep_open && farewell.is_none() {
                 return Ok(());
             }
             if again {
                 again = false;
+                // Only a session that starts now carries what was written before the farewell.
                 round = Some(conn.start_round().await?);
+                farewell_round = farewell.take();
             }
         }
     }

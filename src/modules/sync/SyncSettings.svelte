@@ -21,6 +21,8 @@
   const sync = createQuery(() => syncQuery);
   const paired = $derived(sync.data?.paired_devices ?? 0);
   let leaving = $state(false);
+  // Leave tells the connected devices first, which can take a few seconds: the Dialog stays up.
+  let leaveBusy = $state(false);
   // Bumped after asking to turn off: the switch snaps back until the Dialog is confirmed.
   let flip = $state(0);
 
@@ -37,8 +39,13 @@
     void run(commands.syncSetOption(option, on));
 
   async function leave() {
-    leaving = false;
-    await run(commands.syncLeave());
+    leaveBusy = true;
+    try {
+      await run(commands.syncLeave());
+    } finally {
+      leaveBusy = false;
+      leaving = false;
+    }
   }
 </script>
 
@@ -117,10 +124,14 @@
   open={leaving}
   title="Leave and forget all devices?"
   description="This device forgets all {paired} paired {paired === 1 ? 'device' : 'devices'} and stops syncing with them. Its data stays here. To sync again you pair again."
-  onclose={() => (leaving = false)}
+  onclose={() => {
+    if (!leaveBusy) leaving = false;
+  }}
 >
   {#snippet actions()}
-    <Button onclick={() => (leaving = false)}>Cancel</Button>
-    <Button variant="danger" onclick={() => void leave()}>Leave</Button>
+    <Button disabled={leaveBusy} onclick={() => (leaving = false)}>Cancel</Button>
+    <Button variant="danger" disabled={leaveBusy} onclick={() => void leave()}>
+      {leaveBusy ? 'Leaving…' : 'Leave'}
+    </Button>
   {/snippet}
 </Dialog>

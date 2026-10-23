@@ -301,6 +301,44 @@ pub fn forget(
     Ok(Forgotten { name, key: parsed })
 }
 
+/// Leaving: this device tells the group it is out. It signs a revocation of itself (the others
+/// trust its key, so they take it like any member's Forget), records it so the next exchange
+/// carries it, and writes the "left" line the others then show. Unlike Forget nothing is kept
+/// here: this device does not stand revoked to itself (that would stop its supervisor before the
+/// notice left), and `forget_all` removes the group right after. Call it only when a member is
+/// connected to hear it; the caller pushes, then forgets.
+pub fn leave(
+    conn: &mut Connection,
+    identity: &DeviceIdentity,
+    my_name: &str,
+) -> Result<(), SyncError> {
+    let me = hlc::device_id(conn)?;
+    let tx = conn.transaction()?;
+    let previous = read(&tx, &me)?;
+    let row = Row {
+        device: me.clone(),
+        public_key: identity.public_key().to_hex(),
+        name: my_name.to_owned(),
+        platform: Platform::this().as_str().to_owned(),
+        state: REVOKED.to_owned(),
+        at: next_at(&tx, previous.as_ref()),
+        by: me.clone(),
+        signature: String::new(),
+    }
+    .signed(identity)?;
+    record(&tx, &row, previous.is_some())?;
+    crate::activity::log_left(
+        &tx,
+        crate::activity::Local {
+            device: &me,
+            name: my_name,
+        },
+    )?;
+    tx.commit()?;
+    tracing::info!(target: "sync", "left the group, the members are told");
+    Ok(())
+}
+
 /// Pairing took `device` back: if it stood revoked, a newer decision says so, signed by this
 /// device, and the others take it back too. Returns whether anything was lifted.
 pub fn lift(conn: &Connection, identity: &DeviceIdentity, device: &str) -> Result<bool, SyncError> {
