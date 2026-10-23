@@ -3,6 +3,7 @@
 
 use rusqlite_migration::{M, Migrations};
 
+#[allow(clippy::too_many_lines)] // an append-only list
 pub fn all() -> Migrations<'static> {
     Migrations::new(vec![
         // Paired devices: one row per other device in this device's group.
@@ -114,6 +115,25 @@ pub fn all() -> Migrations<'static> {
          ) STRICT;
          CREATE INDEX sync_conflicts_target ON sync_conflicts(target, target_id);
          CREATE INDEX sync_conflicts_open ON sync_conflicts(status, raised_at);",
+        ),
+        // Where the replay of a text unit got to (#66 review), local and not synced: a memo of
+        // `texts::fold`, so a long-edited record is not replayed from its first record on every
+        // batch. `ms/counter/device/seq` is the last record replayed, `n` how many change-log
+        // rows of the record sort at or before it (the memo is dropped if that count differs: a
+        // record arrived late, or a session's record was rewritten), `state` the replay's result.
+        M::up(
+            "CREATE TABLE sync_text_replay(
+             entity TEXT NOT NULL,
+             entity_id TEXT NOT NULL,
+             unit TEXT NOT NULL,
+             ms INTEGER NOT NULL,
+             counter INTEGER NOT NULL,
+             device TEXT NOT NULL,
+             seq INTEGER NOT NULL,
+             n INTEGER NOT NULL,
+             state TEXT NOT NULL,
+             PRIMARY KEY(entity, entity_id, unit)
+         ) STRICT;",
         ),
     ])
 }

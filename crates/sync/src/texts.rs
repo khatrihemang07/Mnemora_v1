@@ -17,14 +17,16 @@
 use mnemora_core::changelog::ChangeOp;
 use mnemora_core::hlc::Stamp;
 use std::collections::BTreeSet;
+use std::fmt::Write;
 
 use mnemora_core::syncable::{FieldClass, RemoteChange, SyncEntity, SyncEvent};
 use rusqlite::{Connection, OptionalExtension, params};
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::conflicts;
 use crate::error::SyncError;
-use crate::registry::{Registry, wire_fields};
+use crate::registry::Registry;
 use crate::textmerge;
 
 /// A unit of fields with text in it: the text field and what travels with it.
@@ -67,7 +69,7 @@ struct Rec {
 }
 
 /// Two texts that clashed, with the base they came from.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Clashed {
     /// What both started from.
     pub(crate) base: String,
@@ -95,10 +97,23 @@ pub(crate) struct Folded {
     pub(crate) at: i64,
     /// Every clash met on the way.
     pub(crate) clashes: Vec<Clashed>,
+    /// The newest record replayed: its clock, and its sequence on the device that made it.
+    stamp: Stamp,
+    seq: i64,
+}
+
+/// Where a replay got to, as kept in `sync_text_replay`.
+struct Memo {
+    n: i64,
+    folded: Folded,
 }
 
 /// Replays every stored record that touched `unit` of one entity, in clock order. `None` when
 /// no record has text for it.
+///
+/// The replay resumes from where the last one got to (`sync_text_replay`) when the records
+/// before that point are still exactly the ones it replayed, so settling one more record of a
+/// text edited for months costs one record, not all of them. The result is the same either way.
 pub(crate) fn fold(
     conn: &Connection,
     schema: &SyncEntity,
@@ -107,60 +122,202 @@ pub(crate) fn fold(
     entity_id: &str,
     unit: &TextUnit,
 ) -> Result<Option<Folded>, SyncError> {
-    let mut recs = history(conn, schema, me, entity, entity_id, unit)?;
+    let memo = load_memo(conn, entity, entity_id, unit.text)?
+        .filter(|m| count_upto(conn, entity, entity_id, &m.folded).is_ok_and(|n| n == m.n));
+    let after = memo.as_ref().map(|m| &m.folded);
+    let mut recs = history(conn, schema, me, entity, entity_id, unit, after)?;
     recs.sort_by(|a, b| (&a.stamp, a.origin_seq).cmp(&(&b.stamp, b.origin_seq)));
-    Ok(replay(&recs, unit))
+    let folded = replay(&recs, unit, memo.map(|m| m.folded));
+    if !recs.is_empty()
+        && let Some(f) = &folded
+    {
+        save_memo(conn, entity, entity_id, unit.text, f)?;
+    }
+    Ok(folded)
 }
 
-fn replay(recs: &[Rec], unit: &TextUnit) -> Option<Folded> {
-    let mut held: Option<(String, Map<String, Value>, Stamp, i64)> = None;
-    let mut clashes = Vec::new();
+/// How many change-log rows of the record sort at or before `to`.
+fn count_upto(
+    conn: &Connection,
+    entity: &str,
+    entity_id: &str,
+    to: &Folded,
+) -> Result<i64, SyncError> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM change_log WHERE entity = ?1 AND entity_id = ?2
+           AND (hlc_ms, hlc_counter, origin_device, origin_seq) <= (?3, ?4, ?5, ?6)",
+        params![
+            entity,
+            entity_id,
+            to.stamp.ms,
+            to.stamp.counter,
+            to.stamp.device,
+            to.seq
+        ],
+        |r| r.get(0),
+    )?)
+}
+
+fn load_memo(
+    conn: &Connection,
+    entity: &str,
+    entity_id: &str,
+    unit: &str,
+) -> Result<Option<Memo>, SyncError> {
+    let row: Option<(i64, i64, String, i64, i64, String)> = conn
+        .query_row(
+            "SELECT ms, counter, device, seq, n, state FROM sync_text_replay
+             WHERE entity = ?1 AND entity_id = ?2 AND unit = ?3",
+            params![entity, entity_id, unit],
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((ms, counter, device, seq, n, state)) = row else {
+        return Ok(None);
+    };
+    // A memo that cannot be read is just not used.
+    let Ok(State {
+        values,
+        op,
+        at,
+        clashes,
+    }) = serde_json::from_str::<State>(&state)
+    else {
+        return Ok(None);
+    };
+    let Some(op) = ChangeOp::parse(&op) else {
+        return Ok(None);
+    };
+    Ok(Some(Memo {
+        n,
+        folded: Folded {
+            values,
+            op,
+            at,
+            clashes,
+            stamp: Stamp {
+                ms,
+                counter,
+                device,
+            },
+            seq,
+        },
+    }))
+}
+
+/// What of a [`Folded`] is kept in `sync_text_replay.state`.
+#[derive(Serialize, Deserialize)]
+struct State {
+    values: Map<String, Value>,
+    op: String,
+    at: i64,
+    clashes: Vec<Clashed>,
+}
+
+fn save_memo(
+    conn: &Connection,
+    entity: &str,
+    entity_id: &str,
+    unit: &str,
+    f: &Folded,
+) -> Result<(), SyncError> {
+    let state = serde_json::to_string(&State {
+        values: f.values.clone(),
+        op: f.op.as_str().to_owned(),
+        at: f.at,
+        clashes: f.clashes.clone(),
+    })
+    // Cannot fail for these types; an empty state is simply not used when read back.
+    .unwrap_or_default();
+    let n = count_upto(conn, entity, entity_id, f)?;
+    conn.execute(
+        "INSERT INTO sync_text_replay(entity, entity_id, unit, ms, counter, device, seq, n, state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+         ON CONFLICT(entity, entity_id, unit) DO UPDATE SET ms = excluded.ms,
+             counter = excluded.counter, device = excluded.device, seq = excluded.seq,
+             n = excluded.n, state = excluded.state",
+        params![
+            entity,
+            entity_id,
+            unit,
+            f.stamp.ms,
+            f.stamp.counter,
+            f.stamp.device,
+            f.seq,
+            n,
+            state
+        ],
+    )?;
+    Ok(())
+}
+
+/// Replays `recs` (in clock order) onto `start`, what an earlier replay came to.
+fn replay(recs: &[Rec], unit: &TextUnit, start: Option<Folded>) -> Option<Folded> {
+    let mut held = start;
     for rec in recs {
         held = Some(match held.take() {
-            None => (
-                rec.text.clone(),
-                rec.values.clone(),
-                rec.stamp.clone(),
-                rec.at,
-            ),
-            Some((ours, ours_values, ours_stamp, ours_at)) => {
+            None => Folded {
+                values: rec.values.clone(),
+                op: rec.op,
+                at: rec.at,
+                clashes: Vec::new(),
+                stamp: rec.stamp.clone(),
+                seq: rec.origin_seq,
+            },
+            Some(mut ours) => {
+                let ours_text = ours
+                    .values
+                    .get(unit.text)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned();
                 match &rec.prev {
                     // It replaced what is held (or says the same): it takes over.
-                    Some(base) if *base != ours && rec.text != ours => {
-                        let merged = textmerge::merge(base, &ours, &rec.text);
+                    Some(base) if *base != ours_text && rec.text != ours_text => {
+                        let merged = textmerge::merge(base, &ours_text, &rec.text);
                         if merged.clashes() > 0 {
-                            clashes.push(Clashed {
+                            ours.clashes.push(Clashed {
                                 base: base.clone(),
-                                ours: ours.clone(),
-                                ours_device: ours_stamp.device.clone(),
-                                ours_at,
+                                ours: ours_text,
+                                ours_device: ours.stamp.device.clone(),
+                                ours_at: ours.at,
                                 theirs: rec.text.clone(),
                                 theirs_device: rec.stamp.device.clone(),
                                 theirs_at: rec.at,
                             });
                         }
                         let text = merged.text();
-                        let values = merged_values(unit, &text, &ours_values, rec);
-                        (text, values, rec.stamp.clone(), rec.at)
+                        Folded {
+                            values: merged_values(unit, &text, &ours.values, rec),
+                            op: rec.op,
+                            at: rec.at,
+                            clashes: ours.clashes,
+                            stamp: rec.stamp.clone(),
+                            seq: rec.origin_seq,
+                        }
                     }
-                    _ => (
-                        rec.text.clone(),
-                        rec.values.clone(),
-                        rec.stamp.clone(),
-                        rec.at,
-                    ),
+                    _ => Folded {
+                        values: rec.values.clone(),
+                        op: rec.op,
+                        at: rec.at,
+                        clashes: ours.clashes,
+                        stamp: rec.stamp.clone(),
+                        seq: rec.origin_seq,
+                    },
                 }
             }
         });
     }
-    let (_, values, _, _) = held.clone()?;
-    let newest = recs.last()?;
-    Some(Folded {
-        values,
-        op: newest.op,
-        at: newest.at,
-        clashes,
-    })
+    held
 }
 
 /// The unit's values after a merge: the merged text, and the group's other members from the
@@ -187,62 +344,78 @@ fn merged_values(
     out
 }
 
-fn unit_values(fields: &Map<String, Value>, unit: &TextUnit) -> Map<String, Value> {
-    std::iter::once(unit.text)
-        .chain(unit.others.iter().copied())
-        .filter_map(|k| Some((k.to_owned(), fields.get(k)?.clone())))
-        .collect()
-}
-
-/// The stored records that touched the unit's text.
+/// The stored records that touched the unit's text, after the clock `after` if given.
+///
+/// Only the unit's own values are read out of each row, by the JSON operators of `SQLite`, instead of
+/// parsing every whole snapshot here. The values are what `wire_fields` would send for the row
+/// (the record's own `fields`, or its snapshot for a row from before `fields`; a group's other
+/// members completed from the snapshot for this device's own rows).
 fn history(
     conn: &Connection,
-    schema: &SyncEntity,
+    _schema: &SyncEntity,
     me: &str,
     entity: &str,
     entity_id: &str,
     unit: &TextUnit,
+    after: Option<&Folded>,
 ) -> Result<Vec<Rec>, SyncError> {
-    let mut stmt = conn.prepare(
-        "SELECT origin_device, hlc_ms, hlc_counter, origin_seq, op, at, fields, snapshot, prev
-         FROM change_log WHERE entity = ?1 AND entity_id = ?2",
-    )?;
-    let mut rows = stmt.query(params![entity, entity_id])?;
+    // The text itself comes from the record's own `fields` (the snapshot only for a row from
+    // before `fields`); a member that travels with it is completed from the snapshot for this
+    // device's own rows, as `wire_fields` does.
+    let columns: String = std::iter::once((unit.text, false))
+        .chain(unit.others.iter().map(|k| (*k, true)))
+        .fold(String::new(), |mut sql, (k, member)| {
+            let own = if member { " OR origin_device = ?3" } else { "" };
+            let _ = write!(
+                sql,
+                ", COALESCE(fields -> '$.{k}', CASE WHEN fields IS NULL{own} THEN snapshot -> '$.{k}' END)"
+            );
+            sql
+        });
+    let (ms, counter, device, seq) = after.map_or((i64::MIN, 0, "", 0), |f| {
+        (f.stamp.ms, f.stamp.counter, f.stamp.device.as_str(), f.seq)
+    });
+    let mut stmt = conn.prepare(&format!(
+        "SELECT origin_device, hlc_ms, hlc_counter, origin_seq, op, at, prev -> '$.{}'{columns}
+         FROM change_log WHERE entity = ?1 AND entity_id = ?2
+           AND (hlc_ms, hlc_counter, origin_device, origin_seq) > (?4, ?5, ?6, ?7)",
+        unit.text
+    ))?;
+    let mut rows = stmt.query(params![entity, entity_id, me, ms, counter, device, seq])?;
     let mut out = Vec::new();
     while let Some(row) = rows.next()? {
-        let device: String = row.get(0)?;
-        let origin_seq: i64 = row.get(3)?;
-        let fields: Option<String> = row.get(6)?;
-        let snapshot: String = row.get(7)?;
-        let prev: Option<String> = row.get(8)?;
-        let fields = fields
-            .and_then(|f| serde_json::from_str::<Value>(&f).ok())
-            .and_then(|v| match v {
-                Value::Object(map) => Some(map),
-                _ => None,
-            });
-        let snapshot: Value = serde_json::from_str(&snapshot).unwrap_or(Value::Null);
-        let wire = wire_fields(schema, fields, &snapshot, device == me);
-        let Some(text) = wire.get(unit.text).and_then(Value::as_str) else {
+        let parsed = |i: usize| -> Result<Option<Value>, SyncError> {
+            let json: Option<String> = row.get(i)?;
+            Ok(json.and_then(|j| serde_json::from_str(&j).ok()))
+        };
+        let Some(Value::String(text)) = parsed(7)? else {
             continue;
         };
         let Some(op) = ChangeOp::parse(&row.get::<_, String>(4)?) else {
             continue;
         };
-        let prev = prev
-            .and_then(|p| serde_json::from_str::<Value>(&p).ok())
-            .and_then(|p| p.get(unit.text).and_then(Value::as_str).map(str::to_owned));
+        let mut values = Map::new();
+        values.insert(unit.text.to_owned(), Value::String(text.clone()));
+        for (i, name) in unit.others.iter().enumerate() {
+            if let Some(v) = parsed(8 + i)? {
+                values.insert((*name).to_owned(), v);
+            }
+        }
+        let prev = match parsed(6)? {
+            Some(Value::String(p)) => Some(p),
+            _ => None,
+        };
         out.push(Rec {
             stamp: Stamp {
                 ms: row.get(1)?,
                 counter: row.get(2)?,
-                device,
+                device: row.get(0)?,
             },
-            origin_seq,
+            origin_seq: row.get(3)?,
             op,
             at: row.get(5)?,
-            values: unit_values(&wire, unit),
-            text: text.to_owned(),
+            values,
+            text,
             prev,
         });
     }
@@ -415,7 +588,7 @@ mod tests {
             rec(2, "b", Some("one"), "two", false),
             rec(3, "a", Some("two"), "three", true),
         ];
-        let f = replay(&recs, &body()).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(f.values["body"], "three");
         assert_eq!(f.values["edited"], true);
         assert!(f.clashes.is_empty());
@@ -428,7 +601,7 @@ mod tests {
             rec(1, "a", Some(base), "ALPHA beta gamma", false),
             rec(2, "b", Some(base), "alpha beta GAMMA", false),
         ];
-        let f = replay(&recs, &body()).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(f.values["body"], "ALPHA beta GAMMA");
         assert!(f.clashes.is_empty());
 
@@ -436,7 +609,7 @@ mod tests {
             rec(1, "a", Some(base), "alpha BETA gamma", false),
             rec(2, "b", Some(base), "alpha Beta gamma", false),
         ];
-        let f = replay(&recs, &body()).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(f.values["body"], "alpha Beta gamma", "the newer side shows");
         assert_eq!(
             f.clashes,
@@ -463,13 +636,16 @@ mod tests {
         ];
         let mut sorted = all.to_vec();
         sorted.sort_by(|a, b| a.stamp.cmp(&b.stamp));
-        let want = replay(&sorted, &body()).unwrap().values["body"].clone();
+        let want = replay(&sorted, &body(), None).unwrap().values["body"].clone();
         assert_eq!(want, "X Y Z!");
         // `fold` sorts, so any arrival order replays the same.
         let mut shuffled = all.to_vec();
         shuffled.reverse();
         shuffled.sort_by(|a, b| a.stamp.cmp(&b.stamp));
-        assert_eq!(replay(&shuffled, &body()).unwrap().values["body"], want);
+        assert_eq!(
+            replay(&shuffled, &body(), None).unwrap().values["body"],
+            want
+        );
     }
 
     #[test]
@@ -478,7 +654,7 @@ mod tests {
             rec(1, "a", None, "old", false),
             rec(2, "b", None, "new", false),
         ];
-        assert_eq!(replay(&recs, &body()).unwrap().values["body"], "new");
+        assert_eq!(replay(&recs, &body(), None).unwrap().values["body"], "new");
     }
 
     #[test]
@@ -487,7 +663,7 @@ mod tests {
             rec(1, "a", Some("a b"), "A b", true),
             rec(2, "b", Some("a b"), "a B", false),
         ];
-        let f = replay(&recs, &body()).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(
             (f.values["body"].as_str(), f.values["edited"].as_bool()),
             (Some("A B"), Some(true))

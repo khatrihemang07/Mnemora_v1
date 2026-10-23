@@ -346,7 +346,7 @@ mod tests {
                 ],
             )?;
             Ok(ModuleApplied {
-                snapshot: json!({"id": change.entity_id}),
+                snapshot: json!({"id": change.entity_id, "name": change.fields.get("name")}),
                 changed: true,
                 events: Vec::new(),
             })
@@ -486,5 +486,163 @@ mod tests {
                 .stored,
             0
         );
+    }
+
+    #[test]
+    fn settling_a_text_with_a_long_history_stays_fast() {
+        let (conn, registry) = device("me");
+        // A body of about 4 KB, rewritten once per editing session, 2,000 times over.
+        let line = "a line of the journal that is long enough to look like prose, ".repeat(2);
+        let text = |n: usize| format!("{}\nrevision {n}", line.repeat(32));
+        let history: Vec<WireRecord> = (1..=2000usize)
+            .map(|n| {
+                let seq = i64::try_from(n).unwrap();
+                let mut r = record("other", seq, "a", json!({ "name": text(n) }));
+                if n > 1 {
+                    r.prev = json!({ "name": text(n - 1) }).as_object().unwrap().clone();
+                }
+                r
+            })
+            .collect();
+        // Arriving in batches, as a session sends them.
+        for batch in history.chunks(100) {
+            apply_batch(&conn, &registry, "me", batch.to_vec()).unwrap();
+        }
+
+        let mut next = record("other", 2001, "a", json!({ "name": text(2001) }));
+        next.prev = json!({ "name": text(2000) }).as_object().unwrap().clone();
+        let started = std::time::Instant::now();
+        apply_batch(&conn, &registry, "me", vec![next]).unwrap();
+        let took = started.elapsed();
+        assert!(
+            took < std::time::Duration::from_millis(50),
+            "settling one more record took {took:?}"
+        );
+    }
+
+    /// A record of `name` from `device`, clocked at `ms`, made from `prev`.
+    fn text_record(
+        device: &str,
+        seq: i64,
+        ms: i64,
+        session: Option<&str>,
+        prev: Option<&str>,
+        name: &str,
+    ) -> WireRecord {
+        let mut r = record(device, seq, "a", json!({ "name": name }));
+        r.hlc_ms = ms;
+        r.session_id = session.map(str::to_owned);
+        r.op = if prev.is_none() { "create" } else { "update" }.into();
+        if let Some(p) = prev {
+            r.prev = json!({ "name": p }).as_object().unwrap().clone();
+        }
+        r
+    }
+
+    fn name_and_conflicts(conn: &Connection) -> (String, Vec<String>) {
+        let name = conn
+            .query_row("SELECT name FROM fake_things WHERE id = 'a'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id FROM sync_conflicts ORDER BY id")
+            .unwrap();
+        let ids = stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        (name, ids)
+    }
+
+    #[test]
+    fn the_text_is_the_same_whatever_batches_and_order_the_records_arrive_in() {
+        let base = "one two three\nfour five six";
+        let r_base = text_record("d1", 1, 1000, None, None, base);
+        let r_upper = text_record(
+            "d2",
+            1,
+            1001,
+            None,
+            Some(base),
+            "ONE two three\nfour five six",
+        );
+        let r_then = text_record(
+            "d2",
+            2,
+            1004,
+            None,
+            Some("ONE two three\nfour five six"),
+            "ONE two three\nfour five SIX",
+        );
+        let r_clash = text_record(
+            "d3",
+            1,
+            1002,
+            None,
+            Some(base),
+            "Uno two three\nfour five six",
+        );
+        let session_v1 = text_record(
+            "d1",
+            2,
+            1003,
+            Some("s"),
+            Some(base),
+            "one TWO three\nfour five six",
+        );
+        let session_v2 = text_record(
+            "d1",
+            3,
+            1005,
+            Some("s"),
+            Some(base),
+            "one TWO three\nfour five six more",
+        );
+
+        // One device takes them as they come (each device's records in order, but devices
+        // late and interleaved), the session's record twice.
+        let (a, ra) = device("a");
+        for batch in [
+            vec![r_base.clone()],
+            vec![r_clash.clone()],
+            vec![session_v1.clone()],
+            vec![r_upper.clone(), r_then.clone()],
+            vec![session_v2.clone()],
+        ] {
+            apply_batch(&a, &ra, "a", batch).unwrap();
+        }
+        // Another gets the final records in clock order in one go.
+        let (b, rb) = device("b");
+        apply_batch(
+            &b,
+            &rb,
+            "b",
+            vec![
+                r_base.clone(),
+                r_upper.clone(),
+                r_clash.clone(),
+                r_then.clone(),
+                session_v2.clone(),
+            ],
+        )
+        .unwrap();
+        let (name, conflicts) = name_and_conflicts(&a);
+        assert_eq!(name_and_conflicts(&b), (name.clone(), conflicts));
+        assert!(name.contains("TWO") && name.contains("SIX") && name.contains("more"));
+
+        // Resuming from where the last replay got to is the same as replaying it all.
+        let (_, schema) = ra.find("thing").unwrap();
+        let unit = texts::unit(schema, "name").unwrap();
+        let resumed = texts::fold(&a, schema, "a", "thing", "a", &unit)
+            .unwrap()
+            .unwrap();
+        a.execute("DELETE FROM sync_text_replay", []).unwrap();
+        let whole = texts::fold(&a, schema, "a", "thing", "a", &unit)
+            .unwrap()
+            .unwrap();
+        assert_eq!(resumed.values, whole.values);
+        assert_eq!(resumed.clashes, whole.clashes);
     }
 }
