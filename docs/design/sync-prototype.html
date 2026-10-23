@@ -490,6 +490,7 @@ const LOCKED = {
   M1: 'tokio', M2: 'own', M3: 'flush', M4: 'rust', M5: 'cm', M6: 'alive', M7: 'info',
   N1: 'multi', N2: 'seeded', N3: ['drop', 'dup', 'skew', 'ver', 'rev'], N4: 'sandbox',
   P1: 'line', P2: 'toast', P3: 'full', P4: 'gated', P5: 'live', P6: 'enforce', P7: 'pref', P8: 'synced', P9: 'both', P10: 'tell', P11: 'besteffort', P12: ['window', 'clock', 'rewrite', 'untold', 'cost'],
+  P13: 'onenable', P14: 'banner', P15: ['inbound', 'showaddr', 'tailscale'], P16: 'onenable',
 };
 /* "Preview in mock": one option shown in the mock without picking it. */
 let PREVIEW = null;
@@ -1285,6 +1286,25 @@ sec('P', 'Post-audit decisions', 'Decided after the plan-conformance audit of th
     opt('rewrite', 'Rewritten editing sessions can merge oddly (still converge); follow-up issue', '', { rec: true }),
     opt('untold', 'A forgotten device that is never told keeps retrying', '', { rec: true }),
     opt('cost', 'change_log.prev and clock bookkeeping cost with Sync off', '', { rec: true }),
+  ] },
+  { id: 'P13', kind: 'ui', title: 'Mac: asking for Local Network access', why: 'macOS 15+ (Local Network privacy, Apple TN3179) blocks dialling LAN addresses and all mDNS until the user allows it. Found in device QA: denied, every dial failed with "No route to host" and the app only said Not nearby. Accepting incoming connections and (most likely) Tailscale are not covered.', options: [
+    opt('onenable', 'Explain on the welcome page, then trigger the macOS prompt', 'A third line on the welcome page on Mac: "Mnemora will ask to find devices on your local network." The app probes right after Sync is turned on, so the system prompt appears then, with Info.plist\'s usage string "Mnemora finds and syncs with your other devices on this network."', { rec: true, demo: `<div class="banner info" style="margin:0">${ic('wifi')}<div>Mnemora will ask to find devices on your local network. Allow it so your devices can find each other.</div></div>`, pros: ['The prompt comes when it makes sense', 'Never a surprise later'], cons: ['One more line on the welcome page (Mac only)'] }),
+    opt('lazy', 'Let macOS ask on first use', 'Only the Info.plist usage string; the prompt appears whenever the first dial or mDNS happens.', { pros: ['No UI change'], cons: ['Prompt can appear at an odd moment (e.g. mid-pairing)'] }),
+  ] },
+  { id: 'P14', kind: 'ui', title: 'Mac: when Local Network access is denied', why: 'There is no API to read the state; denial shows as "No route to host" on every LAN dial / mDNS send.', options: [
+    opt('banner', 'Banner on Devices and in the Pair sheet, with a button', 'Warning banner: "This Mac can\'t reach devices on your network. Allow Mnemora under System Settings › Privacy & Security › Local Network." [Open Settings]. Peer rows say "Blocked by Local Network setting" instead of Not nearby. Sidebar badge shows the amber "!" like a pause. Logged once in Activity.', { rec: true, demo: `<div class="banner err" style="margin:0">${ic('shield-alert')}<div><b>This Mac can't reach devices on your network.</b><br><span style="color:var(--muted)">Allow Mnemora under System Settings › Privacy &amp; Security › Local Network.</span></div><button class="btn" style="margin-left:auto">Open Settings</button></div>`, pros: ['Never silent', 'One click to the fix'], cons: ['Can\'t tell denial from a real routing error with certainty; shown only when every LAN dial fails this way'] }),
+    opt('activity', 'Only an Activity line and the peer row wording', 'No banner.', { pros: ['Quiet'], cons: ['Easy to miss; looks like Not nearby'] }),
+  ] },
+  { id: 'P15', kind: 'll', multi: true, title: 'Mac: depend on the permission as little as possible', why: 'Even when denied, the Mac can still accept incoming connections, and Tailscale is most likely not covered.', options: [
+    opt('inbound', 'Phone dials the Mac: always dial known Mac addresses from the phone', 'Remembered + typed addresses are dialled by the phone even when mDNS finds nothing, so a denied Mac still syncs once paired.', { rec: true }),
+    opt('showaddr', 'Pair sheet on Mac shows "Or on the phone, Pair by address: 192.168.1.20" under the code', 'So first pairing works with the Mac denied.', { rec: true, demo: `<div class="note" style="margin:0">Or on your phone: Pair by address… <b>192.168.1.20</b></div>` }),
+    opt('tailscale', 'Prefer Tailscale addresses when both have them', 'Tailscale (100.x / MagicDNS) is outside the permission (verify on device).', { rec: true }),
+    opt('bonjour', 'Use Apple\'s Bonjour (dns_sd) on Mac instead of raw multicast', 'A documented "policy denied" error makes detection exact, but adds a macOS-only path.', {}),
+  ] },
+  { id: 'P16', kind: 'll', title: 'Android 17 local network permission', why: 'Android 17 adds ACCESS_LOCAL_NETWORK for apps targeting API 37; the app targets 36 today, so nothing is enforced yet.', options: [
+    opt('later', 'Follow-up issue: declare and request it at Sync enable when the target SDK moves to 37', '', {}),
+    opt('now', 'Declare and request it now, at app start', 'Prompts every Android 17 user, syncing or not.', {}),
+    opt('onenable', 'Declare it now; ask only when Sync is turned on', 'Never asked while Sync is off. On Android 17+ the request comes when the user turns Sync on (and again from the denied banner).', { rec: true }),
   ] },
 ]);
 

@@ -301,7 +301,12 @@ export const commands = {
 	syncRename: (name: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_rename", { name })),
 	/**  Sets "Sync automatically", "Allow over mobile data" or "Visible on this network". */
 	syncSetOption: (option: SyncOption, enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_option", { option, enabled })),
-	/**  Leaves the group: forgets every paired device. This device keeps its data. */
+	/**
+	 *  Leaves the group. If a member is connected it is told first (a signed revocation of this
+	 *  device and a "left" line, pushed now), waiting at most a few seconds; with nobody reachable
+	 *  this is local only and never blocks. Either way every paired device is then forgotten here.
+	 *  This device keeps its data.
+	 */
 	syncLeave: () => typedError<null, AppError>(__TAURI_INVOKE("sync_leave")),
 	/**  The Devices tab: this device (name, addresses, port) and the paired ones. */
 	syncDevices: () => typedError<DevicesView, AppError>(__TAURI_INVOKE("sync_devices")),
