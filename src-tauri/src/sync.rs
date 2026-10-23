@@ -61,7 +61,7 @@ pub fn sync_set_option(
     match option {
         SyncOption::Visible => state.sync.refresh_advert(),
         SyncOption::Automatic => state.sync.options_changed(),
-        SyncOption::MobileData => {}
+        SyncOption::MobileData | SyncOption::ToastConflicts => {}
     }
     Ok(())
 }

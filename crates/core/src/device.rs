@@ -142,7 +142,7 @@ impl LookAndFeel {
 /// Preference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
-// Four independent switches in a settings file; an enum per switch would only add noise.
+// Five independent switches in a settings file; an enum per switch would only add noise.
 #[allow(clippy::struct_excessive_bools)]
 pub struct SyncDevice {
     /// Sync is on. Off (the default) means nothing runs: no listener, no discovery, no tasks.
@@ -155,6 +155,9 @@ pub struct SyncDevice {
     pub mobile_data: bool,
     /// Advertise on the local network so paired devices find this one.
     pub visible: bool,
+    /// "New conflicts: Show a toast" instead of Quietly (the default): per device, so the Mac can
+    /// say so at once while the phone stays calm.
+    pub toast_conflicts: bool,
 }
 
 impl Default for SyncDevice {
@@ -165,6 +168,7 @@ impl Default for SyncDevice {
             automatic: true,
             mobile_data: false,
             visible: true,
+            toast_conflicts: false,
         }
     }
 }
@@ -426,6 +430,7 @@ mod tests {
         assert!(!fresh.enabled, "Sync is off by default");
         assert_eq!(fresh.name, None);
         assert!(fresh.automatic && fresh.visible && !fresh.mobile_data);
+        assert!(!fresh.toast_conflicts, "new conflicts arrive quietly");
         // A file from before Sync has no [sync] table at all.
         std::fs::write(&path, "log_level = \"debug\"\n").unwrap();
         assert_eq!(DeviceSettings::load(&path).sync, fresh);

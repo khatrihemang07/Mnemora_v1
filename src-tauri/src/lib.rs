@@ -95,6 +95,9 @@ macro_rules! specta_builder_for {
                 sync_conflicts::sync_conflict,
                 sync_conflicts::sync_conflict_draft,
                 sync_conflicts::sync_conflict_resolve,
+                sync_conflicts::sync_attention,
+                sync_conflicts::sync_resolution_use_other,
+                sync_conflicts::sync_resolutions_visited,
             ])
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
@@ -104,6 +107,7 @@ macro_rules! specta_builder_for {
                 SyncPairingEvent,
                 SyncPeersEvent,
                 SyncConflictsEvent,
+                SyncNewConflictsEvent,
                 TodoListsMergedEvent
             ])
     };
@@ -130,6 +134,8 @@ mod sync_live_tests;
 #[cfg(test)]
 mod sync_pairing_tests;
 #[cfg(test)]
+mod sync_resolutions_tests;
+#[cfg(test)]
 mod test_support;
 mod theme_inject;
 mod todo;
@@ -154,7 +160,7 @@ use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
 use mnemora_core::events::{
-    EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
+    ConflictsRaised, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
 };
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
@@ -224,6 +230,16 @@ pub struct SyncPeersEvent;
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SyncConflictsEvent;
 
+/// New Conflicts arrived from another device and this device is set to say so with a toast
+/// ("New conflicts: Show a toast"). Never sent while it is set to Quietly.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncNewConflictsEvent {
+    /// How many.
+    pub count: u32,
+    /// The device they came from, when known.
+    pub device: Option<String>,
+}
+
 /// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct LinkOpenedEvent;
@@ -247,6 +263,7 @@ fn follow_remote<R: tauri::Runtime>(
     widgets: &Arc<widget::signal::WidgetSignal>,
 ) {
     let handle_for_merges = handle.clone();
+    let toast_handle = handle.clone();
     bus.subscribe(move |event: &RemoteChanged| {
         let sent = match event.module.as_str() {
             mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
@@ -269,6 +286,23 @@ fn follow_remote<R: tauri::Runtime>(
         };
         if let Err(e) = event.emit(&merged_handle) {
             tracing::warn!(target: "sync", error = %e, "could not emit the List merge event");
+        }
+    });
+    bus.subscribe(move |event: &ConflictsRaised| {
+        use tauri::Manager;
+        // Quietly is the default: only a device set to a toast hears about new conflicts.
+        let wants = toast_handle
+            .try_state::<state::AppState>()
+            .is_some_and(|s| s.device.get().sync.toast_conflicts);
+        if !wants {
+            return;
+        }
+        let toast = SyncNewConflictsEvent {
+            count: event.count,
+            device: event.device.clone(),
+        };
+        if let Err(e) = toast.emit(&toast_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the new-conflicts event");
         }
     });
     let widgets = Arc::clone(widgets);

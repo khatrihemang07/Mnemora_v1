@@ -13,6 +13,7 @@ use specta::Type;
 use crate::conflicts::{self, Resolution, Stored};
 use crate::error::SyncError;
 use crate::peers;
+use crate::resolved_view::{self, ResolvedRow};
 use crate::textmerge::{self, DiffSpan, Piece};
 use crate::texts;
 
@@ -84,6 +85,8 @@ pub struct ConflictRow {
 pub struct ConflictList {
     /// Conflicts that wait, newest first. Its length is the count.
     pub needs_you: Vec<ConflictRow>,
+    /// What was decided without asking, newest first.
+    pub resolved: Vec<ResolvedRow>,
 }
 
 /// A part of the text for Edit merged: agreed, or a clash to choose for.
@@ -165,9 +168,19 @@ fn string_of(snapshot: Option<&serde_json::Value>, key: &str) -> String {
 }
 
 fn subject(conn: &Connection, c: &Stored) -> Result<(ConflictSubject, &'static str), SyncError> {
-    let target = texts::current(conn, &c.target, &c.target_id)?;
+    subject_of(conn, &c.target, &c.target_id, &c.field)
+}
+
+/// What a record is, as the Conflicts tab names it, and the Module it belongs to.
+pub(crate) fn subject_of(
+    conn: &Connection,
+    target_entity: &str,
+    target_id: &str,
+    field: &str,
+) -> Result<(ConflictSubject, &'static str), SyncError> {
+    let target = texts::current(conn, target_entity, target_id)?;
     let target = target.as_ref();
-    Ok(match c.target.as_str() {
+    Ok(match target_entity {
         "journal_entry" => {
             let written = target
                 .and_then(|t| t.get("written_at"))
@@ -199,7 +212,7 @@ fn subject(conn: &Connection, c: &Stored) -> Result<(ConflictSubject, &'static s
         _ => (
             ConflictSubject::Task {
                 title: string_of(target, "title"),
-                field: if c.field == "notes" {
+                field: if field == "notes" {
                     TaskText::Notes
                 } else {
                     TaskText::Title
@@ -228,7 +241,10 @@ pub fn list(conn: &Connection, me: &str, my_name: &str) -> AppResult<ConflictLis
         .iter()
         .map(|c| row(conn, c, me, my_name))
         .collect::<Result<_, _>>()?;
-    Ok(ConflictList { needs_you })
+    Ok(ConflictList {
+        needs_you,
+        resolved: resolved_view::list(conn, me, my_name)?,
+    })
 }
 
 /// The text of the field a Conflict is about as the record holds it now.

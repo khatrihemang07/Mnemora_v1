@@ -285,6 +285,9 @@ pub(crate) fn raise(
     };
     insert(conn, &row)?;
     record(conn, &row, ChangeOp::Create)?;
+    if deleted {
+        crate::resolutions::note_conflict_deleted(conn, &id)?;
+    }
     tracing::info!(target: "sync", auto = deleted, "a text clash was recorded");
     let (entity, entity_id, field) = (target.to_owned(), target_id.to_owned(), field.to_owned());
     Ok(Some(if deleted {
@@ -376,6 +379,7 @@ pub(crate) fn settle_deleted(
     let mut events = Vec::new();
     for (id, field) in waiting {
         if resolve(conn, &id, Resolution::Deleted, "", 0)? {
+            crate::resolutions::note_conflict_deleted(conn, &id)?;
             events.push(SyncEvent::ConflictAutoResolved {
                 id,
                 entity: target.to_owned(),
@@ -419,6 +423,7 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     let text = |k: &str| f.get(k).and_then(Value::as_str).map(str::to_owned);
     let int = |k: &str| f.get(k).and_then(Value::as_i64);
     let before = get(conn, id).map_err(into_app)?;
+    let mut events = Vec::new();
     if before.is_none() {
         let made = (|| {
             Some(Stored {
@@ -449,6 +454,15 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
             });
         };
         insert(conn, &row).map_err(into_app)?;
+        // Learned from the device that raised it: it waits here too.
+        if f.get("status").and_then(Value::as_str) != Some("resolved") {
+            events.push(SyncEvent::ConflictRaised {
+                id: id.to_owned(),
+                entity: row.target.clone(),
+                entity_id: row.target_id.clone(),
+                field: row.field.clone(),
+            });
+        }
     }
     if f.get("status").and_then(Value::as_str) == Some("resolved") {
         conn.execute(
@@ -467,7 +481,7 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     Ok(Applied {
         snapshot: after.as_ref().map_or(Value::Null, json),
         changed: before != after,
-        events: Vec::new(),
+        events,
     })
 }
 

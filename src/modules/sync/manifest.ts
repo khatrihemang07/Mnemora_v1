@@ -1,6 +1,15 @@
 import GitMerge from '~icons/lucide/git-merge';
+import Plus from '~icons/lucide/plus';
 import RadioTower from '~icons/lucide/radio-tower';
+import RefreshCw from '~icons/lucide/refresh-cw';
+import { commands } from '../../lib/ipc/bindings';
+import { queryClient } from '../../lib/ipc/query-client';
 import type { ModuleManifest } from '../../lib/router';
+import { notify } from '../../lib/ui/toast';
+import { paletteHint } from './attention';
+import { useSyncBadge } from './badge.svelte';
+import { pairing } from './pairing.svelte';
+import { attentionQuery } from './queries';
 import { useSyncSwitch } from './switch.svelte';
 
 export const syncManifest: ModuleManifest = {
@@ -20,6 +29,11 @@ export const syncManifest: ModuleManifest = {
   nav: { order: 90, shortcut: null, placement: 'bottom' },
   defaultEnabled: false,
   deviceSwitch: useSyncSwitch,
+  // The conflicts that need you, an amber "!" while paused: the desktop sidebar only (B7, B8).
+  useBadge: useSyncBadge,
+  phoneBadge: false,
+  // Only while something needs you (B10).
+  homeCard: () => import('./HomeCard.svelte'),
   settingsSection: {
     label: 'Sync',
     icon: RadioTower,
@@ -28,9 +42,28 @@ export const syncManifest: ModuleManifest = {
   overlay: () => import('./SyncOverlay.svelte'),
   paletteActions: [
     {
+      id: 'now',
+      label: 'Sync now',
+      icon: RefreshCw,
+      run: () => {
+        void commands.syncNow();
+        notify('Syncing with your devices');
+      },
+    },
+    {
+      id: 'pair',
+      label: 'Pair a device',
+      icon: Plus,
+      run: (ctx) => {
+        ctx.navigate('/sync');
+        void pairing.start('show');
+      },
+    },
+    {
       id: 'conflicts',
       label: 'Open Sync conflicts',
       icon: GitMerge,
+      hint: () => paletteHint(queryClient.getQueryData(attentionQuery.queryKey)),
       run: (ctx) => ctx.navigate('/sync/conflicts'),
     },
   ],

@@ -20,6 +20,8 @@
     queryLabel?: (query: string) => string;
     /** A line for a query action saying what it would do with `query`, shown after its label. */
     queryPreview?: (query: string) => Promise<string | null>;
+    /** A short note on the right of the row ("2 waiting"), asked each time the palette renders. */
+    hint?: () => string | null;
     /** `query` is the trimmed text typed in the palette. */
     run: (query: string) => void;
   }
@@ -102,6 +104,9 @@
                     <span class="flex-1"></span>
                     {#if previewOf(item)}
                       <span class="shrink-0 text-xs text-muted" data-preview>{previewOf(item)}</span>
+                    {/if}
+                    {#if item.hint?.()}
+                      <span class="shrink-0 text-xs text-muted" data-hint>{item.hint()}</span>
                     {/if}
                     {#if item.shortcut}<Kbd keys={item.shortcut} />{/if}
                   </Command.Item>

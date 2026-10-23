@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DeviceSettings } from './bindings';
 import rules from './fixtures/sync-rules.json';
-import { createSyncMock } from './mock-sync';
+import { attentionOf, createSyncMock } from './mock-sync';
 
 const fresh = (paired = 0) => {
   const device: DeviceSettings = {};
@@ -71,5 +71,51 @@ describe('Device settings', () => {
     expect((mock.handle('sync_get', {}) as { paired_devices: number }).paired_devices).toBe(2);
     mock.handle('sync_leave', {});
     expect((mock.handle('sync_get', {}) as { paired_devices: number }).paired_devices).toBe(0);
+  });
+});
+
+describe('what needs attention (mirrors crates/sync/src/attention.rs)', () => {
+  const NOW = 100 * 86_400_000;
+  const peer = (state: string, seen: number | null, synced: number | null = null) =>
+    ({
+      id: 'p',
+      name: 'Pixel 8',
+      platform: 'phone',
+      paired_at: 0,
+      state,
+      last_seen_at: seen,
+      last_synced_at: synced,
+    }) as unknown as Parameters<typeof attentionOf>[1][number];
+
+  it('is calm while all is fine', () => {
+    expect(attentionOf(0, [peer('up_to_date', NOW, NOW)], NOW).needed).toBe(false);
+  });
+
+  it('shows for each of the three conditions alone', () => {
+    expect(attentionOf(2, [], NOW).needed).toBe(true);
+    expect(attentionOf(0, [peer('paused', NOW)], NOW)).toMatchObject({
+      needed: true,
+      paused: ['Pixel 8'],
+    });
+    expect(attentionOf(0, [peer('not_nearby', NOW - 14 * 86_400_000)], NOW).needed).toBe(true);
+    expect(attentionOf(0, [peer('not_nearby', NOW - 13 * 86_400_000)], NOW).needed).toBe(false);
+  });
+
+  it('reads the mock device’s state: conflicts wait until they are settled', () => {
+    const device: DeviceSettings = {};
+    let open = 2;
+    const mock = createSyncMock(device, 1, undefined, undefined, undefined, () => open);
+    expect(mock.handle('sync_attention', {})).toMatchObject({ conflicts: 2, needed: true });
+    open = 0;
+    expect(mock.handle('sync_attention', {})).toMatchObject({ conflicts: 0, needed: false });
+  });
+});
+
+describe('the new-conflicts choice', () => {
+  it('is Quietly until it is set, per device', () => {
+    const { mock } = fresh();
+    expect(mock.handle('sync_get', {})).toMatchObject({ toast_conflicts: false });
+    mock.handle('sync_set_option', { option: 'toast_conflicts', enabled: true });
+    expect(mock.handle('sync_get', {})).toMatchObject({ toast_conflicts: true });
   });
 });

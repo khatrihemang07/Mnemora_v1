@@ -4,7 +4,7 @@
  * exercised in the dev browser. Mirrors `enrich` in crates/sync/src/devices.rs (reachable devices
  * first, then the most recently seen) and the `sync_now` command in src-tauri/src/sync.rs.
  *
- * In the console: `__syncMock.setPeer('syncing' | 'up_to_date' | 'not_nearby' | 'paused', name?)`
+ * In the console: `__syncMock.setPeer('syncing' | 'up_to_date' | 'not_nearby' | 'paused', name?, daysAway?)`
  * puts "Pixel 8 (simulated)" (or the device called `name`) in a state; 'syncing' stays at
  * "120 of 340 changes" so the row can be looked at. "Sync now" runs a short simulated sync with every
  * device that is reachable.
@@ -137,14 +137,16 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
     },
 
     /** Console helper: put a device in a state and leave it there. */
-    setPeer(state: PeerState, name = 'Pixel 8 (simulated)') {
+    setPeer(state: PeerState, name = 'Pixel 8 (simulated)', daysAway = 0) {
       const peer = peers.find((p) => p.name === name) ?? peers[0];
       if (!peer) return;
       cancel(peer.id);
       const s = sim(peer);
       s.state = state;
       s.progress = state === 'syncing' ? { done: 120, total: TOTAL } : null;
+      // A device that is away was last seen `daysAway` days ago (16 shows the Home card).
       if (state !== 'not_nearby') s.seenAt = Date.now();
+      else if (daysAway > 0) s.seenAt = Date.now() - daysAway * DAY;
       emit();
     },
 

@@ -24,4 +24,19 @@ describe('conflicts mock', () => {
       mock.handle('sync_conflict_resolve', { id, choice: { kind: 'keep_this' } }),
     ).toThrow();
   });
+
+  it('lists what was resolved automatically, new ones until visited, and Use other once', () => {
+    const mock = createConflictsMock();
+    type Resolved = { id: string; fresh: boolean; action: string | null; used: string | null };
+    const resolved = () => (mock.handle('sync_conflicts', {}) as { resolved: Resolved[] }).resolved;
+    const priority = () => resolved().find((r) => r.id === 'mock-resolved-priority');
+    expect(priority()).toMatchObject({ fresh: true, action: 'Use P2 instead' });
+    mock.handle('sync_resolutions_visited', {});
+    expect(resolved().every((r) => !r.fresh)).toBe(true);
+    mock.handle('sync_resolution_use_other', { id: 'mock-resolved-priority' });
+    expect(priority()).toMatchObject({ action: null, used: 'Changed to P2' });
+    expect(() =>
+      mock.handle('sync_resolution_use_other', { id: 'mock-resolved-priority' }),
+    ).toThrow();
+  });
 });

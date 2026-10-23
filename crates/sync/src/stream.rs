@@ -180,7 +180,7 @@ fn records_after(
         let snapshot: Value = serde_json::from_str(&snapshot).unwrap_or(Value::Null);
         let prev: Option<String> = row.get(10)?;
         let fields = wire_fields(schema, fields, &snapshot, device == me);
-        let prev = text_prev(schema, &fields, prev);
+        let prev = field_prev(schema, &fields, prev);
         out.push(WireRecord {
             module: row.get(0)?,
             entity: entity.to_owned(),
@@ -201,9 +201,11 @@ fn records_after(
     Ok(out)
 }
 
-/// What the record's text fields replaced: the stored `prev` narrowed to the text fields the
-/// record sends.
-fn text_prev(
+/// What the record's fields replaced: the stored `prev` narrowed to the fields the record
+/// sends. A text keeps only a string (the text a receiver merges against); any other field
+/// keeps its earlier value, which is how a receiver tells two devices changing a value
+/// apart from one device changing it after the other (Resolved automatically).
+fn field_prev(
     schema: &SyncEntity,
     fields: &Map<String, Value>,
     prev: Option<String>,
@@ -213,9 +215,12 @@ fn text_prev(
     };
     prev.into_iter()
         .filter(|(k, v)| {
-            v.is_string()
-                && fields.contains_key(k)
-                && schema.field(k).is_some_and(|f| f.class == FieldClass::Text)
+            fields.contains_key(k)
+                && schema.field(k).is_some_and(|f| match f.class {
+                    FieldClass::Text => v.is_string(),
+                    FieldClass::Derived => false,
+                    FieldClass::Value | FieldClass::Order => true,
+                })
         })
         .collect()
 }

@@ -1,0 +1,927 @@
+//! Resolved automatically: what Sync decided without asking, kept as a log. A value two devices
+//! changed beside each other (the newest took), a record deleted on one device and edited on
+//! another, a Task put in the Inbox because its List is gone, a text clash on something deleted.
+//!
+//! A row is `sync_resolutions` and travels as the change-log entity `sync_resolution`. Its id is
+//! derived from what was decided (the record, the field and the clocks of the two values), so
+//! every device that meets the same decision makes the same row and a device that learns of it
+//! from another finds it already there; whichever device decided, the log has it once. The one
+//! outcome ever added is "used": the person pressed "Use ‹other› instead".
+//!
+//! Order keys and Preferences are not logged one by one: a session folds them into one local
+//! line, "Order & preferences · N changes" (`fold_add`).
+//!
+//! Never log values.
+
+use mnemora_core::changelog::{self, Change, ChangeOp};
+use mnemora_core::db::physical_now;
+use mnemora_core::error::AppResult;
+use mnemora_core::hlc::Stamp;
+use mnemora_core::settings;
+use mnemora_core::syncable::{Applied, FieldClass, RemoteChange, SyncEntity, SyncField};
+use rusqlite::{Connection, OptionalExtension, Row as SqlRow, params};
+use serde_json::{Map, Value};
+use uuid::Uuid;
+
+use crate::error::SyncError;
+use crate::wire::WireRecord;
+
+/// The change-log entity name of a resolution.
+pub const ENTITY: &str = "sync_resolution";
+
+/// What "Use ‹other› instead" sets once pressed.
+const OUTCOME: &str = "outcome";
+
+/// The resolution entity: all fixed at creation and identical on every device that makes it,
+/// but for the outcome.
+pub(crate) const RESOLUTION: SyncEntity = SyncEntity {
+    name: ENTITY,
+    fields: &[
+        SyncField::value("kind"),
+        SyncField::value("target"),
+        SyncField::value("target_id"),
+        SyncField::value("field"),
+        SyncField::value("kept"),
+        SyncField::value("kept_device"),
+        SyncField::value("replaced"),
+        SyncField::value("replaced_device"),
+        SyncField::value("extra"),
+        SyncField::value("at"),
+        SyncField::value("used_at").in_group(OUTCOME),
+        SyncField::value("used_by").in_group(OUTCOME),
+    ],
+};
+
+/// The namespace resolution ids are derived in (`UUIDv5`).
+const NAMESPACE: Uuid = Uuid::from_u128(0x4d6e_656d_6f72_6120_7265_736f_6c76_6564);
+
+/// Fields that are bookkeeping, not something a person decided: never logged.
+const BOOKKEEPING: &[&str] = &["created_at", "repeat_of", "skipped"];
+
+/// How many names a folded line keeps for "Show" (the count stays exact).
+const DETAIL_MAX: usize = 100;
+
+/// What a row is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A value two devices changed beside each other: the newest took.
+    Value,
+    /// A record deleted on one device and edited on another.
+    DeleteEdit,
+    /// A Task put in the Inbox because the List it was moved to is gone.
+    TaskInbox,
+    /// A text clash on a record that is deleted.
+    ConflictDeleted,
+    /// Order and Preference changes of one sync session (this device's own line).
+    OrderPrefs,
+}
+
+impl Kind {
+    /// The value stored and synced.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Value => "value",
+            Self::DeleteEdit => "delete_edit",
+            Self::TaskInbox => "task_inbox",
+            Self::ConflictDeleted => "conflict_deleted",
+            Self::OrderPrefs => "order_prefs",
+        }
+    }
+
+    /// The kind stored under `s`.
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "value" => Self::Value,
+            "delete_edit" => Self::DeleteEdit,
+            "task_inbox" => Self::TaskInbox,
+            "conflict_deleted" => Self::ConflictDeleted,
+            "order_prefs" => Self::OrderPrefs,
+            _ => return None,
+        })
+    }
+}
+
+/// One row as stored.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Row {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    /// The change-log entity and id of the record it is about, and the unit (field or group).
+    pub(crate) target: String,
+    pub(crate) target_id: String,
+    pub(crate) field: String,
+    /// The values that stand, and the ones that gave way, by field.
+    pub(crate) kept: Map<String, Value>,
+    pub(crate) kept_device: String,
+    pub(crate) replaced: Map<String, Value>,
+    pub(crate) replaced_device: String,
+    /// Kind-specific: the deleted List of a Task put in the Inbox; the Conflict of a clash.
+    pub(crate) extra: String,
+    /// When it was decided (clock milliseconds).
+    pub(crate) at: i64,
+    pub(crate) used_at: Option<i64>,
+    pub(crate) used_by: Option<String>,
+    /// When this device first had it.
+    pub(crate) learned_at: i64,
+    /// A folded line: how many changes, and what they were.
+    pub(crate) count: i64,
+    pub(crate) detail: Vec<Folded>,
+}
+
+const COLUMNS: &str = "id, kind, target, target_id, field, kept, kept_device, replaced, \
+                       replaced_device, extra, at, used_at, used_by, learned_at, count, detail";
+
+fn object(text: &str) -> Map<String, Value> {
+    match serde_json::from_str(text) {
+        Ok(Value::Object(m)) => m,
+        _ => Map::new(),
+    }
+}
+
+fn read(r: &SqlRow<'_>) -> rusqlite::Result<Row> {
+    Ok(Row {
+        id: r.get(0)?,
+        kind: r.get(1)?,
+        target: r.get(2)?,
+        target_id: r.get(3)?,
+        field: r.get(4)?,
+        kept: object(&r.get::<_, String>(5)?),
+        kept_device: r.get(6)?,
+        replaced: object(&r.get::<_, String>(7)?),
+        replaced_device: r.get(8)?,
+        extra: r.get(9)?,
+        at: r.get(10)?,
+        used_at: r.get(11)?,
+        used_by: r.get(12)?,
+        learned_at: r.get(13)?,
+        count: r.get(14)?,
+        detail: serde_json::from_str(&r.get::<_, String>(15)?).unwrap_or_default(),
+    })
+}
+
+/// One row.
+pub(crate) fn get(conn: &Connection, id: &str) -> Result<Option<Row>, SyncError> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {COLUMNS} FROM sync_resolutions WHERE id = ?1"),
+            [id],
+            read,
+        )
+        .optional()?)
+}
+
+/// Every row, newest first.
+pub(crate) fn all(conn: &Connection) -> Result<Vec<Row>, SyncError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS} FROM sync_resolutions ORDER BY at DESC, id"
+    ))?;
+    Ok(stmt.query_map([], read)?.collect::<Result<_, _>>()?)
+}
+
+/// The moment of the person's last look at the log; nothing before the first.
+pub(crate) fn visited_at(conn: &Connection) -> Result<i64, SyncError> {
+    Ok(conn
+        .query_row("SELECT at FROM sync_resolution_visit", [], |r| r.get(0))
+        .optional()?
+        .unwrap_or(0))
+}
+
+/// Notes that the person has looked at the log now: the rows it holds stop being new.
+pub fn mark_visited(conn: &Connection) -> Result<(), SyncError> {
+    conn.execute(
+        "INSERT INTO sync_resolution_visit(one, at) VALUES (1, ?1)
+         ON CONFLICT(one) DO UPDATE SET at = excluded.at",
+        [physical_now(conn)],
+    )?;
+    Ok(())
+}
+
+fn stamp_text(s: &Stamp) -> String {
+    format!("{}.{}.{}", s.ms, s.counter, s.device)
+}
+
+fn make_id(parts: &[&str]) -> String {
+    Uuid::new_v5(&NAMESPACE, parts.join("\0").as_bytes()).to_string()
+}
+
+fn json(row: &Row) -> Value {
+    let mut m = Map::new();
+    let mut put = |k: &str, v: Value| {
+        m.insert(k.to_owned(), v);
+    };
+    put("kind", row.kind.clone().into());
+    put("target", row.target.clone().into());
+    put("target_id", row.target_id.clone().into());
+    put("field", row.field.clone().into());
+    put("kept", Value::Object(row.kept.clone()).to_string().into());
+    put("kept_device", row.kept_device.clone().into());
+    put(
+        "replaced",
+        Value::Object(row.replaced.clone()).to_string().into(),
+    );
+    put("replaced_device", row.replaced_device.clone().into());
+    put("extra", row.extra.clone().into());
+    put("at", row.at.into());
+    if let Some(at) = row.used_at {
+        put("used_at", at.into());
+        put("used_by", row.used_by.clone().into());
+    }
+    Value::Object(m)
+}
+
+fn insert(conn: &Connection, row: &Row) -> Result<bool, SyncError> {
+    let n = conn.execute(
+        "INSERT OR IGNORE INTO sync_resolutions(id, kind, target, target_id, field, kept,
+                kept_device, replaced, replaced_device, extra, at, used_at, used_by, learned_at,
+                count, detail)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+        params![
+            row.id,
+            row.kind,
+            row.target,
+            row.target_id,
+            row.field,
+            Value::Object(row.kept.clone()).to_string(),
+            row.kept_device,
+            Value::Object(row.replaced.clone()).to_string(),
+            row.replaced_device,
+            row.extra,
+            row.at,
+            row.used_at,
+            row.used_by,
+            row.learned_at,
+            row.count,
+            serde_json::to_string(&row.detail).unwrap_or_else(|_| "[]".into()),
+        ],
+    )?;
+    Ok(n > 0)
+}
+
+fn record(conn: &Connection, row: &Row, op: ChangeOp) -> Result<(), SyncError> {
+    changelog::record(
+        conn,
+        &Change {
+            module: crate::MODULE_ID.to_owned(),
+            entity: ENTITY.to_owned(),
+            entity_id: row.id.clone(),
+            op,
+            session_id: None,
+            snapshot: json(row),
+        },
+    )?;
+    Ok(())
+}
+
+/// Adds a row unless this device already has it; a new one is recorded as a change so it
+/// reaches the other devices (which make the same row on their own when they meet the same
+/// decision).
+fn note(conn: &Connection, row: &Row) -> Result<bool, SyncError> {
+    if !insert(conn, row)? {
+        return Ok(false);
+    }
+    record(conn, row, ChangeOp::Create)?;
+    tracing::info!(target: "sync", kind = %row.kind, "an automatic decision was logged");
+    Ok(true)
+}
+
+fn blank(kind: Kind, id: String, at: i64, now: i64) -> Row {
+    Row {
+        id,
+        kind: kind.as_str().to_owned(),
+        target: String::new(),
+        target_id: String::new(),
+        field: String::new(),
+        kept: Map::new(),
+        kept_device: String::new(),
+        replaced: Map::new(),
+        replaced_device: String::new(),
+        extra: String::new(),
+        at,
+        used_at: None,
+        used_by: None,
+        learned_at: now,
+        count: 0,
+        detail: Vec::new(),
+    }
+}
+
+// ---------------------------------------------------------------- value clashes
+
+/// A value decided newest-wins against a different one that was changed beside it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Clash {
+    /// The field, or the group it belongs to.
+    pub(crate) unit: String,
+    pub(crate) kept: Map<String, Value>,
+    pub(crate) kept_stamp: Stamp,
+    pub(crate) replaced: Map<String, Value>,
+    pub(crate) replaced_stamp: Stamp,
+}
+
+/// An order key or Preference a sync took, for the session's folded line.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Folded {
+    /// `order` or `preference`.
+    pub kind: String,
+    /// The change-log entity.
+    pub entity: String,
+    /// Its id.
+    pub entity_id: String,
+    /// The field, or for a Preference its `module.key`.
+    pub key: String,
+}
+
+/// One unit of a record: a field, or a group of fields that is decided as one.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Unit<'a> {
+    pub(crate) key: &'a str,
+    pub(crate) members: &'a [&'a str],
+    pub(crate) class: FieldClass,
+}
+
+/// What a received unit of fields amounted to.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Observed {
+    Clash(Clash),
+    Folded(Folded),
+}
+
+/// What deciding one unit of `record` means for the log. `stored` is the newest clock held for
+/// the unit and `current` the record's state before this record (the values that stand);
+/// `take` says the record's values won.
+///
+/// A clash is a different value that was changed BESIDE the stored one: the record's author
+/// replaced something other than what stands here (`prev`). A change made after another one
+/// replaced exactly what stands, and is just a change. Order keys and Preferences are counted
+/// for the folded line whenever the newest one takes and moves the value.
+pub(crate) fn observe(
+    record: &WireRecord,
+    which: &Unit<'_>,
+    clocks: (Option<&Stamp>, &Stamp),
+    take: bool,
+    current: &Value,
+) -> Option<Observed> {
+    let Unit {
+        key: unit,
+        members,
+        class,
+    } = *which;
+    let (stored, incoming) = clocks;
+    let stands = |m: &str| current.get(m).unwrap_or(&Value::Null);
+    let theirs: Map<String, Value> = members
+        .iter()
+        .filter_map(|m| record.fields.get(*m).map(|v| ((*m).to_owned(), v.clone())))
+        .collect();
+    if theirs.iter().all(|(k, v)| stands(k) == v) {
+        return None;
+    }
+    let ours: Map<String, Value> = members
+        .iter()
+        .map(|m| ((*m).to_owned(), stands(m).clone()))
+        .collect();
+    if record.entity == settings::ENTITY || class == FieldClass::Order {
+        if !take {
+            return None;
+        }
+        let key = if record.entity == settings::ENTITY {
+            record.entity_id.clone()
+        } else {
+            unit.to_owned()
+        };
+        return Some(Observed::Folded(Folded {
+            kind: if record.entity == settings::ENTITY {
+                "preference"
+            } else {
+                "order"
+            }
+            .to_owned(),
+            entity: record.entity.clone(),
+            entity_id: record.entity_id.clone(),
+            key,
+        }));
+    }
+    if class != FieldClass::Value || members.iter().any(|m| BOOKKEEPING.contains(m)) {
+        return None;
+    }
+    let stored = stored?;
+    let beside = members.iter().any(|m| {
+        record
+            .prev
+            .get(*m)
+            .is_some_and(|before| before != stands(m))
+    });
+    if !beside {
+        return None;
+    }
+    Some(Observed::Clash(if take {
+        Clash {
+            unit: unit.to_owned(),
+            kept: theirs,
+            kept_stamp: incoming.clone(),
+            replaced: ours,
+            replaced_stamp: stored.clone(),
+        }
+    } else {
+        Clash {
+            unit: unit.to_owned(),
+            kept: ours,
+            kept_stamp: stored.clone(),
+            replaced: theirs,
+            replaced_stamp: incoming.clone(),
+        }
+    }))
+}
+
+/// Logs the clashes found in one received record.
+pub(crate) fn note_clashes(
+    conn: &Connection,
+    entity: &str,
+    entity_id: &str,
+    clashes: &[Clash],
+) -> Result<(), SyncError> {
+    let now = physical_now(conn);
+    for c in clashes {
+        let id = make_id(&[
+            "value",
+            entity,
+            entity_id,
+            &c.unit,
+            &stamp_text(&c.kept_stamp),
+            &stamp_text(&c.replaced_stamp),
+        ]);
+        let mut row = blank(
+            Kind::Value,
+            id,
+            c.kept_stamp.ms.max(c.replaced_stamp.ms),
+            now,
+        );
+        entity.clone_into(&mut row.target);
+        entity_id.clone_into(&mut row.target_id);
+        row.field.clone_from(&c.unit);
+        row.kept.clone_from(&c.kept);
+        row.kept_device.clone_from(&c.kept_stamp.device);
+        row.replaced.clone_from(&c.replaced);
+        row.replaced_device.clone_from(&c.replaced_stamp.device);
+        note(conn, &row)?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- delete and edit
+
+/// Logs a record that is deleted here although another device edited it without having seen
+/// the delete: both took effect (it is deleted, with the edit inside, back if restored).
+/// Called after a record of a deleted entity is stored. The edit is concurrent when its clock
+/// is later than the delete's: whoever wrote it had not seen the delete, or the delete's own
+/// author would have had a later clock.
+pub(crate) fn note_delete_edit(
+    conn: &Connection,
+    schema: &SyncEntity,
+    entity_id: &str,
+) -> Result<(), SyncError> {
+    let entity = schema.name;
+    let delete: Option<(i64, i64, String)> = conn
+        .query_row(
+            "SELECT hlc_ms, hlc_counter, origin_device FROM change_log
+             WHERE entity = ?1 AND entity_id = ?2 AND json_extract(fields, '$.deleted_at') IS NOT NULL
+             ORDER BY hlc_ms DESC, hlc_counter DESC, origin_device DESC LIMIT 1",
+            [entity, entity_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((ms, counter, device)) = delete else {
+        return Ok(());
+    };
+    let edit: Option<(String, i64, String)> = conn
+        .query_row(
+            "SELECT origin_device, hlc_ms, fields FROM change_log
+             WHERE entity = ?1 AND entity_id = ?2 AND origin_device != ?3
+               AND (hlc_ms, hlc_counter) > (?4, ?5) AND fields IS NOT NULL
+               AND json_type(fields, '$.deleted_at') IS NULL AND op != 'delete'
+             ORDER BY hlc_ms, hlc_counter, origin_device LIMIT 1",
+            params![entity, entity_id, device, ms, counter],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let Some((edit_device, edit_ms, fields)) = edit else {
+        return Ok(());
+    };
+    let id = make_id(&[
+        "delete_edit",
+        entity,
+        entity_id,
+        &stamp_text(&Stamp {
+            ms,
+            counter,
+            device: device.clone(),
+        }),
+    ]);
+    let mut row = blank(Kind::DeleteEdit, id, ms.max(edit_ms), physical_now(conn));
+    entity.clone_into(&mut row.target);
+    entity_id.clone_into(&mut row.target_id);
+    row.kept_device = device;
+    // Which fields the edit touched, not what it wrote.
+    row.replaced = object(&fields)
+        .keys()
+        .filter(|k| {
+            schema
+                .field(k)
+                .is_some_and(|f| f.class != FieldClass::Derived)
+        })
+        .map(|k| (k.clone(), Value::Null))
+        .collect();
+    row.replaced_device = edit_device;
+    note(conn, &row)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- Inbox and deleted clashes
+
+/// Logs a Task put in the Inbox because the List it was moved to is gone here. `by` is the
+/// device that moved it, `at` the clock time of that record.
+pub(crate) fn note_task_inbox(
+    conn: &Connection,
+    task_id: &str,
+    list_id: &str,
+    by: &str,
+    at: i64,
+) -> Result<(), SyncError> {
+    let mut row = blank(
+        Kind::TaskInbox,
+        make_id(&["task_inbox", task_id, list_id]),
+        at,
+        physical_now(conn),
+    );
+    row.target = "todo_task".into();
+    task_id.clone_into(&mut row.target_id);
+    row.field = "list_id".into();
+    row.kept.insert("list_id".into(), Value::Null);
+    row.replaced
+        .insert("list_id".into(), Value::String(list_id.to_owned()));
+    by.clone_into(&mut row.replaced_device);
+    list_id.clone_into(&mut row.extra);
+    note(conn, &row)?;
+    Ok(())
+}
+
+/// Logs a text clash that was settled without asking because its record is deleted.
+pub(crate) fn note_conflict_deleted(conn: &Connection, conflict: &str) -> Result<(), SyncError> {
+    let Some(c) = crate::conflicts::get(conn, conflict)? else {
+        return Ok(());
+    };
+    let mut row = blank(
+        Kind::ConflictDeleted,
+        make_id(&["conflict_deleted", conflict]),
+        c.raised_at,
+        physical_now(conn),
+    );
+    row.target = c.target;
+    row.target_id = c.target_id;
+    row.field = c.field;
+    row.kept_device = c.a_device;
+    row.replaced_device = c.b_device;
+    row.extra = c.id;
+    note(conn, &row)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- Order and Preferences
+
+/// Adds what a batch of one session took to that session's folded line, making it with the
+/// first. The line is this device's own account of the session: it is not recorded as a change.
+pub(crate) fn fold_add(
+    conn: &Connection,
+    session: &str,
+    peer: &str,
+    changes: &[Folded],
+) -> Result<(), SyncError> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    let now = physical_now(conn);
+    let mut row = get(conn, session)?.unwrap_or_else(|| {
+        let mut row = blank(Kind::OrderPrefs, session.to_owned(), now, now);
+        peer.clone_into(&mut row.replaced_device);
+        row
+    });
+    row.count += i64::try_from(changes.len()).unwrap_or(i64::MAX);
+    for c in changes {
+        if row.detail.len() < DETAIL_MAX && !row.detail.contains(c) {
+            row.detail.push(c.clone());
+        }
+    }
+    conn.execute(
+        "INSERT INTO sync_resolutions(id, kind, replaced_device, at, learned_at, count, detail)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5, ?6)
+         ON CONFLICT(id) DO UPDATE SET count = excluded.count, detail = excluded.detail",
+        params![
+            row.id,
+            Kind::OrderPrefs.as_str(),
+            row.replaced_device,
+            row.at,
+            row.count,
+            serde_json::to_string(&row.detail).unwrap_or_else(|_| "[]".into()),
+        ],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- remote rows
+
+/// Takes the values of a resolution received from another device (Sync's side of the Module
+/// contract). The row is made from a record that has all of it; the outcome only ever moves
+/// from unused to used.
+pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
+    let id = change.entity_id;
+    let f = change.fields;
+    let text = |k: &str| f.get(k).and_then(Value::as_str).map(str::to_owned);
+    let int = |k: &str| f.get(k).and_then(Value::as_i64);
+    let before = get(conn, id)?;
+    if before.is_none() {
+        let made = (|| {
+            let kind = text("kind").filter(|k| Kind::parse(k).is_some())?;
+            Some(Row {
+                id: id.to_owned(),
+                kind,
+                target: text("target")?,
+                target_id: text("target_id")?,
+                field: text("field")?,
+                kept: object(&text("kept")?),
+                kept_device: text("kept_device")?,
+                replaced: object(&text("replaced")?),
+                replaced_device: text("replaced_device")?,
+                extra: text("extra")?,
+                at: int("at")?,
+                used_at: None,
+                used_by: None,
+                learned_at: physical_now(conn),
+                count: 0,
+                detail: Vec::new(),
+            })
+        })();
+        let Some(row) = made else {
+            tracing::debug!(target: "sync", "a resolution record without its creation, kept for relay only");
+            return Ok(Applied {
+                snapshot: Value::Object(f.clone()),
+                changed: false,
+                events: Vec::new(),
+            });
+        };
+        insert(conn, &row)?;
+    }
+    if let Some(at) = int("used_at") {
+        conn.execute(
+            "UPDATE sync_resolutions SET used_at = ?2, used_by = ?3
+             WHERE id = ?1 AND used_at IS NULL",
+            params![id, at, text("used_by")],
+        )?;
+    }
+    let after = get(conn, id)?;
+    Ok(Applied {
+        snapshot: after.as_ref().map_or(Value::Null, json),
+        changed: before != after,
+        events: Vec::new(),
+    })
+}
+
+// ---------------------------------------------------------------- Use ‹other› instead
+
+/// What the app must write to put the value that gave way back, through the owning Module.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsePlan {
+    /// The change-log entity of the record.
+    pub entity: String,
+    /// Its id.
+    pub entity_id: String,
+    /// The field, or the group it belongs to.
+    pub unit: String,
+    /// The value(s) to write, by field.
+    pub values: Map<String, Value>,
+}
+
+/// What to write for "Use ‹other› instead". Errors if the row is gone, was already used, or is
+/// not a value that can be written back.
+pub fn plan_use(conn: &Connection, id: &str) -> Result<UsePlan, SyncError> {
+    let Some(row) = get(conn, id)? else {
+        return Err(SyncError::Validation("That item is gone"));
+    };
+    if row.used_at.is_some() {
+        return Err(SyncError::Validation("That was already changed"));
+    }
+    if Kind::parse(&row.kind) != Some(Kind::Value) {
+        return Err(SyncError::Validation("That cannot be changed back"));
+    }
+    Ok(UsePlan {
+        entity: row.target,
+        entity_id: row.target_id,
+        unit: row.field,
+        values: row.replaced,
+    })
+}
+
+/// Marks a row used, as a change that reaches the other devices.
+pub fn finish_use(conn: &Connection, id: &str, by: &str) -> Result<(), SyncError> {
+    let now = physical_now(conn);
+    let n = conn.execute(
+        "UPDATE sync_resolutions SET used_at = ?2, used_by = ?3 WHERE id = ?1 AND used_at IS NULL",
+        params![id, now, by],
+    )?;
+    if n > 0
+        && let Some(row) = get(conn, id)?
+    {
+        record(conn, &row, ChangeOp::Update)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn stamp(ms: i64, device: &str) -> Stamp {
+        Stamp {
+            ms,
+            counter: 0,
+            device: device.into(),
+        }
+    }
+
+    fn record(entity: &str, fields: Value, prev: Value) -> WireRecord {
+        WireRecord {
+            module: "todo".into(),
+            entity: entity.into(),
+            entity_id: "t1".into(),
+            op: "update".into(),
+            session_id: None,
+            at: 1,
+            origin_device: "b".into(),
+            origin_seq: 1,
+            hlc_ms: 10,
+            hlc_counter: 0,
+            fields: fields.as_object().unwrap().clone(),
+            prev: prev.as_object().unwrap().clone(),
+        }
+    }
+
+    fn unit(key: &str, class: FieldClass) -> Unit<'_> {
+        Unit {
+            key,
+            members: match key {
+                "priority" => &["priority"],
+                "sort_key" => &["sort_key"],
+                "skipped" => &["skipped"],
+                _ => &["value"],
+            },
+            class,
+        }
+    }
+
+    fn priority(take: bool, fields: Value, prev: Value, current: Value) -> Option<Observed> {
+        observe(
+            &record("todo_task", fields, prev),
+            &unit("priority", FieldClass::Value),
+            (Some(&stamp(5, "a")), &stamp(10, "b")),
+            take,
+            &current,
+        )
+    }
+
+    #[test]
+    fn a_value_changed_beside_the_one_that_stands_is_a_clash_either_way_round() {
+        let took = priority(
+            true,
+            json!({"priority": 2}),
+            json!({"priority": 4}),
+            json!({"priority": 1}),
+        );
+        let Some(Observed::Clash(c)) = took else {
+            panic!("expected a clash");
+        };
+        assert_eq!(c.kept["priority"], 2);
+        assert_eq!(c.replaced["priority"], 1);
+        assert_eq!(c.kept_stamp.device, "b");
+
+        let kept = priority(
+            false,
+            json!({"priority": 2}),
+            json!({"priority": 4}),
+            json!({"priority": 1}),
+        );
+        let Some(Observed::Clash(c)) = kept else {
+            panic!("expected a clash");
+        };
+        assert_eq!(c.kept["priority"], 1);
+        assert_eq!(c.replaced["priority"], 2);
+        assert_eq!(c.kept_stamp.device, "a", "the stored value's author");
+    }
+
+    #[test]
+    fn a_change_made_after_the_one_that_stands_is_not_a_clash() {
+        // The author replaced exactly what stands here.
+        assert!(
+            priority(
+                true,
+                json!({"priority": 2}),
+                json!({"priority": 1}),
+                json!({"priority": 1})
+            )
+            .is_none()
+        );
+        // Both devices chose the same value.
+        assert!(
+            priority(
+                true,
+                json!({"priority": 1}),
+                json!({"priority": 4}),
+                json!({"priority": 1})
+            )
+            .is_none()
+        );
+        // The earlier value is not known: nothing can be said.
+        assert!(
+            priority(
+                true,
+                json!({"priority": 2}),
+                json!({}),
+                json!({"priority": 1})
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn order_keys_and_preferences_are_folded_not_logged() {
+        let r = record(
+            "todo_task",
+            json!({"sort_key": "b"}),
+            json!({"sort_key": "a"}),
+        );
+        let seen = observe(
+            &r,
+            &unit("sort_key", FieldClass::Order),
+            (Some(&stamp(5, "a")), &stamp(10, "b")),
+            true,
+            &json!({"sort_key": "c"}),
+        );
+        assert!(matches!(seen, Some(Observed::Folded(f)) if f.kind == "order"));
+        let lost = observe(
+            &r,
+            &unit("sort_key", FieldClass::Order),
+            (Some(&stamp(50, "a")), &stamp(10, "b")),
+            false,
+            &json!({"sort_key": "c"}),
+        );
+        assert!(lost.is_none(), "an order that gave way changed nothing");
+
+        let pref = record("setting", json!({"value": "sun"}), json!({"value": "mon"}));
+        let seen = observe(
+            &pref,
+            &unit("value", FieldClass::Value),
+            (Some(&stamp(5, "a")), &stamp(10, "b")),
+            true,
+            &json!({"value": "tue"}),
+        );
+        assert!(matches!(seen, Some(Observed::Folded(f)) if f.kind == "preference"));
+    }
+
+    #[test]
+    fn bookkeeping_fields_are_never_logged() {
+        let r = record("todo_task", json!({"skipped": 2}), json!({"skipped": 1}));
+        assert!(
+            observe(
+                &r,
+                &unit("skipped", FieldClass::Value),
+                (Some(&stamp(5, "a")), &stamp(10, "b")),
+                true,
+                &json!({"skipped": 3}),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn the_id_is_the_same_whichever_device_decided() {
+        let kept = stamp(10, "b");
+        let replaced = stamp(5, "a");
+        let a = make_id(&[
+            "value",
+            "e",
+            "1",
+            "priority",
+            &stamp_text(&kept),
+            &stamp_text(&replaced),
+        ]);
+        let b = make_id(&[
+            "value",
+            "e",
+            "1",
+            "priority",
+            &stamp_text(&kept),
+            &stamp_text(&replaced),
+        ]);
+        assert_eq!(a, b);
+        assert!(Uuid::parse_str(&a).is_ok());
+    }
+}

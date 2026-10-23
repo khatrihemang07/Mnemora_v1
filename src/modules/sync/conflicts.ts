@@ -1,4 +1,5 @@
 import type { ConflictRow, ConflictSubject } from '../../lib/ipc/bindings';
+import { clockParts, type TimeFormat } from '../../lib/time/format';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -34,21 +35,28 @@ export function sidesText(row: Pick<ConflictRow, 'showing' | 'other'>): string {
   return `${row.showing.device} ${clockText(row.showing.at)} · ${row.other.device} ${clockText(row.other.at)}`;
 }
 
-export interface DayGroup {
+export interface DayGroup<T = ConflictRow> {
   key: string;
   title: string;
   subtitle: string;
-  rows: ConflictRow[];
+  rows: T[];
 }
 
-/** Rows grouped by the day the newest version was written, newest day first (F11: by day). */
-export function groupByDay(rows: ConflictRow[], now: Date = new Date()): DayGroup[] {
-  const groups = new Map<string, DayGroup>();
+/**
+ * Rows grouped by the day `when` gives for each, newest day first (F11: by day). Conflicts group
+ * by when the newest version was written, Resolved automatically by when it was decided.
+ */
+export function groupByDay<T = ConflictRow>(
+  rows: T[],
+  now: Date = new Date(),
+  when: (row: T) => number = (row) => (row as ConflictRow).raised_at,
+): DayGroup<T>[] {
+  const groups = new Map<string, DayGroup<T>>();
   const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
   const today = dayKey(now);
   const yesterday = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-  for (const row of [...rows].sort((a, b) => b.raised_at - a.raised_at)) {
-    const d = new Date(row.raised_at);
+  for (const row of [...rows].sort((a, b) => when(b) - when(a))) {
+    const d = new Date(when(row));
     const key = dayKey(d);
     let group = groups.get(key);
     if (!group) {
@@ -75,4 +83,10 @@ export function conflictIdOf(pathname: string): string | null {
 /** "Mac" -> "Use Mac's". */
 export function usePossessive(device: string): string {
   return `Use ${device}’s`;
+}
+
+/** "09:31" or "9:31 AM", the way the Time format Preference says. */
+export function timeText(ms: number, format: TimeFormat): string {
+  const { hm, period } = clockParts(new Date(ms), format);
+  return period ? `${hm} ${period}` : hm;
 }

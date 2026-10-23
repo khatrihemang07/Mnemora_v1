@@ -22,6 +22,7 @@ use crate::error::SyncError;
 use crate::held::{self, HeldUnit};
 use crate::merge::{Verdict, decide};
 use crate::registry::Registry;
+use crate::resolutions::{self, Clash, Folded, Observed, Unit};
 use crate::texts;
 use crate::vector;
 use crate::wire::WireRecord;
@@ -36,6 +37,8 @@ pub struct Applied {
     /// What the Modules report about the records they took: the hook where the Activity log and
     /// Resolved automatically will record List merges, Tasks put in the Inbox and the like.
     pub events: Vec<SyncEvent>,
+    /// Order keys and Preferences the batch took, for the session's "Order & preferences" line.
+    pub folded: Vec<Folded>,
 }
 
 /// Applies `records` atomically: all of them, with the vector advanced, or none.
@@ -134,6 +137,7 @@ pub fn apply_batch(
             &decided.kept_back,
         )?;
         applied.stored += 1;
+        let first_event = applied.events.len();
         applied.events.extend(outcome.events);
         if outcome.changed && record.entity != settings::ENTITY {
             applied.changed.insert(record.module.clone());
@@ -149,6 +153,20 @@ pub fn apply_batch(
             applied.changed.insert(module.id().to_owned());
         }
         applied.events.extend(settled.events);
+        // Logged after the record is stored too: what was decided is on the record.
+        resolutions::note_clashes(&tx, &record.entity, &record.entity_id, &decided.clashes)?;
+        applied.folded.extend(decided.folded);
+        for event in &applied.events[first_event..] {
+            if let SyncEvent::TaskToInbox { task_id, list_id } = event {
+                resolutions::note_task_inbox(
+                    &tx,
+                    task_id,
+                    list_id,
+                    &record.origin_device,
+                    record.hlc_ms,
+                )?;
+            }
+        }
         // After the record is stored, so what is recorded now is stamped later than it.
         applied
             .events
@@ -178,6 +196,10 @@ struct Decided {
     kept_back: Vec<HeldUnit>,
     /// Text units the record touched that nothing holds back: settled once the batch is stored.
     text_units: Vec<String>,
+    /// Values that were changed beside the ones that stand here: logged as resolved automatically.
+    clashes: Vec<Clash>,
+    /// Order keys and Preferences that moved, for the session's folded line.
+    folded: Vec<Folded>,
 }
 
 /// The values of `record` that win against the clocks held, whole groups at a time, and the
@@ -206,6 +228,15 @@ fn decide_fields(
         device: record.origin_device.clone(),
     };
     let held = clocks::load(conn, &record.entity, &record.entity_id)?;
+    // What stands now, for telling a change made beside another from one made after it. Sync's
+    // own records are no business of the log, and a record that creates has nothing to clash with.
+    let current = if op == ChangeOp::Create || record.entity.starts_with("sync_") {
+        None
+    } else {
+        // A Preference never set here has no state yet: what the other device sets is a change.
+        texts::current(conn, &record.entity, &record.entity_id)?
+            .or_else(|| (record.entity == settings::ENTITY).then(|| Value::Object(Map::new())))
+    };
     // Units: each ungrouped field alone, each group as one.
     let mut units: Vec<(&str, Vec<&str>, FieldClass)> = Vec::new();
     for field in schema.fields {
@@ -228,8 +259,23 @@ fn decide_fields(
     for (key, members, class) in units {
         let is_text = class == FieldClass::Text;
         let newest_held = members.iter().filter_map(|m| held.get(*m)).max();
-        if !is_text && decide(class, newest_held, &stamp) != Verdict::Take {
-            continue;
+        if !is_text {
+            let take = decide(class, newest_held, &stamp) == Verdict::Take;
+            if let Some(current) = &current {
+                let unit = Unit {
+                    key,
+                    members: &members,
+                    class,
+                };
+                match resolutions::observe(record, &unit, (newest_held, &stamp), take, current) {
+                    Some(Observed::Clash(c)) => out.clashes.push(c),
+                    Some(Observed::Folded(f)) => out.folded.push(f),
+                    None => {}
+                }
+            }
+            if !take {
+                continue;
+            }
         }
         let mut values = Map::new();
         for member in members {
@@ -285,6 +331,9 @@ fn after_record(
         return Ok(events);
     }
     if snapshot.get("deleted_at").is_some_and(|d| !d.is_null()) {
+        if let Some((_, schema)) = registry.find(&record.entity) {
+            resolutions::note_delete_edit(conn, schema, &record.entity_id)?;
+        }
         return conflicts::settle_deleted(conn, &record.entity, &record.entity_id);
     }
     Ok(Vec::new())

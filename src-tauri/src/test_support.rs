@@ -38,8 +38,9 @@ use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
     JournalChangedEvent, LinkOpenedEvent, SettingsChangedEvent, SyncConflictsEvent,
-    SyncPairingEvent, SyncPeersEvent, TodoChangedEvent, TodoListsMergedEvent, commands, editing,
-    journal, links, modules, settings_store, sync, sync_conflicts, todo,
+    SyncNewConflictsEvent, SyncPairingEvent, SyncPeersEvent, TodoChangedEvent,
+    TodoListsMergedEvent, commands, editing, journal, links, modules, settings_store, sync,
+    sync_conflicts, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a

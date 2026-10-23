@@ -10,6 +10,7 @@
   import Dialog from '../../lib/ui/Dialog.svelte';
   import SettingRow from '../../lib/ui/SettingRow.svelte';
   import SettingSection from '../../lib/ui/SettingSection.svelte';
+  import SegmentedControl from '../../lib/ui/SegmentedControl.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import { viewport } from '../../lib/viewport.svelte';
@@ -84,6 +85,17 @@
       label="Visible on this network"
       checked={sync.data?.visible ?? true}
       onchange={(on) => setOption('visible', on)}
+    />
+  </SettingRow>
+  <SettingRow label="New conflicts" hint="On this device only.">
+    <SegmentedControl
+      label="New conflicts"
+      value={sync.data?.toast_conflicts ? 'toast' : 'quietly'}
+      options={[
+        { value: 'quietly', label: 'Quietly' },
+        { value: 'toast', label: 'Show a toast' },
+      ]}
+      onchange={(v) => setOption('toast_conflicts', v === 'toast')}
     />
   </SettingRow>
 </SettingSection>

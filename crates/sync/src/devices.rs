@@ -77,6 +77,18 @@ fn enrich(
     rows
 }
 
+/// The paired devices as the Devices tab lists them.
+#[allow(
+    clippy::implicit_hasher,
+    reason = "the callers pass the manager's plain map"
+)]
+pub(crate) fn peer_rows(
+    conn: &Connection,
+    live: &HashMap<String, PeerLive>,
+) -> AppResult<Vec<PeerRow>> {
+    Ok(enrich(peers::list(conn)?, &peer_state::all(conn)?, live))
+}
+
 /// The Devices tab's data. `listening` is where the listener is bound, if it is; `live` is what
 /// the session manager says about each paired device.
 #[allow(

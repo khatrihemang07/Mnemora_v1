@@ -4,9 +4,11 @@
  */
 import type {
   AppError,
+  Attention,
   DeviceSettings,
   DevicesView,
   PairingView,
+  PeerRow,
   PeerState,
   SyncOption,
   SyncState,
@@ -37,7 +39,32 @@ const COMMANDS = [
   'sync_devices',
   'sync_now',
   'sync_resume',
+  'sync_attention',
 ];
+
+const DAY_MS = 86_400_000;
+
+/** Mirrors `attention_of` in crates/sync/src/attention.rs: what the Home card, badge and hint read. */
+export function attentionOf(conflicts: number, peers: PeerRow[], now: number): Attention {
+  const paused = peers.filter((p) => p.state === 'paused').map((p) => p.name);
+  const unseen = peers
+    .filter((p) => p.state === 'not_nearby')
+    .map((p) => ({
+      name: p.name,
+      days: Math.floor((now - (p.last_seen_at ?? p.paired_at)) / DAY_MS),
+    }))
+    .filter((u) => u.days >= 14);
+  const last = peers
+    .filter((p) => p.last_synced_at !== null)
+    .sort((a, b) => (b.last_synced_at ?? 0) - (a.last_synced_at ?? 0))[0];
+  return {
+    conflicts,
+    paused,
+    unseen,
+    last_synced: last ? { device: last.name, at: last.last_synced_at ?? 0 } : null,
+    needed: conflicts > 0 || paused.length > 0 || unseen.length > 0,
+  };
+}
 
 /** Two devices already paired, for `?paired=2`. */
 const FAKE_PEERS: PairedBase[] = [
@@ -62,6 +89,7 @@ export function createSyncMock(
   emit: (view: PairingView) => void = () => {},
   flags: PairingFlags = defaultPairingFlags(),
   emitPeers: () => void = () => {},
+  openConflicts: () => number = () => 0,
 ) {
   const peers: PairedBase[] = FAKE_PEERS.slice(0, pairedDevices).map((p) => ({ ...p }));
   const sync = () => {
@@ -71,6 +99,7 @@ export function createSyncMock(
       automatic: true,
       mobile_data: false,
       visible: true,
+      toast_conflicts: false,
       ...device.sync,
     };
     return device.sync as Required<NonNullable<DeviceSettings['sync']>>;
@@ -84,6 +113,7 @@ export function createSyncMock(
       automatic: s.automatic,
       mobile_data: s.mobile_data,
       visible: s.visible,
+      toast_conflicts: s.toast_conflicts,
       paired_devices: peers.length,
     };
   };
@@ -99,7 +129,8 @@ export function createSyncMock(
 
   const live = createLiveMock(peers, emitPeers, () => sync().enabled);
   // Console: `__syncMock.setPeer('syncing')` (see mock-sync-live.ts).
-  flags.setPeer = (state: PeerState, name?: string) => live.setPeer(state, name);
+  flags.setPeer = (state: PeerState, name?: string, daysAway?: number) =>
+    live.setPeer(state, name, daysAway);
 
   const devices = (): DevicesView => ({
     this_device: {
@@ -148,6 +179,8 @@ export function createSyncMock(
           return null;
         case 'sync_devices':
           return devices();
+        case 'sync_attention':
+          return attentionOf(openConflicts(), live.rows(), Date.now());
         default:
           return undefined;
       }

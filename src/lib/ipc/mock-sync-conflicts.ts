@@ -12,6 +12,7 @@ import type {
   ConflictRow,
   ConflictView,
   DiffSpan,
+  ResolvedRow,
 } from './bindings';
 
 interface Sample {
@@ -29,7 +30,79 @@ const COMMANDS = [
   'sync_conflict',
   'sync_conflict_draft',
   'sync_conflict_resolve',
+  'sync_resolution_use_other',
+  'sync_resolutions_visited',
 ];
+
+/**
+ * A few "Resolved automatically" rows, worded as Rust words them (crates/sync/src/resolved_view.rs):
+ * a Priority clash and a Due date clash with their buttons, a delete that met an edit, a Task put in
+ * the Inbox, and a session's folded Order & preferences line. The first two are new since the last
+ * visit. `at` is minutes past the day's start so the rows group under Today.
+ */
+function resolvedSamples(now: number): ResolvedRow[] {
+  const day = new Date(now);
+  const at = (h: number, m: number) =>
+    new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m).getTime();
+  const base = { module: 'todo', action: null, used: null, changes: [] as string[] };
+  return [
+    {
+      ...base,
+      id: 'mock-resolved-priority',
+      kind: 'value',
+      icon: 'flag',
+      title: '‘Water plants’ · Priority',
+      detail: 'P1 (Alex’s MacBook Pro) kept · P2 (Pixel 8 (simulated)) replaced',
+      at: at(9, 31),
+      fresh: true,
+      action: 'Use P2 instead',
+    },
+    {
+      ...base,
+      id: 'mock-resolved-due',
+      kind: 'value',
+      icon: 'calendar',
+      title: '‘Call bank’ · Due date',
+      detail: 'Fri 23 Oct (Pixel 8 (simulated)) kept · Thu 22 Oct (Alex’s MacBook Pro) replaced',
+      at: at(9, 20),
+      fresh: true,
+      action: 'Use Thu 22 Oct instead',
+    },
+    {
+      ...base,
+      id: 'mock-resolved-delete',
+      kind: 'delete_edit',
+      icon: 'trash',
+      title: '‘Old shopping list’ · Deleted',
+      detail:
+        'Deleted (Pixel 8 (simulated)) kept · notes edited (Alex’s MacBook Pro) kept inside it',
+      at: at(8, 50),
+      fresh: false,
+    },
+    {
+      ...base,
+      id: 'mock-resolved-inbox',
+      kind: 'task_inbox',
+      icon: 'inbox',
+      title: '‘Pack boots’ · List',
+      detail: 'Moved to the Inbox · ‘Trip’ is gone · Alex’s MacBook Pro had moved it there',
+      at: at(8, 40),
+      fresh: false,
+    },
+    {
+      ...base,
+      id: 'mock-resolved-fold',
+      kind: 'order_prefs',
+      icon: 'order',
+      module: 'sync',
+      title: 'Order & preferences · 4 changes',
+      detail: 'Pixel 8 (simulated)',
+      at: at(8, 31),
+      fresh: false,
+      changes: ['‘Call mum’ moved', '‘Buy oat milk’ moved', 'Week start', 'Time format'],
+    },
+  ];
+}
 
 /** Words, runs of spaces and line breaks, as Rust cuts them. */
 function tokens(text: string): string[] {
@@ -94,7 +167,8 @@ function draftOf(pieces: ClashPiece[], choices: ClashChoice[]): string {
 
 const at = (h: number, m: number) => new Date(2026, 9, 21, h, m).getTime();
 
-export function createConflictsMock(emit: () => void = () => {}) {
+export function createConflictsMock(emit: () => void = () => {}, now: () => number = Date.now) {
+  const resolved = resolvedSamples(now());
   const entryShowing =
     'Went for a run along the canal, felt great after the rain.\nCoffee with Sam after.\n';
   const entryOther =
@@ -174,6 +248,8 @@ export function createConflictsMock(emit: () => void = () => {}) {
   };
 
   return {
+    /** How many conflicts wait, for the attention the Home card and badge read. */
+    openCount: () => [...samples.values()].filter((s) => s.open).length,
     handles: (cmd: string) => COMMANDS.includes(cmd),
     handle(cmd: string, a: Record<string, unknown>): unknown {
       const sample = samples.get(String(a.id));
@@ -181,7 +257,19 @@ export function createConflictsMock(emit: () => void = () => {}) {
         case 'sync_conflicts':
           return {
             needs_you: [...samples.values()].filter((s) => s.open).map((s) => s.row),
+            resolved: resolved.map((r) => ({ ...r, changes: [...r.changes] })),
           } satisfies ConflictList;
+        case 'sync_resolution_use_other': {
+          const row = resolved.find((r) => r.id === String(a.id));
+          if (!row?.action || row.used) throw gone('That cannot be changed');
+          row.used = row.action.replace(/^Use (.*) instead$/, 'Changed to $1');
+          row.action = null;
+          emit();
+          return null;
+        }
+        case 'sync_resolutions_visited':
+          for (const r of resolved) r.fresh = false;
+          return null;
         case 'sync_conflict':
           return sample ? view(sample) : null;
         case 'sync_conflict_draft':
@@ -204,8 +292,8 @@ export function createConflictsMock(emit: () => void = () => {}) {
   };
 }
 
-const gone = (): AppError => ({
+const gone = (message = 'That conflict is gone'): AppError => ({
   code: 'validation',
-  message: 'That conflict is gone',
+  message,
   details: null,
 });

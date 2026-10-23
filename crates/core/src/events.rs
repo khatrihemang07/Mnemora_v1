@@ -85,6 +85,16 @@ pub struct ListsMerged {
     pub device: Option<String>,
 }
 
+/// A sync session left new Conflicts waiting for the person (raised here or learned from the other
+/// device). The app shows a toast if this device is set to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictsRaised {
+    /// How many.
+    pub count: u32,
+    /// The other device (its name), when known.
+    pub device: Option<String>,
+}
+
 /// A sync session with another device ended, having changed these Modules' data. Sent once per
 /// session, not per batch, for things that only need to know at the end (the Todo widget).
 #[derive(Debug, Clone, PartialEq, Eq)]

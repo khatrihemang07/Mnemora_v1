@@ -12,7 +12,7 @@ use crate::runtime::SyncRuntime;
 
 /// What the Sync screens show.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
-// Mirrors the four switches of `SyncDevice`, one field each on the wire.
+// Mirrors the five switches of `SyncDevice`, one field each on the wire.
 #[allow(clippy::struct_excessive_bools)]
 pub struct SyncState {
     /// Sync is on for this device.
@@ -25,6 +25,8 @@ pub struct SyncState {
     pub mobile_data: bool,
     /// Advertise on the local network.
     pub visible: bool,
+    /// Show a toast when a new conflict arrives (the other choice is Quietly).
+    pub toast_conflicts: bool,
     /// Other devices this one is paired with.
     pub paired_devices: u32,
 }
@@ -39,6 +41,8 @@ pub enum SyncOption {
     MobileData,
     /// Visible on this network.
     Visible,
+    /// "New conflicts: Show a toast" (off is Quietly).
+    ToastConflicts,
 }
 
 /// The current state, with this device's name filled in.
@@ -50,6 +54,7 @@ pub fn current(device: &DeviceSettings, conn: &Connection) -> AppResult<SyncStat
         automatic: sync.automatic,
         mobile_data: sync.mobile_data,
         visible: sync.visible,
+        toast_conflicts: sync.toast_conflicts,
         paired_devices: paired_count(conn)?,
     })
 }
@@ -82,5 +87,6 @@ pub fn set_option(device: &DeviceStore, option: SyncOption, on: bool) -> AppResu
         SyncOption::Automatic => d.sync.automatic = on,
         SyncOption::MobileData => d.sync.mobile_data = on,
         SyncOption::Visible => d.sync.visible = on,
+        SyncOption::ToastConflicts => d.sync.toast_conflicts = on,
     })
 }

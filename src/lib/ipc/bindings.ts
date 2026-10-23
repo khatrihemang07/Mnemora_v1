@@ -356,6 +356,16 @@ export const commands = {
 	 *  text is written as an ordinary edit; the Conflict then reads resolved on every device.
 	 */
 	syncConflictResolve: (id: string, choice: ConflictChoice) => typedError<null, AppError>(__TAURI_INVOKE("sync_conflict_resolve", { id, choice })),
+	/**  What needs attention now: the Home card, the sidebar badge and the palette hint read this. */
+	syncAttention: () => typedError<Attention, AppError>(__TAURI_INVOKE("sync_attention")),
+	/**
+	 *  "Use ‹other› instead": writes the value that gave way as an ordinary new edit through the
+	 *  owning Module (so it validates, reads as a normal History line and syncs like any change),
+	 *  and marks the row used on every device.
+	 */
+	syncResolutionUseOther: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_resolution_use_other", { id })),
+	/**  The person looked at "Resolved automatically": its rows stop being new. */
+	syncResolutionsVisited: () => typedError<null, AppError>(__TAURI_INVOKE("sync_resolutions_visited")),
 };
 
 /** Events */
@@ -364,6 +374,7 @@ export const events = {
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
 	syncConflictsEvent: makeEvent<SyncConflictsEvent>("sync-conflicts-event"),
+	syncNewConflictsEvent: makeEvent<SyncNewConflictsEvent>("sync-new-conflicts-event"),
 	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
 	syncPeersEvent: makeEvent<SyncPeersEvent>("sync-peers-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
@@ -400,6 +411,20 @@ export type AppInfo = {
 	log_dir: string,
 	/**  First name from the OS account, for the greeting when no display name is set. */
 	os_first_name: string,
+};
+
+/**  What needs attention now. */
+export type Attention = {
+	/**  Conflicts that wait for the person ("Needs you"). */
+	conflicts: number,
+	/**  Devices syncing is paused with (a version mismatch). */
+	paused: string[],
+	/**  Paired devices not seen for 14 days. */
+	unseen: UnseenDevice[],
+	/**  The most recent finished sync, for the Home card's second half. */
+	last_synced: LastSynced | null,
+	/**  Whether the Home card shows: something above is not empty. */
+	needed: boolean,
 };
 
 /**  The choice for one clash in Edit merged. */
@@ -471,6 +496,8 @@ text: string };
 export type ConflictList = {
 	/**  Conflicts that wait, newest first. Its length is the count. */
 	needs_you: ConflictRow[],
+	/**  What was decided without asking, newest first. */
+	resolved: ResolvedRow[],
 };
 
 /**  A row of "Needs you". */
@@ -786,6 +813,14 @@ export type JournalChangedEvent = null;
  *  fields stay `serde_json::Value`, which specta cannot export (recursive, i64 numbers).
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**  The last finished sync. */
+export type LastSynced = {
+	/**  The device it was with. */
+	device: string,
+	/**  When: UTC milliseconds. */
+	at: number,
+};
 
 /**  A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it. */
 export type LinkOpenedEvent = null;
@@ -1208,6 +1243,66 @@ export type RepeatRule = {
 	mode: string,
 };
 
+/**  The icon a row wears. */
+export type ResolvedIcon = 
+/**  Priority. */
+"flag" | 
+/**  A date or time. */
+"calendar" | 
+/**  A List. */
+"list" | 
+/**  A state. */
+"check" | 
+/**  Something deleted. */
+"trash" | 
+/**  A text. */
+"text" | 
+/**  Order and Preferences. */
+"order" | 
+/**  The Inbox. */
+"inbox" | 
+/**  Anything else. */
+"other";
+
+/**  What a row is about, for its icon. */
+export type ResolvedKind = 
+/**  A value two devices changed; the newest took. */
+"value" | 
+/**  A record deleted on one device and edited on another. */
+"delete_edit" | 
+/**  A Task put in the Inbox because its List is gone. */
+"task_inbox" | 
+/**  A text clash on a record that is deleted. */
+"conflict_deleted" | 
+/**  Order and Preference changes folded into one line. */
+"order_prefs";
+
+/**  One line of "Resolved automatically". */
+export type ResolvedRow = {
+	/**  The row's id. */
+	id: string,
+	/**  What kind of decision it is. */
+	kind: ResolvedKind,
+	/**  The Module it belongs to for the row's tint: `journal`, `todo` or `sync`. */
+	module: string,
+	/**  Its icon. */
+	icon: ResolvedIcon,
+	/**  "‘Water plants’ · Priority". */
+	title: string,
+	/**  "P1 (Mac) kept · P2 (Pixel 8) replaced". */
+	detail: string,
+	/**  When it was decided: UTC milliseconds. Rows group by this day. */
+	at: number,
+	/**  This device learned of it since the person last looked. */
+	fresh: boolean,
+	/**  The button: "Use P2 instead". None when nothing can be changed back or it was done. */
+	action: string | null,
+	/**  After the button was used: "Changed to P2". */
+	used: string | null,
+	/**  For the folded line, what "Show" lists. */
+	changes: string[],
+};
+
 /**  How a connection reached the other device. */
 export type Route = 
 /**  Over the local network. */
@@ -1326,6 +1421,22 @@ export type SyncDevice = {
 	mobile_data?: boolean,
 	/**  Advertise on the local network so paired devices find this one. */
 	visible?: boolean,
+	/**
+	 *  "New conflicts: Show a toast" instead of Quietly (the default): per device, so the Mac can
+	 *  say so at once while the phone stays calm.
+	 */
+	toast_conflicts?: boolean,
+};
+
+/**
+ *  New Conflicts arrived from another device and this device is set to say so with a toast
+ *  ("New conflicts: Show a toast"). Never sent while it is set to Quietly.
+ */
+export type SyncNewConflictsEvent = {
+	/**  How many. */
+	count: number,
+	/**  The device they came from, when known. */
+	device: string | null,
 };
 
 /**  A yes/no choice in Settings › Sync. */
@@ -1335,7 +1446,9 @@ export type SyncOption =
 /**  Allow over mobile data. */
 "mobile_data" | 
 /**  Visible on this network. */
-"visible";
+"visible" | 
+/**  "New conflicts: Show a toast" (off is Quietly). */
+"toast_conflicts";
 
 /**  The pairing sheet's state changed (a code is shown, someone asks, it worked or failed). */
 export type SyncPairingEvent = PairingView;
@@ -1355,6 +1468,8 @@ export type SyncState = {
 	mobile_data: boolean,
 	/**  Advertise on the local network. */
 	visible: boolean,
+	/**  Show a toast when a new conflict arrives (the other choice is Quietly). */
+	toast_conflicts: boolean,
 	/**  Other devices this one is paired with. */
 	paired_devices: number,
 };
@@ -1592,6 +1707,14 @@ export type TodoListsMergedEvent = {
 	into_name: string,
 	/**  The other device whose List it was. */
 	device: string | null,
+};
+
+/**  A paired device that has not been around for a long time. */
+export type UnseenDevice = {
+	/**  Its name. */
+	name: string,
+	/**  Whole days since it was last seen (since pairing, if never). */
+	days: number,
 };
 
 /**  Upcoming: Overdue on top, then the Tasks from tomorrow on in groups. */

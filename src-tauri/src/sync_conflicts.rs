@@ -6,8 +6,10 @@ use mnemora_core::db::Connection;
 use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::util::{new_id, now_ms};
 use mnemora_sync::{
-    ClashChoice, ConflictChoice, ConflictList, ConflictView, ConflictWrite, default_device_name,
+    Attention, ClashChoice, ConflictChoice, ConflictList, ConflictView, ConflictWrite, UsePlan,
+    default_device_name,
 };
+use serde_json::Value;
 use tauri::State;
 
 use crate::state::{AppState, lock};
@@ -107,6 +109,111 @@ fn write_text(conn: &mut Connection, write: &ConflictWrite) -> Result<(), AppErr
                 "That kind of text cannot be written back",
             ));
         }
+    }
+    Ok(())
+}
+
+/// What needs attention now: the Home card, the sidebar badge and the palette hint read this.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_attention(state: State<'_, AppState>) -> Result<Attention, AppError> {
+    mnemora_sync::attention(&lock(&state.db), &state.sync.peers_live(), now_ms())
+}
+
+/// "Use ‹other› instead": writes the value that gave way as an ordinary new edit through the
+/// owning Module (so it validates, reads as a normal History line and syncs like any change),
+/// and marks the row used on every device.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_resolution_use_other(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let me = state.device.device_id();
+    let mut conn = lock(&state.db);
+    let plan = mnemora_sync::resolution_plan_use(&conn, &id)?;
+    write_value(&mut conn, &plan)?;
+    if plan.entity.starts_with("todo_") {
+        state.widgets.todo_changed();
+    }
+    mnemora_sync::resolution_finish_use(&conn, &id, &me)?;
+    Ok(())
+}
+
+/// The person looked at "Resolved automatically": its rows stop being new.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_resolutions_visited(state: State<'_, AppState>) -> Result<(), AppError> {
+    mnemora_sync::resolutions_visited(&lock(&state.db))?;
+    Ok(())
+}
+
+fn invalid(what: &'static str) -> AppError {
+    AppError::new(ErrorCode::Validation, what)
+}
+
+/// Puts the replaced value(s) of `plan` back through the owning Module's own edit.
+fn write_value(conn: &mut Connection, plan: &UsePlan) -> Result<(), AppError> {
+    let id = plan.entity_id.as_str();
+    let text = |k: &str| plan.values.get(k).and_then(Value::as_str);
+    match (plan.entity.as_str(), plan.unit.as_str()) {
+        ("todo_task", "priority") => {
+            let priority = plan
+                .values
+                .get("priority")
+                .and_then(Value::as_u64)
+                .and_then(|p| u32::try_from(p).ok())
+                .ok_or_else(|| invalid("That priority cannot be set"))?;
+            mnemora_todo::set_priority(conn, id, priority)?;
+        }
+        ("todo_task", "list_id") => {
+            mnemora_todo::move_task(conn, id, text("list_id"))?;
+        }
+        ("todo_task", "when") => {
+            let repeat = text("repeat_freq").map(|freq| mnemora_todo::RepeatRule {
+                freq: freq.to_owned(),
+                every: plan
+                    .values
+                    .get("repeat_every")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok())
+                    .unwrap_or(1),
+                days: plan
+                    .values
+                    .get("repeat_days")
+                    .and_then(Value::as_u64)
+                    .and_then(|n| u32::try_from(n).ok()),
+                mode: text("repeat_mode").unwrap_or("fixed").to_owned(),
+            });
+            mnemora_todo::restore_when(
+                conn,
+                &[mnemora_todo::DueChange {
+                    id: id.to_owned(),
+                    due_date: text("due_date").map(str::to_owned),
+                    due_time: text("due_time").map(str::to_owned),
+                    repeat,
+                }],
+            )?;
+        }
+        ("todo_list", "name") => {
+            mnemora_todo::rename_list(conn, id, text("name").unwrap_or_default())?;
+        }
+        ("todo_list", "emoji") => {
+            mnemora_todo::set_list_emoji(conn, id, text("emoji"))?;
+        }
+        ("todo_list", "task_sort") => {
+            let sort = text("task_sort")
+                .and_then(mnemora_todo::TaskSort::parse)
+                .ok_or_else(|| invalid("That sort cannot be set"))?;
+            mnemora_todo::set_list_sort(conn, id, sort)?;
+        }
+        ("todo_list", "group_by") => {
+            let group = text("group_by")
+                .and_then(mnemora_todo::GroupBy::parse)
+                .ok_or_else(|| invalid("That grouping cannot be set"))?;
+            mnemora_todo::set_list_group(conn, id, group)?;
+        }
+        ("journal_entry", "page_date") => {
+            mnemora_journal::move_entry(conn, id, text("page_date").unwrap_or_default())?;
+        }
+        _ => return Err(invalid("That cannot be changed back")),
     }
     Ok(())
 }

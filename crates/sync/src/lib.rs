@@ -6,6 +6,7 @@
 
 mod addresses;
 mod apply;
+mod attention;
 mod clocks;
 mod conflict_view;
 mod conflicts;
@@ -23,6 +24,8 @@ pub mod pair;
 mod peer_state;
 mod peers;
 mod registry;
+mod resolutions;
+mod resolved_view;
 mod runtime;
 mod session;
 mod state;
@@ -41,6 +44,7 @@ use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 
 pub use addresses::{is_tailscale, local as local_addresses, shareable as shareable_address};
+pub use attention::{Attention, LastSynced, UNSEEN_DAYS, UnseenDevice, attention};
 pub use conflict_view::{
     ClashChoice, ClashPiece, ConflictChoice, ConflictList, ConflictRow, ConflictSide,
     ConflictSubject, ConflictView, ConflictWrite, TaskText, draft as conflict_draft,
@@ -62,6 +66,11 @@ pub use peers::{
     PeerRow, forget_all, group, list as list_peers, members, paired_count, pinned, store_paired,
 };
 pub use registry::{Modules, Registry};
+pub use resolutions::{
+    UsePlan, finish_use as resolution_finish_use, mark_visited as resolutions_visited,
+    plan_use as resolution_plan_use,
+};
+pub use resolved_view::{ResolvedIcon, ResolvedKind, ResolvedRow};
 pub use runtime::{RuntimeProbe, SyncRuntime};
 pub use session::{Endpoint, Session, SessionStats, pump};
 pub use state::{SyncOption, SyncState, current, rename, set_enabled, set_option};
@@ -91,14 +100,15 @@ impl Module for SyncModule {
         migrations::all()
     }
 
-    /// Conflicts are the one thing Sync syncs about itself so far.
+    /// What Sync syncs about itself: Conflicts and Resolved automatically.
     fn sync_entities(&self) -> &'static [SyncEntity] {
-        &[conflicts::CONFLICT]
+        &[conflicts::CONFLICT, resolutions::RESOLUTION]
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
         match change.entity {
             conflicts::ENTITY => conflicts::apply(conn, change),
+            resolutions::ENTITY => resolutions::apply(conn, change),
             _ => Err(AppError::new(
                 ErrorCode::Internal,
                 "Sync does not sync that kind of record",

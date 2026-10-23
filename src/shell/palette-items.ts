@@ -47,6 +47,7 @@ export function buildPaletteItems({ setTheme, toggleSidebar, enabled }: Actions)
       shortcut: a.shortcut,
       queryLabel: a.queryLabel,
       queryPreview: a.queryPreview,
+      hint: a.hint,
       run: (query: string) => a.run(moduleContext, query),
     })),
   );

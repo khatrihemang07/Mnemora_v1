@@ -1,6 +1,6 @@
 <!--
   ModuleBadge: a Module's count (Todo's due today plus Overdue) beside its sidebar name, over its
-  icon on the rail, or over its tab icon on a phone. Red when something is Overdue. Renders nothing
+  icon on the rail, or over its tab icon on a phone. Red when something is Overdue (Sync's: its hue, amber while paused). Renders nothing
   for a Module without a badge or with nothing to count.
 -->
 <script lang="ts">
@@ -17,15 +17,26 @@
   // svelte-ignore state_referenced_locally
   const source = manifest.useBadge?.();
   const badge = $derived(source?.badge ?? null);
-  const shown = $derived(badge && badge.count > 99 ? '99+' : String(badge?.count ?? ''));
+  const shown = $derived(
+    badge?.text ?? (badge && badge.count > 99 ? '99+' : String(badge?.count ?? '')),
+  );
+  const tone = $derived(
+    badge?.tone === 'sync'
+      ? 'bg-hue-sync text-on-hue-sync'
+      : badge?.tone === 'warn'
+        ? 'bg-warning text-on-warning'
+        : badge?.alert
+          ? 'bg-danger text-on-accent'
+          : 'bg-active text-muted',
+  );
 </script>
 
 {#if badge}
   <span
-    data-badge={badge.alert ? 'alert' : 'plain'}
-    aria-label="{badge.count} due or overdue"
+    data-badge={badge.tone ?? (badge.alert ? 'alert' : 'plain')}
+    aria-label={badge.label ?? `${badge.count} due or overdue`}
     class="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-1 text-2xs font-semibold tabular-nums
-      {badge.alert ? 'bg-danger text-on-accent' : 'bg-active text-muted'}
+      {tone}
       {placement === 'corner' ? 'absolute -top-2 -right-3.5 ring-2 ring-side' : ''}"
   >
     {shown}

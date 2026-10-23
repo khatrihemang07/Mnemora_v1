@@ -127,15 +127,21 @@ export async function installMock() {
   const codeSeconds = Number(query.get('paircode') ?? 0);
   if (codeSeconds > 0) pairFlags.lifeMs = codeSeconds * 1000;
   (window as unknown as { __syncMock: PairingFlags }).__syncMock = pairFlags;
+  const conflicts = createConflictsMock(() => void events.syncConflictsEvent.emit());
   const sync = createSyncMock(
     device,
     Number(query.get('paired') ?? 0) || 0,
     (view) => void events.syncPairingEvent.emit(view),
     pairFlags,
     () => void events.syncPeersEvent.emit(),
+    conflicts.openCount,
   );
-
-  const conflicts = createConflictsMock(() => void events.syncConflictsEvent.emit());
+  // Console: `__syncMock.newConflict()` acts out a conflict arriving; a toast shows if Settings ›
+  // Sync is on "Show a toast" (Rust only sends the event to a device set to one).
+  pairFlags.newConflict = () => {
+    const wants = (device.sync as { toast_conflicts?: boolean } | undefined)?.toast_conflicts;
+    if (wants) void events.syncNewConflictsEvent.emit({ count: 1, device: 'Pixel 8 (simulated)' });
+  };
 
   applyPrePaintAttributes(values);
 

@@ -55,3 +55,39 @@ export async function watchConflicts(): Promise<() => void> {
     void queryClient.invalidateQueries({ queryKey: ['sync', 'conflict'] });
   });
 }
+
+/** What needs attention: the Home card, the sidebar badge and the palette hint all read this. */
+export const attentionQuery = queryOptions({
+  queryKey: ['sync', 'attention'],
+  queryFn: () => unwrap(commands.syncAttention()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/**
+ * Reads attention again whenever a Conflict is raised or settled or a device's status changes.
+ * Returns what stops listening.
+ */
+export async function watchAttention(): Promise<() => void> {
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: attentionQuery.queryKey });
+  const stops = await Promise.all([
+    events.syncConflictsEvent.listen(refresh),
+    events.syncPeersEvent.listen(refresh),
+  ]);
+  return () => {
+    for (const stop of stops) stop();
+  };
+}
+
+/** Starts `listen` and returns a cleanup that stops it, even if it is called before it finished. */
+export function whileMounted(listen: () => Promise<() => void>): () => void {
+  let stop: (() => void) | undefined;
+  let gone = false;
+  void listen().then((off) => {
+    if (gone) off();
+    else stop = off;
+  });
+  return () => {
+    gone = true;
+    stop?.();
+  };
+}

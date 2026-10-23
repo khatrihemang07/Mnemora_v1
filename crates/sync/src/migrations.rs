@@ -135,5 +135,37 @@ pub fn all() -> Migrations<'static> {
              PRIMARY KEY(entity, entity_id, unit)
          ) STRICT;",
         ),
+        // Resolved automatically (#67), synced as the change-log entity `sync_resolution` except
+        // the folded "Order & preferences" lines, which are this device's own record of a sync
+        // session. `kept`/`replaced` are JSON objects of the unit's values; `at` is the clock
+        // time of the decision (identical on every device), `learned_at` when THIS device first
+        // had the row (local, drives the "since your last visit" dot). `used_*` is set once
+        // "Use ‹other› instead" was pressed. `sync_resolution_visit` is the local last-visit
+        // marker.
+        M::up(
+            "CREATE TABLE sync_resolutions(
+             id TEXT PRIMARY KEY NOT NULL,
+             kind TEXT NOT NULL,
+             target TEXT NOT NULL DEFAULT '',
+             target_id TEXT NOT NULL DEFAULT '',
+             field TEXT NOT NULL DEFAULT '',
+             kept TEXT NOT NULL DEFAULT '{}',
+             kept_device TEXT NOT NULL DEFAULT '',
+             replaced TEXT NOT NULL DEFAULT '{}',
+             replaced_device TEXT NOT NULL DEFAULT '',
+             extra TEXT NOT NULL DEFAULT '',
+             at INTEGER NOT NULL,
+             used_at INTEGER,
+             used_by TEXT,
+             learned_at INTEGER NOT NULL,
+             count INTEGER NOT NULL DEFAULT 0,
+             detail TEXT NOT NULL DEFAULT '[]'
+         ) STRICT;
+         CREATE INDEX sync_resolutions_at ON sync_resolutions(at);
+         CREATE TABLE sync_resolution_visit(
+             one INTEGER PRIMARY KEY NOT NULL CHECK(one = 1),
+             at INTEGER NOT NULL
+         ) STRICT;",
+        ),
     ])
 }

@@ -30,7 +30,9 @@ export interface PairingFlags {
   /** One step of the simulated exchange. */
   stepMs: number;
   /** Console helper (set by the Sync mock): puts a paired device in a state. */
-  setPeer?: (state: PeerState, name?: string) => void;
+  setPeer?: (state: PeerState, name?: string, daysAway?: number) => void;
+  /** Console: a new conflict arrived from the simulated device (toast, if this device wants one). */
+  newConflict?: () => void;
 }
 
 export const defaultPairingFlags = (): PairingFlags => ({

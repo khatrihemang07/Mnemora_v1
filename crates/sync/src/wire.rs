@@ -36,9 +36,10 @@ pub struct WireRecord {
     pub hlc_counter: i64,
     /// Changed fields only (whole groups), `{field: value}`.
     pub fields: Map<String, Value>,
-    /// For the text fields among `fields`: the text this change replaced on the origin device,
-    /// which is what a receiver merges two devices' edits against. Absent for a first record or
-    /// one whose earlier text is unknown, and then the text simply replaces.
+    /// For the fields among `fields`: what this change replaced on the origin device. For a
+    /// text it is what a receiver merges two devices' edits against (absent for a first record
+    /// or one whose earlier text is unknown, and then the text simply replaces); for any other
+    /// field it tells a change made after another one from a change made beside it.
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub prev: Map<String, Value>,
 }

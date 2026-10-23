@@ -9,10 +9,17 @@ export interface HomeCardProps {
 }
 export type HomeCardLoader = () => Promise<{ default: Component<HomeCardProps> }>;
 
-/** A count beside a Module's name in the sidebar and the phone tab bar; red when `alert`. */
+/**
+ * A count beside a Module's name in the sidebar and the phone tab bar; red when `alert`. `tone`
+ * recolours it (Sync's hue, or amber for a warning), `text` replaces the number (Sync's "!" while
+ * paused), and `label` is what a screen reader says (default: the count as "due or overdue").
+ */
 export interface ModuleBadge {
   count: number;
   alert: boolean;
+  tone?: 'sync' | 'warn';
+  text?: string;
+  label?: string;
 }
 
 /** What the shell hands to a Module's actions, so Modules never import the shell. */
@@ -78,6 +85,8 @@ export interface ModuleAction {
    * shows how it read the date, Priority and List). Asked as the text changes; none shows nothing.
    */
   queryPreview?: (query: string) => Promise<string | null>;
+  /** A short note on the right of the row, asked while the palette renders ("2 waiting"). */
+  hint?: () => string | null;
   run: (ctx: ModuleContext, query: string) => void;
 }
 
@@ -123,6 +132,8 @@ export interface ModuleManifest {
    * read reactively; none means nothing to show.
    */
   useBadge?: () => { readonly badge: ModuleBadge | null };
+  /** `false`: the badge shows in the desktop sidebar only, never on the phone tab bar (Sync). */
+  phoneBadge?: false;
   /** A card on Home, loaded only when Home renders it. */
   homeCard?: HomeCardLoader;
   /** The Module's own Settings section, appended after the core sections. */

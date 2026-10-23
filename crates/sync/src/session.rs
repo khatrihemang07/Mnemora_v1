@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::collections::BTreeMap;
 
 use mnemora_core::events::{
-    EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
+    ConflictsRaised, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
 };
 use mnemora_core::syncable::SyncEvent;
 use rusqlite::Connection;
@@ -20,6 +20,7 @@ use crate::apply::apply_batch;
 use crate::error::SyncError;
 use crate::peers;
 use crate::registry::Registry;
+use crate::resolutions;
 use crate::stream::{Cursor, next_batch, pending};
 use crate::transport::Transport;
 use crate::vector;
@@ -65,6 +66,8 @@ pub struct Session {
     acked: usize,
     announced: bool,
     first_sent: bool,
+    /// The id of this session's "Order & preferences" line.
+    fold: String,
 }
 
 impl Session {
@@ -84,6 +87,7 @@ impl Session {
             acked: 0,
             announced: false,
             first_sent: false,
+            fold: mnemora_core::util::new_id(),
         }
     }
 
@@ -170,6 +174,9 @@ impl Session {
                 }
                 let applied = apply_batch(conn, &self.registry, &self.me, records)?;
                 self.stats.received += applied.stored;
+                if let Some((peer, _)) = &self.peer {
+                    resolutions::fold_add(conn, &self.fold, peer, &applied.folded)?;
+                }
                 // First, so a screen on a List that merged away is moved before it refreshes and
                 // finds the List gone.
                 self.announce(conn, applied.events);
@@ -202,6 +209,7 @@ impl Session {
     /// Lists that merged (named after the other device when it is a paired one).
     fn announce(&self, conn: &Connection, events: Vec<SyncEvent>) {
         let mut settings: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut raised = 0_u32;
         for event in events {
             match event {
                 SyncEvent::SettingChanged { module, key } => {
@@ -230,10 +238,12 @@ impl Session {
                         device,
                     });
                 }
-                // Recorded by Activity and Resolved automatically (#67/#68); the Conflicts tab
-                // reads the table, and `RemoteChanged` for Sync refreshes it.
-                SyncEvent::ConflictRaised { .. } | SyncEvent::ConflictAutoResolved { .. } => {
+                SyncEvent::ConflictRaised { .. } => {
+                    raised += 1;
                     tracing::debug!(target: "sync", "a text clash was recorded");
+                }
+                SyncEvent::ConflictAutoResolved { .. } => {
+                    tracing::debug!(target: "sync", "a text clash was resolved on its own");
                 }
                 SyncEvent::TaskToInbox { .. } => {
                     tracing::debug!(target: "sync", "a Task went to the Inbox: its List is gone");
@@ -242,6 +252,15 @@ impl Session {
         }
         for (module, keys) in settings {
             self.bus.publish(&SettingsChanged { module, keys });
+        }
+        if raised > 0 {
+            let device = self
+                .peer()
+                .and_then(|p| peers::name_of(conn, p).ok().flatten());
+            self.bus.publish(&ConflictsRaised {
+                count: raised,
+                device,
+            });
         }
     }
 
