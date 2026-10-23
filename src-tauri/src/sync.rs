@@ -83,7 +83,10 @@ pub fn sync_set_option<R: Runtime>(
         SyncOption::Visible => state.sync.refresh_advert(),
         SyncOption::Automatic => state.sync.options_changed(),
         // On mobile data this starts or stops the whole network.
-        SyncOption::MobileData => crate::sync_power::settle(&app),
+        SyncOption::MobileData => {
+            crate::sync_power::settle(&app);
+            announce_peers(&app);
+        }
         SyncOption::ToastConflicts => {}
     }
     Ok(())
@@ -108,6 +111,7 @@ pub fn sync_devices(state: State<'_, AppState>) -> Result<DevicesView, AppError>
         &state.device.get(),
         &lock(&state.db),
         state.sync.listening(),
+        crate::sync_power::paused_on_mobile_data(state.power.conditions(&state.device.get().sync)),
         &state.sync.peers_live(),
     )
 }

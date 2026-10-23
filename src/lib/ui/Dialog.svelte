@@ -1,4 +1,7 @@
-<!-- Dialog: small modal with a title, body and an actions row. -->
+<!--
+  Dialog: small modal with a title, body and an actions row. It sits above a Sheet (z-50), so a
+  Dialog opened from inside a Sheet dims the whole Sheet too, not only the page behind it.
+-->
 <script lang="ts">
   import { Dialog } from 'bits-ui';
   import type { Snippet } from 'svelte';
@@ -20,9 +23,9 @@
 
 <Dialog.Root {open} onOpenChange={(o) => !o && onclose()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-40 bg-scrim" />
+    <Dialog.Overlay class="fixed inset-0 z-60 bg-scrim" />
     <Dialog.Content
-      class="fixed top-1/2 left-1/2 z-50 w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-md bg-pop p-5 shadow-pop"
+      class="fixed top-1/2 left-1/2 z-70 w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-md bg-pop p-5 shadow-pop"
     >
       <Dialog.Title class="text-base font-semibold text-ink">{title}</Dialog.Title>
       {#if description}

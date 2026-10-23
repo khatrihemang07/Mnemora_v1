@@ -173,19 +173,20 @@
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if byAddress}
       {@render heading(title)}
-      <p class="mb-3 text-sm text-muted">For a device that isn't on this Wi-Fi, e.g. over Tailscale.</p>
+      <p class="mb-3 text-sm text-muted">For a device that isn’t on this Wi-Fi, e.g. over Tailscale.</p>
       <form
         onsubmit={(e) => {
           e.preventDefault();
           void pairing.submitAddress();
         }}
       >
-        <div class="mb-1 text-xs text-muted">Other device's address</div>
+        <div class="mb-1 text-xs text-muted">Other device’s address</div>
         <Input
-          label="Other device's address"
+          label="Other device’s address"
           placeholder="mac.tail1234.ts.net"
           bind:value={() => pairing.address, (v) => { pairing.address = v; pairing.addressError = null; }}
           invalid={addressWrong || pairing.addressError !== null}
+          onblur={() => pairing.checkAddress()}
           autocapitalize="off"
           autocorrect="off"
           spellcheck={false}

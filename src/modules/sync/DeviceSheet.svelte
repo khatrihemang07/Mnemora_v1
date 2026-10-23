@@ -26,6 +26,7 @@
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import { addressLines, deviceGone, pairedText, versionsText } from './device-detail';
+  import { DeviceRename } from './device-rename.svelte';
   import { deviceSheet } from './device-sheet.svelte';
   import { devicesQuery, deviceDetailQuery, watchDevices } from './queries';
   import { statusWord, syncedText } from './peer-status';
@@ -68,33 +69,15 @@
     ]);
   }
 
-  // Rename: the name turns into a field; Enter or leaving it saves, Esc keeps the old name.
-  let renaming = $state(false);
-  let nameText = $state('');
-  let nameError = $state<string | null>(null);
+  // Rename: the sheet stays open and shows the new name (see device-rename.svelte.ts).
+  const rename = new DeviceRename(async (name) => {
+    await unwrap(commands.syncDeviceRename(id, name));
+    await refresh();
+  });
   let nameInput = $state<HTMLInputElement | null>(null);
   $effect(() => {
-    if (renaming) nameInput?.focus();
+    if (rename.editing) nameInput?.focus();
   });
-  function startRename() {
-    nameText = d?.name ?? '';
-    nameError = null;
-    renaming = true;
-  }
-  async function saveName() {
-    if (!renaming) return;
-    if (nameText.trim() === d?.name) {
-      renaming = false;
-      return;
-    }
-    try {
-      await unwrap(commands.syncDeviceRename(id, nameText));
-      renaming = false;
-      await refresh();
-    } catch (e) {
-      nameError = e instanceof Error ? e.message : 'Could not rename this device';
-    }
-  }
 
   // The Address: saved when you leave the field or press Enter; Check dials what is typed.
   let typed = $state<string | null>(null);
@@ -159,22 +142,24 @@
           ></span>
         </span>
         <div class="min-w-0 flex-1">
-          {#if renaming}
+          {#if rename.editing}
             <Input
               label="Device name"
-              bind:value={nameText}
-              invalid={nameError !== null}
+              bind:value={() => rename.text, (v) => rename.type(v)}
+              invalid={rename.error !== null}
               bind:ref={nameInput}
-              onblur={() => void saveName()}
+              onblur={() => void rename.commit(d.name)}
               onkeydown={(e) => {
-                if (e.key === 'Enter') void saveName();
-                else if (e.key === 'Escape') {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void rename.commit(d.name);
+                } else if (e.key === 'Escape') {
                   e.stopPropagation();
-                  renaming = false;
+                  rename.cancel();
                 }
               }}
             />
-            {#if nameError}<p role="alert" class="mt-1 text-sm text-danger">{nameError}</p>{/if}
+            {#if rename.error}<p role="alert" class="mt-1 text-sm text-danger">{rename.error}</p>{/if}
           {:else}
             <div class="truncate font-semibold">{d.name}</div>
             <div class="flex flex-wrap items-center gap-x-1.5 text-sm text-muted">
@@ -242,7 +227,7 @@
         <Button size="sm" onclick={() => void commands.syncDeviceSyncNow(id)}>
           <RefreshCw class="size-3.5" /> Sync now
         </Button>
-        <Button size="sm" variant="ghost" onclick={startRename}>
+        <Button size="sm" variant="ghost" onclick={() => rename.start(d.name)}>
           <Pencil class="size-3.5" /> Rename
         </Button>
         <span class="flex-1"></span>
@@ -259,7 +244,7 @@
 <Dialog
   open={forgetting}
   title="Forget {d?.name ?? 'this device'}?"
-  description="It won't sync with any of your devices again. Its data stays on it. To sync it later, pair it again."
+  description="It won’t sync with any of your devices again. Its data stays on it. To sync it later, pair it again."
   onclose={() => (forgetting = false)}
 >
   {#snippet actions()}

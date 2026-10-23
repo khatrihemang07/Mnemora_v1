@@ -39,14 +39,38 @@ function seeded(seed: number) {
   };
 }
 
-const BREAKDOWNS = [
-  'Todo: 9 Tasks, 1 List · Journal: 2 Entries · Settings: 1',
-  'Todo: 3 Tasks',
-  'Journal: 1 Entry',
-  'Todo: 14 Tasks, 2 Lists, 5 Comments',
-  'Settings: 2',
-  'Todo: 1 Task · Journal: 1 Entry',
+/** The kinds of record a session moves, by Module, as the Rust breakdown words them. */
+const KINDS = [
+  { module: 'Todo', one: 'Task', many: 'Tasks' },
+  { module: 'Todo', one: 'List', many: 'Lists' },
+  { module: 'Todo', one: 'Comment', many: 'Comments' },
+  { module: 'Journal', one: 'Entry', many: 'Entries' },
+  { module: 'Settings', one: '', many: '' },
 ];
+
+/**
+ * "Todo: 9 Tasks, 1 List · Journal: 2 Entries · Settings: 1" for `total` records: the counts always
+ * add up to the in + out of the line, as Rust's breakdown (records moved, both directions) does.
+ */
+export function breakdownOf(total: number, rand: () => number): string {
+  const kinds = KINDS.filter(() => rand() < 0.5);
+  if (kinds.length === 0) kinds.push(KINDS[0] as (typeof KINDS)[number]);
+  const used = kinds.slice(0, Math.max(1, Math.min(kinds.length, total)));
+  const counts = used.map(() => 1);
+  for (let left = total - used.length; left > 0; left--) {
+    const i = Math.floor(rand() * used.length);
+    counts[i] = (counts[i] ?? 0) + 1;
+  }
+  const modules: string[] = [];
+  for (const [i, kind] of used.entries()) {
+    const n = counts[i] ?? 0;
+    const word = kind.module === 'Settings' ? `${n}` : `${n} ${n === 1 ? kind.one : kind.many}`;
+    const at = modules.findIndex((m) => m.startsWith(`${kind.module}: `));
+    if (at < 0) modules.push(`${kind.module}: ${word}`);
+    else modules[at] = `${modules[at]}, ${word}`;
+  }
+  return modules.join(' · ');
+}
 
 /** `count` events going back from `now`, newest last in the array (sorted by the caller). */
 export function makeEvents(count: number, now: number): Event[] {
@@ -70,7 +94,7 @@ export function makeEvents(count: number, now: number): Event[] {
         kind: 'session',
         n_in,
         n_out,
-        breakdown: pick(BREAKDOWNS),
+        breakdown: breakdownOf(n_in + n_out, rand),
         extra: {},
       });
     } else if (r < 0.86) {
@@ -78,7 +102,8 @@ export function makeEvents(count: number, now: number): Event[] {
         ...base,
         ...none,
         kind: 'conflict_raised',
-        extra: { subject: 'a Task’s notes' },
+        // Only the newest still wait; the rest were settled since.
+        extra: { subject: 'a Task’s notes', ...(at > now - 24 * 60 * MINUTE ? { open: '1' } : {}) },
       });
     } else if (r < 0.9) {
       events.push({
@@ -180,7 +205,7 @@ export function describe(e: Event, viewer: string): ActivityRow {
     on: e.device !== viewer && !aboutMe && !named ? name(e.device) : null,
     at: e.at,
     breakdown: e.breakdown,
-    link: e.kind === 'conflict_raised' ? 'conflicts' : null,
+    link: e.kind === 'conflict_raised' && e.extra.open === '1' ? 'conflicts' : null,
   };
 }
 

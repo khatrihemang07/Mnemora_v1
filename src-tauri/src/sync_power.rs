@@ -84,6 +84,12 @@ pub fn should_run(c: Conditions) -> bool {
     c.enabled && c.screen != Screen::Away && (c.link != Link::Mobile || c.mobile_data)
 }
 
+/// Whether Sync is waiting only because the phone is on mobile data with the setting off (the
+/// Devices tab says so, instead of just "not listening").
+pub fn paused_on_mobile_data(c: Conditions) -> bool {
+    c.enabled && c.link == Link::Mobile && !c.mobile_data
+}
+
 /// Whether the flush after leaving is over: the grace is used up, or it is past the minimum and
 /// no session is running.
 pub fn flush_over(elapsed: Duration, grace: Duration, busy: bool) -> bool {
@@ -255,6 +261,8 @@ pub fn link<R: Runtime>(app: &AppHandle<R>, now: Link) {
     let Some(state) = state(app) else { return };
     lock(&state.power.inner).link = now;
     settle(app);
+    // The Devices tab says why Sync waits (or no longer does) on mobile data.
+    crate::sync::announce_peers(app);
     // Devices that could not be reached are worth another try on the new network.
     state.sync.resume();
 }
@@ -312,6 +320,26 @@ mod tests {
         assert!(!should_run(on(Screen::Leaving, Link::Mobile, false)));
         assert!(should_run(on(Screen::Leaving, Link::Mobile, true)));
         assert!(!should_run(on(Screen::Away, Link::Mobile, true)));
+    }
+
+    #[test]
+    fn it_is_paused_on_mobile_data_only_while_sync_is_on_and_the_setting_is_off() {
+        assert!(paused_on_mobile_data(on(
+            Screen::Front,
+            Link::Mobile,
+            false
+        )));
+        assert!(!paused_on_mobile_data(on(
+            Screen::Front,
+            Link::Mobile,
+            true
+        )));
+        for link in [Link::Unknown, Link::Offline, Link::Wifi] {
+            assert!(!paused_on_mobile_data(on(Screen::Front, link, false)));
+        }
+        let mut off = on(Screen::Front, Link::Mobile, false);
+        off.enabled = false;
+        assert!(!paused_on_mobile_data(off));
     }
 
     #[test]

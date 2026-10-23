@@ -210,10 +210,24 @@ describe('pairing by address', () => {
     return s.last();
   };
 
+  it('shows the route the address leads to, not always Wi‑Fi', () => {
+    const routeAfter = (address: string) => {
+      const s = setup();
+      pairAt(s, address);
+      return (s.call('sync_devices') as { peers: { route: string | null }[] }).peers[0]?.route;
+    };
+    expect(routeAfter('100.101.4.7')).toBe('tailscale');
+    expect(routeAfter('mac.tail1234.ts.net')).toBe('tailscale');
+    expect(routeAfter('192.168.1.40')).toBe('wifi');
+  });
+
   it('refuses an address that breaks the rules and a code that is not 8 digits', () => {
     const s = setup();
+    expect(() =>
+      s.call('sync_pair_enter_at', { address: 'bad address!!', code: '12345678' }),
+    ).toThrow(expect.objectContaining({ message: 'That isn’t a host name or an IP address' }));
     expect(() => s.call('sync_pair_enter_at', { address: 'pixel 8', code: '12345678' })).toThrow(
-      expect.objectContaining({ message: "That isn't a host name or an IP address" }),
+      expect.objectContaining({ message: 'That isn’t a host name or an IP address' }),
     );
     expect(() => s.call('sync_pair_enter_at', { address: 'mac.ts.net', code: '12' })).toThrow(
       expect.objectContaining({ message: 'Type all 8 digits of the code' }),

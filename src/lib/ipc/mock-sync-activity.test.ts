@@ -43,6 +43,28 @@ describe('the Activity mock', () => {
     expect(everything(m, { kind: 'device', id: 'nobody' })).toEqual([]);
   });
 
+  it('breaks a session down into exactly as many records as it moved', () => {
+    const rows = everything(mock(), { kind: 'all' }).filter((r) => r.kind === 'session');
+    expect(rows.length).toBeGreaterThan(100);
+    for (const r of rows) {
+      const line = r.text.map((p) => p.text).join('');
+      const m = /(\d+) in, (\d+) out/.exec(line);
+      const moved = Number(m?.[1]) + Number(m?.[2]);
+      // "Todo: 9 Tasks, 1 List · Journal: 2 Entries · Settings: 1": every number after a colon or comma.
+      const counted = [...(r.breakdown ?? '').matchAll(/(?:: |, )(\d+)/g)].reduce(
+        (sum, x) => sum + Number(x[1]),
+        0,
+      );
+      expect(counted, `${line} / ${r.breakdown}`).toBe(moved);
+    }
+  });
+
+  it('only offers Review on a Conflict that still waits', () => {
+    const rows = everything(mock(), { kind: 'all' }).filter((r) => r.kind === 'conflict_raised');
+    expect(rows.some((r) => r.link === 'conflicts')).toBe(true);
+    expect(rows.some((r) => r.link === null)).toBe(true);
+  });
+
   it('words a session as Rust does, and sessions of others carry where they happened', () => {
     const m = mock();
     const rows = everything(m, { kind: 'all' });

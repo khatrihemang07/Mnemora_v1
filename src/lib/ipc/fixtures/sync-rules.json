@@ -232,32 +232,37 @@
     {
       "name": "an IPv6 address with an embedded IPv4 is refused",
       "input": "[::ffff:1.2.3.4]",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a space and punctuation make no host name",
+      "input": "bad address!!",
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "an IPv6 zone is refused",
       "input": "[fe80::1%en0]",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "seven groups with no compression are refused",
       "input": "[1:2:3:4:5:6:7]",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "a host that is only digits and dots is refused",
       "input": "1.2.3",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "an IPv4 with a leading zero is refused",
       "input": "192.168.01.1",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "a Kelvin sign is not an ASCII k",
       "input": "\u212Aitchen.local",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "a name with an underscore",
@@ -268,12 +273,12 @@
     {
       "name": "an empty host with a port",
       "input": ":5000",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "a bare colon-less bracket pair",
       "input": "[]",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "nothing",
@@ -288,47 +293,47 @@
     {
       "name": "a space inside",
       "input": "pixel 8",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "a scheme",
       "input": "http://pixel",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "an impossible IPv4",
       "input": "999.1.1.1",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "a label starting with a dash",
       "input": "-pixel.local",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "an empty label",
       "input": "pixel..local",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "an unclosed bracket",
       "input": "[fd7a::1",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "not an IPv6 in brackets",
       "input": "[pixel]",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "text after the brackets",
       "input": "[fd7a::1]x",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "two ports",
       "input": "pixel:1:2",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     },
     {
       "name": "port zero",
@@ -358,7 +363,7 @@
     {
       "name": "a name over 253 characters",
       "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a",
-      "error": "That isn't a host name or an IP address"
+      "error": "That isn’t a host name or an IP address"
     }
   ]
 }

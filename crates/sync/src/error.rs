@@ -22,7 +22,7 @@ pub enum SyncError {
     Protocol(String),
     /// A record is stamped more than five minutes in the future of this device's clock; nothing
     /// of the exchange is stored (see `pause`).
-    #[error("The other device's clock is too far ahead")]
+    #[error("The other device’s clock is too far ahead")]
     ClockAhead {
         /// How long until the newest such record is no more than five minutes ahead, in
         /// milliseconds: when the exchange can be tried again.

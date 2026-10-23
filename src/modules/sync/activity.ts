@@ -1,5 +1,5 @@
 import type { ActivityFilter, ActivityRow, DevicesView } from '../../lib/ipc/bindings';
-import { groupByDay } from './conflicts';
+import { doneHeading } from '../../lib/time/day-heading';
 
 /** The chip choosing "All": the value `FilterChips` holds. */
 export const CHIP_ALL = 'all';
@@ -34,20 +34,29 @@ export type ActivityItem =
   | { kind: 'day'; key: string; title: string; subtitle: string; first: boolean }
   | { kind: 'row'; key: string; row: ActivityRow };
 
+const pad = (n: number) => String(n).padStart(2, '0');
+const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
 /** The rows (newest first) as heading + rows per local day, flattened for the virtual list. */
 export function itemsOf(rows: ActivityRow[], now: Date = new Date()): ActivityItem[] {
   const items: ActivityItem[] = [];
-  for (const group of groupByDay(rows, now, (r) => r.at)) {
-    // As Done has it: Today, Yesterday, then the whole weekday ("Monday") with the date beside it.
-    const recent = group.title === 'Today' || group.title === 'Yesterday';
+  const today = localDate(now);
+  const days = new Map<string, ActivityRow[]>();
+  for (const row of [...rows].sort((x, y) => y.at - x.at)) {
+    const day = localDate(new Date(row.at));
+    days.set(day, [...(days.get(day) ?? []), row]);
+  }
+  for (const [day, group] of days) {
+    // The very function Done uses, so the two screens read alike.
+    const heading = doneHeading(day, today);
     items.push({
       kind: 'day',
-      key: `day:${group.key}`,
-      title: recent ? group.title : (group.subtitle.split(' ')[0] ?? group.title),
-      subtitle: group.subtitle,
+      key: `day:${day}`,
+      title: heading.name,
+      subtitle: heading.small,
       first: items.length === 0,
     });
-    for (const row of group.rows) items.push({ kind: 'row', key: row.id, row });
+    for (const row of group) items.push({ kind: 'row', key: row.id, row });
   }
   return items;
 }

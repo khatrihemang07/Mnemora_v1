@@ -62,7 +62,7 @@ describe('the typed Address', () => {
       'pixel.tail1234.ts.net',
     );
     expect(() => call('sync_device_address', { id: PIXEL, address: 'pixel 8' })).toThrow(
-      expect.objectContaining({ message: "That isn't a host name or an IP address" }),
+      expect.objectContaining({ message: 'That isn’t a host name or an IP address' }),
     );
     expect(call('sync_device_address', { id: PIXEL, address: '' })).toBeNull();
     expect(call<DeviceDetail>('sync_device', { id: PIXEL }).typed_address).toBeNull();
@@ -88,7 +88,7 @@ describe('Check', () => {
     expect(check(call, 'unpaired.example').kind).toBe('not_paired');
     expect(check(call, 'not an address!')).toMatchObject({
       kind: 'invalid',
-      message: "That isn't a host name or an IP address",
+      message: 'That isn’t a host name or an IP address',
     });
   });
 

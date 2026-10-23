@@ -239,18 +239,22 @@ async fn pairing_by_address_needs_no_discovery_and_remembers_the_address() {
 #[tokio::test]
 async fn pairing_by_address_says_why_it_did_not_work() {
     let (mac, phone) = (Device::new("Mac").await, Device::new("Pixel 8").await);
-    let invalid = phone
-        .app
-        .invoke::<()>(
-            "sync_pair_enter_at",
-            json!({ "address": "pixel 8", "code": "12345678" }),
-        )
-        .unwrap_err();
-    assert_eq!(invalid["code"], "validation");
-    assert_eq!(
-        invalid["message"],
-        "That isn't a host name or an IP address"
-    );
+    for typed in ["pixel 8", "bad address!!"] {
+        let invalid = phone
+            .app
+            .invoke::<()>(
+                "sync_pair_enter_at",
+                json!({ "address": typed, "code": "12345678" }),
+            )
+            .unwrap_err();
+        assert_eq!(invalid["code"], "validation", "{typed}");
+        assert_eq!(
+            invalid["message"],
+            "That isn’t a host name or an IP address"
+        );
+        // Refused before anything was dialled: the sheet is not left "searching".
+        assert_eq!(phone.pairing()["state"], "idle", "{typed}");
+    }
     let short = phone
         .app
         .invoke::<()>(

@@ -8,6 +8,7 @@ const base: ThisDevice = {
   port: 47311,
   addresses: [],
   routes: [],
+  paused_on_mobile_data: false,
 };
 
 describe('listeningSummary', () => {
@@ -20,6 +21,12 @@ describe('listeningSummary', () => {
     expect(s.listening).toBe(true);
     expect(s.text).toBe('Listening on Wi\u2011Fi and Tailscale');
     expect(s.detail).toBe('192.168.1.20 · 100.101.4.7 · port 47311');
+  });
+
+  it('says why it is not listening on mobile data when the setting is off', () => {
+    const s = listeningSummary({ ...base, port: null, paused_on_mobile_data: true });
+    expect(s).toEqual({ listening: false, text: 'Paused on mobile data', detail: '' });
+    expect(listeningSummary({ ...base, port: null }).text).toBe('Not listening yet');
   });
 
   it('names only the networks that are really there', () => {

@@ -58,7 +58,7 @@ export function pauseBanner(peer: Pick<PeerRow, 'name' | 'pause'>): PauseBanner 
     const owner = pause.here ? 'This device' : peer.name;
     return {
       title,
-      text: `${owner}'s clock is ${durationWords(pause.ahead_ms)} ahead. Fix the time to keep syncing.`,
+      text: `${owner}’s clock is ${durationWords(pause.ahead_ms)} ahead. Fix the time to keep syncing.`,
     };
   }
   const { older_here: here, older_there: there } = pause;

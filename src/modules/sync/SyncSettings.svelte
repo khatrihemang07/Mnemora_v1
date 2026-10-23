@@ -55,7 +55,7 @@
       />
     {/key}
   </SettingRow>
-  <SettingRow label="This device's name" hint="Shown on your other devices.">
+  <SettingRow label="This device’s name" hint="Shown on your other devices.">
     <DeviceNameField class="min-[720px]:w-64" />
   </SettingRow>
   <SettingRow

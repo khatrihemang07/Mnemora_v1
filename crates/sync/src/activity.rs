@@ -520,7 +520,7 @@ pub(crate) fn log_conflict_raised(
     if other_device != me {
         row = with_peer(conn, row, other_device, None);
     }
-    row.extra = json!({ "entity": entity, "field": field });
+    row.extra = json!({ "entity": entity, "field": field, "conflict": conflict });
     log(conn, &row)
 }
 

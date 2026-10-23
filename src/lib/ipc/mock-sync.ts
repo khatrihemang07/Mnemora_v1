@@ -2,6 +2,8 @@
  * Sync for the browser mock. Mirrors crates/sync (device name rules, the Device settings) and
  * src-tauri/src/sync.rs; fixtures/sync-rules.json keeps the two in step (ADR 0009).
  */
+
+import { routeOfAddress } from '../../modules/sync/address';
 import type {
   AppError,
   Attention,
@@ -121,7 +123,11 @@ export function createSyncMock(
 
   const typedAddresses = new Map<string, string>();
   const pairing = createPairingMock({
-    rememberAddress: (id, stored) => typedAddresses.set(id, stored),
+    rememberAddress: (id, stored) => {
+      typedAddresses.set(id, stored);
+      // Reached by that address, so the route is the one the address leads to.
+      live.setRoute(id, routeOfAddress(stored));
+    },
     peers,
     emit,
     flags,
@@ -153,6 +159,7 @@ export function createSyncMock(
       port: 47311,
       addresses: ['192.168.1.20', '100.101.4.7'],
       routes: ['wifi', 'tailscale'],
+      paused_on_mobile_data: flags.onMobile === true && sync().enabled && !sync().mobile_data,
     },
     peers: live.rows(),
   });

@@ -30,6 +30,8 @@ pub struct ThisDevice {
     /// Which kinds of network those addresses are on, Wi-Fi first (told by range, so the card
     /// says what is really there).
     pub routes: Vec<Route>,
+    /// Sync is waiting because this phone is on mobile data and "Allow over mobile data" is off.
+    pub paused_on_mobile_data: bool,
 }
 
 /// The Devices tab.
@@ -117,8 +119,9 @@ pub(crate) fn routes_of(ips: &[std::net::IpAddr]) -> Vec<Route> {
     routes
 }
 
-/// The Devices tab's data. `listening` is where the listener is bound, if it is; `live` is what
-/// the session manager says about each paired device.
+/// The Devices tab's data. `listening` is where the listener is bound, if it is; `paused_on_mobile_data`
+/// says Sync is held by the mobile-data setting; `live` is what the session manager says about each
+/// paired device.
 #[allow(
     clippy::implicit_hasher,
     reason = "the one caller passes the manager's plain map"
@@ -127,6 +130,7 @@ pub fn view(
     device: &DeviceSettings,
     conn: &Connection,
     listening: Option<SocketAddr>,
+    paused_on_mobile_data: bool,
     live: &HashMap<String, PeerLive>,
 ) -> AppResult<DevicesView> {
     Ok(DevicesView {
@@ -144,6 +148,7 @@ pub fn view(
             } else {
                 Vec::new()
             },
+            paused_on_mobile_data,
         },
         peers: rows_of(conn, live)?,
     })

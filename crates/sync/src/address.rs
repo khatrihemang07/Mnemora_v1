@@ -34,7 +34,7 @@ impl AddressError {
     pub const fn message(self) -> &'static str {
         match self {
             Self::Empty => "Type an address",
-            Self::Host => "That isn't a host name or an IP address",
+            Self::Host => "That isn’t a host name or an IP address",
             Self::Port => "The port is a number from 1 to 65535",
             Self::Brackets => "Put an IPv6 address in square brackets, like [fd7a::1]",
         }

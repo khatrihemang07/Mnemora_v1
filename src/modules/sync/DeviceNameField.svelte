@@ -32,7 +32,7 @@
 
 <div class={cls}>
   <Input
-    label="This device's name"
+    label="This device’s name"
     bind:value={() => shown, (v) => { text = v; error = null; }}
     invalid={error !== null}
     onblur={() => void commit()}

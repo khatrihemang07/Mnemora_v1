@@ -24,7 +24,6 @@
   import { readCore } from '../../lib/settings/core';
   import { settingsQuery } from '../../lib/settings/queries';
   import type { ActivityRow } from '../../lib/ipc/bindings';
-  import Button from '../../lib/ui/Button.svelte';
   import DayHeading from '../../lib/ui/DayHeading.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
@@ -151,7 +150,7 @@
           getKey={(item) => item.key}
           estimateSize={(item) => estimate(item, item.kind === 'row' && open[item.row.id] === true)}
           onnearend={more}
-          nearEnd={8}
+          nearEnd={40}
           onviewport={viewed}
           class="h-full"
         >
@@ -186,16 +185,16 @@
                       {/if}
                     {:else}
                       {@render sentence(r)}
-                    {/if}
-                    {#if r.link === 'conflicts'}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        class="mt-1 -ml-2"
-                        onclick={() => moduleContext.navigate('/sync/conflicts')}
-                      >
-                        Review
-                      </Button>
+                      {#if r.link === 'conflicts'}
+                        <span class="text-faint"> · </span>
+                        <button
+                          type="button"
+                          class="cursor-pointer rounded-sm font-medium text-hue-sync hover:underline"
+                          onclick={() => moduleContext.navigate('/sync/conflicts')}
+                        >
+                          Review
+                        </button>
+                      {/if}
                     {/if}
                   </div>
                   <span class="shrink-0 pt-1 text-sm text-faint tabular-nums">

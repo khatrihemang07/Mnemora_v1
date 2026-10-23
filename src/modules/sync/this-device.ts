@@ -9,6 +9,10 @@ export interface ListeningSummary {
 }
 
 export function listeningSummary(device: ThisDevice): ListeningSummary {
+  // Nothing is listening on purpose: the phone is on mobile data and Settings says not to use it.
+  if (device.paused_on_mobile_data) {
+    return { listening: false, text: 'Paused on mobile data', detail: '' };
+  }
   if (device.port === null) {
     return { listening: false, text: 'Not listening yet', detail: '' };
   }

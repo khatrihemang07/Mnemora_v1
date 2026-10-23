@@ -39,7 +39,7 @@
       </li>
     {/each}
   </ul>
-  <div class="mt-4 text-sm text-muted">This device's name</div>
+  <div class="mt-4 text-sm text-muted">This device’s name</div>
   <DeviceNameField class="mt-1" />
   <div class="mt-4 flex flex-wrap items-center gap-2">
     <Button variant="primary" onclick={() => void pairing.start('show')}><Plus class="size-4" /> Pair a device</Button>

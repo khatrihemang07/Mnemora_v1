@@ -70,9 +70,13 @@ describe('Activity grouping', () => {
       '# Monday',
       'c',
     ]);
+    expect(items.find((i) => i.kind === 'day' && i.title === 'Monday')).toMatchObject({
+      subtitle: '19 Oct',
+    });
     const first = items[0];
     expect(first?.kind === 'day' && first.first).toBe(true);
-    expect(first?.kind === 'day' && first.subtitle).toBe('Wednesday 21 Oct');
+    // Exactly Done's heading: the date beside it has no weekday.
+    expect(first?.kind === 'day' && first.subtitle).toBe('21 Oct');
   });
 
   it('names yesterday and gives every heading and row its own key', () => {

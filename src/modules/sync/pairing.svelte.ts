@@ -71,15 +71,17 @@ class Pairing {
     await this.run(() => unwrap(commands.syncPairEnter(this.code)));
   }
 
+  /** Says what is wrong with the typed address, if anything; true when it can be dialled. An empty field stays quiet. */
+  checkAddress(): boolean {
+    const parsed = parseAddress(this.address);
+    this.addressError = !parsed.ok && this.address.trim() !== '' ? parsed.message : null;
+    return parsed.ok;
+  }
+
   /** Pairs with the device at `address`, which shows `code`. */
   async submitAddress() {
-    if (this.code.length !== 8) return;
-    const parsed = parseAddress(this.address);
-    if (!parsed.ok) {
-      this.addressError = parsed.message;
-      return;
-    }
-    this.addressError = null;
+    // The address is judged first, so a bad one says so whatever the boxes hold, and nothing is dialled.
+    if (!this.checkAddress() || this.code.length !== 8) return;
     this.commandError = null;
     await this.run(() => unwrap(commands.syncPairEnterAt(this.address, this.code)));
   }

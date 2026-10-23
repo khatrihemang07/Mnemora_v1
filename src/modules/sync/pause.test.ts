@@ -75,10 +75,10 @@ describe('the paused banner', () => {
 
   it('names a clock that is ahead, theirs or ours', () => {
     expect(banner({ kind: 'clock', ahead_ms: 3 * HOUR, here: false })?.text).toBe(
-      "Pixel 8's clock is 3 h ahead. Fix the time to keep syncing.",
+      'Pixel 8’s clock is 3 h ahead. Fix the time to keep syncing.',
     );
     expect(banner({ kind: 'clock', ahead_ms: 12 * MIN, here: true })?.text).toBe(
-      "This device's clock is 12 min ahead. Fix the time to keep syncing.",
+      'This device’s clock is 12 min ahead. Fix the time to keep syncing.',
     );
   });
 });

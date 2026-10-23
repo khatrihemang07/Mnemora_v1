@@ -163,10 +163,10 @@ pub(crate) fn breakdown_text(parts: &[Part]) -> String {
 /// "a Task's notes": what a Conflict is about, in words.
 fn conflict_subject(entity: &str, field: &str) -> String {
     let what = match entity {
-        "todo_task" => "a Task's",
-        "todo_comment" => "a Comment's",
-        "journal_entry" => "an Entry's",
-        _ => "a record's",
+        "todo_task" => "a Task’s",
+        "todo_comment" => "a Comment’s",
+        "journal_entry" => "an Entry’s",
+        _ => "a record’s",
     };
     let part = match field {
         "notes" => "notes",
@@ -184,6 +184,16 @@ fn why_words(why: Option<Why>) -> &'static str {
         Some(Why::Revoked) => "it no longer knows this device",
         Some(Why::Lost) | None => "the connection was lost",
     }
+}
+
+/// Whether the Conflict is still open on this device (a line without its id leads nowhere).
+fn conflict_waits(conn: &Connection, id: &str) -> bool {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_conflicts WHERE id = ?1 AND status = 'open')",
+        [id],
+        |r| r.get(0),
+    )
+    .unwrap_or(false)
 }
 
 /// The row as the viewer reads it.
@@ -272,7 +282,10 @@ fn describe(conn: &Connection, v: Viewer<'_>, row: &Row) -> ActivityRow {
             ],
         },
         Some(Kind::ConflictRaised) => {
-            link = Some(ActivityLink::Conflicts);
+            // Only while the Conflict still waits: afterwards there is nothing to review.
+            if conflict_waits(conn, &str_of("conflict")) {
+                link = Some(ActivityLink::Conflicts);
+            }
             vec![piece(
                 format!(
                     "Conflict in {} needs you",

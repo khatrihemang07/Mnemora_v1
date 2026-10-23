@@ -43,6 +43,8 @@ export interface PairingFlags {
   check?: CheckKind;
   /** Console helper (set by the Sync mock): puts a paired device in a state. */
   setPeer?: (state: PeerState, name?: string, daysAway?: number, why?: string) => void;
+  /** Console: the phone is on mobile data (with "Allow over mobile data" off the card says Sync waits). */
+  onMobile?: boolean;
   /** Console: a new conflict arrived from the simulated device (toast, if this device wants one). */
   newConflict?: () => void;
 }

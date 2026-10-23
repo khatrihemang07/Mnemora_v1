@@ -203,7 +203,7 @@ async fn check_says_who_answered_in_words() {
     // Not an address; a name that is nowhere.
     let bad = check(&a, &b_id, "not an address!");
     assert_eq!(bad["kind"], "invalid");
-    assert_eq!(bad["message"], "That isn't a host name or an IP address");
+    assert_eq!(bad["message"], "That isn’t a host name or an IP address");
     let nowhere = check(&a, &b_id, "no-such-device.invalid");
     assert_eq!(nowhere["kind"], "not_found", "{nowhere}");
 
@@ -243,7 +243,7 @@ async fn a_typed_address_is_a_way_to_reach_the_device() {
             json!({ "id": b_id, "address": "pixel 8" }),
         )
         .unwrap_err();
-    assert_eq!(bad["message"], "That isn't a host name or an IP address");
+    assert_eq!(bad["message"], "That isn’t a host name or an IP address");
     let stored: Value = a.call(
         "sync_device_address",
         json!({ "id": b_id, "address": format!("  LOCALHOST:{} ", b.address().port()) }),

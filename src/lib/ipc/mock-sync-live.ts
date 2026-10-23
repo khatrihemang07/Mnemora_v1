@@ -152,6 +152,12 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
       if ((s.state === 'up_to_date' || s.state === 'syncing') && !timers.has(p.id)) run(p);
     },
 
+    /** How the device was last reached (a device paired by address went the way its address leads). */
+    setRoute(id: string, route: Route) {
+      const p = peers.find((x) => x.id === id);
+      if (p) sim(p).route = route;
+    },
+
     /** Drops one device (it was forgotten). */
     forget(id: string) {
       cancel(id);

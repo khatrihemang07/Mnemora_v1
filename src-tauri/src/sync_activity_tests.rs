@@ -283,7 +283,7 @@ fn a_conflict_raised_and_resolved_is_one_line_each_on_every_device() {
     for i in 0..3 {
         let raised = of_kind(&c[i], "conflict_raised");
         assert_eq!(raised.len(), 1, "device {i}: {raised:?}");
-        assert!(line(&raised[0]).starts_with("Conflict in an Entry's text needs you"));
+        assert!(line(&raised[0]).starts_with("Conflict in an Entry’s text needs you"));
         assert_eq!(raised[0]["link"], "conflicts");
     }
     assert_eq!(
@@ -302,7 +302,10 @@ fn a_conflict_raised_and_resolved_is_one_line_each_on_every_device() {
     for i in 0..3 {
         let resolved = of_kind(&c[i], "conflict_resolved");
         assert_eq!(resolved.len(), 1, "device {i}: {resolved:?}");
-        assert!(line(&resolved[0]).starts_with("Conflict in an Entry's text resolved"));
+        assert!(line(&resolved[0]).starts_with("Conflict in an Entry’s text resolved"));
+        // Nothing is left to review, so the old line no longer leads anywhere.
+        let raised = of_kind(&c[i], "conflict_raised");
+        assert_eq!(raised[0]["link"], Value::Null, "device {i}");
     }
 }
 

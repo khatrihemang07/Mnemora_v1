@@ -1845,6 +1845,8 @@ export type ThisDevice = {
 	 *  says what is really there).
 	 */
 	routes: Route[],
+	/**  Sync is waiting because this phone is on mobile data and "Allow over mobile data" is off. */
+	paused_on_mobile_data: boolean,
 };
 
 /**  The Entry written last on the day. */

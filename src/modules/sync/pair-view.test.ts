@@ -4,7 +4,7 @@ import { clock, fractionLeft, isBusy, previewStats, problem, remaining } from '.
 describe('problem', () => {
   it('words a wrong code with the tries left and where to look', () => {
     const p = problem({ kind: 'wrong_code', tries_left: 2, name: "Hemang's MacBook Pro" }, true);
-    expect(p.title).toBe("That code didn't match.");
+    expect(p.title).toBe('That code didn’t match.');
     expect(p.fix).toBe("2 tries left. Check the code on Hemang's MacBook Pro.");
     expect(p.deadCode).toBe(false);
   });
@@ -102,7 +102,7 @@ describe('isBusy', () => {
 
 describe('pairing by address', () => {
   it('words an unknown name and a silent address', () => {
-    expect(problem({ kind: 'address_not_found' }, true).title).toBe("That name wasn't found.");
+    expect(problem({ kind: 'address_not_found' }, true).title).toBe('That name wasn’t found.');
     const silent = problem({ kind: 'address_unreachable' }, true);
     expect(silent.title).toBe('Nothing answered at that address.');
     expect(silent.deadCode).toBe(false);
@@ -127,9 +127,9 @@ describe('merge preview', () => {
 
   it('words a failed backup for this device and for the other', () => {
     const here = problem({ kind: 'backup_failed', name: null }, true);
-    expect(here.title).toBe("Couldn't back up this device first.");
+    expect(here.title).toBe('Couldn’t back up this device first.');
     expect(here.fix).toContain('Nothing was merged');
     const there = problem({ kind: 'backup_failed', name: 'Pixel 8' }, false);
-    expect(there.title).toBe("Pixel 8 couldn't back up its data first.");
+    expect(there.title).toBe('Pixel 8 couldn’t back up its data first.');
   });
 });

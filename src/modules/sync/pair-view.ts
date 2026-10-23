@@ -17,7 +17,7 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
   switch (error.kind) {
     case 'wrong_code':
       return {
-        title: "That code didn't match.",
+        title: 'That code didn’t match.',
         fix:
           error.tries_left > 0
             ? `${triesLeft(error.tries_left)}. Check the code on ${error.name}.`
@@ -47,7 +47,7 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
     case 'cancelled':
       return {
         title: `Pairing was cancelled on ${error.name ?? OTHER_DEVICE}.`,
-        fix: "Start again when you're ready.",
+        fix: 'Start again when you’re ready.',
         deadCode: true,
       };
     case 'different_environment':
@@ -67,7 +67,7 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
           error.older === 'me'
             ? `${error.name} has newer data. Update this device, then pair again.`
             : error.older === 'them'
-              ? `Its data is older than this device's. Update it, then pair again.`
+              ? `Its data is older than this device’s. Update it, then pair again.`
               : 'Each has something the other lacks. Update both, then pair again.',
         deadCode: false,
       };
@@ -92,7 +92,7 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
       };
     case 'address_not_found':
       return {
-        title: "That name wasn't found.",
+        title: 'That name wasn’t found.',
         fix: 'Check the spelling, and that Tailscale is on for both devices.',
         deadCode: false,
       };
@@ -105,8 +105,8 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
     case 'backup_failed':
       return {
         title: error.name
-          ? `${error.name} couldn't back up its data first.`
-          : "Couldn't back up this device first.",
+          ? `${error.name} couldn’t back up its data first.`
+          : 'Couldn’t back up this device first.',
         fix: `Nothing was merged. Free some space${error.name ? ' there' : ''} and try again.`,
         deadCode: false,
       };

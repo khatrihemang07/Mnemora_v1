@@ -9,7 +9,7 @@ export const DEFAULT_PORT = 47311;
 
 export const ADDRESS_MESSAGES = {
   empty: 'Type an address',
-  host: "That isn't a host name or an IP address",
+  host: 'That isn’t a host name or an IP address',
   port: 'The port is a number from 1 to 65535',
   brackets: 'Put an IPv6 address in square brackets, like [fd7a::1]',
 } as const;
@@ -125,4 +125,21 @@ function normalizeIpv6(text: string): string {
     .map(hex)
     .join(':');
   return `${before}::${after}`;
+}
+
+/**
+ * The route a connection to a stored address takes, as Rust's `Route::of` says it for the address
+ * actually connected to: Tailscale for 100.64.0.0/10, fd7a:115c:a1e0::/48 and MagicDNS names
+ * (`*.ts.net`), the local network for everything else.
+ */
+export function routeOfAddress(stored: string): 'wifi' | 'tailscale' {
+  const text = stored.trim().toLowerCase();
+  if (text.startsWith('[')) {
+    const inner = text.slice(1, text.indexOf(']'));
+    return /^fd7a:115c:a1e0(:|$)/.test(inner) ? 'tailscale' : 'wifi';
+  }
+  const host = text.split(':')[0] ?? '';
+  const v4 = /^100\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(host);
+  if (v4) return Number(v4[1]) >= 64 && Number(v4[1]) <= 127 ? 'tailscale' : 'wifi';
+  return host.endsWith('.ts.net') ? 'tailscale' : 'wifi';
 }
