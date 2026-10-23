@@ -40,6 +40,7 @@ pub fn forget_all(conn: &Connection) -> AppResult<()> {
     crate::peer_state::forget_all(conn)?;
     // The group is gone, and so are its decisions about who may join it.
     crate::revoke::clear(conn)?;
+    crate::introduce::clear(conn)?;
     tracing::info!(target: "sync", "left the group, all paired devices forgotten");
     Ok(())
 }

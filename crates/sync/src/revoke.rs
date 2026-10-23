@@ -119,7 +119,7 @@ impl Row {
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut s, b| {
         let _ = write!(s, "{b:02x}");
@@ -127,7 +127,7 @@ fn hex(bytes: &[u8]) -> String {
     })
 }
 
-fn from_hex(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn from_hex(text: &str) -> Option<Vec<u8>> {
     if !text.len().is_multiple_of(2) || !text.is_ascii() {
         return None;
     }

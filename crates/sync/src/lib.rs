@@ -19,6 +19,7 @@ mod devices;
 pub mod discovery;
 mod error;
 mod held;
+mod introduce;
 mod live;
 mod merge;
 mod migrations;
@@ -74,6 +75,7 @@ pub use detail::{
 pub use devices::{DevicesView, ThisDevice, view as devices_view};
 pub use error::SyncError;
 pub use held::{Released, release_ready as release_held};
+pub use introduce::introduce as introduce_members;
 pub use live::{Host, Pace, PeerLive, Progress, Schedule};
 pub use name::{MAX_NAME_CHARS, default_device_name, validate_name};
 pub use network::{Network, NetworkOptions};
@@ -132,6 +134,7 @@ impl Module for SyncModule {
             activity::ACTIVITY,
             revoke::REVOCATION,
             rename::DEVICE,
+            introduce::INTRODUCTION,
         ]
     }
 
@@ -142,6 +145,7 @@ impl Module for SyncModule {
             activity::ENTITY => activity::apply(conn, change),
             revoke::ENTITY => revoke::apply(conn, change),
             rename::ENTITY => rename::apply(conn, change),
+            introduce::ENTITY => introduce::apply(conn, change),
             _ => Err(AppError::new(
                 ErrorCode::Internal,
                 "Sync does not sync that kind of record",

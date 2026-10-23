@@ -105,7 +105,7 @@ fn same_name(a: &str, b: &str) -> bool {
 /// under it, or under it with a number. The lowest id keeps the plain name, the next gets "(2)",
 /// and so on: a function of the wishes alone, so devices that heard two renames in a different
 /// order still agree.
-fn settle(conn: &Connection, device: &str, wanted: &str) -> AppResult<()> {
+pub(crate) fn settle(conn: &Connection, device: &str, wanted: &str) -> AppResult<()> {
     let before: Option<String> = conn
         .query_row(
             "SELECT COALESCE(wanted_name, name) FROM sync_peers WHERE id = ?1",

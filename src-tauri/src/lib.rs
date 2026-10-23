@@ -138,6 +138,8 @@ mod sync_conflicts_tests;
 #[cfg(test)]
 mod sync_forget_tests;
 #[cfg(test)]
+mod sync_groups_tests;
+#[cfg(test)]
 mod sync_journal_tests;
 #[cfg(test)]
 mod sync_lists_tests;

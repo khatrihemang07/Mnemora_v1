@@ -213,5 +213,19 @@ pub fn all() -> Migrations<'static> {
         // number when two devices were given one name; deriving it from every wish in a fixed
         // order keeps the devices in agreement (#69 review). Local.
         M::up("ALTER TABLE sync_peers ADD COLUMN wanted_name TEXT;"),
+        // Introductions (#70), synced as the change-log entity `sync_introduction`: a member signs
+        // the key of a device it paired, so the members that were not there accept it. `at` orders
+        // them, `by_device` signed it, `signature` is hex.
+        M::up(
+            "CREATE TABLE sync_introductions(
+             device TEXT PRIMARY KEY NOT NULL,
+             public_key TEXT NOT NULL,
+             name TEXT NOT NULL,
+             platform TEXT NOT NULL,
+             at INTEGER NOT NULL,
+             by_device TEXT NOT NULL,
+             signature TEXT NOT NULL
+         ) STRICT;",
+        ),
     ])
 }

@@ -385,6 +385,10 @@ impl<R: Runtime> PairingHost for AppHost<R> {
         }
         // This device was forgotten itself and is being paired again: it syncs once more.
         mnemora_sync::lift_revocation(&conn, &identity, &device)?;
+        // The rest of the group was not here: the device just paired, and the members it brought,
+        // are introduced with this device's signature so the others accept their keys.
+        let introduced: Vec<String> = stored.pins.iter().map(|(_, id)| id.clone()).collect();
+        mnemora_sync::introduce_members(&conn, &identity, &introduced)?;
         Ok(stored)
     }
 
