@@ -109,6 +109,20 @@ fn step(c: &Cluster, ids: &mut Ids, n: usize, s: &Value) {
             )
             .unwrap();
         }
+        "list_sort" => {
+            app.invoke::<Value>(
+                "todo_list_set_sort",
+                json!({ "id": ids.get(&s["list"]), "sort": s["sort"] }),
+            )
+            .unwrap();
+        }
+        "list_group" => {
+            app.invoke::<Value>(
+                "todo_list_set_group",
+                json!({ "id": ids.get(&s["list"]), "groupBy": s["group"] }),
+            )
+            .unwrap();
+        }
         "list_delete" => {
             app.invoke::<Value>(
                 "todo_list_delete",
@@ -121,7 +135,10 @@ fn step(c: &Cluster, ids: &mut Ids, n: usize, s: &Value) {
             let made: Value = app
                 .invoke(
                     "todo_task_create",
-                    json!({ "title": s["title"], "listId": ids.get(&s["list"]) }),
+                    json!({
+                        "title": s["title"], "listId": ids.get(&s["list"]),
+                        "details": { "understood": s.get("understood") },
+                    }),
                 )
                 .unwrap();
             ids.0.insert(str_of(s, "task").into(), made["id"].clone());
@@ -146,6 +163,28 @@ fn step(c: &Cluster, ids: &mut Ids, n: usize, s: &Value) {
             )
             .unwrap();
         }
+        "task_title" => {
+            let now: Value = app.invoke("todo_task", json!({ "id": task })).unwrap();
+            let repeat = (!now["repeat_freq"].is_null()).then(|| {
+                json!({
+                    "freq": now["repeat_freq"], "every": now["repeat_every"],
+                    "days": now["repeat_days"], "mode": now["repeat_mode"],
+                })
+            });
+            app.invoke::<Value>(
+                "todo_task_quick_edit",
+                json!({
+                    "id": task,
+                    "edit": {
+                        "title": s["title"], "understood": s.get("understood"),
+                        "due_date": now["due_date"], "due_time": now["due_time"],
+                        "repeat": repeat, "priority": now["priority"], "list_id": now["list_id"],
+                    },
+                    "local": local(),
+                }),
+            )
+            .unwrap();
+        }
         "task_priority" => {
             app.invoke::<Value>(
                 "todo_task_set_priority",
@@ -156,9 +195,16 @@ fn step(c: &Cluster, ids: &mut Ids, n: usize, s: &Value) {
         "task_when" => {
             app.invoke::<Value>(
                 "todo_task_set_when",
-                json!({ "id": task, "date": s["date"], "time": s["time"], "repeat": null, "local": local() }),
+                json!({
+                    "id": task, "date": s["date"], "time": s["time"],
+                    "repeat": s.get("repeat"), "local": local(),
+                }),
             )
             .unwrap();
+        }
+        "task_skip" => {
+            app.invoke::<Value>("todo_task_skip", json!({ "id": task, "local": local() }))
+                .unwrap();
         }
         "task_done" => {
             app.invoke::<Value>(
@@ -243,6 +289,13 @@ fn step(c: &Cluster, ids: &mut Ids, n: usize, s: &Value) {
                 .unwrap();
             ids.0.insert(str_of(s, "entry").into(), made["id"].clone());
         }
+        "entry_delete" => {
+            app.invoke::<()>(
+                "journal_entry_delete",
+                json!({ "id": ids.get(&s["entry"]) }),
+            )
+            .unwrap();
+        }
         "entry_edit" => {
             app.invoke::<Value>(
                 "journal_entry_update",
@@ -256,8 +309,9 @@ fn step(c: &Cluster, ids: &mut Ids, n: usize, s: &Value) {
 }
 
 /// One device as plain data, in the shape of the fixture's `expect`.
+#[allow(clippy::too_many_lines)] // one entry per part of `expect`: reads best together
 fn world(app: &TestApp, ids: &Ids) -> Value {
-    let (lists, tasks, comments, entries) = app.with_db(|db| {
+    let (lists, tasks, comments, entries, occurrences) = app.with_db(|db| {
         let rows = |columns: &str, from: &str| -> Vec<Value> {
             let mut stmt = db
                 .prepare(&format!("SELECT json_array({columns}) FROM {from}"))
@@ -268,13 +322,24 @@ fn world(app: &TestApp, ids: &Ids) -> Value {
                 .collect()
         };
         (
-            rows("id, name", "todo_lists WHERE deleted_at IS NULL"),
             rows(
-                "id, title, notes, priority, due_date, due_time, state, list_id, deleted_at IS NOT NULL",
+                "id, name, task_sort, COALESCE(group_by, 'none')",
+                "todo_lists WHERE deleted_at IS NULL",
+            ),
+            rows(
+                "id, title, notes, priority, due_date, due_time, state, list_id,
+                 deleted_at IS NOT NULL, understood, repeat_freq, repeat_every, repeat_days,
+                 repeat_mode",
                 "todo_tasks",
             ),
             rows("id, task_id, body, edited", "todo_comments WHERE deleted_at IS NULL"),
             rows("id, body", "journal_entries WHERE deleted_at IS NULL"),
+            db.query_row(
+                "SELECT COUNT(*) FROM todo_tasks WHERE repeat_of IS NOT NULL AND deleted_at IS NULL",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap(),
         )
     });
     let mut out = Map::new();
@@ -292,11 +357,18 @@ fn world(app: &TestApp, ids: &Ids) -> Value {
     };
     out.insert("lists".into(), labelled(&lists, &|r| r[1].clone()));
     out.insert(
+        "arrange".into(),
+        labelled(&lists, &|r| json!({ "sort": r[2], "group": r[3] })),
+    );
+    out.insert("occurrences".into(), json!(occurrences));
+    out.insert(
         "tasks".into(),
         labelled(&tasks, &|r| {
             let gone = r[8] == json!(1);
             json!({
-                "title": r[1], "notes": r[2], "priority": r[3], "due_date": r[4], "due_time": r[5],
+                "title": r[1], "understood": r[9], "notes": r[2],
+                "repeat_freq": r[10], "repeat_every": r[11], "repeat_days": r[12],
+                "repeat_mode": r[13], "priority": r[3], "due_date": r[4], "due_time": r[5],
                 "state": r[6], "deleted": gone,
                 // A deleted Task's List is hidden state that depends on who went first.
                 "list": if gone { Value::Null } else { ids.label_of(&r[7]) },

@@ -40,18 +40,33 @@ const o: Def = { cls: 'order' };
 const SCHEMA: Record<Entity, Record<string, Def>> = {
   task: {
     list_id: v(),
-    title: t(),
+    title: t('title'),
+    understood: v('title'),
     notes: t(),
     due_date: v('when'),
     due_time: v('when'),
+    repeat_freq: v('when'),
+    repeat_every: v('when'),
+    repeat_days: v('when'),
+    repeat_mode: v('when'),
     priority: v(),
     state: v('state'),
     closed_at: v('state'),
+    repeat_of: v(),
+    sort_key: o,
+    created_at: v(),
+    deleted_at: v(),
+    skipped: v(),
+  },
+  list: {
+    name: v(),
+    emoji: v(),
+    task_sort: v(),
+    group_by: v(),
     sort_key: o,
     created_at: v(),
     deleted_at: v(),
   },
-  list: { name: v(), emoji: v(), sort_key: o, created_at: v(), deleted_at: v() },
   comment: {
     body: t('body'),
     edited: v('body'),
@@ -146,6 +161,8 @@ export interface Outcome {
   docs: Doc[];
   /** Text clashes that wait for a person (none on a deleted record). */
   conflicts: TextClash[];
+  /** Text clashes on a record that is deleted: resolved at once and logged. */
+  deletedConflicts: TextClash[];
   values: ValueClash[];
   /** A record deleted by one device and edited later by another. */
   deleteEdits: { entity: Entity; id: string; deleter: string; editor: string; at: number }[];
@@ -372,6 +389,7 @@ export function fold(log: Rec[]): Outcome {
   const outcome: Outcome = {
     docs: [],
     conflicts: [],
+    deletedConflicts: [],
     values: [],
     deleteEdits: [],
     inbox: [],
@@ -450,6 +468,7 @@ export function fold(log: Rec[]): Outcome {
     outcome.docs.filter((d) => d.values.deleted_at == null).map((d) => `${d.entity}/${d.id}`),
   );
   outcome.conflicts = texts.filter((c) => live.has(`${c.entity}/${c.id}`));
+  outcome.deletedConflicts = texts.filter((c) => !live.has(`${c.entity}/${c.id}`));
   rules(outcome, log);
   return outcome;
 }
@@ -501,11 +520,10 @@ function foldText(doc: Doc, recs: Rec[], text: string, members: string[], texts:
 
 // ---------------------------------------------------------------------------------- the rules on top
 
-/** Lists with one name merge into the older; a Task whose List is gone goes to the Inbox. */
+/** Lists with one name merge into the older (the lower id, like Rust `list_sync::settle`); a Task whose List is gone goes to the Inbox. */
 function rules(outcome: Outcome, log: Rec[]) {
   const lists = outcome.docs.filter((d) => d.entity === 'list' && d.values.deleted_at == null);
-  const age = (a: Doc, b: Doc) =>
-    Number(a.values.created_at) - Number(b.values.created_at) || (a.id < b.id ? -1 : 1);
+  const age = (a: Doc, b: Doc) => (a.id < b.id ? -1 : 1);
   const survivor = new Map<string, Doc>();
   for (const l of [...lists].sort(age)) {
     const key = nameKey(String(l.values.name));

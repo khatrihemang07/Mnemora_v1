@@ -4,6 +4,7 @@
  * sync of two devices (both end up with the union of their logs).
  */
 
+import { nextDue, type RepeatRule } from '../ui/when-repeat';
 import {
   type Doc,
   type Entity,
@@ -15,6 +16,12 @@ import {
   same,
 } from './mock-sync-merge';
 import { keyAfter, keyBetween } from './mock-todo-order';
+
+/** What today is on both devices in the fixture (src-tauri/src/sync_merge_fixture_tests.rs `local`). */
+const TODAY = '2026-10-22';
+
+/** The id of the occurrence copy of a Task due on a day: the same on every device (Rust `occurrence_id`). */
+const occurrenceId = (task: string, due: string) => `occurrence|${task}|${due}`;
 
 export interface Replica {
   device: string;
@@ -60,13 +67,17 @@ function append(
   shown: Record<string, Json>,
 ) {
   const fields: Record<string, Json> = {};
+  const changed: string[] = [];
   for (const [k, value] of Object.entries(values)) {
     if (k in shown && same(shown[k], value)) continue;
+    changed.push(k);
     for (const m of GROUPS[k] ?? [k]) fields[m] = m === k ? value : (values[m] ?? shown[m] ?? null);
   }
   if (Object.keys(fields).length === 0) return;
+  // A touched group travels complete, but `prev` holds only what this edit changed (Rust
+  // change_log.prev), so a clash needs both sides to have changed the same member.
   const prev = Object.fromEntries(
-    Object.keys(fields).flatMap((k) => (k in shown ? [[k, shown[k] as Json]] : [])),
+    changed.flatMap((k) => (k in shown ? [[k, shown[k] as Json]] : [])),
   );
   const ms = Math.max(now, r.lastMs);
   const counter = ms === r.lastMs ? r.lastCounter + 1 : 0;
@@ -100,9 +111,11 @@ export function capture(r: Replica, docs: Doc[], now: number) {
     append(r, d.entity, d.id, d.values, now, shown.get(`${d.entity}/${d.id}`) ?? {});
 }
 
+const WHEN = ['due_date', 'due_time', 'repeat_freq', 'repeat_every', 'repeat_days', 'repeat_mode'];
 const GROUPS: Record<string, string[]> = {
-  due_date: ['due_date', 'due_time'],
-  due_time: ['due_date', 'due_time'],
+  title: ['title', 'understood'],
+  understood: ['title', 'understood'],
+  ...Object.fromEntries(WHEN.map((k) => [k, WHEN])),
   state: ['state', 'closed_at'],
   closed_at: ['state', 'closed_at'],
   body: ['body', 'edited'],
@@ -160,6 +173,8 @@ export function perform(r: Replica, s: Step, ids: Ids, now: number) {
       set('list', id, {
         name: String(s.name),
         emoji: null,
+        task_sort: 'manual',
+        group_by: 'none',
         sort_key: keyAfter(lastOf(live(o, 'list'))),
         created_at: now,
         deleted_at: null,
@@ -168,6 +183,10 @@ export function perform(r: Replica, s: Step, ids: Ids, now: number) {
     }
     case 'list_rename':
       return set('list', ref('list') as string, { name: String(s.name) });
+    case 'list_sort':
+      return set('list', ref('list') as string, { task_sort: String(s.sort) });
+    case 'list_group':
+      return set('list', ref('list') as string, { group_by: String(s.group) });
     case 'list_delete': {
       const id = ref('list') as string;
       for (const t of live(o, 'task').filter((t) => t.values.list_id === id))
@@ -180,12 +199,18 @@ export function perform(r: Replica, s: Step, ids: Ids, now: number) {
       set('task', id, {
         list_id: list,
         title: String(s.title),
+        understood: (s.understood ?? null) as Json,
         notes: String(s.notes ?? ''),
         due_date: null,
         due_time: null,
+        repeat_freq: null,
+        repeat_every: null,
+        repeat_days: null,
+        repeat_mode: null,
         priority: 4,
         state: 'open',
         closed_at: null,
+        repeat_of: null,
         sort_key: endKey(o, list),
         created_at: now,
         deleted_at: null,
@@ -199,13 +224,51 @@ export function perform(r: Replica, s: Step, ids: Ids, now: number) {
       });
     case 'task_priority':
       return set('task', task, { priority: Number(s.priority) });
-    case 'task_when':
+    case 'task_title':
+      return set('task', task, {
+        title: String(s.title),
+        understood: (s.understood ?? null) as Json,
+      });
+    case 'task_when': {
+      const rule = (s.repeat ?? null) as RepeatRule | null;
       return set('task', task, {
         due_date: (s.date ?? null) as Json,
         due_time: (s.time ?? null) as Json,
+        ...repeatFields(rule),
       });
-    case 'task_done':
-      return set('task', task, { state: 'done', closed_at: now });
+    }
+    case 'task_skip': {
+      const v = find(o, 'task', task)?.values ?? {};
+      const rule = ruleOf(v);
+      if (!rule) throw new Error('Only a repeating Task can be skipped');
+      const due = (v.due_date as string | null) ?? TODAY;
+      return set('task', task, { due_date: nextDue(rule, due, TODAY), skipped: true });
+    }
+    case 'task_done': {
+      const v = find(o, 'task', task)?.values ?? {};
+      const rule = ruleOf(v);
+      if (!rule) return set('task', task, { state: 'done', closed_at: now });
+      // A repeating Task is not closed: this occurrence is recorded as a done copy (one id for
+      // everyone, so completing it on two devices is one record) and the Task moves on.
+      const due = (v.due_date as string | null) ?? TODAY;
+      set('task', occurrenceId(task, due), {
+        list_id: v.list_id ?? null,
+        title: v.title ?? '',
+        understood: null,
+        notes: v.notes ?? '',
+        due_date: v.due_date ?? null,
+        due_time: v.due_time ?? null,
+        ...repeatFields(null),
+        priority: v.priority ?? 4,
+        state: 'done',
+        closed_at: now,
+        repeat_of: task,
+        sort_key: v.sort_key ?? '',
+        created_at: now,
+        deleted_at: null,
+      });
+      return set('task', task, { due_date: nextDue(rule, due, TODAY) });
+    }
     case 'task_move':
       return set('task', task, { list_id: ref('list'), sort_key: endKey(o, ref('list')) });
     case 'task_delete':
@@ -248,6 +311,8 @@ export function perform(r: Replica, s: Step, ids: Ids, now: number) {
         deleted_at: null,
       });
     }
+    case 'entry_delete':
+      return set('entry', ref('entry') as string, { deleted_at: now });
     case 'entry_edit':
       return set('entry', ref('entry') as string, { body: String(s.body) });
     case 'pref': {
@@ -274,7 +339,29 @@ export function resolvedKinds(o: Outcome): string[] {
     ...o.values.map(() => 'value'),
     ...o.deleteEdits.map(() => 'delete_edit'),
     ...o.inbox.map(() => 'task_inbox'),
+    ...o.deletedConflicts.map(() => 'conflict_deleted'),
   ].sort();
+}
+
+/** A Task's Repeat as its columns (none clears them). */
+function repeatFields(rule: RepeatRule | null): Record<string, Json> {
+  return {
+    repeat_freq: rule?.freq ?? null,
+    repeat_every: rule?.every ?? null,
+    repeat_days: rule?.days ?? null,
+    repeat_mode: rule?.mode ?? null,
+  };
+}
+
+/** The Repeat a Task's values hold, or none. */
+function ruleOf(v: Record<string, Json>): RepeatRule | null {
+  if (v.repeat_freq == null || v.repeat_every == null || v.repeat_mode == null) return null;
+  return {
+    freq: v.repeat_freq as RepeatRule['freq'],
+    every: Number(v.repeat_every),
+    days: (v.repeat_days ?? null) as number | null,
+    mode: v.repeat_mode as RepeatRule['mode'],
+  };
 }
 
 /** The data as the fixture's `expect` words it. */
@@ -303,10 +390,15 @@ export function worldOf(r: Replica, ids: Ids, defaults: Record<string, Json> = {
             label(t.id),
             {
               title: v.title,
+              understood: v.understood ?? null,
               notes: v.notes,
               priority: v.priority,
               due_date: v.due_date,
               due_time: v.due_time,
+              repeat_freq: v.repeat_freq ?? null,
+              repeat_every: v.repeat_every ?? null,
+              repeat_days: v.repeat_days ?? null,
+              repeat_mode: v.repeat_mode ?? null,
               state: v.state,
               deleted,
               list: deleted ? null : label(v.list_id as Json),
@@ -314,6 +406,13 @@ export function worldOf(r: Replica, ids: Ids, defaults: Record<string, Json> = {
           ];
         }),
     ),
+    arrange: Object.fromEntries(
+      lists.map((l) => [
+        label(l.id),
+        { sort: l.values.task_sort ?? 'manual', group: l.values.group_by ?? 'none' },
+      ]),
+    ),
+    occurrences: live(o, 'task').filter((t) => t.values.repeat_of != null).length,
     order: {
       inbox: order(null),
       ...Object.fromEntries(lists.map((l) => [label(l.id), order(l.id)])),
