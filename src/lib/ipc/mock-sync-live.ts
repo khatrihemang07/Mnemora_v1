@@ -127,6 +127,23 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
         );
     },
 
+    /** "Sync now" for one device. */
+    syncOne(id: string) {
+      const p = peers.find((x) => x.id === id);
+      if (!enabled() || !p) return;
+      const s = sim(p);
+      if ((s.state === 'up_to_date' || s.state === 'syncing') && !timers.has(p.id)) run(p);
+    },
+
+    /** Drops one device (it was forgotten). */
+    forget(id: string) {
+      cancel(id);
+      sims.delete(id);
+      const at = peers.findIndex((p) => p.id === id);
+      if (at >= 0) peers.splice(at, 1);
+      emit();
+    },
+
     /** "Sync now": every reachable device runs a simulated sync. */
     syncNow() {
       if (!enabled()) return;

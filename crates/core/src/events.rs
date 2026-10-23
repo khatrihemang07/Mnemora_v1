@@ -95,6 +95,13 @@ pub struct ConflictsRaised {
     pub device: Option<String>,
 }
 
+/// Another device renamed this one. The app saves the name in its device file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceRenamed {
+    /// The new name.
+    pub name: String,
+}
+
 /// A sync session with another device ended, having changed these Modules' data. Sent once per
 /// session, not per batch, for things that only need to know at the end (the Todo widget).
 #[derive(Debug, Clone, PartialEq, Eq)]

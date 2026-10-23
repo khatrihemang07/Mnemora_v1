@@ -31,6 +31,13 @@ impl PublicKey {
         Self(bytes)
     }
 
+    /// Whether `signature` is this key's Ed25519 signature of `message`.
+    pub fn verify(&self, message: &[u8], signature: &[u8]) -> bool {
+        ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &self.0)
+            .verify(message, signature)
+            .is_ok()
+    }
+
     /// Lowercase hex, 64 characters.
     pub fn to_hex(self) -> String {
         use std::fmt::Write;
@@ -115,6 +122,14 @@ impl DeviceIdentity {
     /// The public key other devices pin.
     pub fn public_key(&self) -> PublicKey {
         self.public
+    }
+
+    /// Signs `message` with this device's key (Ed25519). Used for what the whole group must be
+    /// able to check came from a member: a revocation or a rename.
+    pub fn sign(&self, message: &[u8]) -> Result<Vec<u8>, NetError> {
+        let pair = ring::signature::Ed25519KeyPair::from_pkcs8_maybe_unchecked(&self.pkcs8)
+            .map_err(|_| NetError::Key("not an Ed25519 key".into()))?;
+        Ok(pair.sign(message).as_ref().to_vec())
     }
 
     pub(super) fn cert_chain(&self) -> Vec<CertificateDer<'static>> {
@@ -211,6 +226,19 @@ mod tests {
             DeviceIdentity::load_or_create(dir.path()),
             Err(NetError::Key(_))
         ));
+    }
+
+    #[test]
+    fn a_signature_verifies_only_for_its_key_and_message() {
+        let (a, b) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        let sig = a.sign(b"forget c").unwrap();
+        assert!(a.public_key().verify(b"forget c", &sig));
+        assert!(!a.public_key().verify(b"forget d", &sig));
+        assert!(!b.public_key().verify(b"forget c", &sig));
+        assert!(!a.public_key().verify(b"forget c", &sig[1..]));
     }
 
     #[test]

@@ -389,14 +389,15 @@ fn renaming_forgetting_leaving_pauses_resumes_and_failures_are_each_one_attribut
         paused_on(a),
         format!("Paused with {b_name}: one of you needs an update")
     );
+    // The rename reached the others (#69), so they call it by its new name.
     assert_eq!(
         paused_on(b),
-        format!("Paused with {a_name}: one of you needs an update")
+        "Paused with Studio Mac: one of you needs an update"
     );
     let third = order[2];
     assert_eq!(
         paused_on(third),
-        format!("Paused with {b_name}: one of you needs an update · on {a_name}")
+        format!("Paused with {b_name}: one of you needs an update · on Studio Mac")
     );
     assert_eq!(
         line(&of_kind(&c[third], "renamed")[0]),
@@ -404,7 +405,7 @@ fn renaming_forgetting_leaving_pauses_resumes_and_failures_are_each_one_attribut
     );
     assert_eq!(
         line(&of_kind(&c[third], "failed")[0]),
-        format!("Connection to {b_name} lost; retrying · on {a_name}")
+        format!("Connection to {b_name} lost; retrying · on Studio Mac")
     );
 }
 

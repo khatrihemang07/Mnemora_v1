@@ -3,13 +3,13 @@
 use std::sync::{Arc, Mutex};
 
 use mnemora_core::db::{self, Connection, migrate};
-use mnemora_core::error::AppError;
+use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::events::EventBus;
 use mnemora_sync::discovery::{Discovery, Fixed, Mdns};
 use mnemora_sync::net::{DeviceIdentity, Handshake, PublicKey};
 use mnemora_sync::{
-    DevicesView, Host, Network, NetworkOptions, Paired, PairingHost, PairingView, Platform,
-    Registry, Stored, SyncError, SyncOption, SyncState, Who,
+    CheckExpect, CheckResult, DeviceDetail, DevicesView, Host, Network, NetworkOptions, Paired,
+    PairingHost, PairingView, Platform, Registry, Stored, SyncError, SyncOption, SyncState, Who,
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_specta::Event;
@@ -62,6 +62,8 @@ pub fn sync_rename(state: State<'_, AppState>, name: String) -> Result<(), AppEr
     let conn = lock(&state.db);
     if old != new && mnemora_sync::group(&conn)?.is_some() {
         mnemora_sync::log_renamed(&conn, &state.device.device_id(), &old, &new)?;
+        // The other devices take the new name too.
+        mnemora_sync::record_own_name(&conn, &new)?;
     }
     Ok(())
 }
@@ -104,6 +106,133 @@ pub fn sync_devices(state: State<'_, AppState>) -> Result<DevicesView, AppError>
         state.sync.listening(),
         &state.sync.peers_live(),
     )
+}
+
+/// This device's key, made on first use. It lives next to the device file.
+fn identity(state: &AppState) -> Result<DeviceIdentity, AppError> {
+    let dir = state
+        .paths
+        .device_file()
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_default();
+    DeviceIdentity::load_or_create(&dir).map_err(|e| AppError::from(SyncError::from(e)))
+}
+
+fn my_name(state: &AppState) -> String {
+    state
+        .device
+        .get()
+        .sync
+        .name
+        .unwrap_or_else(mnemora_sync::default_device_name)
+}
+
+/// The device sheet: what is known about one paired device.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_device(state: State<'_, AppState>, id: String) -> Result<DeviceDetail, AppError> {
+    let conn = lock(&state.db);
+    mnemora_sync::device_detail(
+        &conn,
+        &id,
+        &state.device.device_id(),
+        &my_name(&state),
+        &state.sync.peers_live(),
+    )?
+    .ok_or_else(|| AppError::new(ErrorCode::NotFound, "That device is not paired"))
+}
+
+/// Renames a paired device for the whole group (unique, 1 to 40 characters). Returns the name saved.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_device_rename(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+) -> Result<String, AppError> {
+    let saved = mnemora_sync::rename_peer(&mut lock(&state.db), &my_name(&state), &id, &name)?;
+    state.sync.peers_changed();
+    Ok(saved)
+}
+
+/// Saves the Address typed for a device (a `MagicDNS` name, host, `host:port`, IPv4 or `[IPv6]`);
+/// empty clears it. Returns it as stored.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_device_address(
+    state: State<'_, AppState>,
+    id: String,
+    address: String,
+) -> Result<Option<String>, AppError> {
+    let stored = mnemora_sync::set_typed_address(&lock(&state.db), &id, &address)?;
+    // A new address is worth trying at once.
+    state.sync.resume();
+    Ok(stored)
+}
+
+/// "Check": dials the typed Address and says whether the device is there.
+#[tauri::command]
+#[specta::specta]
+pub async fn sync_device_check(
+    state: State<'_, AppState>,
+    id: String,
+    address: String,
+) -> Result<CheckResult, AppError> {
+    let (name, others) = {
+        let conn = lock(&state.db);
+        let Some(name) = mnemora_sync::peer_name(&conn, &id)? else {
+            return Err(AppError::new(
+                ErrorCode::NotFound,
+                "That device is not paired",
+            ));
+        };
+        (name, mnemora_sync::list_peers(&conn)?)
+    };
+    let config = state.sync.net_config().ok_or(SyncError::NotReady)?;
+    let (result, worked) = mnemora_sync::check_address(
+        &config,
+        &CheckExpect {
+            device: &id,
+            name: &name,
+        },
+        &address,
+        |device| {
+            others
+                .iter()
+                .find(|p| p.id == device)
+                .map(|p| p.name.clone())
+        },
+    )
+    .await;
+    if let Some(addr) = worked {
+        mnemora_sync::remember_worked(&lock(&state.db), &id, addr)?;
+    }
+    Ok(result)
+}
+
+/// "Sync now" for this device only.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_device_sync_now(state: State<'_, AppState>, id: String) {
+    state.sync.sync_now_with(&id);
+}
+
+/// Forgets a paired device for the whole group: a signed revocation is written and spreads,
+/// every device drops and refuses that key, and any open connection to it closes. Its data
+/// stays on it; pairing it again undoes this.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_device_forget(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let identity = identity(&state)?;
+    let forgotten =
+        mnemora_sync::forget_peer(&mut lock(&state.db), &identity, &my_name(&state), &id)?;
+    if let Some(key) = forgotten.key {
+        state.sync.unpin(&key);
+    }
+    state.sync.peers_changed();
+    state.sync.refresh_advert();
+    Ok(())
 }
 
 /// "Sync now": syncs with every reachable paired device now, even with Sync automatically off.
@@ -247,7 +376,17 @@ impl<R: Runtime> PairingHost for AppHost<R> {
             .clone()
             .unwrap_or_else(mnemora_sync::default_device_name);
         let device = state.device.device_id();
-        mnemora_sync::store_paired(&mut lock(&state.db), &device, &name, paired)
+        let mut conn = lock(&state.db);
+        let stored = mnemora_sync::store_paired(&mut conn, &device, &name, paired)?;
+        // A device that was forgotten and is paired again: the group takes it back too.
+        if mnemora_sync::lift_revocation(
+            &conn,
+            &identity(&state).map_err(SyncError::App)?,
+            &paired.who.device,
+        )? {
+            tracing::info!(target: "sync", "a forgotten device was paired again");
+        }
+        Ok(stored)
     }
 
     fn show(&self, view: &PairingView) {

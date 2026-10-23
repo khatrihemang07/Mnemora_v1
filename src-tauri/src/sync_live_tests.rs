@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use crate::sync_pairing_tests::Device;
 
 /// Quick enough for a test, with the same shape as the app's pace.
-fn quick() -> Pace {
+pub(crate) fn quick() -> Pace {
     Pace {
         debounce: Duration::from_millis(400),
         dial_each: Duration::from_secs(3),
@@ -22,7 +22,7 @@ fn quick() -> Pace {
     }
 }
 
-async fn pair(mac: &Device, phone: &Device) {
+pub(crate) async fn pair(mac: &Device, phone: &Device) {
     mac.call::<()>("sync_pair_show", json!({}));
     let code = mac.pairing()["code"].as_str().unwrap().replace(' ', "");
     phone.found.set(vec![mac.address()]);
@@ -34,23 +34,23 @@ async fn pair(mac: &Device, phone: &Device) {
 }
 
 /// Two paired devices that can find each other (as mDNS would let them).
-async fn paired_pair(mac_pace: Pace) -> (Device, Device) {
+pub(crate) async fn paired_pair(mac_pace: Pace) -> (Device, Device) {
     let mac = Device::with_pace("Mac", mac_pace).await;
     let phone = Device::with_pace("Pixel 8", quick()).await;
     pair(&mac, &phone).await;
     (mac, phone)
 }
 
-fn meet(mac: &Device, phone: &Device) {
+pub(crate) fn meet(mac: &Device, phone: &Device) {
     mac.found.announce(&phone.app.device_id(), phone.address());
     phone.found.announce(&mac.app.device_id(), mac.address());
 }
 
-fn peer_of(device: &Device) -> Value {
+pub(crate) fn peer_of(device: &Device) -> Value {
     device.devices()["peers"][0].clone()
 }
 
-async fn until(what: &str, mut done: impl FnMut() -> bool) {
+pub(crate) async fn until(what: &str, mut done: impl FnMut() -> bool) {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(8) {
         if done() {
@@ -61,7 +61,7 @@ async fn until(what: &str, mut done: impl FnMut() -> bool) {
     panic!("never saw {what}");
 }
 
-fn create(device: &Device, title: &str) -> Value {
+pub(crate) fn create(device: &Device, title: &str) -> Value {
     device
         .app
         .invoke::<Value>("todo_task_create", json!({ "title": title }))
@@ -69,14 +69,14 @@ fn create(device: &Device, title: &str) -> Value {
         .clone()
 }
 
-fn has(device: &Device, id: &Value) -> bool {
+pub(crate) fn has(device: &Device, id: &Value) -> bool {
     device
         .app
         .invoke::<Value>("todo_task", json!({ "id": id }))
         .is_ok()
 }
 
-fn task_count(device: &Device) -> i64 {
+pub(crate) fn task_count(device: &Device) -> i64 {
     device.app.with_db(|c| {
         c.query_row("SELECT COUNT(*) FROM todo_tasks", [], |r| r.get(0))
             .unwrap()
@@ -276,7 +276,7 @@ async fn leaving_the_group_closes_the_connections() {
     assert_eq!(peer_of(&phone)["state"], "not_nearby");
 }
 
-fn row_named(device: &Device, name: &str) -> Value {
+pub(crate) fn row_named(device: &Device, name: &str) -> Value {
     device.devices()["peers"]
         .as_array()
         .unwrap()

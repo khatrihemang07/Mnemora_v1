@@ -83,6 +83,12 @@ macro_rules! specta_builder_for {
                 sync::sync_set_option,
                 sync::sync_leave,
                 sync::sync_devices,
+                sync::sync_device,
+                sync::sync_device_rename,
+                sync::sync_device_address,
+                sync::sync_device_check,
+                sync::sync_device_sync_now,
+                sync::sync_device_forget,
                 sync::sync_pair_state,
                 sync::sync_pair_show,
                 sync::sync_pair_new_code,
@@ -130,6 +136,8 @@ mod sync_conflicts;
 #[cfg(test)]
 mod sync_conflicts_tests;
 #[cfg(test)]
+mod sync_forget_tests;
+#[cfg(test)]
 mod sync_journal_tests;
 #[cfg(test)]
 mod sync_lists_tests;
@@ -164,7 +172,8 @@ use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
 use mnemora_core::events::{
-    ConflictsRaised, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded, SettingsChanged,
+    ConflictsRaised, DeviceRenamed, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded,
+    SettingsChanged,
 };
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
@@ -273,6 +282,7 @@ fn follow_remote<R: tauri::Runtime>(
 ) {
     let handle_for_merges = handle.clone();
     let toast_handle = handle.clone();
+    let rename_handle = handle.clone();
     bus.subscribe(move |event: &RemoteChanged| {
         let sent = match event.module.as_str() {
             mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
@@ -285,6 +295,25 @@ fn follow_remote<R: tauri::Runtime>(
         if let Err(e) = sent {
             tracing::warn!(target: "sync", error = %e, "could not emit the change event");
         }
+    });
+    // Another device renamed this one: the name is saved in the device file like a rename here.
+    // Off the session's thread: it holds the database, which advertising the new name needs too.
+    bus.subscribe(move |event: &DeviceRenamed| {
+        let (handle, name) = (rename_handle.clone(), event.name.clone());
+        tauri::async_runtime::spawn_blocking(move || {
+            use tauri::Manager;
+            let Some(state) = handle.try_state::<state::AppState>() else {
+                return;
+            };
+            if let Err(e) = mnemora_sync::rename(&state.device, &name) {
+                tracing::warn!(target: "sync", error = %e, "could not save the new device name");
+                return;
+            }
+            state.sync.refresh_advert();
+            if let Err(e) = SyncPeersEvent.emit(&handle) {
+                tracing::warn!(target: "sync", error = %e, "could not emit the device change");
+            }
+        });
     });
     let merged_handle = handle_for_merges;
     bus.subscribe(move |event: &ListsMerged| {

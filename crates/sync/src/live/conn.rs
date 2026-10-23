@@ -74,6 +74,15 @@ impl Conn {
     }
 
     async fn start_round(&mut self) -> Result<Session, SyncError> {
+        // A device forgotten while this connection was open gets nothing more from it.
+        let peer = self.peer.clone();
+        let paired = blocking(self.host(), move |conn| {
+            Ok(crate::peers::is_paired(conn, &peer)?)
+        })
+        .await?;
+        if !paired {
+            return Err(SyncError::Disconnected);
+        }
         let session = self.new_session();
         let (session, hello) = blocking(self.host(), move |conn| {
             let hello = session.hello(conn)?;

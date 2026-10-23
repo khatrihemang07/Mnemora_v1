@@ -13,6 +13,7 @@ import type {
   SyncOption,
   SyncState,
 } from './bindings';
+import { createDeviceMock } from './mock-sync-devices';
 import { createLiveMock, type PairedBase } from './mock-sync-live';
 import { createPairingMock, defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
 
@@ -132,6 +133,16 @@ export function createSyncMock(
   flags.setPeer = (state: PeerState, name?: string, daysAway?: number) =>
     live.setPeer(state, name, daysAway);
 
+  const deviceSheet = createDeviceMock({
+    peers,
+    rows: () => live.rows(),
+    myName: () => state().name,
+    emitPeers,
+    syncOne: (id) => live.syncOne(id),
+    forget: (id) => live.forget(id),
+    forced: () => flags.check,
+  });
+
   const devices = (): DevicesView => ({
     this_device: {
       name: state().name,
@@ -143,9 +154,13 @@ export function createSyncMock(
   });
 
   return {
-    handles: (cmd: string) => COMMANDS.includes(cmd) || pairing.commands.includes(cmd),
+    handles: (cmd: string) =>
+      COMMANDS.includes(cmd) ||
+      pairing.commands.includes(cmd) ||
+      deviceSheet.commands.includes(cmd),
     handle(cmd: string, a: Record<string, unknown>): unknown {
       if (pairing.commands.includes(cmd)) return pairing.handle(cmd, a);
+      if (deviceSheet.commands.includes(cmd)) return deviceSheet.handle(cmd, a);
       const s = sync();
       switch (cmd) {
         case 'sync_get':

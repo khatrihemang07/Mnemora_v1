@@ -38,6 +38,8 @@ pub fn forget_all(conn: &Connection) -> AppResult<()> {
     conn.execute("DELETE FROM sync_peers", [])?;
     conn.execute("DELETE FROM sync_group", [])?;
     crate::peer_state::forget_all(conn)?;
+    // The group is gone, and so are its decisions about who may join it.
+    crate::revoke::clear(conn)?;
     tracing::info!(target: "sync", "left the group, all paired devices forgotten");
     Ok(())
 }
@@ -109,6 +111,15 @@ pub fn list(conn: &Connection) -> AppResult<Vec<PeerRow>> {
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Whether `device` is one of the paired devices.
+pub fn is_paired(conn: &Connection, device: &str) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_peers WHERE id = ?1)",
+        [device],
+        |r| r.get(0),
+    )?)
 }
 
 /// The name of a paired device, if it is one.
@@ -235,7 +246,13 @@ pub fn store_paired(
         let Some(member_key) = PublicKey::from_hex(&member.key) else {
             continue;
         };
-        if known || member.device == my_device || member.device == who.device {
+        // A member that stands revoked here is not taken in: whoever introduced it has not yet
+        // heard that it was forgotten.
+        if known
+            || member.device == my_device
+            || member.device == who.device
+            || crate::revoke::is_revoked(&tx, &member.device)?
+        {
             continue;
         }
         let member_name = unique_name(&member.name, &taken);

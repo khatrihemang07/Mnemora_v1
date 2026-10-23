@@ -34,7 +34,7 @@ pub use handshake::{Handshake, PROTOCOL_VERSION, Refusal};
 pub use identity::{DeviceIdentity, PublicKey};
 pub use link::{
     DEFAULT_PORT, Established, Incoming, Listener, LocalHandshake, NetConfig, NetTransport,
-    PeerInfo, Secured, TlsChannel, dial, secure_dial,
+    PeerInfo, Probed, Secured, TlsChannel, dial, probe, secure_dial,
 };
 pub use tls::Trust;
 

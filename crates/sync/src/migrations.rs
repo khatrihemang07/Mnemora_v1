@@ -188,5 +188,26 @@ pub fn all() -> Migrations<'static> {
          ) STRICT;
          CREATE INDEX sync_activity_at ON sync_activity(at DESC, id DESC);",
         ),
+        // The device sheet, Forget and Rename (#69). `typed_address` is the Address a person typed for
+        // a paired device (local). `app_version` and `data_versions` (JSON) are what the device
+        // said about itself the last time it was reached (local). `sync_revocations` is synced as
+        // the change-log entity `sync_revocation`: a signed decision of a member that a device is
+        // out of the group (`state` revoked), or in again after pairing (`lifted`); `at` orders
+        // decisions, `by_device` signed it, `signature` is hex.
+        M::up(
+            "ALTER TABLE sync_peers ADD COLUMN typed_address TEXT;
+         ALTER TABLE sync_peer_status ADD COLUMN app_version TEXT;
+         ALTER TABLE sync_peer_status ADD COLUMN data_versions TEXT;
+         CREATE TABLE sync_revocations(
+             device TEXT PRIMARY KEY NOT NULL,
+             public_key TEXT NOT NULL,
+             name TEXT NOT NULL,
+             platform TEXT NOT NULL,
+             state TEXT NOT NULL,
+             at INTEGER NOT NULL,
+             by_device TEXT NOT NULL,
+             signature TEXT NOT NULL
+         ) STRICT;",
+        ),
     ])
 }

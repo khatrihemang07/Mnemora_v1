@@ -1,5 +1,5 @@
 {
-  "about": "Rules shared by the Rust commands (src-tauri/src/sync.rs) and the browser mock (src/lib/ipc/mock-sync.test.ts). See ADR 0009. Each case renames this device with `input`: it is refused (`error` is the code and message) or saved as `saved`. `unique_name_cases` give a device's wanted name and the names already taken in the group, and the name it is stored under; `code_cases` say what a typed pairing code reads as (null: not a code).",
+  "about": "Rules shared by the Rust commands (src-tauri/src/sync.rs) and the browser mock (src/lib/ipc/mock-sync.test.ts). See ADR 0009. Each case renames this device with `input`: it is refused (`error` is the code and message) or saved as `saved`. `unique_name_cases` give a device's wanted name and the names already taken in the group, and the name it is stored under; `code_cases` say what a typed pairing code reads as (null: not a code). `address_cases` give a typed Address and what is stored (`stored`, `port`) or why it is refused (`error`).",
   "name_cases": [
     {
       "name": "a plain name",
@@ -130,6 +130,147 @@
       "name": "empty",
       "input": "",
       "code": null
+    }
+  ],
+  "address_cases": [
+    {
+      "name": "a MagicDNS name",
+      "input": "pixel.tail1234.ts.net",
+      "stored": "pixel.tail1234.ts.net",
+      "port": 47311
+    },
+    {
+      "name": "a name is lower-cased and trimmed",
+      "input": "  Pixel.Tail1234.TS.net ",
+      "stored": "pixel.tail1234.ts.net",
+      "port": 47311
+    },
+    {
+      "name": "a plain host",
+      "input": "pixel",
+      "stored": "pixel",
+      "port": 47311
+    },
+    {
+      "name": "a trailing dot is dropped",
+      "input": "pixel.local.",
+      "stored": "pixel.local",
+      "port": 47311
+    },
+    {
+      "name": "host and port",
+      "input": "pixel.local:5000",
+      "stored": "pixel.local:5000",
+      "port": 5000
+    },
+    {
+      "name": "an IPv4 address",
+      "input": "100.88.12.4",
+      "stored": "100.88.12.4",
+      "port": 47311
+    },
+    {
+      "name": "an IPv4 address and port",
+      "input": "192.168.1.31:47312",
+      "stored": "192.168.1.31:47312",
+      "port": 47312
+    },
+    {
+      "name": "an IPv6 address in brackets",
+      "input": "[fd7a:115c:a1e0::1]",
+      "stored": "[fd7a:115c:a1e0::1]",
+      "port": 47311
+    },
+    {
+      "name": "an IPv6 address and port",
+      "input": "[FD7A::1]:9000",
+      "stored": "[fd7a::1]:9000",
+      "port": 9000
+    },
+    {
+      "name": "nothing",
+      "input": "   ",
+      "error": "Type an address"
+    },
+    {
+      "name": "a bare IPv6 address",
+      "input": "fd7a:115c:a1e0::1",
+      "error": "Put an IPv6 address in square brackets, like [fd7a::1]"
+    },
+    {
+      "name": "a space inside",
+      "input": "pixel 8",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "a scheme",
+      "input": "http://pixel",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "an impossible IPv4",
+      "input": "999.1.1.1",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "a label starting with a dash",
+      "input": "-pixel.local",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "an empty label",
+      "input": "pixel..local",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "an unclosed bracket",
+      "input": "[fd7a::1",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "not an IPv6 in brackets",
+      "input": "[pixel]",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "text after the brackets",
+      "input": "[fd7a::1]x",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "two ports",
+      "input": "pixel:1:2",
+      "error": "That isn't a host name or an IP address"
+    },
+    {
+      "name": "port zero",
+      "input": "pixel:0",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "port too big",
+      "input": "pixel:65536",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "port not a number",
+      "input": "pixel:abc",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "an empty port",
+      "input": "pixel:",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "a signed port",
+      "input": "pixel:+80",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "a name over 253 characters",
+      "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a",
+      "error": "That isn't a host name or an IP address"
     }
   ]
 }

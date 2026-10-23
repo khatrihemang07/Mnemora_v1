@@ -177,6 +177,40 @@ pub async fn dial(config: &NetConfig, addr: SocketAddr) -> Result<Established, N
     establish(config, secured).await
 }
 
+/// Who answered a [`probe`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Probed {
+    /// The key it proved.
+    pub key: PublicKey,
+    /// What it says about itself.
+    pub handshake: Handshake,
+}
+
+/// Connects to `addr` and reads who is there, without taking part in a session: TLS (so only a
+/// device whose key is pinned answers, and only if it still trusts ours), then the other end's
+/// handshake. Ours is never sent, so the other end ends the attempt at once and starts nothing.
+/// For "Check" in the device sheet.
+pub async fn probe(config: &NetConfig, addr: SocketAddr) -> Result<Probed, NetError> {
+    let mut secured = secure_dial(config, addr).await?;
+    if !secured.pinned {
+        return Err(NetError::Refused(super::Refusal::Unpinned));
+    }
+    let handshake = tokio::time::timeout(
+        HANDSHAKE_TIMEOUT,
+        secured.channel.recv_max::<Handshake>(HANDSHAKE_MAX_FRAME),
+    )
+    .await
+    .map_err(|_| NetError::Timeout)?
+    .map_err(|e| match e {
+        NetError::Io(io) => tls_error(io),
+        other => other,
+    })?;
+    Ok(Probed {
+        key: secured.key,
+        handshake,
+    })
+}
+
 /// Runs the handshake over a secured connection and starts its transport.
 async fn establish(config: &NetConfig, mut secured: Secured) -> Result<Established, NetError> {
     if !secured.pinned {

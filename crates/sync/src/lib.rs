@@ -6,12 +6,15 @@
 
 mod activity;
 mod activity_view;
+mod address;
 mod addresses;
 mod apply;
 mod attention;
+mod check;
 mod clocks;
 mod conflict_view;
 mod conflicts;
+mod detail;
 mod devices;
 pub mod discovery;
 mod error;
@@ -26,8 +29,10 @@ pub mod pair;
 mod peer_state;
 mod peers;
 mod registry;
+mod rename;
 mod resolutions;
 mod resolved_view;
+mod revoke;
 mod runtime;
 mod session;
 mod state;
@@ -53,14 +58,19 @@ pub use activity_view::{
     ActivityFilter, ActivityLink, ActivityPage, ActivityRow, Piece, Viewer as ActivityViewer,
     page as activity_page,
 };
+pub use address::{Address, AddressError};
 pub use addresses::{is_tailscale, local as local_addresses, shareable as shareable_address};
 pub use attention::{Attention, LastSynced, UNSEEN_DAYS, UnseenDevice, attention};
+pub use check::{CheckKind, CheckResult, Expect as CheckExpect, check as check_address};
 pub use conflict_view::{
     ClashChoice, ClashPiece, ConflictChoice, ConflictList, ConflictRow, ConflictSide,
     ConflictSubject, ConflictView, ConflictWrite, TaskText, draft as conflict_draft,
     finish as conflict_finish, list as conflict_list, plan as conflict_plan, view as conflict_view,
 };
 pub use conflicts::{Resolution as ConflictResolution, open_count as conflict_count};
+pub use detail::{
+    DeviceDetail, KnownAddress, ModuleVersion, detail as device_detail, set_typed_address,
+};
 pub use devices::{DevicesView, ThisDevice, view as devices_view};
 pub use error::SyncError;
 pub use held::{Released, release_ready as release_held};
@@ -71,16 +81,19 @@ pub use pair::msg::{Member, Who};
 pub use pair::{
     Older, Paired, Pairing, PairingError, PairingHost, PairingView, Platform, Stored, Timing,
 };
-pub use peer_state::Route;
+pub use peer_state::{Route, worked as remember_worked};
 pub use peers::{
-    PeerRow, forget_all, group, list as list_peers, members, paired_count, pinned, store_paired,
+    PeerRow, forget_all, group, list as list_peers, members, name_of as peer_name, paired_count,
+    pinned, store_paired,
 };
 pub use registry::{Modules, Registry};
+pub use rename::{record_own as record_own_name, rename_peer};
 pub use resolutions::{
     UsePlan, finish_use as resolution_finish_use, mark_visited as resolutions_visited,
     plan_use as resolution_plan_use,
 };
 pub use resolved_view::{ResolvedIcon, ResolvedKind, ResolvedRow};
+pub use revoke::{Forgotten, forget as forget_peer, lift as lift_revocation, revoked_keys};
 pub use runtime::{RuntimeProbe, SyncRuntime};
 pub use session::{Endpoint, Session, SessionStats, pump};
 pub use state::{SyncOption, SyncState, current, rename, set_enabled, set_option};
@@ -110,12 +123,15 @@ impl Module for SyncModule {
         migrations::all()
     }
 
-    /// What Sync syncs about itself: Conflicts, Resolved automatically and Activity.
+    /// What Sync syncs about itself: Conflicts, Resolved automatically, Activity, who was forgotten
+    /// and what the devices are called.
     fn sync_entities(&self) -> &'static [SyncEntity] {
         &[
             conflicts::CONFLICT,
             resolutions::RESOLUTION,
             activity::ACTIVITY,
+            revoke::REVOCATION,
+            rename::DEVICE,
         ]
     }
 
@@ -124,6 +140,8 @@ impl Module for SyncModule {
             conflicts::ENTITY => conflicts::apply(conn, change),
             resolutions::ENTITY => resolutions::apply(conn, change),
             activity::ENTITY => activity::apply(conn, change),
+            revoke::ENTITY => revoke::apply(conn, change),
+            rename::ENTITY => rename::apply(conn, change),
             _ => Err(AppError::new(
                 ErrorCode::Internal,
                 "Sync does not sync that kind of record",

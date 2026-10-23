@@ -26,10 +26,20 @@ export const devicesQuery = queryOptions({
   staleTime: Number.POSITIVE_INFINITY,
 });
 
-/** Reads the Devices tab again whenever a paired device's status or progress changes. Returns what stops listening. */
+/** One paired device for its sheet. */
+export const deviceDetailQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['sync', 'device', id],
+    queryFn: () => unwrap(commands.syncDevice(id)),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+
+/** Reads the Devices tab (and any open device sheet) again whenever a paired device's status or progress changes. Returns what stops listening. */
 export async function watchDevices(): Promise<() => void> {
   return events.syncPeersEvent.listen(() => {
     void queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey });
+    void queryClient.invalidateQueries({ queryKey: ['sync', 'device'] });
   });
 }
 

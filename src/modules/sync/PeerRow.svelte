@@ -8,11 +8,13 @@
   import { onDestroy } from 'svelte';
   import Laptop from '~icons/lucide/laptop';
   import Smartphone from '~icons/lucide/smartphone';
-  import type { PeerRow, PeerState } from '../../lib/ipc/bindings';
+  import type { PeerRow } from '../../lib/ipc/bindings';
   import { clock } from '../../lib/time/clock.svelte';
   import ProgressBar from '../../lib/ui/ProgressBar.svelte';
   import { BarGate } from './bar-gate';
+  import { deviceSheet } from './device-sheet.svelte';
   import { absoluteTime, rowParts } from './peer-status';
+  import { CHIP, DOT } from './peer-style';
 
   let { peer }: { peer: PeerRow } = $props();
 
@@ -32,24 +34,15 @@
   const gate = new BarGate((v) => (barVisible = v));
   $effect(() => gate.update(syncing));
   onDestroy(() => gate.stop());
-
-  const DOT: Record<PeerState, string> = {
-    up_to_date: 'bg-success',
-    syncing: 'bg-hue-sync',
-    not_nearby: 'bg-faint',
-    paused: 'bg-warning',
-    removed: 'bg-danger',
-  };
-  const CHIP: Record<PeerState, string> = {
-    up_to_date: 'bg-[color-mix(in_oklch,var(--success)_14%,transparent)] text-success',
-    syncing: 'bg-hue-sync-soft text-hue-sync',
-    not_nearby: 'bg-surface-2 text-muted',
-    paused: 'bg-[color-mix(in_oklch,var(--warning)_16%,transparent)] text-ink',
-    removed: 'bg-danger-soft text-danger',
-  };
 </script>
 
-<li class="px-(--pad) py-3 not-first:border-t not-first:border-line" data-peer={peer.id} data-state={peer.state}>
+<li class="not-first:border-t not-first:border-line" data-peer={peer.id} data-state={peer.state}>
+  <button
+    type="button"
+    class="block w-full cursor-pointer px-(--pad) py-3 text-left transition-colors duration-(--dur) hover:bg-hover"
+    aria-label="{peer.name}, {parts[0]}. Open details"
+    onclick={() => deviceSheet.open(peer.id)}
+  >
   <div class="flex items-center gap-3">
     <span class="relative grid size-10 shrink-0 place-items-center rounded-md bg-hue-sync-soft text-hue-sync">
       <Icon class="size-5" />
@@ -77,4 +70,5 @@
       hue="--hue-sync"
     />
   {/if}
+  </button>
 </li>

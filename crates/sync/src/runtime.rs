@@ -103,6 +103,21 @@ impl SyncRuntime {
         self.with_network(|n| n.live().refresh_peers());
     }
 
+    /// "Sync now" for one device.
+    pub fn sync_now_with(&self, device: &str) {
+        self.with_network(|n| n.live().sync_now_with(device));
+    }
+
+    /// Stops trusting one key at once (a device was forgotten here).
+    pub fn unpin(&self, key: &crate::net::PublicKey) {
+        self.with_network(|n| n.unpin(key));
+    }
+
+    /// What a connection needs, once the network side has started.
+    pub fn net_config(&self) -> Option<crate::net::NetConfig> {
+        self.with_network(Network::config)
+    }
+
     /// "Sync automatically" was switched.
     pub fn options_changed(&self) {
         self.with_network(|n| n.live().options_changed());

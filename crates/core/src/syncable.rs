@@ -190,6 +190,12 @@ pub enum SyncEvent {
         /// Key within the Module.
         key: String,
     },
+    /// Another device renamed THIS device (Sync's `sync_device` record): the app changes the name
+    /// in its device file.
+    DeviceRenamed {
+        /// The new name.
+        name: String,
+    },
 }
 
 /// What [`Module::settle_remote`](crate::module::Module::settle_remote) did.

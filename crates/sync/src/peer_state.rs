@@ -39,7 +39,7 @@ impl Route {
         }
     }
 
-    fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         match s {
             "wifi" => Some(Self::Wifi),
             "tailscale" => Some(Self::Tailscale),
@@ -69,6 +69,26 @@ pub fn saw(conn: &Connection, device: &str, route: Route) -> AppResult<()> {
         "INSERT INTO sync_peer_status(device, last_seen_at, route) VALUES (?1, ?2, ?3)
          ON CONFLICT(device) DO UPDATE SET last_seen_at = ?2, route = ?3",
         params![device, now_ms(), route.as_str()],
+    )?;
+    Ok(())
+}
+
+/// Notes what the device said about itself when it was reached: its app version and the data
+/// version of each Module.
+pub fn met(
+    conn: &Connection,
+    device: &str,
+    app_version: &str,
+    data_versions: &std::collections::BTreeMap<String, usize>,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO sync_peer_status(device, app_version, data_versions) VALUES (?1, ?2, ?3)
+         ON CONFLICT(device) DO UPDATE SET app_version = ?2, data_versions = ?3",
+        params![
+            device,
+            app_version,
+            serde_json::to_string(data_versions).unwrap_or_default()
+        ],
     )?;
     Ok(())
 }
@@ -121,6 +141,16 @@ pub fn all(conn: &Connection) -> AppResult<HashMap<String, Remembered>> {
 
 /// How many addresses are kept for one device.
 const REMEMBERED_ADDRESSES: i64 = 8;
+
+/// A remembered address with when it last worked.
+pub fn known_addresses(conn: &Connection, device: &str) -> AppResult<Vec<(String, Option<i64>)>> {
+    let mut stmt = conn.prepare(
+        "SELECT address, last_ok_at FROM sync_peer_addresses WHERE device = ?1
+         ORDER BY last_ok_at IS NULL, last_ok_at DESC, rowid DESC",
+    )?;
+    let rows = stmt.query_map([device], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
 
 /// Remembers addresses a device said it can be reached at (not yet known to work).
 pub fn learn(conn: &Connection, device: &str, addrs: &[SocketAddr]) -> AppResult<()> {

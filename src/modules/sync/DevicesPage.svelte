@@ -1,9 +1,11 @@
-<!-- DevicesPage: the welcome page until the first pairing, then this device and the paired ones. Pairing opens in a Sheet over it. -->
+<!-- DevicesPage: the welcome page until the first pairing, then this device and the paired ones. Pairing and a device's details open in a Sheet over it (`?device=‹id›`). -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import PairedDevices from './PairedDevices.svelte';
+  import DeviceSheet from './DeviceSheet.svelte';
+  import { deviceSheet } from './device-sheet.svelte';
   import PairSheet from './PairSheet.svelte';
   import { syncQuery } from './queries';
   import SyncFrame from './SyncFrame.svelte';
@@ -23,4 +25,7 @@
     <PairedDevices />
   {/if}
   <PairSheet />
+  {#if deviceSheet.id && sync.data?.paired_devices}
+    <DeviceSheet id={deviceSheet.id} />
+  {/if}
 </SyncFrame>

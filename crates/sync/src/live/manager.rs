@@ -27,7 +27,7 @@ use crate::discovery::{Browsing, Candidate, Discovery};
 use crate::error::SyncError;
 use crate::net::{Established, NetConfig};
 use crate::peer_state::{self, Route};
-use crate::peers;
+use crate::{peers, revoke};
 
 /// A running Sync's connections. Dropping it stops them all.
 pub struct Live {
@@ -54,6 +54,8 @@ enum Cmd {
     #[cfg(test)]
     Adopt(Box<Established>),
     SyncNow,
+    /// "Sync now" for one device.
+    SyncNowOne(String),
     Resume,
     Refresh,
     Reconfigure,
@@ -117,6 +119,12 @@ impl Live {
     /// "Sync now": sync with every reachable device now, whatever "Sync automatically" says.
     pub fn sync_now(&self) {
         let _ = self.cmds.send(Cmd::SyncNow);
+    }
+
+    /// "Sync now" for one device: syncs with it now if it can be reached, whatever "Sync
+    /// automatically" says.
+    pub fn sync_now_with(&self, device: &str) {
+        let _ = self.cmds.send(Cmd::SyncNowOne(device.to_owned()));
     }
 
     /// The network changed or the app came back: try unreachable devices again from the start of
@@ -268,7 +276,7 @@ impl Supervisor {
             let retry_at = self.peers.values().filter_map(|p| p.retry_at).min();
             tokio::select! {
                 Some(cmd) = cmds.recv() => self.command(cmd).await,
-                Some(round) = rounds.recv() => self.round_done(&round),
+                Some(round) = rounds.recv() => self.round_done(&round).await,
                 Some(done) = self.set.join_next_with_id() => self.finished(done).await,
                 () = changes.notified() => self.push_at = Some(Instant::now() + self.pace.debounce),
                 found = next_found(&mut browse) => match found {
@@ -290,6 +298,7 @@ impl Supervisor {
             #[cfg(test)]
             Cmd::Adopt(established) => self.adopt(*established, true).await,
             Cmd::SyncNow => self.sync_now().await,
+            Cmd::SyncNowOne(id) => self.sync_now_one(&id).await,
             Cmd::Resume => self.resume().await,
             Cmd::Refresh => {
                 self.reload().await;
@@ -303,17 +312,26 @@ impl Supervisor {
 
     /// Reads the paired devices: new ones are tracked, forgotten ones dropped.
     async fn reload(&mut self) {
-        let ids = blocking(self.host(), |conn| {
-            Ok(peers::list(conn)?
+        let (ids, pinned, revoked) = blocking(self.host(), |conn| {
+            let ids = peers::list(conn)?
                 .into_iter()
                 .map(|p| p.id)
-                .collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+            Ok((ids, peers::pinned(conn)?, revoke::revoked_keys(conn)?))
         })
         .await
         .unwrap_or_else(|e| {
             tracing::warn!(target: "sync", error = %e, "could not read the paired devices");
-            Vec::new()
+            (Vec::new(), Vec::new(), Vec::new())
         });
+        // What the paired devices and the forgotten ones say is what is trusted: a device taken
+        // back is pinned again, one forgotten (here, or by another member) is refused from now on.
+        for (key, device) in &pinned {
+            self.config.trust.pin(*key, device);
+        }
+        for (key, _) in &revoked {
+            self.config.trust.unpin(key);
+        }
         for id in &ids {
             self.peers.entry(id.clone()).or_insert_with(|| Peer {
                 found: Vec::new(),
@@ -367,10 +385,21 @@ impl Supervisor {
         })
         .await
         .unwrap_or_default();
-        // The typed Address (#71) joins here as a third source.
-        let addrs = candidates(&found, &remembered, &[]);
+        let typed = blocking(self.host(), {
+            let device = device.clone();
+            move |conn| crate::detail::typed_for_dial(conn, &device)
+        })
+        .await
+        .unwrap_or_default();
         let (config, each) = (self.config.clone(), self.pace.dial_each);
         let handle = self.set.spawn(async move {
+            // The Address a person typed is the third source, looked up here so a slow name never
+            // holds the others up.
+            let typed = match typed {
+                Some(address) => address.resolve(each).await.unwrap_or_default(),
+                None => Vec::new(),
+            };
+            let addrs = candidates(&found, &remembered, &typed);
             let established = if addrs.is_empty() {
                 None
             } else {
@@ -542,12 +571,15 @@ impl Supervisor {
         }
     }
 
-    fn round_done(&mut self, round: &RoundDone) {
+    async fn round_done(&mut self, round: &RoundDone) {
         if let Some(peer) = self.peers.get_mut(&round.peer) {
             peer.backoff.reset();
             peer.manual = false;
         }
         if round.received > 0 {
+            // What arrived may have forgotten a device (or taken one back): the connection to it
+            // closes now, not at the next round.
+            self.reload().await;
             // What arrived may be news to the other devices too (one of them may not reach the
             // sender). Nothing hooks the sync connection's own writes, so say so here. A round
             // that received nothing ends the chain.
@@ -619,8 +651,13 @@ impl Supervisor {
         });
         self.note_pause(&id, false).await;
         let remember = id.clone();
+        let (app_version, versions) = (
+            established.peer.handshake.app_version.clone(),
+            established.peer.handshake.data_versions.clone(),
+        );
         let stored = blocking(&self.shared.host, move |conn| {
             peer_state::saw(conn, &remember, route)?;
+            peer_state::met(conn, &remember, &app_version, &versions)?;
             peer_state::learn(conn, &remember, &reported)?;
             if by_me {
                 peer_state::worked(conn, &remember, remote)?;
@@ -693,6 +730,23 @@ impl Supervisor {
         }
         for id in to_dial {
             self.dial(&id).await;
+        }
+    }
+
+    async fn sync_now_one(&mut self, id: &str) {
+        let Some(peer) = self.peers.get_mut(id) else {
+            return;
+        };
+        peer.manual = true;
+        match &peer.conn {
+            Some(held) => {
+                let _ = held.tx.send(ConnCmd::Round);
+            }
+            None if !peer.dialling => {
+                peer.backoff.reset();
+                self.dial(id).await;
+            }
+            None => {}
         }
     }
 

@@ -53,7 +53,8 @@ pub struct Network {
     fell_back: bool,
     accept: JoinHandle<()>,
     discovery: Arc<dyn Discovery>,
-    trust: Trust,
+    /// What a connection needs (its `trust` is the set the listener and dialler check).
+    config: Box<NetConfig>,
 }
 
 impl Network {
@@ -105,7 +106,7 @@ impl Network {
         let pairing = Pairing::new(
             pairing_host,
             Arc::clone(&options.discovery),
-            config,
+            config.clone(),
             addr.port(),
             options.timing,
             Handle::current(),
@@ -128,7 +129,7 @@ impl Network {
             fell_back,
             accept,
             discovery: options.discovery,
-            trust,
+            config: Box::new(config),
         })
     }
 
@@ -179,7 +180,17 @@ impl Network {
 
     /// Stops trusting every key (this device left its group).
     pub fn unpin_all(&self) {
-        self.trust.unpin_all();
+        self.config.trust.unpin_all();
+    }
+
+    /// Stops trusting one key (a device was forgotten): its next connection is refused.
+    pub fn unpin(&self, key: &crate::net::PublicKey) {
+        self.config.trust.unpin(key);
+    }
+
+    /// What a connection to another device needs: this device's key, who it trusts, what it says.
+    pub fn config(&self) -> NetConfig {
+        (*self.config).clone()
     }
 }
 

@@ -39,7 +39,7 @@ pub struct DevicesView {
 }
 
 /// Where a device stands, from what the session manager says about it right now.
-fn state_of(live: Option<&PeerLive>) -> PeerState {
+pub(crate) fn state_of(live: Option<&PeerLive>) -> PeerState {
     match live {
         Some(l) if l.paused => PeerState::Paused,
         Some(l) if l.syncing => PeerState::Syncing,

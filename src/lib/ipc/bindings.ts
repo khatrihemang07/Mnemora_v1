@@ -305,6 +305,25 @@ export const commands = {
 	syncLeave: () => typedError<null, AppError>(__TAURI_INVOKE("sync_leave")),
 	/**  The Devices tab: this device (name, addresses, port) and the paired ones. */
 	syncDevices: () => typedError<DevicesView, AppError>(__TAURI_INVOKE("sync_devices")),
+	/**  The device sheet: what is known about one paired device. */
+	syncDevice: (id: string) => typedError<DeviceDetail, AppError>(__TAURI_INVOKE("sync_device", { id })),
+	/**  Renames a paired device for the whole group (unique, 1 to 40 characters). Returns the name saved. */
+	syncDeviceRename: (id: string, name: string) => typedError<string, AppError>(__TAURI_INVOKE("sync_device_rename", { id, name })),
+	/**
+	 *  Saves the Address typed for a device (a MagicDNS name, host, `host:port`, IPv4 or `[IPv6]`);
+	 *  empty clears it. Returns it as stored.
+	 */
+	syncDeviceAddress: (id: string, address: string) => typedError<string | null, AppError>(__TAURI_INVOKE("sync_device_address", { id, address })),
+	/**  "Check": dials the typed Address and says whether the device is there. */
+	syncDeviceCheck: (id: string, address: string) => typedError<CheckResult, AppError>(__TAURI_INVOKE("sync_device_check", { id, address })),
+	/**  "Sync now" for this device only. */
+	syncDeviceSyncNow: (id: string) => __TAURI_INVOKE<void>("sync_device_sync_now", { id }),
+	/**
+	 *  Forgets a paired device for the whole group: a signed revocation is written and spreads,
+	 *  every device drops and refuses that key, and any open connection to it closes. Its data
+	 *  stays on it; pairing it again undoes this.
+	 */
+	syncDeviceForget: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_device_forget", { id })),
 	/**  Where pairing stands. Idle while Sync is off or still starting. */
 	syncPairState: () => __TAURI_INVOKE<PairingView>("sync_pair_state"),
 	/**  "Pair a device": shows a code and waits for the other device to type it. */
@@ -475,6 +494,37 @@ export type Attention = {
 	needed: boolean,
 };
 
+/**  What a Check found. */
+export type CheckKind = 
+/**  The device answered. */
+"reached" | 
+/**  The text is not an address. */
+"invalid" | 
+/**  The name does not resolve. */
+"not_found" | 
+/**  Nothing answered there. */
+"unreachable" | 
+/**  Nothing answered in time. */
+"timed_out" | 
+/**  A different device answered. */
+"wrong_device" | 
+/**  Something answered that is not a device paired with this one, or no longer trusts it. */
+"not_paired" | 
+/**  Something answered that is not a Mnemora. */
+"other";
+
+/**  The result of a Check. */
+export type CheckResult = {
+	/**  The device was reached. */
+	reached: boolean,
+	/**  What happened. */
+	kind: CheckKind,
+	/**  "Reached Pixel 8 in 84 ms", or why not. */
+	message: string,
+	/**  How long the device took to answer, when it did. */
+	ms: number | null,
+};
+
 /**  The choice for one clash in Edit merged. */
 export type ClashChoice = 
 /**  The newer version's words. */
@@ -627,6 +677,36 @@ export type DeleteChoice =
 { kind: "move_to_list"; 
 /**  The receiving List. */
 list_id: string };
+
+/**  What the device sheet shows. */
+export type DeviceDetail = {
+	/**  Its device id. */
+	id: string,
+	/**  Its name here. */
+	name: string,
+	/**  Its kind. */
+	platform: Platform,
+	/**  Where it stands now. */
+	state: PeerState,
+	/**  When it was paired: UTC milliseconds. */
+	paired_at: number,
+	/**  The name of the device that paired it; this device's own name when this one did. */
+	paired_by: string | null,
+	/**  When it was last reached. */
+	last_seen_at: number | null,
+	/**  When a session with it last finished. */
+	last_synced_at: number | null,
+	/**  How it was reached the last time. */
+	route: Route | null,
+	/**  Addresses remembered for it, the one that worked most recently first. */
+	addresses: KnownAddress[],
+	/**  The Address typed for it, as stored. */
+	typed_address: string | null,
+	/**  Its app version, once it has been reached. */
+	app_version: string | null,
+	/**  Its Modules' data versions, once it has been reached. */
+	data_versions: ModuleVersion[],
+};
 
 /**  Everything stored per device. */
 export type DeviceSettings = {
@@ -862,6 +942,14 @@ export type JournalChangedEvent = null;
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
 
+/**  An address that was remembered for the device. */
+export type KnownAddress = {
+	/**  `ip:port`. */
+	address: string,
+	/**  When connecting to it last worked: UTC milliseconds; `None` if only heard of. */
+	last_ok_at: number | null,
+};
+
 /**  The last finished sync. */
 export type LastSynced = {
 	/**  The device it was with. */
@@ -958,6 +1046,14 @@ export type LookAndFeel = {
 	phone_tabs?: string[] | null,
 	/**  The tabs were saved from Settings (an upgrade only pins them). */
 	phone_tabs_edited?: boolean | null,
+};
+
+/**  One Module's data version on the device. */
+export type ModuleVersion = {
+	/**  The Module's id, e.g. `todo`. */
+	module: string,
+	/**  How many migrations its data has had. */
+	version: number,
 };
 
 /**  Everything the UI supplies to write a new Entry. */
