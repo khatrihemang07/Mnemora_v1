@@ -10,6 +10,10 @@ use crate::util::{compact_utc, now_ms};
 /// How many backups are kept.
 pub const KEEP_BACKUPS: usize = 5;
 
+/// Marks the name of a backup taken before pairing with another device. These rotate on their
+/// own, so frequent pairings never push out the backups taken before a migration (ADR 0004).
+const PAIRING_MARK: &str = "-pairing-";
+
 /// Writes a consistent copy of the database to `dir/<timestamp>-<from>-to-<to>.db`
 /// and then prunes to the newest [`KEEP_BACKUPS`]. `at_ms` is injected for testability.
 pub fn create_backup(
@@ -19,9 +23,16 @@ pub fn create_backup(
     to: usize,
     at_ms: i64,
 ) -> AppResult<PathBuf> {
+    write_backup(
+        conn,
+        dir,
+        &format!("{}-{from}-to-{to}.db", compact_utc(at_ms)),
+    )
+}
+
+fn write_backup(conn: &Connection, dir: &Path, name: &str) -> AppResult<PathBuf> {
     std::fs::create_dir_all(dir)?;
-    let name = format!("{}-{from}-to-{to}.db", compact_utc(at_ms));
-    let dest = dir.join(&name);
+    let dest = dir.join(name);
     // Write beside the target and rename, so a crash never leaves a half file that looks valid.
     let partial = dir.join(format!("{name}.partial"));
     if let Err(e) = conn.backup(rusqlite::MAIN_DB, &partial, None) {
@@ -44,8 +55,24 @@ pub fn backup_now(conn: &Connection, dir: &Path) -> AppResult<PathBuf> {
     create_backup(conn, dir, version, version, now_ms())
 }
 
-/// Deletes all but the newest `keep` backups in `dir` (names sort chronologically).
-/// Returns how many were removed.
+/// A backup taken before this device merges with another one (pairing, or the first session
+/// with a device it never met). Kept apart from the others: the newest [`KEEP_BACKUPS`] of each
+/// kind stay.
+pub fn backup_for_pairing(conn: &Connection, dir: &Path) -> AppResult<PathBuf> {
+    let version: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(version), 0) FROM _module_migrations",
+        [],
+        |r| r.get(0),
+    )?;
+    write_backup(
+        conn,
+        dir,
+        &format!("{}{PAIRING_MARK}{version}.db", compact_utc(now_ms())),
+    )
+}
+
+/// Deletes all but the newest `keep` backups of each kind (migration and manual, pairing) in
+/// `dir` (names sort chronologically). Returns how many were removed.
 pub fn rotate(dir: &Path, keep: usize) -> AppResult<usize> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
@@ -59,11 +86,19 @@ pub fn rotate(dir: &Path, keep: usize) -> AppResult<usize> {
         .collect();
     // Timestamp prefixes sort chronologically, newest last.
     backups.sort();
-    let excess = backups.len().saturating_sub(keep);
-    for old in &backups[..excess] {
-        std::fs::remove_file(old)?;
+    let (pairing, other): (Vec<PathBuf>, Vec<PathBuf>) = backups.into_iter().partition(|p| {
+        p.file_name()
+            .is_some_and(|n| n.to_string_lossy().contains(PAIRING_MARK))
+    });
+    let mut removed = 0;
+    for kind in [pairing, other] {
+        let excess = kind.len().saturating_sub(keep);
+        for old in &kind[..excess] {
+            std::fs::remove_file(old)?;
+        }
+        removed += excess;
     }
-    Ok(excess)
+    Ok(removed)
 }
 
 #[cfg(test)]
@@ -130,6 +165,33 @@ mod tests {
         // Oldest two (t=0s, t=1s) are gone.
         assert!(left[0].starts_with("19700101T000002"));
         assert!(left[4].starts_with("19700101T000006"));
+    }
+
+    #[test]
+    fn pairing_backups_rotate_apart_from_migration_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = seeded();
+        conn.execute_batch(
+            "CREATE TABLE _module_migrations(module TEXT PRIMARY KEY, version INTEGER);",
+        )
+        .unwrap();
+        for i in 0..2 {
+            create_backup(&conn, dir.path(), i, i + 1, i64::try_from(i).unwrap()).unwrap();
+        }
+        for _ in 0..8 {
+            backup_for_pairing(&conn, dir.path()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let left = names(dir.path());
+        assert_eq!(
+            left.iter().filter(|n| n.contains("-pairing-")).count(),
+            KEEP_BACKUPS
+        );
+        assert_eq!(
+            left.iter().filter(|n| n.contains("-to-")).count(),
+            2,
+            "the migration backups are still there: {left:?}"
+        );
     }
 
     #[test]

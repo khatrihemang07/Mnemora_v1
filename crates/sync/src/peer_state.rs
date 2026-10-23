@@ -115,6 +115,21 @@ pub fn finished(conn: &Connection, device: &str, received: usize, sent: usize) -
     Ok(())
 }
 
+/// Whether the next records from `device` need a backup first: it was introduced by another
+/// member (not paired with `me` directly, which backed up already) and no session with it has
+/// finished yet, so this is the first time its records can reach this database.
+pub fn needs_first_backup(conn: &Connection, me: &str, device: &str) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM sync_peers p
+             WHERE p.id = ?2 AND COALESCE(p.paired_by, ?1) <> ?1
+               AND NOT EXISTS(SELECT 1 FROM sync_peer_status s
+                              WHERE s.device = p.id AND s.last_synced_at IS NOT NULL))",
+        params![me, device],
+        |r| r.get(0),
+    )?)
+}
+
 /// What is remembered about every device.
 pub fn all(conn: &Connection) -> AppResult<HashMap<String, Remembered>> {
     let mut stmt = conn.prepare(
@@ -279,6 +294,26 @@ mod tests {
         let kept = &all(&conn).unwrap()["p"];
         assert_eq!((kept.last_in, kept.last_out), (Some(12), Some(3)));
         assert!(kept.last_synced_at.is_some());
+    }
+
+    #[test]
+    fn only_an_introduced_device_never_synced_needs_a_first_backup() {
+        let conn = conn();
+        let add = |id: &str, by: &str| {
+            conn.execute(
+                "INSERT INTO sync_peers(id, name, paired_at, public_key, platform, paired_by)
+                 VALUES (?1, ?1, 0, 'k', 'desktop', ?2)",
+                [id, by],
+            )
+            .unwrap();
+        };
+        add("direct", "me");
+        add("introduced", "direct");
+        assert!(!needs_first_backup(&conn, "me", "direct").unwrap());
+        assert!(needs_first_backup(&conn, "me", "introduced").unwrap());
+        assert!(!needs_first_backup(&conn, "me", "stranger").unwrap());
+        finished(&conn, "introduced", 0, 0).unwrap();
+        assert!(!needs_first_backup(&conn, "me", "introduced").unwrap());
     }
 
     #[test]

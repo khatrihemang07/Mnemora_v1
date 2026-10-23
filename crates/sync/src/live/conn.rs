@@ -60,6 +60,8 @@ pub(super) struct Conn {
     pub done: UnboundedSender<RoundDone>,
     /// Stay open after a session; off for a "Sync now" with Sync automatically off.
     pub keep_open: bool,
+    /// This connection already took the first-merge backup (or none was due).
+    pub backed_up: bool,
 }
 
 impl Conn {
@@ -97,6 +99,26 @@ impl Conn {
         Ok(session)
     }
 
+    /// A device introduced by another member has never been merged with this one: its first
+    /// records are preceded by a backup (the pairing backup covers devices paired directly). A
+    /// failed backup ends the session before anything is applied; the next one tries again.
+    async fn back_up_before_first_records(&mut self) -> Result<(), SyncError> {
+        let (me, peer) = (self.shared.me.clone(), self.peer.clone());
+        let due = blocking(self.host(), move |conn| {
+            Ok(peer_state::needs_first_backup(conn, &me, &peer)?)
+        })
+        .await?;
+        if due {
+            let host = Arc::clone(self.host());
+            tokio::task::spawn_blocking(move || host.backup())
+                .await
+                .map_err(|e| SyncError::Protocol(format!("a backup task failed: {e}")))??;
+            tracing::info!(target: "sync", "backed up before the first records of an introduced device");
+        }
+        self.backed_up = true;
+        Ok(())
+    }
+
     /// Feeds `message` to the session, sends what it answers and reports progress. Returns the
     /// session while it still has work to do.
     async fn feed(
@@ -104,6 +126,11 @@ impl Conn {
         session: Session,
         message: Message,
     ) -> Result<Option<Session>, SyncError> {
+        if !self.backed_up
+            && matches!(&message, Message::Batch { records, .. } if !records.is_empty())
+        {
+            self.back_up_before_first_records().await?;
+        }
         let (session, replies) = blocking(self.host(), move |conn| {
             let mut session = session;
             let replies = session.handle(conn, message)?;

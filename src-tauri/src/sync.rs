@@ -421,7 +421,7 @@ impl<R: Runtime> PairingHost for AppHost<R> {
 
     fn backup(&self) -> Result<(), SyncError> {
         let state = self.app.state::<AppState>();
-        let path = backup::backup_now(&lock(&state.db), &state.paths.backup_dir)?;
+        let path = backup::backup_for_pairing(&lock(&state.db), &state.paths.backup_dir)?;
         tracing::info!(target: "sync", path = %path.display(), "backed up before the first merge");
         Ok(())
     }

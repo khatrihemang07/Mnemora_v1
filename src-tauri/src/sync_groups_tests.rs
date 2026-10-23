@@ -272,3 +272,54 @@ async fn four_devices_paired_in_pieces_while_apart_all_end_up_pinning_each_other
     })
     .await;
 }
+
+// ---------------------------------------------------------------- backup before a first merge
+
+fn backup_files(d: &Device) -> usize {
+    std::fs::read_dir(d.app.backup_dir()).map_or(0, |dir| dir.filter_map(Result::ok).count())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_device_met_only_through_an_introduction_is_backed_up_for_once_before_its_first_records()
+{
+    let a = Device::with_pace("Alice", quick()).await;
+    let b = Device::with_pace("Bob", quick()).await;
+    let c = Device::with_pace("Carol", quick()).await;
+    pair_views(&a, &b).await;
+    pair_views(&b, &c).await;
+    meet(&b, &c);
+    meet(&a, &b);
+    until("Alice to hear of Carol", || {
+        sorted(a.listed()) == ["Bob", "Carol"]
+    })
+    .await;
+    // Bob goes away, so Carol's changes can only reach Alice from Carol herself.
+    drop(b);
+    let before = backup_files(&a);
+    assert_eq!(before, 1, "the pairing with Bob");
+    let first = create(&c, "from Carol");
+    meet(&a, &c);
+    until("Carol's Task on Alice", || has(&a, &first)).await;
+    assert_eq!(backup_files(&a), before + 1, "one backup before the first");
+
+    // The backup holds what Alice had, not Carol's Task.
+    let newest = std::fs::read_dir(a.app.backup_dir())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .max()
+        .unwrap();
+    let copy = mnemora_core::db::Connection::open(newest).unwrap();
+    let tasks: i64 = copy
+        .query_row("SELECT COUNT(*) FROM todo_tasks", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(tasks, 0);
+
+    let second = create(&c, "and another");
+    until("the next Task", || has(&a, &second)).await;
+    assert_eq!(
+        backup_files(&a),
+        before + 1,
+        "not again for the same device"
+    );
+}

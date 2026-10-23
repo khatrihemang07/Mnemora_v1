@@ -721,6 +721,7 @@ impl Supervisor {
             cmds,
             done: self.done_tx.clone(),
             keep_open: automatic,
+            backed_up: false,
         };
         let peer_id = id.clone();
         let handle = self.set.spawn(async move {
