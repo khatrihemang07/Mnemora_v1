@@ -9,6 +9,7 @@
   import ArrowLeft from '~icons/lucide/arrow-left';
   import Check from '~icons/lucide/check';
   import GitMerge from '~icons/lucide/git-merge';
+  import RadioTower from '~icons/lucide/radio-tower';
   import { type ClashChoice, commands, type ConflictChoice, type DiffSpan } from '../../lib/ipc/bindings';
   import { unwrap } from '../../lib/ipc/unwrap';
   import Button from '../../lib/ui/Button.svelte';
@@ -16,10 +17,12 @@
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import MarkdownEditor from '../../lib/ui/MarkdownEditor.svelte';
+  import PageHeader from '../../lib/ui/PageHeader.svelte';
   import SegmentedControl from '../../lib/ui/SegmentedControl.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import { notify, notifyError } from '../../lib/ui/toast';
+  import { viewport } from '../../lib/viewport.svelte';
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
   import { clockText, conflictIdOf, rowTitle, usePossessive } from './conflicts';
@@ -92,6 +95,8 @@
 {/snippet}
 
 <div data-sync class="selectable h-full overflow-y-auto p-(--pad)">
+  <!-- The top bar says "Sync" as on the other Sync pages; a phone has its own back row instead. -->
+  {#if !viewport.isPhone}<PageHeader title="Sync" icon={RadioTower} hue="--hue-sync" />{/if}
   <div class="mx-auto max-w-4xl">
     <div class="mb-2 flex items-center gap-2">
       <Button variant="ghost" size="sm" onclick={back}>
@@ -172,7 +177,8 @@
               {#if p.kind === 'agreed'}
                 {p.text}
               {:else}
-                <span class="my-2 block rounded-sm border border-line font-sans text-sm" data-clash={n}>
+                <!-- whitespace-normal: the text around is pre-wrap, which would draw the template's line breaks between the rows as blank bands. -->
+                <span class="my-2 block rounded-sm border border-line font-sans text-sm whitespace-normal" data-clash={n}>
                   <span class="block bg-diff-add px-2.5 py-1.5 {choices[n] !== 'other' ? 'shadow-[inset_3px_0_0_var(--hue-sync)]' : ''}">
                     <b>{showingName}</b> {p.showing}
                   </span>

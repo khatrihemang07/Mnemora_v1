@@ -69,6 +69,7 @@
         href={router.href(e.path)}
         active={router.isWithin(e.path)}
         accentVar={e.manifest.accentVar}
+        badgeOf={e.manifest}
         shortcut={e.id === 'settings' ? shortcutLabel(',') : hint(e.manifest.nav.shortcut)}
         {rail}
       />

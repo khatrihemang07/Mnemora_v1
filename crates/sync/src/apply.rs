@@ -418,7 +418,7 @@ mod tests {
         let mut conn = db::open_in_memory().unwrap();
         migrate::run(&mut conn, &[&CoreModule, &SyncModule, &Fake], dir.path()).unwrap();
         hlc::set_device_id(&conn, id).unwrap();
-        let modules: Modules = Arc::new(vec![Box::new(Fake)]);
+        let modules: Modules = Arc::new(vec![Box::new(Fake), Box::new(SyncModule)]);
         (conn, Registry::new(modules))
     }
 
@@ -832,5 +832,40 @@ mod tests {
         .unwrap();
         assert!(value_rows(&conn).is_empty());
         assert_eq!(count(&conn, "SELECT n FROM fake_things"), 3);
+    }
+
+    #[test]
+    fn a_used_outcome_that_arrives_before_the_row_is_taken_when_the_row_is_made() {
+        let (conn, registry) = device("c");
+        let make = n_record("a", 1, 1000, 1, None);
+        let by_a = n_record("a", 2, 1500, 2, Some(1));
+        let by_b = n_record("b", 1, 2000, 3, Some(1));
+        apply_batch(&conn, &registry, "c", vec![make, by_b]).unwrap();
+        // Another device made the row (from the records it had) and pressed "Use".
+        let id = value_rows(&conn);
+        assert!(id.is_empty(), "no clash yet: A's change is missing here");
+        let row_id = {
+            let (other, other_registry) = device("d");
+            apply_batch(
+                &other,
+                &other_registry,
+                "d",
+                vec![
+                    n_record("a", 1, 1000, 1, None),
+                    by_a.clone(),
+                    n_record("b", 1, 2000, 3, Some(1)),
+                ],
+            )
+            .unwrap();
+            value_rows(&other)[0].0.clone()
+        };
+        let mut used = record("d", 1, &row_id, json!({"used_at": 5000, "used_by": "d"}));
+        used.entity = resolutions::ENTITY.into();
+        used.module = crate::MODULE_ID.into();
+        used.hlc_ms = 3000;
+        apply_batch(&conn, &registry, "c", vec![used]).unwrap();
+        apply_batch(&conn, &registry, "c", vec![by_a]).unwrap();
+        let row = resolutions::get(&conn, &row_id).unwrap().unwrap();
+        assert_eq!(row.used_at, Some(5000));
     }
 }

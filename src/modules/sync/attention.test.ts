@@ -61,6 +61,27 @@ describe('the Home card line', () => {
     ).toBe('Paused with Pixel 8 and Air · iPad not seen for 16 days');
   });
 
+  it('does not add a synced clause for a device an earlier clause is about', () => {
+    expect(
+      homeCardLine(
+        {
+          ...calm,
+          unseen: [{ name: 'Pixel 8', days: 16 }],
+          last_synced: synced(3),
+          needed: true,
+        },
+        NOW,
+      ),
+    ).toBe('Pixel 8 not seen for 16 days');
+    expect(
+      homeCardLine({ ...calm, paused: ['Pixel 8'], last_synced: synced(3), needed: true }, NOW),
+    ).toBe('Paused with Pixel 8');
+    // Another device that did sync still gets its clause.
+    expect(
+      homeCardLine({ ...calm, paused: ['Air'], last_synced: synced(3), needed: true }, NOW),
+    ).toBe('Paused with Air · Pixel 8 synced 3 min ago');
+  });
+
   it('sends Review to the conflicts when some wait, else to the devices', () => {
     expect(reviewPath({ ...calm, conflicts: 1 })).toBe('/sync/conflicts');
     expect(reviewPath({ ...calm, paused: ['Pixel 8'] })).toBe('/sync');

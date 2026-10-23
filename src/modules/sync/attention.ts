@@ -38,7 +38,9 @@ export function homeCardLine(a: Attention, now: Date = new Date()): string {
   if (a.conflicts > 0) parts.push(`${plural(a.conflicts, 'conflict', 'conflicts')} to review`);
   if (a.paused.length > 0) parts.push(`Paused with ${names(a.paused)}`);
   for (const u of a.unseen) parts.push(`${u.name} not seen for ${plural(u.days, 'day', 'days')}`);
-  if (a.last_synced) {
+  // Not for a device already named above: "Pixel 8 not seen for 16 days · Pixel 8 synced 3 min ago".
+  const named = [...a.paused, ...a.unseen.map((u) => u.name)];
+  if (a.last_synced && !named.includes(a.last_synced.device)) {
     parts.push(`${a.last_synced.device} synced ${relativeTime(new Date(a.last_synced.at), now)}`);
   }
   return parts.join(' · ');

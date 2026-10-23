@@ -146,7 +146,10 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
       s.progress = state === 'syncing' ? { done: 120, total: TOTAL } : null;
       // A device that is away was last seen `daysAway` days ago (16 shows the Home card).
       if (state !== 'not_nearby') s.seenAt = Date.now();
-      else if (daysAway > 0) s.seenAt = Date.now() - daysAway * DAY;
+      else if (daysAway > 0) {
+        s.seenAt = Date.now() - daysAway * DAY;
+        s.syncedAt = s.seenAt;
+      }
       emit();
     },
 

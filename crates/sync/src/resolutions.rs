@@ -284,9 +284,31 @@ fn note(conn: &Connection, row: &Row) -> Result<bool, SyncError> {
     if !insert(conn, row)? {
         return Ok(false);
     }
+    take_used_before_made(conn, &row.id)?;
     record(conn, row, ChangeOp::Create)?;
     tracing::info!(target: "sync", kind = %row.kind, "an automatic decision was logged");
     Ok(true)
+}
+
+/// "Used" can reach a device before it has made the row itself (rows are worked out from the
+/// records): the update is in the change log, and is taken now that the row is there.
+fn take_used_before_made(conn: &Connection, id: &str) -> Result<(), SyncError> {
+    let used: Option<(i64, Option<String>)> = conn
+        .query_row(
+            "SELECT fields ->> '$.used_at', fields ->> '$.used_by' FROM change_log
+             WHERE entity = ?1 AND entity_id = ?2 AND fields ->> '$.used_at' IS NOT NULL
+             ORDER BY hlc_ms, hlc_counter, origin_device LIMIT 1",
+            params![ENTITY, id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    if let Some((at, by)) = used {
+        conn.execute(
+            "UPDATE sync_resolutions SET used_at = ?2, used_by = ?3 WHERE id = ?1 AND used_at IS NULL",
+            params![id, at, by],
+        )?;
+    }
+    Ok(())
 }
 
 fn blank(kind: Kind, id: String, at: i64, now: i64) -> Row {

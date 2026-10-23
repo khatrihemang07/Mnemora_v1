@@ -3,13 +3,12 @@ import Plus from '~icons/lucide/plus';
 import RadioTower from '~icons/lucide/radio-tower';
 import RefreshCw from '~icons/lucide/refresh-cw';
 import { commands } from '../../lib/ipc/bindings';
-import { queryClient } from '../../lib/ipc/query-client';
 import type { ModuleManifest } from '../../lib/router';
 import { notify } from '../../lib/ui/toast';
 import { paletteHint } from './attention';
 import { useSyncBadge } from './badge.svelte';
+import { syncAttention } from './hint.svelte';
 import { pairing } from './pairing.svelte';
-import { attentionQuery } from './queries';
 import { useSyncSwitch } from './switch.svelte';
 
 export const syncManifest: ModuleManifest = {
@@ -63,7 +62,7 @@ export const syncManifest: ModuleManifest = {
       id: 'conflicts',
       label: 'Open Sync conflicts',
       icon: GitMerge,
-      hint: () => paletteHint(queryClient.getQueryData(attentionQuery.queryKey)),
+      hint: () => paletteHint(syncAttention.current),
       run: (ctx) => ctx.navigate('/sync/conflicts'),
     },
   ],
