@@ -16,6 +16,7 @@ use mnemora_core::util::now_ms;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use serde_json::{Map, Value};
 
+use crate::activity;
 use crate::clocks;
 use crate::conflicts;
 use crate::error::SyncError;
@@ -39,6 +40,8 @@ pub struct Applied {
     pub events: Vec<SyncEvent>,
     /// Order keys and Preferences the batch took, for the session's "Order & preferences" line.
     pub folded: Vec<Folded>,
+    /// The Module and entity of every record stored, for the session's Activity breakdown.
+    pub moved: Vec<(String, String)>,
 }
 
 /// Applies `records` atomically: all of them, with the vector advanced, or none.
@@ -137,6 +140,9 @@ pub fn apply_batch(
             &decided.kept_back,
         )?;
         applied.stored += 1;
+        applied
+            .moved
+            .push((record.module.clone(), record.entity.clone()));
         let first_event = applied.events.len();
         applied.events.extend(outcome.events);
         if outcome.changed && record.entity != settings::ENTITY {
@@ -194,6 +200,7 @@ pub fn apply_batch(
         applied.changed.extend(settled.changed);
         applied.events.extend(settled.events);
     }
+    activity::note_events(&tx, &applied.events)?;
     tx.commit()?;
     Ok(applied)
 }

@@ -1,5 +1,5 @@
-import { queryOptions } from '@tanstack/svelte-query';
-import { commands, events } from '../../lib/ipc/bindings';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
+import { type ActivityFilter, type ActivityPage, commands, events } from '../../lib/ipc/bindings';
 import { queryClient } from '../../lib/ipc/query-client';
 import { unwrap } from '../../lib/ipc/unwrap';
 import { deviceQuery } from '../../lib/settings/queries';
@@ -90,4 +90,22 @@ export function whileMounted(listen: () => Promise<() => void>): () => void {
     gone = true;
     stop?.();
   };
+}
+
+/** Activity lines per page: pages of 100, loaded as the list is scrolled (G7). */
+export const ACTIVITY_PAGE = 100;
+
+/** The Activity log for one filter, newest first, a page at a time. */
+export const activityQuery = (filter: ActivityFilter) =>
+  infiniteQueryOptions({
+    queryKey: ['sync', 'activity', filter],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => unwrap(commands.syncActivity(filter, pageParam, ACTIVITY_PAGE)),
+    getNextPageParam: (last: ActivityPage) => last.next,
+    staleTime: 0,
+  });
+
+/** Calls `onchange` when Activity gained lines (a session, or lines from another device). Returns what stops listening. */
+export async function watchActivity(onchange: () => void): Promise<() => void> {
+  return events.syncActivityEvent.listen(onchange);
 }

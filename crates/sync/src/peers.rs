@@ -24,6 +24,17 @@ pub fn paired_count(conn: &Connection) -> AppResult<u32> {
 /// Forgets every paired device and leaves the group. Synced data stays; this device just stops
 /// belonging to the group.
 pub fn forget_all(conn: &Connection) -> AppResult<()> {
+    let had_group = group(conn)?.is_some();
+    if had_group {
+        let me = mnemora_core::hlc::device_id(conn)?;
+        crate::activity::log_left(
+            conn,
+            crate::activity::Local {
+                device: &me,
+                name: "",
+            },
+        )?;
+    }
     conn.execute("DELETE FROM sync_peers", [])?;
     conn.execute("DELETE FROM sync_group", [])?;
     crate::peer_state::forget_all(conn)?;
@@ -208,6 +219,11 @@ pub fn store_paired(
         params![who.device, name, now, who.key, who.platform.as_str(), my_device],
     )?;
     taken.push(name.clone());
+    let local = crate::activity::Local {
+        device: my_device,
+        name: my_name,
+    };
+    crate::activity::log_paired(&tx, local, &who.device, &name)?;
     let mut also_joined = Vec::new();
     let mut pins = vec![(key, who.device.clone())];
     for member in &who.members {
@@ -236,6 +252,7 @@ pub fn store_paired(
             ],
         )?;
         taken.push(member_name.clone());
+        crate::activity::log_joined(&tx, local, &member.device, &member_name)?;
         also_joined.push(member_name);
         pins.push((member_key, member.device.clone()));
     }

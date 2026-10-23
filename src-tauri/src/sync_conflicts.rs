@@ -6,8 +6,8 @@ use mnemora_core::db::Connection;
 use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::util::{new_id, now_ms};
 use mnemora_sync::{
-    Attention, ClashChoice, ConflictChoice, ConflictList, ConflictView, ConflictWrite, UsePlan,
-    default_device_name,
+    ActivityFilter, ActivityPage, Attention, ClashChoice, ConflictChoice, ConflictList,
+    ConflictView, ConflictWrite, UsePlan, default_device_name,
 };
 use serde_json::Value;
 use tauri::State;
@@ -111,6 +111,29 @@ fn write_text(conn: &mut Connection, write: &ConflictWrite) -> Result<(), AppErr
         }
     }
     Ok(())
+}
+
+/// The Activity tab: a page of the log, newest first, after `cursor` (the previous page's `next`).
+#[tauri::command]
+#[specta::specta]
+pub fn sync_activity(
+    state: State<'_, AppState>,
+    filter: ActivityFilter,
+    cursor: Option<String>,
+    limit: u32,
+) -> Result<ActivityPage, AppError> {
+    let name = my_name(&state);
+    let device = state.device.device_id();
+    mnemora_sync::activity_page(
+        &lock(&state.db),
+        mnemora_sync::ActivityViewer {
+            device: &device,
+            name: &name,
+        },
+        &filter,
+        cursor.as_deref(),
+        limit,
+    )
 }
 
 /// What needs attention now: the Home card, the sidebar badge and the palette hint read this.

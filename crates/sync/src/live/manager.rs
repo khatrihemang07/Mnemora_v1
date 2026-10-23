@@ -20,6 +20,9 @@ use super::shared::Shared;
 use super::status::PeerLive;
 use super::tie::replaces;
 use super::{Host, Pace, blocking};
+use rusqlite::Connection;
+
+use crate::activity::{self, Local, Why};
 use crate::discovery::{Browsing, Candidate, Discovery};
 use crate::error::SyncError;
 use crate::net::{Established, NetConfig};
@@ -420,7 +423,7 @@ impl Supervisor {
                 self.tasks.remove(&id);
                 done
             }
-            Err(e) => return self.task_died(&e),
+            Err(e) => return self.task_died(&e).await,
         };
         match done {
             Done::Dial { peer, established } => {
@@ -438,24 +441,25 @@ impl Supervisor {
                     None => self.dial_failed(&peer),
                 }
             }
-            Done::Conn { peer, id, result } => self.connection_ended(&peer, id, result),
+            Done::Conn { peer, id, result } => self.connection_ended(&peer, id, result).await,
         }
     }
 
     /// A dial or connection task panicked (or was cancelled): its device must not stay marked as
     /// dialling or connected for good.
-    fn task_died(&mut self, error: &JoinError) {
+    async fn task_died(&mut self, error: &JoinError) {
         tracing::warn!(target: "sync", panicked = error.is_panic(), "a sync task ended unexpectedly");
         match self.tasks.remove(&error.id()) {
             Some(Doing::Dial(peer)) => self.dial_failed(&peer),
             Some(Doing::Conn(peer, id)) => {
-                self.connection_ended(&peer, id, Err(SyncError::Disconnected));
+                self.connection_ended(&peer, id, Err(SyncError::Disconnected))
+                    .await;
             }
             None => {}
         }
     }
 
-    fn connection_ended(&mut self, id_of_peer: &str, id: u64, result: Result<(), SyncError>) {
+    async fn connection_ended(&mut self, id_of_peer: &str, id: u64, result: Result<(), SyncError>) {
         let auto = self.automatic();
         let Some(peer) = self.peers.get_mut(id_of_peer) else {
             return;
@@ -478,12 +482,66 @@ impl Supervisor {
                     peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
                 }
                 peer.manual = false;
+                // Only a line lost in the middle of a sync is news.
+                let mid_sync = self
+                    .shared
+                    .snapshot()
+                    .get(id_of_peer)
+                    .is_some_and(|l| l.syncing);
                 self.shared.update(id_of_peer, true, |l| {
                     l.reachable = false;
                     l.syncing = false;
                     l.progress = None;
                 });
+                if mid_sync {
+                    let peer = id_of_peer.to_owned();
+                    self.note(move |conn, local| {
+                        activity::log_failed(conn, local, &peer, Why::Lost)
+                    })
+                    .await;
+                }
             }
+        }
+    }
+
+    /// A device went from not paused to paused, or back: one line in Activity either way.
+    async fn note_pause(&self, peer: &str, was: bool, now: bool) {
+        let peer = peer.to_owned();
+        match (was, now) {
+            (false, true) => {
+                self.note(move |conn, local| activity::log_paused(conn, local, &peer, Why::Update))
+                    .await;
+            }
+            (true, false) => {
+                self.note(move |conn, local| activity::log_resumed(conn, local, &peer))
+                    .await;
+            }
+            _ => {}
+        }
+    }
+
+    /// Writes a line in Activity (the supervisor's own events: a pause, a resume, a lost line).
+    /// A failure to write costs the line only.
+    async fn note(
+        &self,
+        f: impl FnOnce(&Connection, Local<'_>) -> Result<bool, SyncError> + Send + 'static,
+    ) {
+        let me = self.shared.me.clone();
+        let name = self.shared.host.device_name();
+        let made = blocking(&self.shared.host, move |conn| {
+            f(
+                conn,
+                Local {
+                    device: &me,
+                    name: &name,
+                },
+            )
+        })
+        .await;
+        match made {
+            Ok(true) => self.shared.host.activity_changed(),
+            Ok(false) => {}
+            Err(e) => tracing::warn!(target: "sync", error = %e, "could not log to Activity"),
         }
     }
 
@@ -520,11 +578,13 @@ impl Supervisor {
             if automatic && by_me {
                 peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
             }
+            let was_paused = self.shared.snapshot().get(&id).is_some_and(|l| l.paused);
             self.shared.update(&id, true, |l| {
                 l.paused = true;
                 l.syncing = false;
                 l.progress = None;
             });
+            self.note_pause(&id, was_paused, true).await;
             return;
         }
         if !by_me && !automatic && !peer.manual {
@@ -557,10 +617,12 @@ impl Supervisor {
             .filter_map(|a| a.parse().ok())
             .collect();
         self.shared.set_dialled(&id, Some(by_me));
+        let was_paused = self.shared.snapshot().get(&id).is_some_and(|l| l.paused);
         self.shared.update(&id, true, |l| {
             l.reachable = true;
             l.paused = false;
         });
+        self.note_pause(&id, was_paused, false).await;
         let remember = id.clone();
         let stored = blocking(&self.shared.host, move |conn| {
             peer_state::saw(conn, &remember, route)?;

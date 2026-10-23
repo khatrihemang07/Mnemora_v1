@@ -96,8 +96,12 @@ async fn paired_devices_that_find_each_other_connect_and_say_up_to_date() {
         peer_of(&mac)["state"] == "up_to_date" && peer_of(&phone)["state"] == "up_to_date"
     })
     .await;
+    // The first session may still be finishing (pairing left a line in Activity to pass on).
+    until("the first session to finish", || {
+        peer_of(&mac)["last_synced_at"].is_u64()
+    })
+    .await;
     assert_eq!(peer_of(&mac)["route"], "wifi");
-    assert!(peer_of(&mac)["last_synced_at"].is_u64());
 }
 
 #[tokio::test]
@@ -111,8 +115,9 @@ async fn a_change_reaches_the_other_device_only_after_the_quiet_period() {
     let (mac, phone) = paired_pair(slow).await;
     meet(&mac, &phone);
     until("connected", || peer_of(&mac)["state"] == "up_to_date").await;
-    // Let the connection's first (empty) session finish before the change.
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    // Let the connection's first session finish, and the quiet period that pairing's line in
+    // Activity started run out, before the change.
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
 
     let signals = phone.app.widget_signals();
     let made = Instant::now();
@@ -190,9 +195,11 @@ async fn with_sync_automatically_off_only_sync_now_syncs() {
 async fn turning_sync_off_stops_every_connection_and_the_port() {
     let (mac, phone) = paired_pair(quick()).await;
     meet(&mac, &phone);
-    until("connected", || peer_of(&phone)["state"] == "up_to_date").await;
+    until("connected", || {
+        peer_of(&phone)["state"] == "up_to_date" && mac.app.sync_probe().sessions >= 1
+    })
+    .await;
     let addr = mac.address();
-    assert!(mac.app.sync_probe().sessions >= 1);
 
     mac.call::<()>("sync_set_enabled", json!({ "enabled": false }));
     assert_eq!(
@@ -334,4 +341,66 @@ async fn turning_sync_off_and_on_again_and_again_leaves_nothing_behind() {
     assert_eq!(mac.app.sync_probe().tasks, 0);
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(mac.found.active(), 0, "announcing or browsing is left over");
+}
+
+/// The Activity lines of a device, as `kind -> lines`.
+fn activity_lines(device: &Device, kind: &str) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let page: Value = device.call(
+            "sync_activity",
+            json!({ "filter": { "kind": "all" }, "cursor": cursor, "limit": 100 }),
+        );
+        for row in page["rows"].as_array().unwrap() {
+            if row["kind"] == kind {
+                let text: String = row["text"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p["text"].as_str().unwrap())
+                    .collect();
+                lines.push(text);
+            }
+        }
+        match page["next"].as_str() {
+            Some(next) => cursor = Some(next.to_owned()),
+            None => return lines,
+        }
+    }
+}
+
+#[tokio::test]
+async fn pairing_and_a_live_session_are_each_one_line_on_both_devices() {
+    let (mac, phone) = paired_pair(quick()).await;
+    meet(&mac, &phone);
+    until("connected", || {
+        peer_of(&mac)["state"] == "up_to_date" && peer_of(&phone)["state"] == "up_to_date"
+    })
+    .await;
+    let id = create(&mac, "Plan weekend hike");
+    until("the task on the phone", || has(&phone, &id)).await;
+    // The line a session writes travels on by itself: both devices end with the same two lines.
+    until("both lines on both devices", || {
+        [&mac, &phone].iter().all(|d| {
+            activity_lines(d, "paired").len() == 1 && activity_lines(d, "session").len() == 1
+        })
+    })
+    .await;
+    let (lead, follow) = if mac.app.device_id() < phone.app.device_id() {
+        (&mac, "Pixel 8")
+    } else {
+        (&phone, "Mac")
+    };
+    assert_eq!(
+        activity_lines(lead, "paired"),
+        [format!("Paired with {follow}")]
+    );
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert_eq!(
+        activity_lines(&mac, "session").len(),
+        1,
+        "empty rounds are not logged"
+    );
+    assert_eq!(activity_lines(&phone, "session").len(), 1);
 }

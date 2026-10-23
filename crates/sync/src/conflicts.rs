@@ -287,6 +287,15 @@ pub(crate) fn raise(
     record(conn, &row, ChangeOp::Create)?;
     if deleted {
         crate::resolutions::note_conflict_deleted(conn, &id)?;
+    } else {
+        // The device across from the one that detected it: the author of the other version.
+        let me = mnemora_core::hlc::device_id(conn)?;
+        let other = if clash.theirs_device == me {
+            &clash.ours_device
+        } else {
+            &clash.theirs_device
+        };
+        crate::activity::log_conflict_raised(conn, &id, target, field, row.raised_at, other)?;
     }
     tracing::info!(target: "sync", auto = deleted, "a text clash was recorded");
     let (entity, entity_id, field) = (target.to_owned(), target_id.to_owned(), field.to_owned());
@@ -355,6 +364,13 @@ pub(crate) fn resolve(
     }
     if let Some(row) = get(conn, id)? {
         record(conn, &row, ChangeOp::Update)?;
+        // A person's choice is Activity; a closing the engine did on its own is not.
+        if matches!(
+            resolution,
+            Resolution::KeptThis | Resolution::KeptOther | Resolution::Merged
+        ) {
+            crate::activity::log_conflict_resolved(conn, id, &row.target, &row.field, by, now)?;
+        }
     }
     Ok(true)
 }

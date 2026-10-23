@@ -358,6 +358,8 @@ export const commands = {
 	syncConflictResolve: (id: string, choice: ConflictChoice) => typedError<null, AppError>(__TAURI_INVOKE("sync_conflict_resolve", { id, choice })),
 	/**  What needs attention now: the Home card, the sidebar badge and the palette hint read this. */
 	syncAttention: () => typedError<Attention, AppError>(__TAURI_INVOKE("sync_attention")),
+	/**  The Activity tab: a page of the log, newest first, after `cursor` (the previous page's `next`). */
+	syncActivity: (filter: ActivityFilter, cursor: string | null, limit: number) => typedError<ActivityPage, AppError>(__TAURI_INVOKE("sync_activity", { filter, cursor, limit })),
 	/**
 	 *  "Use ‹other› instead": writes the value that gave way as an ordinary new edit through the
 	 *  owning Module (so it validates, reads as a normal History line and syncs like any change),
@@ -373,6 +375,7 @@ export const events = {
 	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
+	syncActivityEvent: makeEvent<SyncActivityEvent>("sync-activity-event"),
 	syncConflictsEvent: makeEvent<SyncConflictsEvent>("sync-conflicts-event"),
 	syncNewConflictsEvent: makeEvent<SyncNewConflictsEvent>("sync-new-conflicts-event"),
 	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
@@ -382,6 +385,51 @@ export const events = {
 };
 
 /* Types */
+/**  Whose events to show. */
+export type ActivityFilter = 
+/**  Every device's. */
+{ kind: "all" } | 
+/**  Those this device took part in. */
+{ kind: "this_device" } | 
+/**  Those the given device took part in. */
+{ kind: "device"; 
+/**  Its id. */
+id: string };
+
+/**  Where a line can take the person. */
+export type ActivityLink = 
+/**  To the Conflicts tab. */
+"conflicts";
+
+/**  A page of the log. */
+export type ActivityPage = {
+	/**  Newest first. */
+	rows: ActivityRow[],
+	/**  Pass this back for the next (older) page; `None` at the end. */
+	next: string | null,
+};
+
+/**  One line of the log. */
+export type ActivityRow = {
+	/**  Its id. */
+	id: string,
+	/**  What kind of event: picks the icon. */
+	kind: string,
+	/**  The sentence. */
+	text: Piece[],
+	/**
+	 *  The device it happened on, when that is neither this one nor the one the sentence names:
+	 *  "· on Pixel 8".
+	 */
+	on: string | null,
+	/**  When: UTC milliseconds. Rows group by the local day of this. */
+	at: number,
+	/**  A session's per-Module breakdown ("Todo: 9 Tasks, 1 List · Journal: 2 Entries"). */
+	breakdown: string | null,
+	/**  Where the line leads. */
+	link: ActivityLink | null,
+};
+
 /**
  *  The All view: open Tasks grouped (by List unless changed), the Inbox first. Empty groups are
  *  left out.
@@ -1191,6 +1239,14 @@ export type PeerState =
 /**  It was forgotten group-wide (#69). */
 "removed";
 
+/**  A run of a sentence; `strong` ones are names. */
+export type Piece = {
+	/**  The words. */
+	text: string,
+	/**  Shown bold (a device or List name). */
+	strong: boolean,
+};
+
 /**  What kind of device: decides the icon, and nothing else. */
 export type Platform = 
 /**  A computer. */
@@ -1401,6 +1457,12 @@ export type Span = {
 	/**  Whether it matched the search. */
 	matched: boolean,
 };
+
+/**
+ *  Activity gained lines (a session was logged, or a line arrived from another device): the
+ *  Activity tab reads its first page again.
+ */
+export type SyncActivityEvent = null;
 
 /**  Sync raised, received or settled a Conflict: the Conflicts tab and Compare are stale. */
 export type SyncConflictsEvent = null;

@@ -9,6 +9,7 @@ import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bind
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
 import { createSyncMock } from './mock-sync';
+import { createActivityMock } from './mock-sync-activity';
 import { createConflictsMock } from './mock-sync-conflicts';
 import { defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
 import { createTodoMock } from './mock-todo';
@@ -127,6 +128,9 @@ export async function installMock() {
   const codeSeconds = Number(query.get('paircode') ?? 0);
   if (codeSeconds > 0) pairFlags.lifeMs = codeSeconds * 1000;
   (window as unknown as { __syncMock: PairingFlags }).__syncMock = pairFlags;
+  // Thousands of lines to scroll: `?activity=20000` for more. It shows on the Activity tab with a
+  // paired device (`?paired=2`).
+  const activity = createActivityMock(Number(query.get('activity') ?? 0) || 4000);
   const conflicts = createConflictsMock(() => void events.syncConflictsEvent.emit());
   const sync = createSyncMock(
     device,
@@ -229,6 +233,7 @@ export async function installMock() {
         case 'open_log_dir':
           return null;
         default:
+          if (activity.handles(cmd)) return activity.handle(cmd, a);
           if (conflicts.handles(cmd)) return conflicts.handle(cmd, a);
           if (sync.handles(cmd)) return sync.handle(cmd, a);
           if (todo.handles(cmd)) return todo.handle(cmd, a);

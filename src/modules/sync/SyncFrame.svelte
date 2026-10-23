@@ -1,5 +1,5 @@
 <!--
-  SyncFrame: the chrome every Sync page shares: the page title with "Sync now", and the Devices ·
+  SyncFrame: the chrome every Sync page shares (`fill` for a page that scrolls inside itself): the page title with "Sync now", and the Devices ·
   Conflicts · Activity tabs under it. Each tab is a route, so choosing one navigates.
 -->
 <script lang="ts">
@@ -15,14 +15,17 @@
   import { syncQuery } from './queries';
   import { pathForTab, SYNC_TABS, type SyncTab } from './tabs';
 
-  let { tab, children }: { tab: SyncTab; children: Snippet } = $props();
+  let { tab, fill = false, children }: { tab: SyncTab; fill?: boolean; children: Snippet } = $props();
 
   const sync = createQuery(() => syncQuery);
   // Nothing to sync with until the first pairing.
   const alone = $derived((sync.data?.paired_devices ?? 0) === 0);
 </script>
 
-<div data-sync class="selectable h-full overflow-y-auto p-(--pad)">
+<div
+  data-sync
+  class="selectable h-full p-(--pad) {fill ? 'flex flex-col' : 'overflow-y-auto'}"
+>
   <PageHeader title="Sync" icon={RadioTower} hue="--hue-sync">
     {#snippet actions()}
       <Button variant="ghost" size="sm" disabled={alone} aria-label="Sync now" onclick={() => void commands.syncNow()}>
@@ -31,13 +34,14 @@
       </Button>
     {/snippet}
   </PageHeader>
-  <div class="mx-auto max-w-3xl">
+  <div class="mx-auto w-full max-w-3xl {fill ? 'min-h-0 flex-1' : ''}">
     <Tabs
       value={tab}
       tabs={SYNC_TABS}
       label="Sync pages"
       hue="--hue-sync"
       onHue="--on-hue-sync"
+      {fill}
       onchange={(t) => moduleContext.navigate(pathForTab(t))}
     >
       {@render children()}

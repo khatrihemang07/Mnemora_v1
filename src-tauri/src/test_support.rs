@@ -37,8 +37,8 @@ use tempfile::TempDir;
 use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    JournalChangedEvent, LinkOpenedEvent, SettingsChangedEvent, SyncConflictsEvent,
-    SyncNewConflictsEvent, SyncPairingEvent, SyncPeersEvent, TodoChangedEvent,
+    JournalChangedEvent, LinkOpenedEvent, SettingsChangedEvent, SyncActivityEvent,
+    SyncConflictsEvent, SyncNewConflictsEvent, SyncPairingEvent, SyncPeersEvent, TodoChangedEvent,
     TodoListsMergedEvent, commands, editing, journal, links, modules, settings_store, sync,
     sync_conflicts, todo,
 };
@@ -321,16 +321,22 @@ impl Cluster {
         let (app_a, app_b) = (&self.devices[a], &self.devices[b]);
         let (state_a, state_b) = (app_a.state(), app_b.state());
         let (db_a, db_b) = (lock(&state_a.db), lock(&state_b.db));
-        let session_a = state_a.sync.session(
-            &db_a,
-            Registry::new(Arc::clone(&state_a.modules)),
-            state_a.bus.clone(),
-        )?;
-        let session_b = state_b.sync.session(
-            &db_b,
-            Registry::new(Arc::clone(&state_b.modules)),
-            state_b.bus.clone(),
-        )?;
+        let session_a = state_a
+            .sync
+            .session(
+                &db_a,
+                Registry::new(Arc::clone(&state_a.modules)),
+                state_a.bus.clone(),
+            )?
+            .named(&device_name(&state_a));
+        let session_b = state_b
+            .sync
+            .session(
+                &db_b,
+                Registry::new(Arc::clone(&state_b.modules)),
+                state_b.bus.clone(),
+            )?
+            .named(&device_name(&state_b));
         let (ta, tb, link) = memory::pair();
         if let Some(n) = cut_after {
             link.cut_after(n);
@@ -356,6 +362,16 @@ impl Cluster {
             }
         }
     }
+}
+
+/// The name a device signs its Activity with.
+fn device_name(state: &AppState) -> String {
+    state
+        .device
+        .get()
+        .sync
+        .name
+        .unwrap_or_else(mnemora_sync::default_device_name)
 }
 
 impl std::ops::Index<usize> for Cluster {

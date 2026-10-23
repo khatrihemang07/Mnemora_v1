@@ -96,6 +96,7 @@ macro_rules! specta_builder_for {
                 sync_conflicts::sync_conflict_draft,
                 sync_conflicts::sync_conflict_resolve,
                 sync_conflicts::sync_attention,
+                sync_conflicts::sync_activity,
                 sync_conflicts::sync_resolution_use_other,
                 sync_conflicts::sync_resolutions_visited,
             ])
@@ -107,6 +108,7 @@ macro_rules! specta_builder_for {
                 SyncPairingEvent,
                 SyncPeersEvent,
                 SyncConflictsEvent,
+                SyncActivityEvent,
                 SyncNewConflictsEvent,
                 TodoListsMergedEvent
             ])
@@ -120,6 +122,8 @@ mod journal;
 mod links;
 mod state;
 mod sync;
+#[cfg(test)]
+mod sync_activity_tests;
 #[cfg(test)]
 mod sync_cluster_tests;
 mod sync_conflicts;
@@ -230,6 +234,11 @@ pub struct SyncPeersEvent;
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SyncConflictsEvent;
 
+/// Activity gained lines (a session was logged, or a line arrived from another device): the
+/// Activity tab reads its first page again.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncActivityEvent;
+
 /// New Conflicts arrived from another device and this device is set to say so with a toast
 /// ("New conflicts: Show a toast"). Never sent while it is set to Quietly.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
@@ -268,7 +277,9 @@ fn follow_remote<R: tauri::Runtime>(
         let sent = match event.module.as_str() {
             mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
             mnemora_journal::MODULE_ID => JournalChangedEvent.emit(&handle),
-            mnemora_sync::MODULE_ID => SyncConflictsEvent.emit(&handle),
+            mnemora_sync::MODULE_ID => SyncConflictsEvent
+                .emit(&handle)
+                .and_then(|()| SyncActivityEvent.emit(&handle)),
             _ => Ok(()),
         };
         if let Err(e) = sent {

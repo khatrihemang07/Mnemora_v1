@@ -3,7 +3,7 @@
   meant to be a route: `value` is the tab on show and `onchange` navigates, so Back returns to the
   previous tab. The active tab carries a 2px underline in the Module `hue` that grows in with
   `transform`; arrow keys move between tabs, Home and End jump. A `count` adds a filled pill, in the
-  hue (`onHue` is the ink on it). `children` is the panel of the tab on show. To pick a value rather
+  hue (`onHue` is the ink on it). `children` is the panel of the tab on show; `fill` makes it take the height left, for a panel that scrolls inside itself. To pick a value rather
   than a page use SegmentedControl.
 -->
 <script lang="ts" generics="T extends string">
@@ -27,9 +27,11 @@
     hue?: string;
     /** The matching on-colour token name (`--on-hue-sync`). */
     onHue?: string;
+    /** The panel fills the height left (a page that scrolls inside itself, like a `VirtualList`). */
+    fill?: boolean;
     children?: Snippet;
   }
-  let { value, tabs, label, onchange, hue, onHue, children }: Props = $props();
+  let { value, tabs, label, onchange, hue, onHue, fill = false, children }: Props = $props();
   let list = $state<HTMLElement | null>(null);
 
   onMount(() => {
@@ -46,7 +48,7 @@
 <Tabs.Root
   {value}
   onValueChange={change}
-  class="min-w-0"
+  class="min-w-0 {fill ? 'flex h-full min-h-0 flex-col' : ''}"
   style="--tab-hue: var({hue ?? '--accent'}); --tab-on: var({onHue ?? '--on-accent'})"
 >
   <!-- The hairline is on the wrapper and the list overlaps it by 1px, so the list never scrolls
@@ -79,6 +81,6 @@
   </Tabs.List>
   </div>
   {#if children}
-    <Tabs.Content {value} class="min-w-0">{@render children()}</Tabs.Content>
+    <Tabs.Content {value} class="min-w-0 {fill ? 'flex min-h-0 flex-1 flex-col' : ''}">{@render children()}</Tabs.Content>
   {/if}
 </Tabs.Root>

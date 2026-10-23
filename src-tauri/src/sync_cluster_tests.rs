@@ -656,8 +656,13 @@ fn a_record_that_arrives_by_two_paths_is_stored_once() {
     let (sent, got) = c.sync(2, 1);
     assert_eq!((sent.sent, got.received), (0, 0), "B already holds both");
     let rows: i64 = c[1].with_db(|db| {
-        db.query_row("SELECT COUNT(*) FROM change_log", [], |r| r.get(0))
-            .unwrap()
+        // Activity lines (Sync's own, about the sessions) are not what is counted.
+        db.query_row(
+            "SELECT COUNT(*) FROM change_log WHERE module <> 'sync'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap()
     });
     assert_eq!(rows, 2);
 }

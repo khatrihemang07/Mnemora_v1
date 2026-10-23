@@ -15,7 +15,7 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_specta::Event;
 
 use crate::state::{AppState, lock};
-use crate::{SyncPairingEvent, SyncPeersEvent};
+use crate::{SyncActivityEvent, SyncPairingEvent, SyncPeersEvent};
 
 /// Sync's state for this device: on or off, its name and options, and how many devices are paired.
 #[tauri::command]
@@ -44,8 +44,25 @@ pub fn sync_set_enabled<R: Runtime>(
 #[tauri::command]
 #[specta::specta]
 pub fn sync_rename(state: State<'_, AppState>, name: String) -> Result<(), AppError> {
+    let old = state
+        .device
+        .get()
+        .sync
+        .name
+        .unwrap_or_else(mnemora_sync::default_device_name);
     mnemora_sync::rename(&state.device, &name)?;
     state.sync.refresh_advert();
+    // A device that has no group yet has nobody to tell.
+    let new = state
+        .device
+        .get()
+        .sync
+        .name
+        .unwrap_or_else(mnemora_sync::default_device_name);
+    let conn = lock(&state.db);
+    if old != new && mnemora_sync::group(&conn)?.is_some() {
+        mnemora_sync::log_renamed(&conn, &state.device.device_id(), &old, &new)?;
+    }
     Ok(())
 }
 
@@ -275,6 +292,22 @@ impl<R: Runtime> Host for AppHost<R> {
         if let Err(e) = SyncPeersEvent.emit(&self.app) {
             tracing::warn!(target: "sync", error = %e, "could not emit the device status");
         }
+    }
+
+    fn activity_changed(&self) {
+        if let Err(e) = SyncActivityEvent.emit(&self.app) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the Activity change");
+        }
+    }
+
+    fn device_name(&self) -> String {
+        self.app
+            .state::<AppState>()
+            .device
+            .get()
+            .sync
+            .name
+            .unwrap_or_else(mnemora_sync::default_device_name)
     }
 }
 

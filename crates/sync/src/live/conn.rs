@@ -38,7 +38,7 @@ pub(super) enum ConnCmd {
 #[derive(Debug)]
 pub(super) struct RoundDone {
     pub peer: String,
-    /// Records the session stored.
+    /// Records the session stored, or the line it wrote in Activity: news for other devices.
     pub received: usize,
 }
 
@@ -60,7 +60,7 @@ impl Conn {
     fn new_session(&self) -> Session {
         self.shared.sessions.fetch_add(1, Ordering::SeqCst);
         let host = self.host();
-        Session::new(self.shared.me.clone(), host.registry(), host.bus())
+        Session::new(self.shared.me.clone(), host.registry(), host.bus()).named(&host.device_name())
     }
 
     async fn start_round(&mut self) -> Result<Session, SyncError> {
@@ -122,7 +122,9 @@ impl Conn {
         });
         let _ = self.done.send(RoundDone {
             peer: self.peer.clone(),
-            received,
+            // The line this device wrote in Activity is news to the other device too. Activity
+            // that merely arrived is not pushed on at once: it travels with the next session.
+            received: received + usize::from(stats.logged),
         });
         Ok(())
     }

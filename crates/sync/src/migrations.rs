@@ -167,5 +167,26 @@ pub fn all() -> Migrations<'static> {
              at INTEGER NOT NULL
          ) STRICT;",
         ),
+        // Activity (#68), synced as the change-log entity `sync_activity` and kept forever. A row
+        // is written once: `device` is the device that logged it, `peer` the other device it is
+        // about (both with the name they had then, for devices this one does not know), `n_in`
+        // and `n_out` what a session moved from the logger's side, `detail` its per-Module
+        // breakdown (counts only), `extra` kind-specific JSON (a reason, names).
+        M::up(
+            "CREATE TABLE sync_activity(
+             id TEXT PRIMARY KEY NOT NULL,
+             kind TEXT NOT NULL,
+             at INTEGER NOT NULL,
+             device TEXT NOT NULL,
+             device_name TEXT NOT NULL DEFAULT '',
+             peer TEXT NOT NULL DEFAULT '',
+             peer_name TEXT NOT NULL DEFAULT '',
+             n_in INTEGER NOT NULL DEFAULT 0,
+             n_out INTEGER NOT NULL DEFAULT 0,
+             detail TEXT NOT NULL DEFAULT '[]',
+             extra TEXT NOT NULL DEFAULT ''
+         ) STRICT;
+         CREATE INDEX sync_activity_at ON sync_activity(at DESC, id DESC);",
+        ),
     ])
 }

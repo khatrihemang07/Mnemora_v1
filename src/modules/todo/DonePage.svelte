@@ -8,6 +8,7 @@
 -->
 <script lang="ts">
   import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query';
+  import DayHeading from '../../lib/ui/DayHeading.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import PageHeader from '../../lib/ui/PageHeader.svelte';
@@ -67,11 +68,7 @@
     {#each days as day (day.date)}
       {@const heading = doneHeading(day.date, todoClock.today)}
       <section aria-label={heading.name}>
-        <div class="mt-5.5 mb-1 flex items-baseline gap-2 border-b border-line px-2 pb-1.5 first:mt-1">
-          <h2 class="font-display text-lg" style="font-weight: var(--display-weight)">{heading.name}</h2>
-          <small class="text-xs text-faint">{heading.small}</small>
-          <small class="ml-auto text-xs text-faint tabular-nums">{day.tasks.length}</small>
-        </div>
+        <DayHeading name={heading.name} small={heading.small} count={day.tasks.length} first />
         {#each day.tasks as task (task.id)}
           <TaskRow {task} ontick={tickTask} onuntick={untickTask} list={listOf(task.list_id)} />
         {/each}

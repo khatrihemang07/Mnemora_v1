@@ -4,6 +4,8 @@
 
 #![forbid(unsafe_code)]
 
+mod activity;
+mod activity_view;
 mod addresses;
 mod apply;
 mod attention;
@@ -43,6 +45,14 @@ use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 
+pub use activity::{
+    Kind as ActivityKind, Local, Why, log_failed, log_forgot, log_left, log_paused, log_renamed,
+    log_resumed,
+};
+pub use activity_view::{
+    ActivityFilter, ActivityLink, ActivityPage, ActivityRow, Piece, Viewer as ActivityViewer,
+    page as activity_page,
+};
 pub use addresses::{is_tailscale, local as local_addresses, shareable as shareable_address};
 pub use attention::{Attention, LastSynced, UNSEEN_DAYS, UnseenDevice, attention};
 pub use conflict_view::{
@@ -100,15 +110,20 @@ impl Module for SyncModule {
         migrations::all()
     }
 
-    /// What Sync syncs about itself: Conflicts and Resolved automatically.
+    /// What Sync syncs about itself: Conflicts, Resolved automatically and Activity.
     fn sync_entities(&self) -> &'static [SyncEntity] {
-        &[conflicts::CONFLICT, resolutions::RESOLUTION]
+        &[
+            conflicts::CONFLICT,
+            resolutions::RESOLUTION,
+            activity::ACTIVITY,
+        ]
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
         match change.entity {
             conflicts::ENTITY => conflicts::apply(conn, change),
             resolutions::ENTITY => resolutions::apply(conn, change),
+            activity::ENTITY => activity::apply(conn, change),
             _ => Err(AppError::new(
                 ErrorCode::Internal,
                 "Sync does not sync that kind of record",

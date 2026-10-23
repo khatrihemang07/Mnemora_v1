@@ -52,6 +52,12 @@ pub trait Host: PairingHost {
     fn local_changes(&self) -> Arc<Notify>;
     /// A paired device's status (or progress) changed: tell the window.
     fn status_changed(&self);
+    /// Something was written to Activity outside a session: the window reads it again.
+    fn activity_changed(&self) {}
+    /// This device's name, for what it logs in Activity. Unknown by default.
+    fn device_name(&self) -> String {
+        String::new()
+    }
 }
 
 /// Runs `f` on the host's database.

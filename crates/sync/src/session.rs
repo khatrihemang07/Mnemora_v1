@@ -16,6 +16,7 @@ use mnemora_core::events::{
 use mnemora_core::syncable::SyncEvent;
 use rusqlite::Connection;
 
+use crate::activity::{self, Local, Part};
 use crate::apply::apply_batch;
 use crate::error::SyncError;
 use crate::peers;
@@ -35,6 +36,11 @@ pub struct SessionStats {
     pub received: usize,
     /// Modules whose data the session changed here.
     pub changed: BTreeSet<String>,
+    /// Activity records the session received. They are not counted in `received` (nor are those
+    /// it sent in `sent`): a sync that moved only those is quiet.
+    pub activity: usize,
+    /// This device wrote the session's line in Activity.
+    pub logged: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -68,6 +74,10 @@ pub struct Session {
     first_sent: bool,
     /// The id of this session's "Order & preferences" line.
     fold: String,
+    /// This device's name, for what it logs.
+    name: String,
+    /// Records moved by Module and kind (not Activity), both ways, for the Activity breakdown.
+    moved: BTreeMap<(String, String), i64>,
 }
 
 impl Session {
@@ -88,7 +98,16 @@ impl Session {
             announced: false,
             first_sent: false,
             fold: mnemora_core::util::new_id(),
+            name: String::new(),
+            moved: BTreeMap::new(),
         }
+    }
+
+    /// Signs what the session logs with this device's name.
+    #[must_use]
+    pub fn named(mut self, name: &str) -> Self {
+        name.clone_into(&mut self.name);
+        self
     }
 
     /// The message that opens the exchange.
@@ -130,18 +149,55 @@ impl Session {
         message: Message,
     ) -> Result<Vec<Message>, SyncError> {
         let replies = self.step(conn, message)?;
-        self.announce_end();
+        self.announce_end(conn);
         Ok(replies)
     }
 
     /// Tells the bus once, when the exchange is over, which Modules it changed.
-    fn announce_end(&mut self) {
+    fn announce_end(&mut self, conn: &Connection) {
         if self.is_done() && !self.announced {
             self.announced = true;
+            self.log(conn);
             if !self.stats.changed.is_empty() {
                 self.bus.publish(&RemoteSessionEnded {
                     modules: self.stats.changed.iter().cloned().collect(),
                 });
+            }
+        }
+    }
+
+    /// Writes the session's line in Activity, if this device is the one that does and the session
+    /// moved anything. A failure costs the line, never the session.
+    fn log(&mut self, conn: &Connection) {
+        let Some((peer, _)) = &self.peer else {
+            return;
+        };
+        let parts: Vec<Part> = self
+            .moved
+            .iter()
+            .map(|((m, e), n)| Part {
+                m: m.clone(),
+                e: e.clone(),
+                n: *n,
+            })
+            .collect();
+        let local = Local {
+            device: &self.me,
+            name: &self.name,
+        };
+        let n_in = i64::try_from(self.stats.received).unwrap_or(i64::MAX);
+        let n_out = i64::try_from(self.stats.sent).unwrap_or(i64::MAX);
+        match activity::log_session(conn, local, peer, n_in, n_out, parts) {
+            Ok(made) => {
+                if made {
+                    self.stats.logged = true;
+                    self.bus.publish(&RemoteChanged {
+                        module: crate::MODULE_ID.to_owned(),
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!(target: "sync", error = %e, "could not log the session");
             }
         }
     }
@@ -173,7 +229,17 @@ impl Session {
                     self.in_total = total;
                 }
                 let applied = apply_batch(conn, &self.registry, &self.me, records)?;
-                self.stats.received += applied.stored;
+                for (module, entity) in &applied.moved {
+                    if entity == activity::ENTITY {
+                        self.stats.activity += 1;
+                    } else {
+                        self.stats.received += 1;
+                        *self
+                            .moved
+                            .entry((module.clone(), entity.clone()))
+                            .or_default() += 1;
+                    }
+                }
                 if let Some((peer, _)) = &self.peer {
                     resolutions::fold_add(conn, &self.fold, peer, &applied.folded)?;
                 }
@@ -275,7 +341,15 @@ impl Session {
             peer_vector,
             &mut self.cursor,
         )?;
-        self.stats.sent += records.len();
+        for record in &records {
+            if record.entity != activity::ENTITY {
+                self.stats.sent += 1;
+                *self
+                    .moved
+                    .entry((record.module.clone(), record.entity.clone()))
+                    .or_default() += 1;
+            }
+        }
         self.in_flight = records.len();
         let first = !self.first_sent;
         self.first_sent = true;
