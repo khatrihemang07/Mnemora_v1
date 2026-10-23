@@ -79,6 +79,15 @@ describe('the Activity mock', () => {
     expect(rows.some((r) => r.link === null)).toBe(true);
   });
 
+  it('words an open Conflict line for what it is about', () => {
+    const rows = everything(mock(), { kind: 'all' }).filter((r) => r.kind === 'conflict_raised');
+    const open = rows
+      .filter((r) => r.link === 'conflicts')
+      .map((r) => r.text.map((p) => p.text).join(''));
+    expect(open.some((t) => t.includes('Entry’s text'))).toBe(true);
+    expect(open.some((t) => t.includes('Task’s notes'))).toBe(true);
+  });
+
   it('words a session as Rust does, and sessions of others carry where they happened', () => {
     const m = mock();
     const rows = everything(m, { kind: 'all' });

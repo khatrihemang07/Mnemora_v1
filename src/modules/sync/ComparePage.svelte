@@ -22,6 +22,7 @@
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
   import { clockText, conflictIdOf, rowTitle, usePossessive } from './conflicts';
+  import { compareFlow, forgetCompareFlow } from './compare-flow.svelte';
   import { conflictQuery, watchConflicts } from './queries';
   import SyncFrame from './SyncFrame.svelte';
 
@@ -39,10 +40,13 @@
     };
   });
 
-  let showOriginal = $state(false);
-  let step = $state<'compare' | 'choose' | 'polish'>('compare');
-  let choices = $state<ClashChoice[]>([]);
-  let draft = $state('');
+  // Kept per conflict outside this component: the shell remounts the page when the window crosses the
+  // phone breakpoint, and the step, choices and text must survive that.
+  const flow = $derived(compareFlow(id));
+  const showOriginal = $derived(flow.showOriginal);
+  const step = $derived(flow.step);
+  const choices = $derived(flow.choices);
+  const draft = $derived(flow.draft);
   let busy = $state(false);
 
   const clashes = $derived(view?.pieces.filter((p) => p.kind === 'clash') ?? []);
@@ -56,6 +60,7 @@
     try {
       await unwrap(commands.syncConflictResolve(id, choice));
       notify(message);
+      forgetCompareFlow(id);
       back();
     } catch (e) {
       notifyError(e instanceof Error ? e.message : 'Could not settle that conflict');
@@ -65,18 +70,18 @@
   }
 
   async function startEdit() {
-    choices = clashes.map(() => 'showing');
+    flow.choices = clashes.map(() => 'showing');
     if (clashes.length === 0) await toPolish();
-    else step = 'choose';
+    else flow.step = 'choose';
   }
 
   async function toPolish() {
-    draft = await unwrap(commands.syncConflictDraft(id, choices));
-    step = 'polish';
+    flow.draft = await unwrap(commands.syncConflictDraft(id, flow.choices));
+    flow.step = 'polish';
   }
 
   function pick(index: number, value: ClashChoice) {
-    choices = choices.map((c, i) => (i === index ? value : c));
+    flow.choices = flow.choices.map((c, i) => (i === index ? value : c));
   }
 
   const numbered = $derived.by(() => {
@@ -87,7 +92,7 @@
 
 {#snippet words(spans: DiffSpan[], tint: string, removed = false)}
   <p class="font-display leading-relaxed whitespace-pre-wrap">
-    {#each spans as s}{#if s.changed}<mark class="rounded-[3px] px-px text-ink {tint} {removed ? 'line-through' : ''}">{s.text}</mark>{:else}{s.text}{/if}{/each}
+    {#each spans as s}{#if s.changed}<mark class="rounded-sm px-px text-ink {tint} {removed ? 'line-through' : ''}">{s.text}</mark>{:else}{s.text}{/if}{/each}
   </p>
 {/snippet}
 
@@ -100,7 +105,7 @@
       <span class="flex-1"></span>
       {#if step === 'compare' && view}
         <label class="flex items-center gap-2 text-sm text-muted">
-          <Switch checked={showOriginal} label="Show original" onchange={(v) => (showOriginal = v)} />
+          <Switch checked={showOriginal} label="Show original" onchange={(v) => (flow.showOriginal = v)} />
           Show original
         </label>
       {/if}
@@ -174,10 +179,10 @@
               {:else}
                 <!-- whitespace-normal: the text around is pre-wrap, which would draw the template's line breaks between the rows as blank bands. -->
                 <span class="my-2 block rounded-sm border border-line font-sans text-sm whitespace-normal" data-clash={n}>
-                  <span class="block bg-diff-add px-2.5 py-1.5 {choices[n] !== 'other' ? 'shadow-[inset_3px_0_0_var(--hue-sync)]' : ''}">
+                  <span class="block bg-diff-add border-l-3 px-2.5 py-1.5 {choices[n] !== 'other' ? 'border-l-hue-sync' : 'border-l-transparent'}">
                     <b>{showingName}</b> {p.showing}
                   </span>
-                  <span class="block bg-diff-del px-2.5 py-1.5 {choices[n] !== 'showing' ? 'shadow-[inset_3px_0_0_var(--hue-sync)]' : ''}">
+                  <span class="block bg-diff-del border-l-3 px-2.5 py-1.5 {choices[n] !== 'showing' ? 'border-l-hue-sync' : 'border-l-transparent'}">
                     <b>{otherName}</b> {p.other}
                   </span>
                   <!-- Buttons, not a SegmentedControl: the device names are long, so they wrap (and stack on a phone), and the chosen one carries a check as well as the tint. -->
@@ -208,12 +213,12 @@
         </Card>
         <div class="mt-3 flex flex-wrap gap-1.5">
           <Button variant="primary" onclick={toPolish}><Check class="size-3.5" /> Next: polish</Button>
-          <Button variant="ghost" onclick={() => (step = 'compare')}>Cancel</Button>
+          <Button variant="ghost" onclick={() => (flow.step = 'compare')}>Cancel</Button>
         </div>
       {:else}
         <p class="mb-3 text-xs text-faint">1 Choose for each clash › <b class="text-hue-sync">2 Polish</b></p>
         <Card class="min-h-40">
-          <MarkdownEditor label="Merged text" value={draft} onchange={(t) => (draft = t)} bare />
+          <MarkdownEditor label="Merged text" value={draft} onchange={(t) => (flow.draft = t)} bare />
         </Card>
         <div class="mt-3 flex flex-wrap gap-1.5">
           <Button
@@ -223,7 +228,7 @@
           >
             Save
           </Button>
-          <Button variant="ghost" onclick={() => (step = 'compare')}>Cancel</Button>
+          <Button variant="ghost" onclick={() => (flow.step = 'compare')}>Cancel</Button>
         </div>
       {/if}
     {/if}

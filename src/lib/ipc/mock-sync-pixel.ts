@@ -27,6 +27,7 @@ import type {
   TodoListsMergedEvent,
   TodoTaskDeletedEvent,
 } from './bindings';
+import { subjectWords } from './mock-sync-activity';
 import type { Sample } from './mock-sync-conflicts';
 import {
   type Doc,
@@ -408,10 +409,10 @@ export function createPixelMock(ports: PixelPorts) {
       const subject = subjectOf(c, o);
       const words =
         subject.kind === 'entry'
-          ? 'an Entry’s text'
+          ? subjectWords('entry', 'text')
           : subject.kind === 'task'
-            ? `a Task’s ${subject.field}`
-            : 'a Comment';
+            ? subjectWords('task', subject.field)
+            : subjectWords('comment', '');
       const sample = conflictOf(c, o, writeText(c));
       ports.conflicts.raise(sample);
       add('conflict_raised', { subject: words, conflict: sample.row.id });
@@ -622,6 +623,9 @@ export function createPixelMock(ports: PixelPorts) {
       const s = SCENARIOS[name];
       if (!s) throw new Error(`unknown scenario ${name}: ${Object.keys(SCENARIOS).join(', ')}`);
       const hint = s.stage();
+      // Staging writes through the mock's commands, which tell no one: the lists and Tasks on show
+      // are read again, as the real path does after a change.
+      ports.announce.todoChanged();
       const result = s.sync ? sync() : null;
       return { hint, result };
     },

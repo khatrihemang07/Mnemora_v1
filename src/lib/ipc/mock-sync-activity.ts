@@ -30,6 +30,13 @@ export interface Event {
   extra: Record<string, string>;
 }
 
+/** How the Activity line names the text a Conflict is about: "a Task’s notes", "an Entry’s text". */
+export function subjectWords(entity: string, field: string): string {
+  if (entity === 'entry') return 'an Entry’s text';
+  if (entity === 'task') return `a Task’s ${field}`;
+  return 'a Comment';
+}
+
 /** A small seeded generator, so the same log is made every time. */
 function seeded(seed: number) {
   let s = seed >>> 0;
@@ -78,7 +85,10 @@ export function makeEvents(count: number, now: number): Event[] {
   const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length)] as T;
   const events: Event[] = [];
   let at = now - 2 * MINUTE;
-  const waiting = ['mock-conflict-notes', 'mock-conflict-entry'];
+  const waiting = [
+    { id: 'mock-conflict-notes', subject: subjectWords('task', 'notes') },
+    { id: 'mock-conflict-entry', subject: subjectWords('entry', 'text') },
+  ];
   for (let i = 0; i < count; i++) {
     at -= (4 + Math.floor(rand() * 70)) * MINUTE;
     const r = rand();
@@ -99,16 +109,16 @@ export function makeEvents(count: number, now: number): Event[] {
         extra: {},
       });
     } else if (r < 0.86) {
+      // Only the newest two still wait (the mock's two sample Conflicts), each worded for its own
+      // text; the rest were settled since.
+      const open = at > now - 24 * 60 * MINUTE ? waiting.shift() : undefined;
       events.push({
         ...base,
         ...none,
         kind: 'conflict_raised',
-        // Only the newest still wait; the rest were settled since.
-        extra: {
-          subject: 'a Task’s notes',
-          // The newest two are the mock's two sample Conflicts; the rest were settled since.
-          ...(at > now - 24 * 60 * MINUTE && waiting.length ? { conflict: waiting.shift() } : {}),
-        },
+        extra: open
+          ? { subject: open.subject, conflict: open.id }
+          : { subject: subjectWords('task', 'notes') },
       });
     } else if (r < 0.9) {
       events.push({

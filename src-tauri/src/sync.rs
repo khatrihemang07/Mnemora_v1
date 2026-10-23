@@ -7,7 +7,7 @@ use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::events::EventBus;
 use mnemora_core::syncable::Holdings;
 use mnemora_sync::discovery::{Discovery, Fixed, Mdns};
-use mnemora_sync::net::{DeviceIdentity, Handshake, PublicKey};
+use mnemora_sync::net::{DeviceIdentity, Handshake, NetError, PublicKey};
 use mnemora_sync::{
     CheckExpect, CheckResult, DeviceDetail, DevicesView, Host, Network, NetworkOptions, Paired,
     PairingHost, PairingView, Platform, Registry, Stored, SyncError, SyncOption, SyncState, Who,
@@ -557,7 +557,13 @@ pub async fn start_network<R: Runtime>(
         .parent()
         .map(std::path::Path::to_path_buf)
         .unwrap_or_default();
-    let identity = Arc::new(DeviceIdentity::load_or_create(&dir).map_err(SyncError::from)?);
+    // The key file is read (or made) with blocking I/O, so not on a runtime worker.
+    let identity =
+        tauri::async_runtime::spawn_blocking(move || DeviceIdentity::load_or_create(&dir))
+            .await
+            .map_err(|e| SyncError::from(NetError::Key(e.to_string())))?
+            .map_err(SyncError::from)?;
+    let identity = Arc::new(identity);
     let host = Arc::new(AppHost::new(app.clone(), state.live_network)?);
     let network = Network::start(host, identity, options).await?;
     // Turned off meanwhile: the network has no owner and is dropped here, closing its port.
