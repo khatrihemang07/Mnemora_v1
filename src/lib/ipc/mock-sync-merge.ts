@@ -414,7 +414,10 @@ export function fold(log: Rec[]): Outcome {
         let beside = false;
         for (const m of members) {
           if (!(m in r.fields)) continue;
-          if (held && m in r.prev && !same(r.prev[m], values[m])) beside = true;
+          // A group travels whole: a member the record did not change is what its author held, so
+          // a different one standing means it had not seen the record before.
+          const author = m in r.prev ? r.prev[m] : members.length > 1 ? r.fields[m] : undefined;
+          if (held && author !== undefined && !same(author, values[m])) beside = true;
           values[m] = r.fields[m] as Json;
         }
         if (

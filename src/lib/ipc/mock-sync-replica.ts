@@ -5,6 +5,7 @@
  */
 
 import { nextDue, type RepeatRule } from '../ui/when-repeat';
+import { occurrenceId } from './mock-occurrence';
 import {
   type Doc,
   type Entity,
@@ -19,9 +20,6 @@ import { keyAfter, keyBetween } from './mock-todo-order';
 
 /** What today is on both devices in the fixture (src-tauri/src/sync_merge_fixture_tests.rs `local`). */
 const TODAY = '2026-10-22';
-
-/** The id of the occurrence copy of a Task due on a day: the same on every device (Rust `occurrence_id`). */
-const occurrenceId = (task: string, due: string) => `occurrence|${task}|${due}`;
 
 export interface Replica {
   device: string;

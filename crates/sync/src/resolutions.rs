@@ -540,12 +540,15 @@ fn replay_clashes(
             |before: &Map<String, Value>, m: &str| before.get(m).cloned().unwrap_or(Value::Null);
         for (i, m) in members.iter().enumerate() {
             if let Some(v) = parse(row.get(3 + 2 * i)?) {
-                if let Some(before) =
-                    parse(row.get(4 + 2 * i)?).or_else(|| from_nothing.then_some(Value::Null))
-                    && held.is_some()
-                    && before != stands(&values, m)
-                {
-                    beside = true;
+                if held.is_some() {
+                    match parse(row.get(4 + 2 * i)?).or_else(|| from_nothing.then_some(Value::Null))
+                    {
+                        Some(before) => beside |= before != stands(&values, m),
+                        // A group travels whole: a member this record did not change is what its
+                        // author held, so a different one stands if it had not seen the record
+                        // before (it changed another member of the group).
+                        None => beside |= members.len() > 1 && v != stands(&values, m),
+                    }
                 }
                 values.insert((*m).to_owned(), v);
             }

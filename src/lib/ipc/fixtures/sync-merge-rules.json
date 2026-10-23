@@ -49,7 +49,10 @@
         { "d": "b", "op": "task_when", "task": "t1", "date": "2026-11-05", "time": "08:00" },
         { "op": "sync" }
       ],
-      "expect": { "tasks": { "t1": { "due_date": "2026-11-05", "due_time": "08:00" } } }
+      "expect": {
+        "tasks": { "t1": { "due_date": "2026-11-05", "due_time": "08:00" } },
+        "resolved": ["value"]
+      }
     },
     {
       "name": "a Task's state and its Priority are separate",
@@ -401,7 +404,8 @@
             "repeat_days": null,
             "repeat_mode": "fixed"
           }
-        }
+        },
+        "resolved": ["value"]
       }
     },
     {
@@ -474,7 +478,8 @@
             "repeat_every": null,
             "repeat_mode": null
           }
-        }
+        },
+        "resolved": ["value"]
       }
     },
     {

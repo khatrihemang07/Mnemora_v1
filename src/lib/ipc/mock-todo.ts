@@ -49,6 +49,7 @@ import type {
   TodoListsMergedEvent,
   UpcomingView,
 } from './bindings';
+import { occurrenceId } from './mock-occurrence';
 import type { Doc } from './mock-sync-merge';
 import {
   compareTasks,
@@ -686,7 +687,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
             const now = Date.now();
             const occurrence: Stored = {
               ...task,
-              id: crypto.randomUUID(),
+              id: occurrenceId(task.id, due),
               repeat_freq: null,
               repeat_every: null,
               repeat_days: null,

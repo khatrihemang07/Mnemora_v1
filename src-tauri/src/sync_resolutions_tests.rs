@@ -224,6 +224,63 @@ fn both_choosing_the_same_value_is_not_a_clash() {
     assert!(resolved(&c[1]).is_empty());
 }
 
+/// Both Mnemoras set the When of one Task: one only the Repeat, the other only the date.
+fn when_beside(a_later: bool) -> (Cluster, Value) {
+    let (c, id) = pair_with_task("Water plants");
+    let set = |app: &TestApp, date: &str, every: u32| {
+        let repeat = json!({ "freq": "day", "every": every, "days": null, "mode": "fixed" });
+        app.invoke::<Value>(
+            "todo_task_set_when",
+            json!({ "id": id, "date": date, "time": null, "repeat": repeat, "local": local() }),
+        )
+        .unwrap();
+    };
+    set(&c[0], "2026-11-01", 1);
+    c.sync(0, 1);
+    let (late, early) = if a_later { (0, 1) } else { (1, 0) };
+    c[early].clock().advance(1_000);
+    c[late].clock().advance(5_000);
+    set(&c[0], "2026-11-01", 2);
+    set(&c[1], "2026-11-05", 1);
+    c.sync(0, 1);
+    (c, id)
+}
+
+#[test]
+fn a_change_to_one_member_of_a_group_beside_another_member_is_a_logged_clash() {
+    for a_later in [true, false] {
+        let (c, id) = when_beside(a_later);
+        let (mac, pixel) = (task(&c[0], &id), task(&c[1], &id));
+        assert_eq!(
+            mac["due_date"], pixel["due_date"],
+            "converged, a_later={a_later}"
+        );
+        assert_eq!(
+            mac["repeat_every"], pixel["repeat_every"],
+            "whole group, a_later={a_later}"
+        );
+        let (a, b) = (kind_of(&c[0], "value"), kind_of(&c[1], "value"));
+        assert_eq!(
+            (a.len(), b.len()),
+            (1, 1),
+            "one row each, a_later={a_later}"
+        );
+        assert_eq!(a[0]["id"], b[0]["id"], "the same row, a_later={a_later}");
+        // Use the other side: its whole group comes back, date and Repeat together.
+        c[0].clock().advance(10_000);
+        c[0].invoke::<()>("sync_resolution_use_other", json!({ "id": a[0]["id"] }))
+            .unwrap();
+        let after = task(&c[0], &id);
+        let (date, every) = if a_later {
+            ("2026-11-05", 1)
+        } else {
+            ("2026-11-01", 2)
+        };
+        assert_eq!(after["due_date"], date, "a_later={a_later}");
+        assert_eq!(after["repeat_every"], every, "a_later={a_later}");
+    }
+}
+
 #[test]
 fn the_values_are_written_the_way_the_format_preferences_say() {
     let (c, id) = pair_with_task("Call bank");
