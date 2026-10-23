@@ -1,4 +1,4 @@
-import type { PairingError, PairingView } from '../../lib/ipc/bindings';
+import type { Counts, PairingError, PairingView } from '../../lib/ipc/bindings';
 
 /** A failure as the sheet words it: what happened, then what to do about it. */
 export interface PairProblem {
@@ -102,6 +102,14 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
         fix: 'Check the address, that Mnemora is open on the other device with a code showing, and that both devices are on Tailscale.',
         deadCode: false,
       };
+    case 'backup_failed':
+      return {
+        title: error.name
+          ? `${error.name} couldn't back up its data first.`
+          : "Couldn't back up this device first.",
+        fix: `Nothing was merged. Free some space${error.name ? ' there' : ''} and try again.`,
+        deadCode: false,
+      };
     case 'busy':
       return {
         title: 'That device is pairing with another one.',
@@ -115,6 +123,22 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
         deadCode: false,
       };
   }
+}
+
+/** One cell of the merge preview: a number and what it counts. */
+export interface Stat {
+  n: number;
+  label: string;
+}
+
+/** The six numbers of the merge preview, the other device's first (prototype E7). */
+export function previewStats(there: Counts, here: Counts): Stat[] {
+  const row = (c: Counts, where: string): Stat[] => [
+    { n: c.entries, label: `${c.entries === 1 ? 'Entry' : 'Entries'} ${where}` },
+    { n: c.tasks, label: `${c.tasks === 1 ? 'Task' : 'Tasks'} ${where}` },
+    { n: c.lists, label: `${c.lists === 1 ? 'List' : 'Lists'} ${where}` },
+  ];
+  return [...row(there, 'there'), ...row(here, 'here')];
 }
 
 /** `1:54` from milliseconds, rounding up so the ring and the text hit zero together. */

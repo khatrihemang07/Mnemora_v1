@@ -8,7 +8,7 @@ use crate::db::migrate::MigrationReport;
 use crate::device::DeviceStore;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::settings::{SettingsRegistry, validate};
-use crate::syncable::{Applied, RemoteChange, Settled, SyncEntity};
+use crate::syncable::{Applied, Holdings, RemoteChange, Settled, SyncEntity};
 
 /// A self-contained area of the app. Registered in one place by the app crate.
 /// Modules never import each other; they share only core contracts and the event bus.
@@ -56,6 +56,13 @@ pub trait Module: Send + Sync {
     /// changed records nothing.
     fn settle_remote(&self, _conn: &Connection, _change: &RemoteChange<'_>) -> AppResult<Settled> {
         Ok(Settled::default())
+    }
+
+    /// What this Module holds that a person would count (Entries, Tasks, List names): shown in
+    /// the preview before two devices that both have data merge for the first time. Deleted
+    /// things are not counted. Nothing by default.
+    fn holdings(&self, _conn: &Connection) -> AppResult<Holdings> {
+        Ok(Holdings::default())
     }
 
     /// Work to do once per app start, after every Module's migrations ran (housekeeping such as

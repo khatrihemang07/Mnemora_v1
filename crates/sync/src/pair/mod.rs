@@ -8,6 +8,7 @@
 //! - [`proto`]: the exchange from each end, over any framed channel.
 //! - [`hub`]: [`Pairing`], the state the UI drives (show, enter, allow, cancel).
 //! - [`host`]: what the app provides (this device's facts, storage, events).
+//! - [`preview`]: the first-merge preview (counts, Lists that combine).
 //! - [`view`]: what the pairing sheet renders.
 
 use std::time::Duration;
@@ -16,6 +17,7 @@ pub mod code;
 pub mod host;
 pub mod hub;
 pub mod msg;
+pub mod preview;
 pub(crate) mod proto;
 #[cfg(test)]
 mod tests;
@@ -23,6 +25,7 @@ pub mod view;
 
 pub use host::{Paired, PairingHost, Stored};
 pub use hub::Pairing;
+pub use preview::Counts;
 pub use view::{Older, PairingError, PairingView, Platform};
 
 /// How long each part of a pairing may take. The defaults are the app's; tests shorten them.
@@ -36,6 +39,8 @@ pub struct Timing {
     pub dial: Duration,
     /// How long one reply may take during the exchange (not counting the person's answer).
     pub step: Duration,
+    /// How long the typing device's person may take over the merge preview.
+    pub confirm: Duration,
     /// Extra time the typing device waits beyond the code's life before giving up.
     pub grace: Duration,
 }
@@ -47,6 +52,7 @@ impl Default for Timing {
             search: Duration::from_secs(5),
             dial: Duration::from_secs(3),
             step: Duration::from_secs(10),
+            confirm: Duration::from_secs(300),
             grace: Duration::from_secs(5),
         }
     }

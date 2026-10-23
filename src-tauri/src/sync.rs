@@ -2,9 +2,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use mnemora_core::db::{self, Connection, migrate};
+use mnemora_core::db::{self, Connection, backup, migrate};
 use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::events::EventBus;
+use mnemora_core::syncable::Holdings;
 use mnemora_sync::discovery::{Discovery, Fixed, Mdns};
 use mnemora_sync::net::{DeviceIdentity, Handshake, PublicKey};
 use mnemora_sync::{
@@ -304,6 +305,15 @@ pub fn sync_pair_decide(state: State<'_, AppState>, allow: bool) -> Result<(), A
     Ok(())
 }
 
+/// Merge or Cancel on the first-merge preview (on the device that typed the code). Cancel tells
+/// the other device and leaves both databases as they were.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_merge(state: State<'_, AppState>, merge: bool) -> Result<(), AppError> {
+    state.sync.pairing()?.confirm(merge);
+    Ok(())
+}
+
 /// Closes the pairing sheet's pairing: no code, no search; whoever was asked is told.
 #[tauri::command]
 #[specta::specta]
@@ -402,6 +412,18 @@ impl<R: Runtime> PairingHost for AppHost<R> {
         let introduced: Vec<String> = stored.pins.iter().map(|(_, id)| id.clone()).collect();
         mnemora_sync::introduce_members(&conn, &identity, &paired.who.device, &introduced)?;
         Ok(stored)
+    }
+
+    fn holdings(&self) -> Result<Holdings, SyncError> {
+        let state = self.app.state::<AppState>();
+        Registry::new(Arc::clone(&state.modules)).holdings(&lock(&state.db))
+    }
+
+    fn backup(&self) -> Result<(), SyncError> {
+        let state = self.app.state::<AppState>();
+        let path = backup::backup_now(&lock(&state.db), &state.paths.backup_dir)?;
+        tracing::info!(target: "sync", path = %path.display(), "backed up before the first merge");
+        Ok(())
     }
 
     fn remember_address(&self, device: &str, address: &str) {

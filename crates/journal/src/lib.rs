@@ -19,7 +19,7 @@ use mnemora_core::device::DeviceStore;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
-use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity};
+use mnemora_core::syncable::{Applied, Holdings, RemoteChange, SyncEntity};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -67,6 +67,18 @@ impl Module for JournalModule {
 
     fn sync_entities(&self) -> &'static [SyncEntity] {
         sync::ENTITIES
+    }
+
+    fn holdings(&self, conn: &Connection) -> AppResult<Holdings> {
+        let entries: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM journal_entries WHERE deleted_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(Holdings {
+            entries,
+            ..Holdings::default()
+        })
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {

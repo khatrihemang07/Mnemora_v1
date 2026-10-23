@@ -1,6 +1,8 @@
 //! What pairing needs from the app around it: this device's facts, a place to record a pairing,
 //! and a way to tell the UI. The sync crate never touches the database or the window itself.
 
+use mnemora_core::syncable::Holdings;
+
 use super::msg::Who;
 use super::view::{PairingView, Platform};
 use crate::SyncError;
@@ -40,6 +42,16 @@ pub trait PairingHost: Send + Sync + 'static {
     fn visible(&self) -> bool;
     /// The keys of the devices already paired, as `(key, device id)`.
     fn pinned(&self) -> Vec<(PublicKey, String)>;
+    /// What this device holds (Entries, Tasks, Lists), for the first-merge preview. A device
+    /// that reports nothing is treated as empty: no preview.
+    fn holdings(&self) -> Result<Holdings, SyncError> {
+        Ok(Holdings::default())
+    }
+    /// Backs up the database (the existing backup code and rotation) before the first merge
+    /// with a new device. An error stops the pairing with nothing recorded.
+    fn backup(&self) -> Result<(), SyncError> {
+        Ok(())
+    }
     /// Records the pairing: the group, the device and the members it brought.
     fn store(&self, paired: &Paired) -> Result<Stored, SyncError>;
     /// Tells the UI the pairing state changed.

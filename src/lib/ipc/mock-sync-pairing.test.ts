@@ -249,3 +249,68 @@ describe('pairing by address', () => {
     });
   });
 });
+
+describe('the merge preview', () => {
+  it('shows counts after the right code; Merge pairs', () => {
+    const s = setup();
+    s.call('sync_pair_enter', { code: '92000000' });
+    vi.advanceTimersByTime(900 + 1350);
+    expect(s.last()).toMatchObject({
+      state: 'preview',
+      name: 'Pixel 8 (simulated)',
+      there: { entries: 214, tasks: 96, lists: 7 },
+      here: { entries: 12, tasks: 30, lists: 4 },
+      combine: ['Groceries', 'Work'],
+    });
+    expect(s.names()).toEqual([]);
+    s.call('sync_pair_merge', { merge: true });
+    expect(s.last().state).toBe('finishing');
+    vi.advanceTimersByTime(900);
+    expect(s.last().state).toBe('paired');
+    expect(s.names()).toEqual(['Pixel 8 (simulated)']);
+  });
+
+  it('Cancel closes without pairing', () => {
+    const s = setup();
+    s.call('sync_pair_enter', { code: '92000000' });
+    vi.advanceTimersByTime(3000);
+    s.call('sync_pair_merge', { merge: false });
+    expect(s.last().state).toBe('idle');
+    vi.advanceTimersByTime(5000);
+    expect(s.last().state).toBe('idle');
+    expect(s.names()).toEqual([]);
+  });
+
+  it('a failed backup stops the merge', () => {
+    const s = setup();
+    s.call('sync_pair_enter', { code: '93000000' });
+    vi.advanceTimersByTime(3000);
+    s.call('sync_pair_merge', { merge: true });
+    vi.advanceTimersByTime(900);
+    expect(s.last()).toMatchObject({ state: 'failed', error: { kind: 'backup_failed' } });
+    expect(s.names()).toEqual([]);
+  });
+
+  it('the showing device waits, then pairs when the phone confirms', () => {
+    const s = setup({ ...defaultPairingFlags(), pixel: 'merge' });
+    s.call('sync_pair_show');
+    vi.advanceTimersByTime(4000);
+    s.call('sync_pair_decide', { allow: true });
+    expect(s.last()).toMatchObject({ state: 'confirming', name: 'Pixel 8 (simulated)' });
+    vi.advanceTimersByTime(2700);
+    expect(s.last().state).toBe('paired');
+  });
+
+  it('the showing device is told when the phone cancels, and keeps its code', () => {
+    const s = setup({ ...defaultPairingFlags(), pixel: 'merge_cancel' });
+    s.call('sync_pair_show');
+    vi.advanceTimersByTime(4000);
+    s.call('sync_pair_decide', { allow: true });
+    vi.advanceTimersByTime(2700);
+    expect(s.last()).toMatchObject({
+      state: 'showing',
+      notice: { kind: 'cancelled', name: 'Pixel 8 (simulated)' },
+    });
+    expect(s.names()).toEqual([]);
+  });
+});

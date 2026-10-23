@@ -677,7 +677,7 @@ async fn a_proof_is_not_checked_once_the_tries_are_spent() {
     let a = Dev::new("Mac", Environment::Production).await;
     a.network.pairing().show().unwrap();
     let code = a.code();
-    let side = ShowSide(a.network.pairing());
+    let side = ShowSide::new(a.network.pairing());
     assert_eq!(side.attempt(&code, &|| false), Attempt::Wrong(2));
     assert_eq!(side.attempt("00000000x", &|| true), Attempt::Dead);
     assert_eq!(side.attempt(&code, &|| false), Attempt::Wrong(1));

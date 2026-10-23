@@ -227,6 +227,11 @@ impl TestApp {
         self.app.state::<AppState>().device.device_id()
     }
 
+    /// The folder this app's database backups go to (it may not exist yet).
+    pub fn backup_dir(&self) -> std::path::PathBuf {
+        self.app.state::<AppState>().paths.backup_dir.clone()
+    }
+
     /// What Sync has running: all zeros while Sync is off.
     pub fn sync_probe(&self) -> RuntimeProbe {
         self.app.state::<AppState>().sync.probe()

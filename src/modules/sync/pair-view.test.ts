@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clock, fractionLeft, isBusy, problem, remaining } from './pair-view';
+import { clock, fractionLeft, isBusy, previewStats, problem, remaining } from './pair-view';
 
 describe('problem', () => {
   it('words a wrong code with the tries left and where to look', () => {
@@ -46,6 +46,8 @@ describe('problem', () => {
       { kind: 'nothing_nearby' },
       { kind: 'connection_lost' },
       { kind: 'busy' },
+      { kind: 'backup_failed', name: null },
+      { kind: 'backup_failed', name: 'Pixel 8' },
       { kind: 'not_ready' },
     ] as const;
     for (const e of errors) {
@@ -104,5 +106,30 @@ describe('pairing by address', () => {
     const silent = problem({ kind: 'address_unreachable' }, true);
     expect(silent.title).toBe('Nothing answered at that address.');
     expect(silent.deadCode).toBe(false);
+  });
+});
+
+describe('merge preview', () => {
+  it('lists the other device first, then this one, with singular nouns for 1', () => {
+    const stats = previewStats(
+      { entries: 214, tasks: 96, lists: 7 },
+      { entries: 1, tasks: 1, lists: 1 },
+    );
+    expect(stats.map((s) => `${s.n} ${s.label}`)).toEqual([
+      '214 Entries there',
+      '96 Tasks there',
+      '7 Lists there',
+      '1 Entry here',
+      '1 Task here',
+      '1 List here',
+    ]);
+  });
+
+  it('words a failed backup for this device and for the other', () => {
+    const here = problem({ kind: 'backup_failed', name: null }, true);
+    expect(here.title).toBe("Couldn't back up this device first.");
+    expect(here.fix).toContain('Nothing was merged');
+    const there = problem({ kind: 'backup_failed', name: 'Pixel 8' }, false);
+    expect(there.title).toBe("Pixel 8 couldn't back up its data first.");
   });
 });

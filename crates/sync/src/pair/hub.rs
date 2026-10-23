@@ -5,10 +5,11 @@
 
 use std::collections::HashSet;
 use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use mnemora_core::syncable::Holdings;
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::task::AbortHandle;
@@ -18,7 +19,8 @@ use super::Timing;
 use super::code::{self, MAX_TRIES};
 use super::host::{Paired, PairingHost, Stored};
 use super::msg::{Reason, Who};
-use super::proto::{self, Attempt, Decision, Failure, ShowerPort, TyperPort};
+use super::preview::{Counts, lists_that_combine};
+use super::proto::{self, Attempt, Choice, Decision, Failure, ShowerPort, TyperPort};
 use super::view::{PairingError, PairingView};
 use crate::SyncError;
 use crate::address::{Address, ResolveError};
@@ -43,6 +45,10 @@ struct Pending {
     answer: Option<oneshot::Sender<Decision>>,
     /// Allow was pressed; the pairing is being recorded.
     answered: bool,
+    /// The typing device's person is deciding on the merge preview.
+    confirming: bool,
+    /// Dropped (so the receiver resolves) when the pairing is stopped while confirming.
+    stop: Option<oneshot::Sender<()>>,
 }
 
 struct Inner {
@@ -51,6 +57,8 @@ struct Inner {
     show: Option<Show>,
     asking: Option<Pending>,
     typing: Option<AbortHandle>,
+    /// The merge preview is on the sheet (typing side): where the person's choice goes.
+    reviewing: Option<oneshot::Sender<Choice>>,
     timer: Option<AbortHandle>,
     /// Bumps whenever a code is made or pairing is cancelled, so a late task knows it is stale.
     generation: u64,
@@ -110,6 +118,7 @@ impl Pairing {
                 show: None,
                 asking: None,
                 typing: None,
+                reviewing: None,
                 timer: None,
                 generation: 0,
                 next_question: 0,
@@ -148,7 +157,11 @@ impl Pairing {
 
     fn view_of(&self, g: &Inner) -> PairingView {
         if let Some(p) = &g.asking {
-            return if p.answered {
+            return if p.confirming {
+                PairingView::Confirming {
+                    name: p.who.name.clone(),
+                }
+            } else if p.answered {
                 PairingView::Finishing {
                     name: p.who.name.clone(),
                 }
@@ -232,6 +245,7 @@ impl Pairing {
         if let Some(t) = g.timer.take() {
             t.abort();
         }
+        g.reviewing = None;
         if let Some(answer) = g.asking.take().and_then(|mut p| p.answer.take()) {
             let _ = answer.send(tell);
         }
@@ -290,7 +304,12 @@ impl Pairing {
     fn expire(&self, generation: u64) {
         {
             let mut g = self.lock();
-            if g.generation != generation || !g.show_alive() {
+            // Once Allow was pressed the pairing runs to its end (the merge preview may take
+            // longer than the code); `end_question` closes a code that ran out meanwhile.
+            if g.generation != generation
+                || !g.show_alive()
+                || g.asking.as_ref().is_some_and(|p| p.answered)
+            {
                 return;
             }
             if let Some(show) = g.show.as_mut() {
@@ -321,10 +340,25 @@ impl Pairing {
         self.publish(&g);
     }
 
+    /// The typing device's person chose on the merge preview. Cancel tells the other device and
+    /// leaves both databases as they were.
+    pub fn confirm(&self, merge: bool) {
+        let mut g = self.lock();
+        if let Some(choice) = g.reviewing.take() {
+            let _ = choice.send(if merge { Choice::Merge } else { Choice::Cancel });
+        }
+    }
+
     /// Closes the sheet's pairing: no code, no search, and whoever was asked is told.
     pub fn cancel(&self) {
         {
             let mut g = self.lock();
+            // On the merge preview the exchange itself says no to the other device, then the
+            // sheet closes.
+            if let Some(choice) = g.reviewing.take() {
+                let _ = choice.send(Choice::Cancel);
+                return;
+            }
             Self::clear(&mut g, Decision::Cancelled);
             self.sync_open(&g);
             self.publish(&g);
@@ -357,7 +391,9 @@ impl Pairing {
             mut channel, key, ..
         } = secured;
         let Ok(me) = self.me() else { return };
-        let result = proto::show_code(&mut channel, &ShowSide(&self), &me, key, &self.timing).await;
+        let side = ShowSide::new(&self);
+        let result = proto::show_code(&mut channel, &side, &me, key, &self.timing).await;
+        self.end_question(side.question());
         match result {
             Ok(stored) => self.finish_shower(&stored),
             Err(Failure::Refused {
@@ -374,9 +410,49 @@ impl Pairing {
                 reason: Reason::Groups,
                 ..
             }) => self.notice(PairingError::DifferentGroups),
+            Err(Failure::Refused {
+                reason: Reason::BackupFailed,
+                name,
+            }) => self.notice(PairingError::BackupFailed { name }),
+            // The typing device's person said no to the merge: the code stays, with a note.
+            Err(Failure::Refused {
+                reason: Reason::Cancelled,
+                name: Some(name),
+            }) => self.notice(PairingError::Cancelled { name: Some(name) }),
             // A wrong code was counted when it happened; expiry, cancel and a lost connection
             // were published by whoever caused them.
             Err(_) => {}
+        }
+    }
+
+    /// The question to the person is over (answered, refused or the connection went): takes it
+    /// off the sheet, and closes the code if it ran out while the pairing was being finished.
+    fn end_question(&self, id: u64) {
+        if id == 0 {
+            return;
+        }
+        let ran_out = {
+            let mut g = self.lock();
+            if g.asking.as_ref().is_none_or(|p| p.id != id) {
+                return;
+            }
+            g.asking = None;
+            let ran_out = g.show.as_mut().is_some_and(|s| {
+                let out = s.dead.is_none() && s.expires <= Instant::now();
+                if out {
+                    s.dead = Some(PairingError::CodeExpired { name: None });
+                }
+                out
+            });
+            if ran_out && let Some(timer) = g.timer.take() {
+                timer.abort();
+            }
+            self.sync_open(&g);
+            self.publish(&g);
+            ran_out
+        };
+        if ran_out {
+            self.refresh_advert();
         }
     }
 
@@ -483,8 +559,11 @@ impl Pairing {
                 return;
             }
             g.typing = None;
+            g.reviewing = None;
             g.base = match outcome {
                 Ok(stored) => paired_view(&stored),
+                // This device's own person cancelled the merge preview: the sheet just closes.
+                Err(PairingError::Cancelled { name: None }) => PairingView::Idle,
                 Err(error) => PairingView::Failed { error },
             };
             self.sync_open(&g);
@@ -579,6 +658,7 @@ fn is_final(error: &PairingError) -> bool {
             | PairingError::VersionMismatch { .. }
             | PairingError::DifferentGroups
             | PairingError::Cancelled { .. }
+            | PairingError::BackupFailed { .. }
     )
 }
 
@@ -607,6 +687,7 @@ fn typer_error(failure: Failure) -> PairingError {
             Reason::Expired => PairingError::CodeExpired { name },
             Reason::Cancelled => PairingError::Cancelled { name },
             Reason::Busy => PairingError::Busy,
+            Reason::BackupFailed => PairingError::BackupFailed { name },
             Reason::Groups => PairingError::DifferentGroups,
             Reason::Version => PairingError::VersionMismatch {
                 name: name.unwrap_or_default(),
@@ -633,17 +714,71 @@ impl TyperPort for TypeSide<'_> {
         self.hub.publish(&g);
     }
 
+    fn holdings(&self) -> Result<Holdings, SyncError> {
+        self.hub.host.holdings()
+    }
+
+    fn review(
+        &self,
+        shower: &Who,
+        mine: &Holdings,
+        theirs: &Holdings,
+    ) -> impl Future<Output = Choice> + Send {
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut g = self.hub.lock();
+            g.reviewing = Some(tx);
+            g.base = PairingView::Preview {
+                name: shower.name.clone(),
+                platform: shower.platform,
+                there: Counts::of(theirs),
+                here: Counts::of(mine),
+                combine: lists_that_combine(mine, theirs),
+            };
+            self.hub.publish(&g);
+        }
+        async move { rx.await.unwrap_or(Choice::Cancel) }
+    }
+
+    fn backup(&self, shower: &Who) -> Result<(), SyncError> {
+        {
+            let mut g = self.hub.lock();
+            g.base = PairingView::Finishing {
+                name: shower.name.clone(),
+            };
+            self.hub.publish(&g);
+        }
+        self.hub.host.backup()
+    }
+
     fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
         self.hub.commit(paired, self.typed)
     }
 }
 
 /// The showing side's hooks into [`Pairing`].
-pub(super) struct ShowSide<'a>(pub(super) &'a Arc<Pairing>);
+pub(super) struct ShowSide<'a> {
+    hub: &'a Arc<Pairing>,
+    /// The question this connection asked (0: none yet), for `Pairing::end_question`.
+    question: AtomicU64,
+}
+
+impl<'a> ShowSide<'a> {
+    pub(super) fn new(hub: &'a Arc<Pairing>) -> Self {
+        Self {
+            hub,
+            question: AtomicU64::new(0),
+        }
+    }
+
+    fn question(&self) -> u64 {
+        self.question.load(Ordering::SeqCst)
+    }
+}
 
 impl ShowerPort for ShowSide<'_> {
     fn code(&self) -> Option<String> {
-        let g = self.0.lock();
+        let g = self.hub.lock();
         g.show
             .as_ref()
             .filter(|s| s.dead.is_none())
@@ -652,7 +787,7 @@ impl ShowerPort for ShowSide<'_> {
 
     fn attempt(&self, code: &str, proves: &dyn Fn() -> bool) -> Attempt {
         let left = {
-            let mut g = self.0.lock();
+            let mut g = self.hub.lock();
             let Some(show) = g
                 .show
                 .as_mut()
@@ -672,19 +807,20 @@ impl ShowerPort for ShowSide<'_> {
                     timer.abort();
                 }
             }
-            self.0.sync_open(&g);
-            self.0.publish(&g);
+            self.hub.sync_open(&g);
+            self.hub.publish(&g);
             left
         };
         if left == 0 {
-            self.0.refresh_advert();
+            self.hub.refresh_advert();
         }
         Attempt::Wrong(left)
     }
 
     fn ask(&self, who: &Who) -> impl Future<Output = Decision> + Send {
-        let hub = Arc::clone(self.0);
+        let hub = Arc::clone(self.hub);
         let who = who.clone();
+        let question = &self.question;
         async move {
             let (tx, rx) = oneshot::channel();
             let id = {
@@ -705,32 +841,45 @@ impl ShowerPort for ShowSide<'_> {
                     who,
                     answer: Some(tx),
                     answered: false,
+                    confirming: false,
+                    stop: None,
                 });
                 hub.publish(&g);
                 id
             };
-            // Whatever ends the question, even a dropped connection, takes it off the sheet.
-            let _question = EndQuestion { hub: &hub, id };
+            // The caller ends the question (`Pairing::end_question`) when the exchange is over,
+            // whatever ends it, so the sheet keeps showing it while the merge is decided.
+            question.store(id, Ordering::SeqCst);
             rx.await.unwrap_or(Decision::Cancelled)
         }
     }
 
-    fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
-        self.0.commit(paired, None)
+    fn holdings(&self) -> Result<Holdings, SyncError> {
+        self.hub.host.holdings()
     }
-}
 
-struct EndQuestion<'a> {
-    hub: &'a Arc<Pairing>,
-    id: u64,
-}
-
-impl Drop for EndQuestion<'_> {
-    fn drop(&mut self) {
-        let mut g = self.hub.lock();
-        if g.asking.as_ref().is_some_and(|p| p.id == self.id) {
-            g.asking = None;
-            self.hub.publish(&g);
+    fn reviewing(&self) -> impl Future<Output = ()> + Send {
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut g = self.hub.lock();
+            let id = self.question();
+            if let Some(p) = g.asking.as_mut().filter(|p| p.id == id) {
+                p.confirming = true;
+                p.stop = Some(tx);
+                self.hub.publish(&g);
+            }
         }
+        // Resolves when the pairing is stopped here (the question is dropped with its sender).
+        async move {
+            let _ = rx.await;
+        }
+    }
+
+    fn backup(&self) -> Result<(), SyncError> {
+        self.hub.host.backup()
+    }
+
+    fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
+        self.hub.commit(paired, None)
     }
 }

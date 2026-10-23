@@ -5,6 +5,8 @@ use mnemora_core::env::Environment;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use super::preview::Counts;
+
 /// What kind of device: decides the icon, and nothing else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
@@ -106,6 +108,12 @@ pub enum PairingError {
     AddressNotFound,
     /// Nothing answered at the typed address in time, or it is not Mnemora (Pair by address).
     AddressUnreachable,
+    /// A database could not be backed up first, so nothing was merged. `name` is the other
+    /// device when it was the one that could not; `None` is this device.
+    BackupFailed {
+        /// The device whose backup failed, when it is not this one.
+        name: Option<String>,
+    },
     /// The other device is already pairing with someone.
     Busy,
     /// Sync is not ready (still starting, or off).
@@ -148,6 +156,24 @@ pub enum PairingView {
     Searching,
     /// The code was right; waiting for the person on the other device to Allow.
     Waiting {
+        /// The device being waited for.
+        name: String,
+    },
+    /// Both devices have data: the typing device shows what will be combined and asks.
+    Preview {
+        /// The other device.
+        name: String,
+        /// Its kind.
+        platform: Platform,
+        /// What the other device holds.
+        there: Counts,
+        /// What this device holds.
+        here: Counts,
+        /// The Lists that will combine into one, by this device's spelling.
+        combine: Vec<String>,
+    },
+    /// The showing device, while the typing device decides on the merge preview.
+    Confirming {
         /// The device being waited for.
         name: String,
     },

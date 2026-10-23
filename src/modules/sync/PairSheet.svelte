@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import CircleAlert from '~icons/lucide/circle-alert';
+  import Archive from '~icons/lucide/archive';
   import CircleCheck from '~icons/lucide/circle-check';
   import Laptop from '~icons/lucide/laptop';
   import Smartphone from '~icons/lucide/smartphone';
@@ -18,7 +19,7 @@
   import Input from '../../lib/ui/Input.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import CountdownRing from './CountdownRing.svelte';
-  import { clock, fractionLeft, problem, remaining } from './pair-view';
+  import { clock, fractionLeft, previewStats, problem, remaining } from './pair-view';
   import { pairing } from './pairing.svelte';
 
   // Rust sends the time left when a view arrives; the sheet counts down from there.
@@ -65,7 +66,9 @@
   const title = $derived(
     view.state === 'paired'
       ? 'Paired'
-      : byAddress && view.state !== 'waiting'
+      : view.state === 'preview'
+        ? `Merge with ${view.name}?`
+        : byAddress && view.state !== 'waiting'
         ? 'Pair by address'
         : view.state === 'searching' || (typing && view.state !== 'waiting')
           ? 'Enter a code'
@@ -133,6 +136,30 @@
         <Button onclick={() => void pairing.decide(false)}>Deny</Button>
         <Button variant="primary" onclick={() => void pairing.decide(true)}>Allow</Button>
       </div>
+    {:else if view.state === 'preview'}
+      {@render heading(title)}
+      <p class="mb-3 text-sm text-muted">Both devices have data. Everything is combined; nothing is removed.</p>
+      <div class="grid grid-cols-3 gap-2" role="list" aria-label="What each device holds">
+        {#each previewStats(view.there, view.here) as stat (stat.label)}
+          <div role="listitem" class="rounded-sm bg-surface-2 px-2.5 py-2 text-xs text-muted">
+            <b class="block text-lg font-semibold text-ink tabular-nums">{stat.n}</b>{stat.label}
+          </div>
+        {/each}
+      </div>
+      {#if view.combine.length > 0}
+        <p class="mt-3 text-sm text-ink">
+          Lists with the same name become one: {#each view.combine as name, i (name)}<b>{name}</b>{i < view.combine.length - 1 ? ', ' : ''}{/each}.
+        </p>
+      {/if}
+      <p class="mt-3 flex items-center gap-1.5 text-xs text-muted"><Archive class="size-3.5" />Both databases are backed up first.</p>
+      <div class="mt-4 flex justify-end gap-2">
+        <Button onclick={() => void pairing.merge(false)}>Cancel</Button>
+        <Button variant="primary" onclick={() => void pairing.merge(true)}>Merge and sync</Button>
+      </div>
+    {:else if view.state === 'confirming'}
+      {@render heading(title)}
+      <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Waiting for {view.name} to confirm the merge…</div>
+      <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if view.state === 'finishing'}
       {@render heading(title)}
       <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Pairing with {view.name}…</div>

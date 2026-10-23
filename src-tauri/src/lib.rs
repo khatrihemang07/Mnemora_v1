@@ -95,6 +95,7 @@ macro_rules! specta_builder_for {
                 sync::sync_pair_enter,
                 sync::sync_pair_enter_at,
                 sync::sync_pair_decide,
+                sync::sync_pair_merge,
                 sync::sync_pair_cancel,
                 sync::sync_now,
                 sync::sync_resume,
@@ -146,6 +147,8 @@ mod sync_journal_tests;
 mod sync_lists_tests;
 #[cfg(test)]
 mod sync_live_tests;
+#[cfg(test)]
+mod sync_merge_preview_tests;
 #[cfg(test)]
 mod sync_pairing_tests;
 #[cfg(test)]

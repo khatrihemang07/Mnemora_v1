@@ -95,6 +95,15 @@ class Pairing {
     }
   }
 
+  /**
+   * Merge and sync, or Cancel, on the merge preview. Cancel tells the other device and leaves both
+   * databases as they were, so the sheet has nothing left to show.
+   */
+  async merge(merge: boolean) {
+    if (!merge) this.open = false;
+    await this.run(() => unwrap(commands.syncPairMerge(merge)));
+  }
+
   /** Closes the sheet; whatever was going on stops, and whoever was asked is told. */
   async close() {
     this.open = false;

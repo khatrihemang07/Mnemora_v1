@@ -6,7 +6,9 @@
  * Showing a code ("Pair a device"): after `delayMs` the simulated phone types the right code and asks
  * Allow or Deny. Change that from the console: `__syncMock.pixel = 'wrong' | 'never' | 'joins'`
  * (`wrong`: it mistypes 3 times, which kills the code; `never`: nothing happens until the code
- * expires; `joins`: it also brings two devices of its group). `__syncMock.delayMs` and
+ * expires; `joins`: it also brings two devices of its group; `merge`: it has data too, so after
+ * Allow this device shows "Waiting for … to confirm the merge…" and the phone merges after a few
+ * seconds; `merge_cancel`: the same, but the phone cancels). `__syncMock.delayMs` and
  * `__syncMock.lifeMs` (or `?paircode=SECONDS` in the address for a short-lived code) change the timing.
  *
  * Typing a code ("Enter a code") uses magic codes:
@@ -17,6 +19,8 @@
  *   60000000  connection lost        70000000  different groups      80000000  busy
  *   90000000  right, but the name clashes ("Pixel 8 (simulated) (2)")
  *   91000000  right, and two devices of its group join too           99999999  cancelled from the other device
+ *   92000000  right, both have data: the merge preview (Merge pairs; Cancel closes the sheet)
+ *   93000000  the same, but backing up fails after Merge
  *
  * "Pair by address…" (`sync_pair_enter_at`) takes the same codes, and the address decides first:
  *   …nowhere…  the name does not resolve        …closed… or …timeout…  nothing answered
@@ -28,7 +32,7 @@ import type { AppError, CheckKind, PairingError, PairingView, PeerState } from '
 import type { PairedBase } from './mock-sync-live';
 
 export interface PairingFlags {
-  pixel: 'right' | 'wrong' | 'never' | 'joins';
+  pixel: 'right' | 'wrong' | 'never' | 'joins' | 'merge' | 'merge_cancel';
   /** Until the simulated phone types the code, or mistypes it again. */
   delayMs: number;
   /** How long a code lives. */
@@ -88,6 +92,7 @@ export const PAIRING_COMMANDS = [
   'sync_pair_enter',
   'sync_pair_enter_at',
   'sync_pair_decide',
+  'sync_pair_merge',
   'sync_pair_cancel',
 ];
 
@@ -107,6 +112,8 @@ interface Shown {
   expires: number;
   tries: number;
   dead: PairingError | null;
+  /** The last attempt that failed for another reason than a wrong code. */
+  notice: PairingError | null;
 }
 
 export function createPairingMock(deps: Deps) {
@@ -116,6 +123,8 @@ export function createPairingMock(deps: Deps) {
   let timers: ReturnType<typeof setTimeout>[] = [];
   let wrongStreak = 0;
   let joinGroup = false;
+  /** The magic code whose merge preview is on screen. */
+  let previewing = '';
 
   const set = (next: PairingView) => {
     view = next;
@@ -140,7 +149,7 @@ export function createPairingMock(deps: Deps) {
       left_ms: Math.max(0, shown.expires - Date.now()),
       tries_left: shown.tries,
       discoverable: deps.visible(),
-      notice: null,
+      notice: shown.notice,
     };
   };
 
@@ -174,6 +183,7 @@ export function createPairingMock(deps: Deps) {
       expires: Date.now() + flags.lifeMs,
       tries: MAX_TRIES,
       dead: null,
+      notice: null,
     };
     set(showing());
     later(flags.lifeMs, () => {
@@ -243,6 +253,21 @@ export function createPairingMock(deps: Deps) {
         return fail({ kind: 'different_groups' });
       case '80000000':
         return fail({ kind: 'busy' });
+      case '92000000':
+      case '93000000':
+        set({ state: 'waiting', name: PIXEL });
+        after(flags.stepMs * 1.5, () => {
+          previewing = code;
+          set({
+            state: 'preview',
+            name: PIXEL,
+            platform: 'phone',
+            there: { entries: 214, tasks: 96, lists: 7 },
+            here: { entries: 12, tasks: 30, lists: 4 },
+            combine: ['Groceries', 'Work'],
+          });
+        });
+        return;
       case '99999999':
         set({ state: 'waiting', name: PIXEL });
         after(flags.stepMs * 1.5, () => fail({ kind: 'cancelled', name: PIXEL }));
@@ -272,7 +297,7 @@ export function createPairingMock(deps: Deps) {
           return null;
         case 'sync_pair_new_code':
           needSync();
-          if (shown && view.state !== 'asking') startCode();
+          if (shown && view.state !== 'asking' && view.state !== 'confirming') startCode();
           return null;
         case 'sync_pair_enter': {
           needSync();
@@ -307,9 +332,33 @@ export function createPairingMock(deps: Deps) {
           if (a.allow !== true) {
             stop();
             set({ state: 'idle' });
+          } else if (flags.pixel === 'merge' || flags.pixel === 'merge_cancel') {
+            // Both have data: the phone decides on its merge preview.
+            set({ state: 'confirming', name: PIXEL });
+            later(flags.stepMs * 3, () => {
+              if (flags.pixel === 'merge') return pair([]);
+              if (!shown) return;
+              shown.notice = { kind: 'cancelled', name: PIXEL };
+              set(showing());
+            });
           } else {
             set({ state: 'finishing', name: PIXEL });
             later(flags.stepMs, () => pair(joinGroup ? GROUP : []));
+          }
+          return null;
+        case 'sync_pair_merge':
+          needSync();
+          if (view.state !== 'preview') return null;
+          if (a.merge !== true) {
+            stop();
+            set({ state: 'idle' });
+          } else {
+            set({ state: 'finishing', name: PIXEL });
+            later(flags.stepMs, () => {
+              if (previewing === '93000000')
+                set({ state: 'failed', error: { kind: 'backup_failed', name: null } });
+              else pair([]);
+            });
           }
           return null;
         case 'sync_pair_cancel':

@@ -5,8 +5,11 @@ use std::sync::Arc;
 
 use mnemora_core::module::Module;
 use mnemora_core::settings::{self, SettingsRegistry};
-use mnemora_core::syncable::{FieldClass, SyncEntity};
+use mnemora_core::syncable::{FieldClass, Holdings, SyncEntity};
+use rusqlite::Connection;
 use serde_json::{Map, Value};
+
+use crate::SyncError;
 
 /// Every Module of the app, shared with the engine.
 pub type Modules = Arc<Vec<Box<dyn Module>>>;
@@ -55,6 +58,15 @@ impl Registry {
             let entity = m.sync_entities().iter().find(|e| e.name == name)?;
             Some((m.as_ref(), entity))
         })
+    }
+
+    /// What this device holds, every Module's part added up.
+    pub fn holdings(&self, conn: &Connection) -> Result<Holdings, SyncError> {
+        let mut all = Holdings::default();
+        for module in self.modules.iter() {
+            all.add(module.holdings(conn)?);
+        }
+        Ok(all)
     }
 
     /// Every syncable entity name.

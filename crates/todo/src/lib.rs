@@ -41,7 +41,7 @@ use mnemora_core::device::DeviceStore;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
-use mnemora_core::syncable::{Applied, RemoteChange, Settled, SyncEntity};
+use mnemora_core::syncable::{Applied, Holdings, RemoteChange, Settled, SyncEntity};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -123,6 +123,23 @@ impl Module for TodoModule {
 
     fn sync_entities(&self) -> &'static [SyncEntity] {
         sync::ENTITIES
+    }
+
+    fn holdings(&self, conn: &Connection) -> AppResult<Holdings> {
+        let tasks: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM todo_tasks WHERE deleted_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        let mut names = conn.prepare("SELECT name FROM todo_lists WHERE deleted_at IS NULL")?;
+        let lists = names
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(Holdings {
+            entries: 0,
+            tasks,
+            lists,
+        })
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {

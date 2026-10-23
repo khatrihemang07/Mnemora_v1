@@ -339,6 +339,11 @@ export const commands = {
 	syncPairEnterAt: (address: string, code: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_enter_at", { address, code })),
 	/**  Allow or Deny the device that typed the right code. */
 	syncPairDecide: (allow: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_decide", { allow })),
+	/**
+	 *  Merge or Cancel on the first-merge preview (on the device that typed the code). Cancel tells
+	 *  the other device and leaves both databases as they were.
+	 */
+	syncPairMerge: (merge: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_merge", { merge })),
 	/**  Closes the pairing sheet's pairing: no code, no search; whoever was asked is told. */
 	syncPairCancel: () => __TAURI_INVOKE<void>("sync_pair_cancel"),
 	/**
@@ -662,6 +667,16 @@ export type ConflictView = {
 	original: string,
 	/**  The text, cut at the clashes, for Edit merged. */
 	pieces: ClashPiece[],
+};
+
+/**  The numbers of one side of the preview. */
+export type Counts = {
+	/**  Journal Entries. */
+	entries: number,
+	/**  Tasks. */
+	tasks: number,
+	/**  Lists. */
+	lists: number,
 };
 
 /**  The number of open Tasks due on one date. */
@@ -1180,6 +1195,13 @@ older: Older } |
 { kind: "address_not_found" } | 
 /**  Nothing answered at the typed address in time, or it is not Mnemora (Pair by address). */
 { kind: "address_unreachable" } | 
+/**
+ *  A database could not be backed up first, so nothing was merged. `name` is the other
+ *  device when it was the one that could not; `None` is this device.
+ */
+{ kind: "backup_failed"; 
+/**  The device whose backup failed, when it is not this one. */
+name: string | null } | 
 /**  The other device is already pairing with someone. */
 { kind: "busy" } | 
 /**  Sync is not ready (still starting, or off). */
@@ -1217,6 +1239,22 @@ left_ms: number } |
 { state: "searching" } | 
 /**  The code was right; waiting for the person on the other device to Allow. */
 { state: "waiting"; 
+/**  The device being waited for. */
+name: string } | 
+/**  Both devices have data: the typing device shows what will be combined and asks. */
+{ state: "preview"; 
+/**  The other device. */
+name: string; 
+/**  Its kind. */
+platform: Platform; 
+/**  What the other device holds. */
+there: Counts; 
+/**  What this device holds. */
+here: Counts; 
+/**  The Lists that will combine into one, by this device's spelling. */
+combine: string[] } | 
+/**  The showing device, while the typing device decides on the merge preview. */
+{ state: "confirming"; 
 /**  The device being waited for. */
 name: string } | 
 /**  Allowed here; recording the pairing and telling the other device. */

@@ -13,7 +13,9 @@
 //! time): a change to any member sends every member, and a receiver takes the whole group or
 //! none of it.
 
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use specta::Type;
 
 use crate::changelog::ChangeOp;
 use crate::settings::SettingsRegistry;
@@ -205,6 +207,32 @@ pub struct Settled {
     pub recorded: bool,
     /// What it reports.
     pub events: Vec<SyncEvent>,
+}
+
+/// What one device holds of the things a person counts, for the first-merge preview and to tell an
+/// empty device from one with data. Each Module fills in its own part; they are added together.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Holdings {
+    /// Journal Entries (not deleted).
+    pub entries: u32,
+    /// Tasks (not deleted).
+    pub tasks: u32,
+    /// Names of the Lists (not deleted), in no particular order.
+    pub lists: Vec<String>,
+}
+
+impl Holdings {
+    /// Nothing at all: a fresh device.
+    pub fn is_empty(&self) -> bool {
+        self.entries == 0 && self.tasks == 0 && self.lists.is_empty()
+    }
+
+    /// Adds another Module's part.
+    pub fn add(&mut self, other: Self) {
+        self.entries += other.entries;
+        self.tasks += other.tasks;
+        self.lists.extend(other.lists);
+    }
 }
 
 /// The entity called `name` among a Module's declared ones.

@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use mnemora_core::env::Environment;
+use mnemora_core::syncable::Holdings;
 use serde::{Deserialize, Serialize};
 
 use super::view::Platform;
@@ -64,6 +65,8 @@ pub enum Reason {
     Cancelled,
     /// The sender is pairing with someone else.
     Busy,
+    /// The sender could not back up its database, so nothing was merged.
+    BackupFailed,
 }
 
 /// One pairing message.
@@ -111,6 +114,17 @@ pub enum Msg {
         /// Group id.
         group: String,
     },
+    /// Shower to typer: allowed, and what the shower holds (for the first-merge preview). The
+    /// typer answers `Reviewing` (it shows the preview) or `Go` (nothing to preview).
+    Allowed {
+        /// The shower's Entries, Tasks and Lists.
+        holdings: Holdings,
+    },
+    /// Typer to shower: the typer's person is looking at the merge preview.
+    Reviewing,
+    /// Typer to shower: merge. The typer's database is backed up; the shower backs up its own,
+    /// records the pairing and says `Accepted`.
+    Go,
     /// Typer to shower: stored on its side.
     Done,
     /// Either way: no.
@@ -173,6 +187,11 @@ mod tests {
             },
             Msg::Identity { who: Box::new(who) },
             Msg::Accepted { group: "g".into() },
+            Msg::Allowed {
+                holdings: Holdings::default(),
+            },
+            Msg::Reviewing,
+            Msg::Go,
             Msg::Done,
             Msg::Refuse {
                 reason: Reason::Version,

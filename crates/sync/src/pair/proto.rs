@@ -11,13 +11,21 @@
 //!    names, platform, Environment, data versions, the group's device list). Versions and
 //!    Environments must match.
 //! 4. The showing device asks its person Allow or Deny; the typing device waits.
-//! 5. On Allow the showing device records the pairing and says `Accepted`; the typing device
-//!    records it and says `Done`.
+//! 5. On Allow the showing device sends what it holds (`Allowed`). If both devices hold data the
+//!    typing device shows the merge preview (`Reviewing`) and its person chooses Merge or Cancel
+//!    while the showing device waits; if one is empty the merge goes straight ahead. Nothing is
+//!    stored by either device until Merge.
+//! 6. On Merge the typing device backs up its database and says `Go`; the showing device backs up
+//!    its own, so both backups exist before either records the pairing (and so before any record
+//!    is exchanged). A backup that fails refuses the pairing and nothing changes.
+//! 7. The showing device records the pairing and says `Accepted`; the typing device records it
+//!    and says `Done`.
 
 use std::future::Future;
 use std::time::Duration;
 
 use mnemora_core::env::Environment;
+use mnemora_core::syncable::Holdings;
 use ring::hmac;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -26,6 +34,7 @@ use tokio::time::timeout;
 use super::Timing;
 use super::host::{Paired, Stored};
 use super::msg::{Msg, Reason, Who, hex, unhex};
+use super::preview::needs_preview;
 use super::view::Older;
 use crate::SyncError;
 use crate::net::link::HANDSHAKE_MAX_FRAME;
@@ -62,6 +71,13 @@ pub(crate) enum Decision {
     Busy,
 }
 
+/// What the typing device's person chose on the merge preview.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Choice {
+    Merge,
+    Cancel,
+}
+
 /// What one proof from the typing device came to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Attempt {
@@ -77,6 +93,18 @@ pub(crate) enum Attempt {
 pub(crate) trait TyperPort: Sync {
     /// The code was right: the shower is `shower` and its person is being asked.
     fn waiting(&self, shower: &Who);
+    /// What this device holds.
+    fn holdings(&self) -> Result<Holdings, SyncError>;
+    /// Shows the merge preview and resolves when the person chooses (or the pairing is stopped,
+    /// which counts as Cancel).
+    fn review(
+        &self,
+        shower: &Who,
+        mine: &Holdings,
+        theirs: &Holdings,
+    ) -> impl Future<Output = Choice> + Send;
+    /// Backs up this device's database, before anything is merged.
+    fn backup(&self, shower: &Who) -> Result<(), SyncError>;
     /// Records the pairing; the exchange finishes only if this succeeds.
     fn commit(&self, paired: &Paired) -> Result<Stored, SyncError>;
 }
@@ -91,6 +119,13 @@ pub(crate) trait ShowerPort: Sync {
     fn attempt(&self, code: &str, proves: &dyn Fn() -> bool) -> Attempt;
     /// Asks the person; resolves when they answer, the code expires or pairing is cancelled.
     fn ask(&self, who: &Who) -> impl Future<Output = Decision> + Send;
+    /// What this device holds.
+    fn holdings(&self) -> Result<Holdings, SyncError>;
+    /// The typing device's person is looking at the merge preview: shows that. Resolves when the
+    /// person here cancels (or pairing is stopped).
+    fn reviewing(&self) -> impl Future<Output = ()> + Send;
+    /// Backs up this device's database, before anything is merged.
+    fn backup(&self) -> Result<(), SyncError>;
     /// Records the pairing.
     fn commit(&self, paired: &Paired) -> Result<Stored, SyncError>;
 }
@@ -262,6 +297,13 @@ where
     // closes with the same reason, and its person sees our name.
     compatible(me, &shower)?;
     let wait = timing.code_life + timing.grace;
+    let theirs = match recv(ch, wait).await? {
+        Msg::Allowed { holdings } => holdings,
+        Msg::Refuse { reason } => return Err(refused_by_peer(reason, Some(shower.name))),
+        _ => return Err(Failure::Lost),
+    };
+    agree_to_merge(ch, port, &shower, &theirs, timing).await?;
+    send(ch, &Msg::Go).await?;
     let group = match recv(ch, wait).await? {
         Msg::Accepted { group } => group,
         Msg::Refuse { reason } => return Err(refused_by_peer(reason, Some(shower.name))),
@@ -279,6 +321,65 @@ where
     // The pairing is recorded here either way; this only tells the other end to record it too.
     let _ = send(ch, &Msg::Done).await;
     Ok(stored)
+}
+
+/// The typing device's part between `Allowed` and `Go`: the preview when both devices hold data
+/// (the person may cancel), then this device's backup.
+async fn agree_to_merge<S, P>(
+    ch: &mut Channel<S>,
+    port: &P,
+    shower: &Who,
+    theirs: &Holdings,
+    timing: &Timing,
+) -> Result<(), Failure>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+    P: TyperPort,
+{
+    let mine = port.holdings().map_err(|e| lost("count", e))?;
+    if needs_preview(&mine, theirs) {
+        send(ch, &Msg::Reviewing).await?;
+        let choice = tokio::select! {
+            c = timeout(timing.confirm, port.review(shower, &mine, theirs)) => {
+                c.unwrap_or(Choice::Cancel)
+            }
+            m = ch.recv_max::<Msg>(HANDSHAKE_MAX_FRAME) => {
+                return Err(match m {
+                    Ok(Msg::Refuse { reason }) => refused_by_peer(reason, Some(shower.name.clone())),
+                    _ => Failure::Lost,
+                });
+            }
+        };
+        if choice == Choice::Cancel {
+            send(
+                ch,
+                &Msg::Refuse {
+                    reason: Reason::Cancelled,
+                },
+            )
+            .await?;
+            // `name: None`: this device's own person stopped it.
+            return Err(Failure::Refused {
+                reason: Reason::Cancelled,
+                name: None,
+            });
+        }
+    }
+    if let Err(e) = port.backup(shower) {
+        tracing::warn!(target: "sync", error = %e, "could not back up before the first merge");
+        send(
+            ch,
+            &Msg::Refuse {
+                reason: Reason::BackupFailed,
+            },
+        )
+        .await?;
+        return Err(Failure::Refused {
+            reason: Reason::BackupFailed,
+            name: None,
+        });
+    }
+    Ok(())
 }
 
 /// The showing device's end. `peer` is the typing device's TLS key; `me.key` is our own.
@@ -312,6 +413,47 @@ where
         return Err(Failure::Refused {
             reason,
             name: Some(typer.name),
+        });
+    }
+    send(
+        ch,
+        &Msg::Allowed {
+            holdings: port.holdings().map_err(|e| lost("count", e))?,
+        },
+    )
+    .await?;
+    // The typing device either shows the preview or says Go; its person may take a while.
+    let mut answer = recv(ch, timing.step).await?;
+    if answer == Msg::Reviewing {
+        let cancelled = port.reviewing();
+        tokio::select! {
+            m = recv(ch, timing.confirm + timing.grace) => answer = m?,
+            () = cancelled => {
+                send(ch, &Msg::Refuse { reason: Reason::Cancelled }).await?;
+                return Err(Failure::Refused {
+                    reason: Reason::Cancelled,
+                    name: Some(typer.name),
+                });
+            }
+        }
+    }
+    match answer {
+        Msg::Go => {}
+        Msg::Refuse { reason } => return Err(refused_by_peer(reason, Some(typer.name))),
+        _ => return Err(Failure::Lost),
+    }
+    if let Err(e) = port.backup() {
+        tracing::warn!(target: "sync", error = %e, "could not back up before the first merge");
+        send(
+            ch,
+            &Msg::Refuse {
+                reason: Reason::BackupFailed,
+            },
+        )
+        .await?;
+        return Err(Failure::Refused {
+            reason: Reason::BackupFailed,
+            name: None,
         });
     }
     let group = me
