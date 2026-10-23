@@ -516,7 +516,7 @@ fn replay_clashes(
         sql
     });
     let mut stmt = conn.prepare(&format!(
-        "SELECT origin_device, hlc_ms, hlc_counter{columns} FROM change_log
+        "SELECT origin_device, hlc_ms, hlc_counter{columns}, op = 'create' FROM change_log
          WHERE entity = ?1 AND entity_id = ?2 AND fields IS NOT NULL AND ({touched})
          ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq"
     ))?;
@@ -532,11 +532,16 @@ fn replay_clashes(
         };
         let mut values = held.as_ref().map(|h| h.0.clone()).unwrap_or_default();
         let mut beside = false;
+        // A device's first record of its Address has no earlier record to have replaced anything:
+        // it was made from nothing, so another first one is a clash (as for any later value).
+        let created: bool = row.get(3 + 2 * members.len())?;
+        let from_nothing = created && entity == crate::rename::ENTITY;
         let stands =
             |before: &Map<String, Value>, m: &str| before.get(m).cloned().unwrap_or(Value::Null);
         for (i, m) in members.iter().enumerate() {
             if let Some(v) = parse(row.get(3 + 2 * i)?) {
-                if let Some(before) = parse(row.get(4 + 2 * i)?)
+                if let Some(before) =
+                    parse(row.get(4 + 2 * i)?).or_else(|| from_nothing.then_some(Value::Null))
                     && held.is_some()
                     && before != stands(&values, m)
                 {

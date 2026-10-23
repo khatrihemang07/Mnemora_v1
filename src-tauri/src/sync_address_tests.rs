@@ -207,3 +207,45 @@ fn an_address_typed_before_it_synced_joins_the_group_once() {
     c.sync_all();
     assert_eq!(shown(&c[0], &watch), json!("10.1.1.1"));
 }
+
+#[test]
+fn two_first_addresses_typed_at_once_are_a_clash_like_any_other() {
+    let c = group(3);
+    let watch = c[2].device_id();
+    // Neither has heard anything about the Watch's record: both records are its first.
+    type_address(&c[0], &watch, "10.0.0.20");
+    c[1].clock().advance(5_000);
+    type_address(&c[1], &watch, "10.0.0.30");
+    c.sync_all();
+    for d in 0..2 {
+        assert_eq!(shown(&c[d], &watch), json!("10.0.0.30"), "device {d}");
+    }
+    let (a, b) = (value_rows(&c[0]), value_rows(&c[1]));
+    assert_eq!((a.len(), b.len()), (1, 1), "{a:?} {b:?}");
+    assert_eq!(a[0]["id"], b[0]["id"]);
+    assert_eq!(
+        a[0]["detail"],
+        "10.0.0.30 (Pixel 8) kept · 10.0.0.20 (Mac) replaced"
+    );
+}
+
+#[test]
+fn a_rename_and_an_address_made_at_once_both_stand() {
+    let c = group(3);
+    let watch = c[2].device_id();
+    // The Mac renames the Watch while the Pixel 8 types its Address, neither knowing of the other.
+    c[0].invoke::<Value>(
+        "sync_device_rename",
+        json!({ "id": watch, "name": "Wrist" }),
+    )
+    .unwrap();
+    c[1].clock().advance(5_000);
+    type_address(&c[1], &watch, "10.0.0.30");
+    c.sync_all();
+    for d in 0..2 {
+        assert_eq!(shown(&c[d], &watch), json!("10.0.0.30"), "device {d}");
+        let sheet: Value = c[d].invoke("sync_device", json!({ "id": watch })).unwrap();
+        assert_eq!(sheet["name"], "Wrist", "device {d}");
+    }
+    assert!(value_rows(&c[0]).is_empty() && value_rows(&c[1]).is_empty());
+}
