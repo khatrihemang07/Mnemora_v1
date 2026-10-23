@@ -92,7 +92,7 @@
 
 {#snippet words(spans: DiffSpan[], tint: string, removed = false)}
   <p class="font-display leading-relaxed whitespace-pre-wrap">
-    {#each spans as s}{#if s.changed}<mark class="rounded-sm px-px text-ink {tint} {removed ? 'line-through' : ''}">{s.text}</mark>{:else}{s.text}{/if}{/each}
+    {#each spans as s}{#if s.changed}<mark class="rounded-[3px] px-px text-ink {tint} {removed ? 'line-through' : ''}">{s.text}</mark>{:else}{s.text}{/if}{/each}
   </p>
 {/snippet}
 
