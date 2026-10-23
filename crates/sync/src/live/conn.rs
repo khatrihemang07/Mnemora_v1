@@ -38,8 +38,18 @@ pub(super) enum ConnCmd {
 #[derive(Debug)]
 pub(super) struct RoundDone {
     pub peer: String,
-    /// Records the session stored, or the line it wrote in Activity: news for other devices.
+    /// Records the session stored, the line it wrote in Activity or Activity it took in: news
+    /// for the other devices (see `news`).
     pub received: usize,
+}
+
+/// How much of what a session did is news to the other devices. Nothing hooks the sync
+/// connection's own writes, so the supervisor is told: stored records, the line this device wrote
+/// in Activity and Activity that merely arrived (a device the sender cannot reach may be reached
+/// from here). A round that brought nothing new ends the chain; Activity is written once, so
+/// passing it on cannot go round for ever.
+fn news(stats: &SessionStats) -> usize {
+    stats.received + stats.activity + usize::from(stats.logged)
 }
 
 pub(super) struct Conn {
@@ -122,9 +132,7 @@ impl Conn {
         });
         let _ = self.done.send(RoundDone {
             peer: self.peer.clone(),
-            // The line this device wrote in Activity is news to the other device too. Activity
-            // that merely arrived is not pushed on at once: it travels with the next session.
-            received: received + usize::from(stats.logged),
+            received: news(&stats),
         });
         Ok(())
     }
@@ -166,5 +174,25 @@ pub(super) async fn run(mut conn: Conn) -> Result<(), SyncError> {
                 round = Some(conn.start_round().await?);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn activity_that_merely_arrived_is_news_and_an_empty_round_is_not() {
+        assert_eq!(news(&SessionStats::default()), 0);
+        let only_activity = SessionStats {
+            activity: 2,
+            ..SessionStats::default()
+        };
+        assert!(news(&only_activity) > 0);
+        let logged = SessionStats {
+            logged: true,
+            ..SessionStats::default()
+        };
+        assert!(news(&logged) > 0);
     }
 }

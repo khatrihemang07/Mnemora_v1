@@ -408,6 +408,33 @@ fn renaming_forgetting_leaving_pauses_resumes_and_failures_are_each_one_attribut
     );
 }
 
+#[test]
+fn a_pause_and_a_resume_are_logged_once_however_often_they_are_noticed() {
+    let c = group(2);
+    let order = by_id(&c, 2);
+    let (a, b) = (order[0], order[1]);
+    let (a_id, a_name) = local(&c, a);
+    let (b_id, _) = local(&c, b);
+    c[a].with_db(|db| {
+        let me = Local {
+            device: &a_id,
+            name: a_name,
+        };
+        assert!(
+            !mnemora_sync::log_resumed(db, me, &b_id).unwrap(),
+            "nothing was paused"
+        );
+        assert!(mnemora_sync::log_paused(db, me, &b_id, Why::Update).unwrap());
+        // After a restart the device meets the same pause again.
+        assert!(!mnemora_sync::log_paused(db, me, &b_id, Why::Update).unwrap());
+        assert!(mnemora_sync::log_resumed(db, me, &b_id).unwrap());
+        assert!(!mnemora_sync::log_resumed(db, me, &b_id).unwrap());
+        assert!(mnemora_sync::log_paused(db, me, &b_id, Why::Update).unwrap());
+    });
+    assert_eq!(of_kind(&c[a], "paused").len(), 2);
+    assert_eq!(of_kind(&c[a], "resumed").len(), 1);
+}
+
 // ---------------------------------------------------------------- paging and filters
 
 #[test]

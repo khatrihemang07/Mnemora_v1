@@ -504,19 +504,16 @@ impl Supervisor {
         }
     }
 
-    /// A device went from not paused to paused, or back: one line in Activity either way.
-    async fn note_pause(&self, peer: &str, was: bool, now: bool) {
+    /// A device is met paused or running again: one line in Activity per change, which the log
+    /// itself keeps track of (so a restart does not log it twice).
+    async fn note_pause(&self, peer: &str, paused: bool) {
         let peer = peer.to_owned();
-        match (was, now) {
-            (false, true) => {
-                self.note(move |conn, local| activity::log_paused(conn, local, &peer, Why::Update))
-                    .await;
-            }
-            (true, false) => {
-                self.note(move |conn, local| activity::log_resumed(conn, local, &peer))
-                    .await;
-            }
-            _ => {}
+        if paused {
+            self.note(move |conn, local| activity::log_paused(conn, local, &peer, Why::Update))
+                .await;
+        } else {
+            self.note(move |conn, local| activity::log_resumed(conn, local, &peer))
+                .await;
         }
     }
 
@@ -578,13 +575,12 @@ impl Supervisor {
             if automatic && by_me {
                 peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
             }
-            let was_paused = self.shared.snapshot().get(&id).is_some_and(|l| l.paused);
             self.shared.update(&id, true, |l| {
                 l.paused = true;
                 l.syncing = false;
                 l.progress = None;
             });
-            self.note_pause(&id, was_paused, true).await;
+            self.note_pause(&id, true).await;
             return;
         }
         if !by_me && !automatic && !peer.manual {
@@ -617,12 +613,11 @@ impl Supervisor {
             .filter_map(|a| a.parse().ok())
             .collect();
         self.shared.set_dialled(&id, Some(by_me));
-        let was_paused = self.shared.snapshot().get(&id).is_some_and(|l| l.paused);
         self.shared.update(&id, true, |l| {
             l.reachable = true;
             l.paused = false;
         });
-        self.note_pause(&id, was_paused, false).await;
+        self.note_pause(&id, false).await;
         let remember = id.clone();
         let stored = blocking(&self.shared.host, move |conn| {
             peer_state::saw(conn, &remember, route)?;

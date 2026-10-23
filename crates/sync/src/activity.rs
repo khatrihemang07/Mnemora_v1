@@ -23,7 +23,7 @@ use mnemora_core::error::AppResult;
 use mnemora_core::hlc;
 use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity, SyncEvent, SyncField};
 use mnemora_core::util::new_id;
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -425,15 +425,29 @@ pub fn log_renamed(
     log(conn, &row)
 }
 
-/// Sync with `peer` was paused for `why`. Logged by the lower id of the two. Called by the
-/// session manager and by the pause banners (#72).
+/// Whether the newest pause or resume this device logged about `peer` is a pause. Read from the
+/// log rather than kept in memory, so a restart does not log the same pause again.
+fn paused_now(conn: &Connection, me: &str, peer: &str) -> Result<bool, SyncError> {
+    let newest: Option<String> = conn
+        .query_row(
+            "SELECT kind FROM sync_activity WHERE kind IN ('paused', 'resumed')
+               AND device = ?1 AND peer = ?2 ORDER BY rowid DESC LIMIT 1",
+            params![me, peer],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(newest.as_deref() == Some("paused"))
+}
+
+/// Sync with `peer` was paused for `why`. Logged by the lower id of the two, and once per pause
+/// however often it is met again. Called by the session manager and by the pause banners (#72).
 pub fn log_paused(
     conn: &Connection,
     local: Local<'_>,
     peer: &str,
     why: Why,
 ) -> Result<bool, SyncError> {
-    if !leads(local.device, peer) {
+    if !leads(local.device, peer) || paused_now(conn, local.device, peer)? {
         return Ok(false);
     }
     let mut row = with_peer(conn, blank(conn, new_id(), Kind::Paused, local), peer, None);
@@ -441,9 +455,9 @@ pub fn log_paused(
     log(conn, &row)
 }
 
-/// Sync with `peer` resumed after a pause.
+/// Sync with `peer` resumed after a pause (nothing is logged when it was not paused).
 pub fn log_resumed(conn: &Connection, local: Local<'_>, peer: &str) -> Result<bool, SyncError> {
-    if !leads(local.device, peer) {
+    if !leads(local.device, peer) || !paused_now(conn, local.device, peer)? {
         return Ok(false);
     }
     let row = with_peer(
