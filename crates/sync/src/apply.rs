@@ -93,8 +93,10 @@ pub fn apply_batch(
             continue;
         }
         if record.hlc_ms > latest {
+            // Sorted, so the last record is the newest: sync can resume once that one is allowed.
+            let newest = records.last().map_or(record.hlc_ms, |r| r.hlc_ms);
             return Err(SyncError::ClockAhead {
-                ahead_ms: record.hlc_ms - latest + MAX_AHEAD_MS,
+                resumes_in_ms: newest - latest,
             });
         }
         if folded.insert(&record.entity) {

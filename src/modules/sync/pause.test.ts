@@ -67,6 +67,12 @@ describe('the paused banner', () => {
     );
   });
 
+  it('says when records made on a wrong clock will be taken, though the clock is fixed now', () => {
+    expect(banner({ kind: 'stamped', resumes_in_ms: 160 * MIN })?.text).toBe(
+      'Pixel 8 has changes made while a clock was set ahead. Syncing resumes by itself in 2 h 40 min.',
+    );
+  });
+
   it('names a clock that is ahead, theirs or ours', () => {
     expect(banner({ kind: 'clock', ahead_ms: 3 * HOUR, here: false })?.text).toBe(
       "Pixel 8's clock is 3 h ahead. Fix the time to keep syncing.",

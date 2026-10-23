@@ -8,7 +8,7 @@
  * puts "Pixel 8 (simulated)" (or the device called `name`) in a state; 'syncing' stays at
  * "120 of 340 changes" so the row can be looked at. A paused device shows one of the banners of #72:
  * `why` is `update` (default: it has an older Todo), `me` (this device does), `both`, `clock` (3 h
- * ahead) or `clock_me`; `?paired=2&paused=clock` starts that way. "Sync now" runs a short simulated sync with every
+ * ahead), `clock_me` or `stamped` (the clock is fixed, its records are not); `?paired=2&paused=clock` starts that way. "Sync now" runs a short simulated sync with every
  * device that is reachable.
  */
 import type { Pause, PeerRow, PeerState, Progress, Route } from './bindings';
@@ -33,6 +33,7 @@ export const PAUSES: Record<string, Pause> = {
   me: { kind: 'update', older_here: ['todo'], older_there: [] },
   both: { kind: 'update', older_here: ['journal'], older_there: ['todo'] },
   clock: { kind: 'clock', ahead_ms: 3 * 3_600_000, here: false },
+  stamped: { kind: 'stamped', resumes_in_ms: 160 * 60_000 },
   clock_me: { kind: 'clock', ahead_ms: 3 * 3_600_000, here: true },
 };
 

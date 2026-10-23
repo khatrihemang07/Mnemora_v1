@@ -1313,6 +1313,14 @@ export type Pause =
 older_here: string[]; 
 /**  Modules whose data is older on the other device. */
 older_there: string[] } | 
+/**
+ *  The clocks agree now, but records were stamped by a clock that was ahead (the other
+ *  device's, or one it relays): they are refused until real time is within five minutes of
+ *  them. Fixing the clock does not shorten it.
+ */
+{ kind: "stamped"; 
+/**  How long until the newest of them is allowed, in milliseconds. */
+resumes_in_ms: number } | 
 /**  One clock is more than five minutes ahead of the other. */
 { kind: "clock"; 
 /**  By how much, in milliseconds. */

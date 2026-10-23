@@ -144,8 +144,41 @@ async fn a_record_from_a_wrong_clock_pauses_even_after_the_handshake_looked_fine
     phone.app.clock().skew(0);
     meet(&mac, &phone);
     until("the Mac pauses", || paused(&mac)).await;
-    assert_eq!(peer_of(&mac)["pause"]["kind"], "clock");
+    // The clock is fine now; what is wrong is the date on the records, and the banner says that.
+    assert_eq!(peer_of(&mac)["pause"]["kind"], "stamped");
+    let wait = peer_of(&mac)["pause"]["resumes_in_ms"].as_i64().unwrap();
+    assert!(
+        (3 * HOUR - 6 * 60_000..=3 * HOUR).contains(&wait),
+        "resumes once real time is within five minutes of the records: {wait}"
+    );
     assert!(!has(&mac, &from_future), "never stored");
+    // Retries meet a good handshake each time, but the pause stays and is logged once: it is
+    // not "resumed" until a sync really ran.
+    tokio::time::sleep(std::time::Duration::from_millis(900)).await;
+    assert_eq!(logged(&mac, &phone, "paused"), 1);
+    assert_eq!(logged(&mac, &phone, "resumed"), 0);
+    assert!(paused(&mac));
+    assert!(!has(&mac, &from_future));
+}
+
+#[tokio::test]
+async fn records_from_a_wrong_clock_are_taken_once_real_time_catches_up() {
+    let (mac, phone) = paired_pair(quick()).await;
+    phone.app.clock().skew(3 * HOUR);
+    let from_future = create(&phone, "Made on a fast clock");
+    phone.app.clock().skew(0);
+    meet(&mac, &phone);
+    until("the Mac pauses", || paused(&mac)).await;
+    // Three hours pass on both devices.
+    mac.app.clock().skew(3 * HOUR);
+    phone.app.clock().skew(3 * HOUR);
+    running(&mac, &phone).await;
+    until("the records arrive", || has(&mac, &from_future)).await;
+    until("the resume to be logged", || {
+        logged(&mac, &phone, "resumed") == 1
+    })
+    .await;
+    assert_eq!(logged(&mac, &phone, "paused"), 1);
 }
 
 #[tokio::test]
@@ -174,6 +207,31 @@ fn a_record_stamped_more_than_five_minutes_ahead_is_refused_and_never_seen_by_th
             .unwrap()
     });
     assert!(newest < Cluster::START + 60_000, "{newest}");
+}
+
+#[test]
+fn edits_after_the_clock_is_fixed_are_not_stamped_further_ahead() {
+    let c = Cluster::new(1);
+    c[0].clock().advance(3 * HOUR);
+    create_task(&c[0], "On a fast clock");
+    let ahead = newest_stamp(&c[0]);
+    c[0].clock().advance(-3 * HOUR);
+    create_task(&c[0], "After the fix");
+    create_task(&c[0], "And another");
+    let now = newest_stamp(&c[0]);
+    assert_eq!(now.0, ahead.0, "the pause is not extended by new edits");
+    assert!(now > ahead, "but they still sort after what came before");
+}
+
+fn newest_stamp(app: &TestApp) -> (i64, i64) {
+    app.with_db(|d| {
+        d.query_row(
+            "SELECT hlc_ms, hlc_counter FROM change_log ORDER BY hlc_ms DESC, hlc_counter DESC LIMIT 1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    })
 }
 
 #[test]

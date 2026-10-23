@@ -23,6 +23,14 @@ pub enum Pause {
         /// Modules whose data is older on the other device.
         older_there: Vec<String>,
     },
+    /// The clocks agree now, but records were stamped by a clock that was ahead (the other
+    /// device's, or one it relays): they are refused until real time is within five minutes of
+    /// them. Fixing the clock does not shorten it.
+    Stamped {
+        /// How long until the newest of them is allowed, in milliseconds.
+        #[specta(type = u32)]
+        resumes_in_ms: i64,
+    },
     /// One clock is more than five minutes ahead of the other.
     Clock {
         /// By how much, in milliseconds.
@@ -34,12 +42,18 @@ pub enum Pause {
 }
 
 impl Pause {
-    /// The clock pause for a record stamped `ahead_ms` into the future (the sender's clock).
+    /// The clock pause for a peer whose clock is `ahead_ms` ahead of this device's.
     pub const fn clock_ahead(ahead_ms: i64) -> Self {
         Self::Clock {
             ahead_ms,
             here: false,
         }
+    }
+
+    /// Whether this is the pause that outlives the handshake (see `Stamped`): a good handshake
+    /// does not end it, only a sync that ran.
+    pub const fn outlives_handshake(&self) -> bool {
+        matches!(self, Self::Stamped { .. })
     }
 }
 

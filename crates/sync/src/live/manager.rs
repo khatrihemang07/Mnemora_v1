@@ -516,12 +516,14 @@ impl Supervisor {
                     peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
                 }
                 peer.manual = false;
-                if let SyncError::ClockAhead { ahead_ms } = e {
+                if let SyncError::ClockAhead { resumes_in_ms } = e {
                     // A record from further ahead than five minutes was refused: the peer's
-                    // clock (or that of a device it relays) is wrong, whatever its handshake said.
+                    // clock (or that of a device it relays) was wrong, whatever its handshake
+                    // says now.
                     self.shared
                         .update(id_of_peer, true, |l| l.reachable = false);
-                    self.pause(id_of_peer, Pause::clock_ahead(ahead_ms)).await;
+                    self.pause(id_of_peer, Pause::Stamped { resumes_in_ms })
+                        .await;
                     return;
                 }
                 // Only a line lost in the middle of a sync is news.
@@ -546,6 +548,15 @@ impl Supervisor {
         }
     }
 
+    /// Whether `id` is paused for a reason a good handshake does not end (see `Pause::Stamped`).
+    fn outlasts_handshake(&self, id: &str) -> bool {
+        self.shared
+            .snapshot()
+            .get(id)
+            .and_then(|l| l.paused.as_ref())
+            .is_some_and(Pause::outlives_handshake)
+    }
+
     /// Marks `id` paused for `pause`: the Devices tab shows it, Activity says so once.
     async fn pause(&self, id: &str, pause: Pause) {
         self.shared.update(id, true, |l| {
@@ -563,7 +574,7 @@ impl Supervisor {
         if let Some(pause) = paused {
             let why = match pause {
                 Pause::Update { .. } => Why::Update,
-                Pause::Clock { .. } => Why::Clock,
+                Pause::Clock { .. } | Pause::Stamped { .. } => Why::Clock,
             };
             self.note(move |conn, local| activity::log_paused(conn, local, &peer, why))
                 .await;
@@ -602,6 +613,12 @@ impl Supervisor {
         if let Some(peer) = self.peers.get_mut(&round.peer) {
             peer.backoff.reset();
             peer.manual = false;
+        }
+        // A sync that ran to the end: whatever was wrong with the records is gone.
+        let stamped = self.outlasts_handshake(&round.peer);
+        if stamped {
+            self.shared.update(&round.peer, true, |l| l.paused = None);
+            self.note_pause(&round.peer, None).await;
         }
         if round.received > 0 {
             // What arrived may have forgotten a device (or taken one back): the connection to it
@@ -667,11 +684,18 @@ impl Supervisor {
             .filter_map(|a| a.parse().ok())
             .collect();
         self.shared.set_dialled(&id, Some(by_me));
+        // A pause caused by what was stored on the other side outlives a good handshake: the
+        // retry would otherwise log a resume and a pause every time. A finished sync ends it.
+        let kept = self.outlasts_handshake(&id);
         self.shared.update(&id, true, |l| {
             l.reachable = true;
-            l.paused = None;
+            if !kept {
+                l.paused = None;
+            }
         });
-        self.note_pause(&id, None).await;
+        if !kept {
+            self.note_pause(&id, None).await;
+        }
         let remember = id.clone();
         let (app_version, versions) = (
             established.peer.handshake.app_version.clone(),

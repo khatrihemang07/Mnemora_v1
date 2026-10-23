@@ -48,6 +48,12 @@ export function pauseBanner(peer: Pick<PeerRow, 'name' | 'pause'>): PauseBanner 
   const pause = peer.pause;
   if (pause === null) return null;
   const title = `Paused with ${peer.name}`;
+  if (pause.kind === 'stamped') {
+    return {
+      title,
+      text: `${peer.name} has changes made while a clock was set ahead. Syncing resumes by itself in ${durationWords(pause.resumes_in_ms)}.`,
+    };
+  }
   if (pause.kind === 'clock') {
     const owner = pause.here ? 'This device' : peer.name;
     return {

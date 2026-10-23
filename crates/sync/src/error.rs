@@ -24,8 +24,9 @@ pub enum SyncError {
     /// of the exchange is stored (see `pause`).
     #[error("The other device's clock is too far ahead")]
     ClockAhead {
-        /// How far ahead of this device's clock the record is, in milliseconds.
-        ahead_ms: i64,
+        /// How long until the newest such record is no more than five minutes ahead, in
+        /// milliseconds: when the exchange can be tried again.
+        resumes_in_ms: i64,
     },
     /// A record of a kind no Module here syncs.
     #[error("The other device sent a kind of record this device does not know")]
