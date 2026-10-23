@@ -39,6 +39,7 @@ pub(crate) const INTRODUCTION: SyncEntity = SyncEntity {
         SyncField::value("name").in_group(INTRO),
         SyncField::value("platform").in_group(INTRO),
         SyncField::value("at").in_group(INTRO),
+        SyncField::value("direct").in_group(INTRO),
         SyncField::value("by").in_group(INTRO),
         SyncField::value("signature").in_group(INTRO),
     ],
@@ -56,6 +57,9 @@ struct Row {
     name: String,
     platform: String,
     at: i64,
+    /// The signer paired this device itself (a real pairing), rather than passing on a member of
+    /// the group the paired device brought. Only the former may undo a Forget.
+    direct: bool,
     by: String,
     signature: String,
 }
@@ -64,12 +68,13 @@ impl Row {
     /// What the signature covers: every field, so none can be swapped.
     fn message(&self) -> Vec<u8> {
         [
-            "mnemora-introduction-v1",
+            "mnemora-introduction-v2",
             &self.device,
             &self.public_key,
             &self.name,
             &self.platform,
             &self.at.to_string(),
+            if self.direct { "direct" } else { "relayed" },
             &self.by,
         ]
         .join("\0")
@@ -93,6 +98,7 @@ impl Row {
         m.insert("name".into(), self.name.clone().into());
         m.insert("platform".into(), self.platform.clone().into());
         m.insert("at".into(), self.at.into());
+        m.insert("direct".into(), self.direct.into());
         m.insert("by".into(), self.by.clone().into());
         m.insert("signature".into(), self.signature.clone().into());
         Value::Object(m)
@@ -108,6 +114,7 @@ impl Row {
             name: crate::name::validate_name(&text("name")?).ok()?,
             platform: text("platform")?,
             at: f.get("at").and_then(Value::as_i64)?,
+            direct: f.get("direct").and_then(Value::as_bool)?,
             by: text("by")?,
             signature: text("signature")?,
         })
@@ -116,7 +123,7 @@ impl Row {
 
 fn read(conn: &Connection, device: &str) -> rusqlite::Result<Option<Row>> {
     conn.query_row(
-        "SELECT device, public_key, name, platform, at, by_device, signature
+        "SELECT device, public_key, name, platform, at, by_device, signature, direct
          FROM sync_introductions WHERE device = ?1",
         [device],
         |r| {
@@ -128,6 +135,7 @@ fn read(conn: &Connection, device: &str) -> rusqlite::Result<Option<Row>> {
                 at: r.get(4)?,
                 by: r.get(5)?,
                 signature: r.get(6)?,
+                direct: r.get(7)?,
             })
         },
     )
@@ -136,10 +144,10 @@ fn read(conn: &Connection, device: &str) -> rusqlite::Result<Option<Row>> {
 
 fn store(conn: &Connection, row: &Row) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO sync_introductions(device, public_key, name, platform, at, by_device, signature)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO sync_introductions(device, public_key, name, platform, at, by_device, signature, direct)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(device) DO UPDATE SET public_key = ?2, name = ?3, platform = ?4, at = ?5,
-             by_device = ?6, signature = ?7",
+             by_device = ?6, signature = ?7, direct = ?8",
         params![
             row.device,
             row.public_key,
@@ -147,7 +155,8 @@ fn store(conn: &Connection, row: &Row) -> rusqlite::Result<()> {
             row.platform,
             row.at,
             row.by,
-            row.signature
+            row.signature,
+            row.direct
         ],
     )?;
     Ok(())
@@ -159,13 +168,15 @@ pub fn clear(conn: &Connection) -> AppResult<()> {
     Ok(())
 }
 
-/// Signs and records an introduction of each of `devices`, which this device has just paired (or
-/// been told of by the device it paired), so the rest of the group accepts them. A device that is
+/// Signs and records an introduction of each of `devices`, which this device has just paired
+/// (`paired`, a direct pairing) or been told of by the device it paired, so the rest of the group
+/// accepts them. A device that is
 /// not paired here, has no usable key or stands forgotten is left out, and nothing is made while
 /// `devices` are all the group has. Returns how many were made.
 pub fn introduce(
     conn: &Connection,
     identity: &DeviceIdentity,
+    paired: &str,
     devices: &[String],
 ) -> Result<usize, SyncError> {
     // Nobody else is in the group to tell: two devices pairing for the first time need no
@@ -208,6 +219,7 @@ pub fn introduce(
             at: previous
                 .as_ref()
                 .map_or(now, |p| now.max(p.at.saturating_add(1))),
+            direct: device == paired,
             by: me.clone(),
             signature: String::new(),
         }
@@ -258,6 +270,10 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     if row.by == me || device == me {
         return nothing("made here or about this device");
     }
+    // Nobody vouches for itself.
+    if row.by == *device {
+        return nothing("a device introducing itself");
+    }
     let signer: Option<String> = conn
         .query_row(
             "SELECT public_key FROM sync_peers WHERE id = ?1",
@@ -286,10 +302,16 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     if crate::peers::group(conn)?.is_none() {
         return nothing("no group here");
     }
+    if key_held_by_other(conn, device, &row.public_key)? {
+        return nothing("key belongs to another device");
+    }
     // Forgotten here: only a pairing newer than the Forget brings it back, and then the Forget no
     // longer stands.
     if let Some(forgot_at) = revoked_at(conn, device)? {
-        if row.at <= forgot_at {
+        // A member that had not heard of the Forget may pass the device on from some other pairing
+        // (a member the device paired brought it); only a pairing of the device itself is a
+        // decision to have it back, or a Forget could be undone by anyone behind on news.
+        if row.at <= forgot_at || !row.direct {
             store(conn, &row)?;
             return nothing("forgotten since");
         }
@@ -302,6 +324,15 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
         changed: false,
         events: Vec::new(),
     })
+}
+
+/// Whether a paired device other than `device` holds `key`.
+fn key_held_by_other(conn: &Connection, device: &str, key: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_peers WHERE public_key = ?2 AND id <> ?1)",
+        params![device, key],
+        |r| r.get(0),
+    )
 }
 
 /// When `device` was forgotten, if it stands forgotten here.
@@ -344,7 +375,10 @@ fn take_in(conn: &Connection, row: &Row) -> AppResult<()> {
             crate::rename::settle(conn, &row.device, &row.name)?;
             tracing::info!(target: "sync", "a device paired by another member was accepted");
         }
-        Some((key, paired_at)) if key.as_deref() != Some(&row.public_key) && paired_at < row.at => {
+        // A new key for a device already paired: only from the member that paired that key.
+        Some((key, paired_at))
+            if row.direct && key.as_deref() != Some(&row.public_key) && paired_at < row.at =>
+        {
             conn.execute(
                 "UPDATE sync_peers SET public_key = ?2, paired_at = ?3, paired_by = ?4 WHERE id = ?1",
                 params![row.device, row.public_key, row.at, row.by],
@@ -398,12 +432,24 @@ mod tests {
         signer: &DeviceIdentity,
         at: i64,
     ) -> Row {
+        intro_as(device, newcomer, by, signer, at, true)
+    }
+
+    fn intro_as(
+        device: &str,
+        newcomer: &DeviceIdentity,
+        by: &str,
+        signer: &DeviceIdentity,
+        at: i64,
+        direct: bool,
+    ) -> Row {
         Row {
             device: device.into(),
             public_key: newcomer.public_key().to_hex(),
             name: "Pixel 8".into(),
             platform: "phone".into(),
             at,
+            direct,
             by: by.into(),
             signature: String::new(),
         }
@@ -541,6 +587,109 @@ mod tests {
     }
 
     #[test]
+    fn an_introduction_of_a_device_the_signer_did_not_pair_cannot_undo_a_forget() {
+        let conn = conn();
+        let (bob, dana) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "bob", "Bob", &bob);
+        forgot(&conn, "dana", &dana, 5);
+        // Bob had not heard of the Forget and passed Dana on from another pairing, later than it.
+        receive(&conn, &intro_as("dana", &dana, "bob", &bob, 10, false));
+        assert!(!paired(&conn, "dana"));
+        assert!(crate::revoke::is_revoked(&conn, "dana").unwrap());
+    }
+
+    #[test]
+    fn the_direct_flag_is_signed() {
+        let conn = conn();
+        let (bob, dana) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "bob", "Bob", &bob);
+        forgot(&conn, "dana", &dana, 5);
+        let mut row = intro_as("dana", &dana, "bob", &bob, 10, false);
+        row.direct = true;
+        receive(&conn, &row);
+        assert!(!paired(&conn, "dana"));
+    }
+
+    #[test]
+    fn a_member_cannot_introduce_itself_or_take_over_another_members_id() {
+        let conn = conn();
+        let (bob, carol, mallory) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "bob", "Bob", &bob);
+        pair(&conn, "carol", "Carol", &carol);
+        // Bob signs "bob" with a new key, and "carol" with Mallory's key, later than both pairings.
+        receive(&conn, &intro("bob", &mallory, "bob", &bob, 10));
+        receive(&conn, &intro_as("carol", &mallory, "bob", &bob, 11, false));
+        let keys: Vec<String> = {
+            let mut stmt = conn
+                .prepare("SELECT public_key FROM sync_peers ORDER BY id")
+                .unwrap();
+            stmt.query_map([], |r| r.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        assert_eq!(
+            keys,
+            [bob.public_key().to_hex(), carol.public_key().to_hex()]
+        );
+    }
+
+    #[test]
+    fn a_key_already_held_by_another_device_is_not_taken_again() {
+        let conn = conn();
+        let (bob, carol) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "bob", "Bob", &bob);
+        pair(&conn, "carol", "Carol", &carol);
+        // Under a new id, Carol's key: two ids for one key would let one device count twice.
+        receive(&conn, &intro("carol2", &carol, "bob", &bob, 10));
+        assert!(!paired(&conn, "carol2"));
+    }
+
+    #[test]
+    fn a_pairing_that_is_not_direct_does_not_replace_the_key_of_a_paired_device() {
+        let conn = conn();
+        let (bob, carol, other) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "bob", "Bob", &bob);
+        pair(&conn, "carol", "Carol", &carol);
+        receive(&conn, &intro_as("carol", &other, "bob", &bob, 10, false));
+        let key: String = conn
+            .query_row(
+                "SELECT public_key FROM sync_peers WHERE id = 'carol'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(key, carol.public_key().to_hex());
+        // The member that really paired the new key may.
+        receive(&conn, &intro("carol", &other, "bob", &bob, 11));
+        let key: String = conn
+            .query_row(
+                "SELECT public_key FROM sync_peers WHERE id = 'carol'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(key, other.public_key().to_hex());
+    }
+
+    #[test]
     fn a_name_that_clashes_is_numbered_the_same_way_on_every_device() {
         let conn = conn();
         let (bob, dana) = (
@@ -580,13 +729,23 @@ mod tests {
             "Erin",
             &DeviceIdentity::generate().unwrap(),
         );
-        let made = introduce(&sender, &me, &["dana".to_owned(), "ghost".to_owned()]).unwrap();
+        let made = introduce(
+            &sender,
+            &me,
+            "dana",
+            &["dana".to_owned(), "ghost".to_owned()],
+        )
+        .unwrap();
         assert_eq!(made, 1);
         let alone = conn();
         pair(&alone, "dana", "Dana", &dana);
-        assert_eq!(introduce(&alone, &me, &["dana".to_owned()]).unwrap(), 0);
+        assert_eq!(
+            introduce(&alone, &me, "dana", &["dana".to_owned()]).unwrap(),
+            0
+        );
         let row = read(&sender, "dana").unwrap().unwrap();
         assert_eq!(row.by, "me");
+        assert!(row.direct);
 
         let receiver = conn();
         hlc::set_device_id(&receiver, "receiver").unwrap();

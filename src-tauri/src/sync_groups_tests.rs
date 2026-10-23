@@ -148,7 +148,7 @@ fn an_introduction_signed_by_a_device_outside_the_group_changes_nothing() {
             [DeviceIdentity::generate().unwrap().public_key().to_hex()],
         )
         .unwrap();
-        let made = mnemora_sync::introduce_members(db, &outsider, &["mallory".to_owned()]).unwrap();
+        let made = mnemora_sync::introduce_members(db, &outsider, "mallory", &["mallory".to_owned()]).unwrap();
         assert_eq!(made, 1);
     });
     c.sync(1, 0);
@@ -238,6 +238,37 @@ async fn a_forgotten_device_paired_again_via_a_member_that_had_not_heard_comes_b
     pair_views(&b, &c).await;
     until("Alice to take Carol back", || {
         sorted(a.listed()) == ["Bob", "Carol"]
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn four_devices_paired_in_pieces_while_apart_all_end_up_pinning_each_other() {
+    let a = Device::with_pace("Alice", quick()).await;
+    let b = Device::with_pace("Bob", quick()).await;
+    let c = Device::with_pace("Carol", quick()).await;
+    let d = Device::with_pace("Dana", quick()).await;
+    // A-B, then B-C while Alice is away, then A-D while Alice is away from both.
+    pair_views(&a, &b).await;
+    pair_views(&b, &c).await;
+    pair_views(&a, &d).await;
+    assert_eq!(sorted(c.listed()), ["Alice", "Bob"]);
+    assert_eq!(sorted(d.listed()), ["Alice", "Bob"]);
+    // Pairs meet in a chain; the introductions travel with the ordinary sync.
+    for (x, y) in [(&a, &b), (&b, &c), (&a, &d), (&a, &b), (&b, &c)] {
+        meet(x, y);
+    }
+    until("everybody to list everybody", || {
+        sorted(a.listed()) == ["Bob", "Carol", "Dana"]
+            && sorted(b.listed()) == ["Alice", "Carol", "Dana"]
+            && sorted(c.listed()) == ["Alice", "Bob", "Dana"]
+            && sorted(d.listed()) == ["Alice", "Bob", "Carol"]
+    })
+    .await;
+    // And the ones that never met pin each other: Carol reaches Dana directly.
+    meet(&c, &d);
+    until("Carol and Dana connected", || {
+        state_of(&c, "Dana") == "up_to_date" && state_of(&d, "Carol") == "up_to_date"
     })
     .await;
 }

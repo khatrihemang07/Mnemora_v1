@@ -227,5 +227,8 @@ pub fn all() -> Migrations<'static> {
              signature TEXT NOT NULL
          ) STRICT;",
         ),
+        // Whether the signer paired the device itself; signed, and the only kind that can undo a
+        // Forget (#70 review). Introductions made before this were direct pairings.
+        M::up("ALTER TABLE sync_introductions ADD COLUMN direct INTEGER NOT NULL DEFAULT 1;"),
     ])
 }

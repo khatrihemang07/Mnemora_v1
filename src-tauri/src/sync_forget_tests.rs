@@ -35,6 +35,13 @@ fn state_of(d: &Device, name: &str) -> Value {
     row_named(d, name)["state"].clone()
 }
 
+/// Carol cannot reach the member: it is "Not nearby", or "Removed" when a member that had not yet
+/// dropped her passed the Forget on first (which of the two is a race).
+fn cut_off(d: &Device, name: &str) -> bool {
+    let state = state_of(d, name);
+    state == "not_nearby" || state == "removed"
+}
+
 fn all_up_to_date(d: &Device) -> bool {
     let peers = d.devices()["peers"].as_array().unwrap().clone();
     peers.len() == 2 && peers.iter().all(|p| p["state"] == "up_to_date")
@@ -65,7 +72,7 @@ async fn a_forgotten_device_is_refused_by_every_member() {
     c.found.announce(&id(&a), a.address());
     c.found.announce(&id(&b), b.address());
     until("Carol to lose both", || {
-        state_of(&c, "Alice") == "not_nearby" && state_of(&c, "Bob") == "not_nearby"
+        cut_off(&c, "Alice") && cut_off(&c, "Bob")
     })
     .await;
     let secret = create(&c, "Carol's own");
@@ -74,8 +81,7 @@ async fn a_forgotten_device_is_refused_by_every_member() {
     tokio::time::sleep(Duration::from_millis(1_500)).await;
     assert!(!has(&a, &secret) && !has(&b, &secret), "Carol still synced");
     assert!(!has(&c, &shared), "Carol still received");
-    assert_eq!(state_of(&c, "Alice"), "not_nearby");
-    assert_eq!(state_of(&c, "Bob"), "not_nearby");
+    assert!(cut_off(&c, "Alice") && cut_off(&c, "Bob"));
 
     // The same thing, asked of the network directly: neither member answers Carol.
     for member in [&a, &b] {
@@ -110,7 +116,7 @@ async fn pairing_a_forgotten_device_again_takes_it_back_everywhere() {
     a.call::<()>("sync_device_forget", json!({ "id": id(&c) }));
     until("Bob to drop Carol", || b.listed() == ["Alice"]).await;
     until("Carol to lose both", || {
-        state_of(&c, "Alice") == "not_nearby" && state_of(&c, "Bob") == "not_nearby"
+        cut_off(&c, "Alice") && cut_off(&c, "Bob")
     })
     .await;
 

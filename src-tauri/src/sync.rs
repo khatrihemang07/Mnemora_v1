@@ -388,7 +388,7 @@ impl<R: Runtime> PairingHost for AppHost<R> {
         // The rest of the group was not here: the device just paired, and the members it brought,
         // are introduced with this device's signature so the others accept their keys.
         let introduced: Vec<String> = stored.pins.iter().map(|(_, id)| id.clone()).collect();
-        mnemora_sync::introduce_members(&conn, &identity, &introduced)?;
+        mnemora_sync::introduce_members(&conn, &identity, &paired.who.device, &introduced)?;
         Ok(stored)
     }
 

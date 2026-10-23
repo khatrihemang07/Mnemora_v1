@@ -52,7 +52,8 @@ pub(crate) fn peer_of(device: &Device) -> Value {
 
 pub(crate) async fn until(what: &str, mut done: impl FnMut() -> bool) {
     let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(8) {
+    // Generous: the whole suite runs these in parallel on a small machine.
+    while start.elapsed() < Duration::from_secs(20) {
         if done() {
             return;
         }
