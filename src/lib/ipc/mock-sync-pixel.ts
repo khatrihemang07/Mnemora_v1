@@ -19,7 +19,6 @@
  * named by its id or by its title, name or the start of its text.
  */
 import type {
-  ClashPiece,
   ConflictRow,
   ConflictSubject,
   ResolvedIcon,
@@ -29,14 +28,7 @@ import type {
 } from './bindings';
 import { subjectWords } from './mock-sync-activity';
 import type { Sample } from './mock-sync-conflicts';
-import {
-  type Doc,
-  fold,
-  type Json,
-  type Outcome,
-  type Piece,
-  type TextClash,
-} from './mock-sync-merge';
+import { type Doc, fold, type Json, type Outcome, type TextClash } from './mock-sync-merge';
 import { capture, createIds, createReplica, perform, syncReplicas } from './mock-sync-replica';
 
 export const PIXEL = { id: 'mock-pixel', name: 'Pixel 8 (simulated)' };
@@ -227,7 +219,12 @@ export function createPixelMock(ports: PixelPorts) {
     };
   };
 
-  const conflictOf = (c: TextClash, o: Outcome, write: (text: string) => void): Sample => {
+  const conflictOf = (
+    c: TextClash,
+    o: Outcome,
+    write: (text: string) => void,
+    live: () => string | undefined,
+  ): Sample => {
     const id = `pixel-conflict-${hash(`${c.entity}/${c.id}/${c.field}/${c.base}/${c.ours}/${c.theirs}`)}`;
     const row: ConflictRow = {
       id,
@@ -237,20 +234,15 @@ export function createPixelMock(ports: PixelPorts) {
       showing: { device: deviceName(c.theirsDevice), at: c.theirsAt },
       other: { device: deviceName(c.oursDevice), at: c.oursAt },
     };
-    const pieces: ClashPiece[] = c.pieces.map((p: Piece) =>
-      'agreed' in p
-        ? { kind: 'agreed', text: p.agreed }
-        : { kind: 'clash', showing: p.clash.theirs, other: p.clash.ours, original: p.clash.base },
-    );
     return {
       row,
       base: c.base,
       showing: c.theirs,
       other: c.ours,
-      pieces,
       open: true,
       resolution: null,
       apply: write,
+      live,
     };
   };
 
@@ -361,10 +353,21 @@ export function createPixelMock(ports: PixelPorts) {
         known.add(k);
         return true;
       });
+    const docOf = (c: TextClash) => {
+      const target = c.entity === 'entry' ? ports.data.journal : ports.data.todo;
+      return {
+        target,
+        doc: target.exportDocs().find((d) => d.entity === c.entity && d.id === c.id),
+      };
+    };
+    /** The text of the clashing field as the app holds it now. */
+    const liveText = (c: TextClash) => (): string | undefined => {
+      const v = docOf(c).doc?.values[c.field];
+      return typeof v === 'string' ? v : undefined;
+    };
     const writeText = (c: TextClash) => (text: string) => {
       const field = c.field;
-      const target = c.entity === 'entry' ? ports.data.journal : ports.data.todo;
-      const doc = target.exportDocs().find((d) => d.entity === c.entity && d.id === c.id);
+      const { target, doc } = docOf(c);
       if (doc) target.importDocs([{ ...doc, values: { ...doc.values, [field]: text } }]);
       (c.entity === 'entry' ? ports.announce.journalChanged : ports.announce.todoChanged)();
     };
@@ -413,7 +416,7 @@ export function createPixelMock(ports: PixelPorts) {
           : subject.kind === 'task'
             ? subjectWords('task', subject.field)
             : subjectWords('comment', '');
-      const sample = conflictOf(c, o, writeText(c));
+      const sample = conflictOf(c, o, writeText(c), liveText(c));
       ports.conflicts.raise(sample);
       add('conflict_raised', { subject: words, conflict: sample.row.id });
     }

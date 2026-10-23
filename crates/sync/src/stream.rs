@@ -157,7 +157,7 @@ fn records_after(
     let local_only = registry.local_only(entity);
     let mut stmt = conn.prepare(&format!(
         "SELECT module, entity_id, op, session_id, at, origin_seq, hlc_ms, hlc_counter, fields,
-                snapshot, prev
+                snapshot, prev, seen
          FROM change_log WHERE entity = ?1 AND origin_device = ?2 AND origin_seq > ?3
            AND entity_id NOT IN ({})
          ORDER BY origin_seq LIMIT ?4",
@@ -179,6 +179,7 @@ fn records_after(
             });
         let snapshot: Value = serde_json::from_str(&snapshot).unwrap_or(Value::Null);
         let prev: Option<String> = row.get(10)?;
+        let seen: Option<String> = row.get(11)?;
         let fields = wire_fields(schema, fields, &snapshot, device == me);
         let prev = field_prev(schema, &fields, prev);
         out.push(WireRecord {
@@ -194,6 +195,7 @@ fn records_after(
             hlc_counter: row.get(7)?,
             fields,
             prev,
+            seen: seen.and_then(|s| serde_json::from_str(&s).ok()),
         });
     }
     // The op is checked on receipt; sending an unknown one would only be refused there.

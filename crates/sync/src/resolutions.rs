@@ -16,7 +16,7 @@
 //!
 //! Never log values.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
@@ -634,29 +634,68 @@ pub(crate) fn settle_value(
 
 // ---------------------------------------------------------------- delete and edit
 
+/// The first edit, in clock order, of a record by a device other than the one that deleted it
+/// (`delete` is its clock and device) from before it was restored, that the delete's author
+/// did not know of: later by the clock, or above what the delete says its device had `seen`.
+/// Returns the editing device, the edit's clock milliseconds and its fields as JSON.
+fn first_unaware_edit(
+    conn: &Connection,
+    entity: &str,
+    entity_id: &str,
+    delete: (i64, i64, &str),
+    restored: (i64, i64),
+    seen: Option<&BTreeMap<String, i64>>,
+) -> Result<Option<(String, i64, String)>, SyncError> {
+    let (ms, counter, device) = delete;
+    let mut stmt = conn.prepare(
+        "SELECT origin_device, hlc_ms, fields, origin_seq, hlc_counter FROM change_log
+         WHERE entity = ?1 AND entity_id = ?2 AND origin_device != ?3
+           AND (hlc_ms, hlc_counter) < (?4, ?5)
+           AND fields IS NOT NULL
+           AND json_type(fields, '$.deleted_at') IS NULL AND op != 'delete'
+         ORDER BY hlc_ms, hlc_counter, origin_device",
+    )?;
+    let mut rows = stmt.query(params![entity, entity_id, device, restored.0, restored.1])?;
+    while let Some(row) = rows.next()? {
+        let (edit_device, edit_ms, fields): (String, i64, String) =
+            (row.get(0)?, row.get(1)?, row.get(2)?);
+        let (edit_seq, edit_counter): (i64, i64) = (row.get(3)?, row.get(4)?);
+        let later = (edit_ms, edit_counter) > (ms, counter);
+        let unseen = seen.is_some_and(|s| edit_seq > s.get(&edit_device).copied().unwrap_or(0));
+        if later || unseen {
+            return Ok(Some((edit_device, edit_ms, fields)));
+        }
+    }
+    Ok(None)
+}
+
 /// Logs a record that is deleted here although another device edited it without having seen
 /// the delete: both took effect (it is deleted, with the edit inside, back if restored).
-/// Called after a record of a deleted entity is stored. The edit is concurrent when its clock
-/// is later than the delete's: whoever wrote it had not seen the delete, or the delete's own
-/// author would have had a later clock.
+/// Called after a record of a deleted entity is stored. An edit is concurrent with the delete
+/// when its clock is later than the delete's (whoever wrote it had not seen the delete, or the
+/// delete's own author would have had a later clock), or when the delete's author had not yet
+/// received it (the delete says what its device held, `seen`). Whichever clock is later, the
+/// line is the same.
 pub(crate) fn note_delete_edit(
     conn: &Connection,
     schema: &SyncEntity,
     entity_id: &str,
 ) -> Result<(), SyncError> {
     let entity = schema.name;
-    let delete: Option<(i64, i64, String)> = conn
+    let delete: Option<(i64, i64, String, Option<String>)> = conn
         .query_row(
-            "SELECT hlc_ms, hlc_counter, origin_device FROM change_log
+            "SELECT hlc_ms, hlc_counter, origin_device, seen FROM change_log
              WHERE entity = ?1 AND entity_id = ?2 AND json_extract(fields, '$.deleted_at') IS NOT NULL
              ORDER BY hlc_ms DESC, hlc_counter DESC, origin_device DESC LIMIT 1",
             [entity, entity_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .optional()?;
-    let Some((ms, counter, device)) = delete else {
+    let Some((ms, counter, device, seen)) = delete else {
         return Ok(());
     };
+    // `None`: a delete from before records said what they had seen; only a later clock counts.
+    let seen: Option<BTreeMap<String, i64>> = seen.and_then(|s| serde_json::from_str(&s).ok());
     // Whoever restored it had seen the delete, and so has everything written after that.
     let restored: (i64, i64) = conn
         .query_row(
@@ -669,20 +708,14 @@ pub(crate) fn note_delete_edit(
         )
         .optional()?
         .unwrap_or((i64::MAX, 0));
-    let edit: Option<(String, i64, String)> = conn
-        .query_row(
-            "SELECT origin_device, hlc_ms, fields FROM change_log
-             WHERE entity = ?1 AND entity_id = ?2 AND origin_device != ?3
-               AND (hlc_ms, hlc_counter) > (?4, ?5) AND (hlc_ms, hlc_counter) < (?6, ?7)
-               AND fields IS NOT NULL
-               AND json_type(fields, '$.deleted_at') IS NULL AND op != 'delete'
-             ORDER BY hlc_ms, hlc_counter, origin_device LIMIT 1",
-            params![
-                entity, entity_id, device, ms, counter, restored.0, restored.1
-            ],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .optional()?;
+    let edit = first_unaware_edit(
+        conn,
+        entity,
+        entity_id,
+        (ms, counter, &device),
+        restored,
+        seen.as_ref(),
+    )?;
     let Some((edit_device, edit_ms, fields)) = edit else {
         retract_delete_edits(conn, entity, entity_id, None)?;
         return Ok(());
@@ -1033,6 +1066,7 @@ mod tests {
             hlc_counter: 0,
             fields: fields.as_object().unwrap().clone(),
             prev: prev.as_object().unwrap().clone(),
+            seen: None,
         }
     }
 

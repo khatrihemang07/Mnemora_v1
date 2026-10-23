@@ -3,6 +3,7 @@
  * simulated "Pixel 8", and the same shapes Rust sends (crates/sync/src/conflict_view.rs). The
  * merge itself is Rust's; here each sample carries its clashes ready made.
  */
+
 import type {
   AppError,
   ClashChoice,
@@ -14,15 +15,17 @@ import type {
   DiffSpan,
   ResolvedRow,
 } from './bindings';
+import { type Piece, textMerge } from './mock-sync-merge';
 
 export interface Sample {
   row: ConflictRow;
   base: string;
   showing: string;
   other: string;
-  pieces: ClashPiece[];
   open: boolean;
   resolution: string | null;
+  /** The text of the field as the app holds it now; absent for the ready-made samples. */
+  live?: () => string | undefined;
   /** The simulated device's Conflicts: what to write into the data when a person chooses the other text. */
   apply?: (text: string) => void;
 }
@@ -153,6 +156,22 @@ export function diffSpans(a: string, b: string): [DiffSpan[], DiffSpan[]] {
   return [spans(ta, ca), spans(tb, cb)];
 }
 
+/** The text showing now: the record's live text, or the one the Conflict was raised with. */
+const showingNow = (s: Sample): string => s.live?.() ?? s.showing;
+
+/**
+ * The clashes of the other version against what shows now, as `pieces` in conflict_view.rs: the
+ * older version is "ours", the showing text "theirs", so an edit made since the Conflict was
+ * raised stays (Edit merged).
+ */
+function piecesOf(s: Sample): ClashPiece[] {
+  return textMerge(s.base, s.other, showingNow(s)).map((p: Piece) =>
+    'agreed' in p
+      ? { kind: 'agreed', text: p.agreed }
+      : { kind: 'clash', showing: p.clash.theirs, other: p.clash.ours, original: p.clash.base },
+  );
+}
+
 /** Mirrors `draft` in conflict_view.rs. */
 function draftOf(pieces: ClashPiece[], choices: ClashChoice[]): string {
   let n = 0;
@@ -201,16 +220,6 @@ export function createConflictsMock(
         base: 'Went for a run along the canal.\nCoffee with Sam after.\n',
         showing: entryShowing,
         other: entryOther,
-        pieces: [
-          { kind: 'agreed', text: 'Went for a run along the canal, ' },
-          {
-            kind: 'clash',
-            showing: 'felt great after the rain.',
-            other: 'legs heavy but good.',
-            original: 'canal.',
-          },
-          { kind: 'agreed', text: '\nCoffee with Sam after.\n' },
-        ],
         open: true,
         resolution: null,
       },
@@ -229,16 +238,6 @@ export function createConflictsMock(
         base: 'Route: to decide\nBring the stove\n',
         showing: notesShowing,
         other: notesOther,
-        pieces: [
-          { kind: 'agreed', text: 'Route: ' },
-          {
-            kind: 'clash',
-            showing: 'ridge loop from the north',
-            other: 'lake path from the south',
-            original: 'to decide',
-          },
-          { kind: 'agreed', text: '\nBring the stove\n' },
-        ],
         open: true,
         resolution: null,
       },
@@ -250,7 +249,7 @@ export function createConflictsMock(
   const openSamples = () => [...samples.values()].filter((s) => s.open && shown(s.row.id));
 
   const view = (s: Sample): ConflictView => {
-    const [showing, other] = diffSpans(s.showing, s.other);
+    const [showing, other] = diffSpans(showingNow(s), s.other);
     return {
       row: s.row,
       open: s.open,
@@ -258,7 +257,7 @@ export function createConflictsMock(
       showing: showing ?? [],
       other: other ?? [],
       original: s.base,
-      pieces: s.pieces,
+      pieces: piecesOf(s),
     };
   };
 
@@ -306,7 +305,7 @@ export function createConflictsMock(
           return sample ? view(sample) : null;
         case 'sync_conflict_draft':
           if (!sample) throw gone();
-          return draftOf(sample.pieces, (a.choices as ClashChoice[]) ?? []);
+          return draftOf(piecesOf(sample), (a.choices as ClashChoice[]) ?? []);
         case 'sync_conflict_resolve': {
           if (!sample?.open) throw gone();
           const choice = a.choice as ConflictChoice;

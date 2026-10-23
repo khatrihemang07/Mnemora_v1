@@ -247,7 +247,10 @@ pub fn list(conn: &Connection, me: &str, my_name: &str) -> AppResult<ConflictLis
     })
 }
 
-/// The text of the field a Conflict is about as the record holds it now.
+/// The text of the field a Conflict is about as the record holds it now. Edit merged is built
+/// from it, not from the text the Conflict was raised with: the clashes are those of the other
+/// version against what shows now (the older version is "ours", the showing text "theirs"), so
+/// an edit made since stays, as agreed text or inside the showing side of a clash.
 fn showing_now(conn: &Connection, c: &Stored) -> Result<String, SyncError> {
     Ok(string_of(
         texts::current(conn, &c.target, &c.target_id)?.as_ref(),
@@ -267,8 +270,7 @@ pub fn view(
     };
     let showing = showing_now(conn, &c)?;
     let (showing_spans, other_spans) = textmerge::diff(&showing, &c.b_text);
-    // The clashes of the merge that raised it: the older version is "ours", the newer "theirs".
-    let pieces = textmerge::merge(&c.base, &c.b_text, &c.a_text)
+    let pieces = textmerge::merge(&c.base, &c.b_text, &showing)
         .pieces
         .into_iter()
         .map(|p| match p {
@@ -297,9 +299,10 @@ pub fn draft(conn: &Connection, id: &str, choices: &[ClashChoice]) -> AppResult<
     let Some(c) = conflicts::get(conn, id)? else {
         return Err(SyncError::Validation("That conflict is gone").into());
     };
+    let showing = showing_now(conn, &c)?;
     let mut choices = choices.iter();
     let mut out = String::new();
-    for piece in textmerge::merge(&c.base, &c.b_text, &c.a_text).pieces {
+    for piece in textmerge::merge(&c.base, &c.b_text, &showing).pieces {
         match piece {
             Piece::Agreed(text) => out.push_str(&text),
             Piece::Clash(k) => match choices.next().unwrap_or(&ClashChoice::Showing) {

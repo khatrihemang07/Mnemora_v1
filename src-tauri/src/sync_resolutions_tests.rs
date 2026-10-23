@@ -329,6 +329,112 @@ fn a_delete_and_an_edit_on_different_devices_are_both_kept_and_logged_once() {
     );
 }
 
+/// Mac deletes and Pixel 8 edits, each without knowing of the other; `delete_first` says whose
+/// clock is later.
+fn delete_beside_edit(delete_first: bool) -> (Cluster, Value) {
+    let (c, id) = pair_with_task("Water plants");
+    let (delete_at, edit_at) = if delete_first {
+        (1_000, 2_000)
+    } else {
+        (2_000, 1_000)
+    };
+    c[0].clock().advance(delete_at);
+    c[0].invoke::<()>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+    c[1].clock().advance(edit_at);
+    c[1].invoke::<Value>(
+        "todo_task_update",
+        json!({ "id": id, "title": "Water plants", "notes": "Fern first", "sessionId": "e" }),
+    )
+    .unwrap();
+    (c, id)
+}
+
+#[test]
+fn a_delete_and_an_edit_are_logged_whichever_clock_is_later() {
+    for delete_first in [true, false] {
+        let (c, _) = delete_beside_edit(delete_first);
+        c.sync(0, 1);
+        c.sync(0, 1);
+        for d in 0..2 {
+            let rows = kind_of(&c[d], "delete_edit");
+            assert_eq!(rows.len(), 1, "device {d}, delete first: {delete_first}");
+            assert_eq!(
+                rows[0]["detail"], "Deleted (Mac) kept · notes edited (Pixel 8) kept inside it",
+                "device {d}, delete first: {delete_first}"
+            );
+        }
+        assert_eq!(
+            kind_of(&c[0], "delete_edit")[0]["id"],
+            kind_of(&c[1], "delete_edit")[0]["id"]
+        );
+    }
+}
+
+#[test]
+fn an_edit_the_deleting_device_had_already_received_is_not_logged() {
+    let (c, id) = pair_with_task("Water plants");
+    c[1].clock().advance(1_000);
+    c[1].invoke::<Value>(
+        "todo_task_update",
+        json!({ "id": id, "title": "Water plants", "notes": "Fern first", "sessionId": "e" }),
+    )
+    .unwrap();
+    c.sync(0, 1);
+    // The Mac now knows the edit, and deletes after it; its clock is later.
+    c[0].clock().advance(2_000);
+    c[0].invoke::<()>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+    c.sync(0, 1);
+    c.sync(0, 1);
+    for d in 0..2 {
+        assert!(kind_of(&c[d], "delete_edit").is_empty(), "device {d}");
+    }
+}
+
+#[test]
+fn a_delete_and_an_earlier_edit_met_through_a_third_device_are_logged_once_in_any_order() {
+    let c = Cluster::new(3);
+    let names = ["Mac", "Pixel 8", "Tablet"];
+    for (i, name) in names.iter().enumerate() {
+        c[i].invoke::<()>("sync_rename", json!({ "name": name }))
+            .unwrap();
+        for (j, other) in names.iter().enumerate().filter(|(j, _)| *j != i) {
+            let id = c[j].device_id();
+            c[i].with_db(|db| {
+                db.execute(
+                    "INSERT INTO sync_peers(id, name, paired_at) VALUES (?1, ?2, ?3)",
+                    (id.as_str(), *other, Cluster::START),
+                )
+                .unwrap();
+            });
+        }
+    }
+    let id = create(&c[0], "Water plants")["id"].clone();
+    c.sync_all();
+    c[1].clock().advance(1_000);
+    c[1].invoke::<Value>(
+        "todo_task_update",
+        json!({ "id": id, "title": "Water plants", "notes": "Fern first", "sessionId": "e" }),
+    )
+    .unwrap();
+    c[0].clock().advance(2_000);
+    c[0].invoke::<()>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+    // The Tablet hears of the delete first, and the edit reaches it later.
+    c.sync(0, 2);
+    c.sync(1, 2);
+    c.sync_all();
+    for d in 0..3 {
+        let rows = kind_of(&c[d], "delete_edit");
+        assert_eq!(rows.len(), 1, "device {d}");
+        assert_eq!(
+            rows[0]["detail"],
+            "Deleted (Mac) kept · notes edited (Pixel 8) kept inside it"
+        );
+    }
+}
+
 #[test]
 fn a_delete_met_by_two_edits_is_one_row_the_same_on_three_devices_in_any_order() {
     let c = Cluster::new(3);

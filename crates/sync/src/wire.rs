@@ -42,6 +42,11 @@ pub struct WireRecord {
     /// field it tells a change made after another one from a change made beside it.
     #[serde(default, skip_serializing_if = "Map::is_empty")]
     pub prev: Map<String, Value>,
+    /// For a delete: what the origin held of the other devices' records of this kind of entity,
+    /// `{device: highest origin sequence}`. An edit above it was made without knowing of the
+    /// delete. Absent for any other record, and for deletes made by older versions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seen: Option<BTreeMap<String, i64>>,
 }
 
 /// A message of a sync session.

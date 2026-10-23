@@ -97,6 +97,11 @@ export interface Rec {
   fields: Record<string, Json>;
   /** What each of those fields held on the author's device before. */
   prev: Record<string, Json>;
+  /**
+   * For a delete: the highest `seq` the author held of each other device's records of this kind
+   * of entity. An edit above it was made without knowing of the delete (Rust: change_log.seen).
+   */
+  seen?: Record<string, number>;
 }
 
 const cmp = (a: Rec, b: Rec) =>
@@ -419,14 +424,16 @@ export function fold(log: Rec[]): Outcome {
       Object.assign(doc.values, held?.values);
     }
     outcome.docs.push(doc);
-    // A record deleted by one device and edited later by another.
+    // A record deleted by one device and edited by another without knowing of it: later by the
+    // clock, or not yet received by the deleter (whichever clock is later).
     const deletes = recs.filter((r) => r.fields.deleted_at != null);
     const gone = deletes[deletes.length - 1];
     if (gone && doc.values.deleted_at != null) {
       const edit = recs.find(
         (r) =>
-          cmp(r, gone) > 0 &&
           r.stamp.device !== gone.stamp.device &&
+          (cmp(r, gone) > 0 ||
+            (gone.seen !== undefined && r.seq > (gone.seen[r.stamp.device] ?? 0))) &&
           Object.keys(r.fields).some((f) => f !== 'deleted_at'),
       );
       if (edit)

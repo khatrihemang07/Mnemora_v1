@@ -4,6 +4,8 @@
 //!
 //! Snapshots hold user content, so nothing in this file may log them.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Map, Value};
 
@@ -84,17 +86,19 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
     let tick = hlc::tick(conn)?;
     let device = hlc::device_id(conn)?;
     let touched = changed_fields(conn, change)?;
+    let seen = seen_by_delete(conn, change, &touched, &device)?;
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
-                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields, prev)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14)
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields, prev,
+                                seen)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14, ?15)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
          DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
              snapshot = excluded.snapshot, at = excluded.at,
              origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
              hlc_counter = excluded.hlc_counter, seq = excluded.seq,
              origin_seq = excluded.origin_seq, fields = excluded.fields,
-             prev = excluded.prev",
+             prev = excluded.prev, seen = excluded.seen",
         rusqlite::params![
             new_id(),
             change.module,
@@ -110,9 +114,41 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
             tick.seq,
             touched.fields.map(|f| Value::Object(f).to_string()),
             Value::Object(touched.prev).to_string(),
+            seen,
         ],
     )?;
     Ok(())
+}
+
+/// For a record that deletes, what this device had of the other devices' records of the same
+/// kind of entity: `{device: highest origin sequence held}`, as JSON. Sync tells an edit made
+/// without knowing of the delete from one the delete's author had already seen. `None` for any
+/// other record.
+fn seen_by_delete(
+    conn: &Connection,
+    change: &Change,
+    touched: &Touched,
+    device: &str,
+) -> AppResult<Option<String>> {
+    let deletes = change.op == ChangeOp::Delete
+        || touched
+            .fields
+            .as_ref()
+            .and_then(|f| f.get("deleted_at"))
+            .is_some_and(|d| !d.is_null());
+    if !deletes {
+        return Ok(None);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT origin_device, MAX(origin_seq) FROM change_log
+         WHERE entity = ?1 AND origin_device != ?2 GROUP BY origin_device",
+    )?;
+    let seen = stmt
+        .query_map([change.entity.as_str(), device], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    Ok(Some(serde_json::to_string(&seen).unwrap_or_default()))
 }
 
 /// What a change touched, and what it replaced.
@@ -267,6 +303,9 @@ pub struct Remote<'a> {
     /// What the origin's change replaced, for the fields that travel with it (text), exactly as
     /// sent.
     pub prev: &'a Map<String, Value>,
+    /// For a delete: what its origin held of the other devices' records of the entity kind,
+    /// `{device: origin sequence}`, exactly as sent.
+    pub seen: Option<&'a BTreeMap<String, i64>>,
 }
 
 /// Stores a record received from another device: shows the clock its timestamp, appends it
@@ -277,15 +316,16 @@ pub fn record_remote(conn: &Connection, remote: &Remote<'_>, snapshot: &Value) -
     let tick = hlc::observe_tick(conn, remote.clock)?;
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
-                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields, prev)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields, prev,
+                                seen)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
          DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
              snapshot = excluded.snapshot, at = excluded.at,
              origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
              hlc_counter = excluded.hlc_counter, seq = excluded.seq,
              origin_seq = excluded.origin_seq, fields = excluded.fields,
-             prev = excluded.prev",
+             prev = excluded.prev, seen = excluded.seen",
         rusqlite::params![
             new_id(),
             remote.module,
@@ -302,6 +342,9 @@ pub fn record_remote(conn: &Connection, remote: &Remote<'_>, snapshot: &Value) -
             remote.origin_seq,
             Value::Object(remote.fields.clone()).to_string(),
             Value::Object(remote.prev.clone()).to_string(),
+            remote
+                .seen
+                .map(|s| serde_json::to_string(s).unwrap_or_default()),
         ],
     )?;
     Ok(())
@@ -837,6 +880,7 @@ mod tests {
             },
             fields,
             prev: fields,
+            seen: None,
         }
     }
 
@@ -940,7 +984,7 @@ mod tests {
         .unwrap();
 
         let report = migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
-        assert_eq!(report.applied, vec![("core".into(), 1, 6)]);
+        assert_eq!(report.applied, vec![("core".into(), 1, 7)]);
         assert!(report.backup.is_some(), "existing data is backed up first");
         let theme: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'theme'", [], |r| {

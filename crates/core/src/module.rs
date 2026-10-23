@@ -169,6 +169,11 @@ impl Module for CoreModule {
             // merges two devices' texts three-way against it. Older rows have none, which
             // means "unknown": their text simply replaces.
             M::up("ALTER TABLE change_log ADD COLUMN prev TEXT;"),
+            // Sync (Resolved automatically): a record that deletes keeps what its device held of
+            // the other devices' records of that kind of entity, `{device: origin sequence}`,
+            // so an edit made without knowing of the delete can be told from one the delete
+            // followed. Absent for every other record and for deletes made before this.
+            M::up("ALTER TABLE change_log ADD COLUMN seen TEXT;"),
         ])
     }
 

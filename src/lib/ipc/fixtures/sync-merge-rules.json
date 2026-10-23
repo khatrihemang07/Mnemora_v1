@@ -298,11 +298,26 @@
       }
     },
     {
-      "name": "an edit made before a delete is no clash",
+      "name": "an edit made before a delete, neither device knowing of the other, is logged too",
       "steps": [
         { "d": "a", "op": "task_create", "task": "t1", "title": "Old list", "notes": "Old" },
         { "op": "sync" },
         { "d": "b", "op": "task_edit", "task": "t1", "notes": "New" },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true, "notes": "New" } },
+        "resolved": ["delete_edit"]
+      }
+    },
+    {
+      "name": "an edit the deleting device had already received is no clash",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Old list", "notes": "Old" },
+        { "op": "sync" },
+        { "d": "b", "op": "task_edit", "task": "t1", "notes": "New" },
+        { "op": "sync" },
         { "d": "a", "op": "task_delete", "task": "t1" },
         { "op": "sync" }
       ],

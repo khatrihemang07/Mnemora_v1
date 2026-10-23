@@ -129,6 +129,7 @@ pub fn apply_batch(
                 },
                 fields: &record.fields,
                 prev: &record.prev,
+                seen: record.seen.as_ref(),
             },
             &outcome.snapshot,
         )?;
@@ -475,6 +476,7 @@ mod tests {
             hlc_counter: 0,
             fields: fields.as_object().unwrap().clone(),
             prev: Map::new(),
+            seen: None,
         }
     }
 

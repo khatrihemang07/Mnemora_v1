@@ -330,6 +330,90 @@ fn a_conflict_follows_the_latest_text_when_it_is_edited_before_review() {
     assert_eq!(waiting(&c[0]).len(), 1, "no second conflict from the edit");
 }
 
+fn draft(app: &TestApp, conflict: &str, choices: Value) -> String {
+    app.invoke(
+        "sync_conflict_draft",
+        json!({ "id": conflict, "choices": choices }),
+    )
+    .unwrap()
+}
+
+#[test]
+fn edit_merged_keeps_an_edit_made_outside_the_clash_after_the_conflict_was_raised() {
+    let (c, id) = clashing();
+    let conflict = ids(&c[1])[0].clone();
+    c[1].clock().advance(1_000);
+    let later = "Went for a run along the canal, legs heavy but good.
+Coffee with Sam after.
+Then a long walk home.
+";
+    edit(&c[1], &id, later, "later");
+    // The later words are agreed text, not part of a clash.
+    let view = compare(&c[1], &conflict);
+    let pieces = view["pieces"].as_array().unwrap();
+    assert_eq!(pieces.iter().filter(|p| p["kind"] == "clash").count(), 1);
+    assert!(
+        pieces
+            .iter()
+            .any(|p| p["kind"] == "agreed" && p["text"].as_str().unwrap().contains("long walk"))
+    );
+    assert_eq!(draft(&c[1], &conflict, json!(["showing"])), later);
+    let other = draft(&c[1], &conflict, json!(["other"]));
+    assert_eq!(other, format!("{MINE}Then a long walk home.\n"));
+    let both = draft(&c[1], &conflict, json!(["both"]));
+    assert!(both.contains("legs heavy but good. felt great after the rain."));
+    assert!(both.ends_with("Then a long walk home.\n"));
+    resolve(&c[1], &conflict, json!({ "kind": "merged", "text": both }));
+    c.sync(0, 1);
+    for d in 0..2 {
+        assert_eq!(body(&c[d], &id), both, "device {d}");
+        assert!(body(&c[d], &id).contains("Then a long walk home."));
+        assert!(waiting(&c[d]).is_empty(), "device {d}");
+    }
+}
+
+#[test]
+fn edit_merged_keeps_an_edit_made_inside_the_clash_after_the_conflict_was_raised() {
+    let (c, id) = clashing();
+    let conflict = ids(&c[1])[0].clone();
+    c[1].clock().advance(1_000);
+    let later =
+        "Went for a run along the canal, legs heavy but really good.\nCoffee with Sam after.\n";
+    edit(&c[1], &id, later, "later");
+    assert_eq!(ids(&c[1]), std::slice::from_ref(&conflict));
+    // The clash now holds the words as they are, not as they were when it was raised.
+    let view = compare(&c[1], &conflict);
+    let clash = view["pieces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["kind"] == "clash")
+        .unwrap()
+        .clone();
+    assert!(clash["showing"].as_str().unwrap().contains("really"));
+    assert_eq!(clash["other"], "felt great after the rain.");
+    assert_eq!(draft(&c[1], &conflict, json!(["showing"])), later);
+    assert_eq!(draft(&c[1], &conflict, json!(["other"])), MINE);
+    let both = draft(&c[1], &conflict, json!(["both"]));
+    assert!(both.contains("really good."));
+    assert!(both.contains("felt great after the rain."));
+    resolve(&c[1], &conflict, json!({ "kind": "merged", "text": both }));
+    c.sync(0, 1);
+    for d in 0..2 {
+        assert_eq!(body(&c[d], &id), both, "device {d}");
+    }
+}
+
+#[test]
+fn edit_merged_without_choices_keeps_the_text_as_it_shows_now() {
+    let (c, id) = clashing();
+    let conflict = ids(&c[1])[0].clone();
+    c[1].clock().advance(1_000);
+    let later = format!("Morning.\n{YOURS}");
+    edit(&c[1], &id, &later, "later");
+    assert_eq!(draft(&c[1], &conflict, json!([])), later);
+}
+
 #[test]
 fn a_clash_on_a_deleted_entry_is_resolved_without_asking() {
     let c = Cluster::new(2);
@@ -435,6 +519,61 @@ fn task_notes_and_title_merge_apart_and_clash_apart() {
             "Route: ridge loop from the north"
         );
         assert!(waiting(&c[d]).is_empty());
+    }
+}
+
+#[test]
+fn edit_merged_of_task_notes_keeps_a_later_edit_to_the_notes_and_the_title() {
+    let c = Cluster::new(2);
+    let id = create_task(&c[0], "Plan weekend hike")["id"].clone();
+    c.sync(0, 1);
+    c[0].clock().advance(1_000);
+    update_task(
+        &c[0],
+        &id,
+        "Plan weekend hike",
+        "Route: ridge loop from the north",
+        "a",
+    );
+    c[1].clock().advance(2_000);
+    update_task(
+        &c[1],
+        &id,
+        "Plan weekend hike",
+        "Route: lake path from the south",
+        "b",
+    );
+    c.sync(0, 1);
+    let conflict = ids(&c[1])[0].clone();
+    // Later, on the device that is asked: the notes grow after the clash and the title changes.
+    c[1].clock().advance(1_000);
+    update_task(
+        &c[1],
+        &id,
+        "Plan the weekend hike",
+        "Route: lake path from the south\nBring water",
+        "later",
+    );
+    assert_eq!(ids(&c[1]), std::slice::from_ref(&conflict));
+    assert_eq!(
+        draft(&c[1], &conflict, json!(["showing"])),
+        "Route: lake path from the south\nBring water"
+    );
+    assert_eq!(
+        draft(&c[1], &conflict, json!(["other"])),
+        "Route: ridge loop from the north"
+    );
+    // The new line is part of the showing side of the clash (it is on the clashing line).
+    let both = draft(&c[1], &conflict, json!(["both"]));
+    assert!(both.contains("Bring water"), "{both}");
+    assert!(both.contains("ridge loop from the north"), "{both}");
+    resolve(&c[1], &conflict, json!({ "kind": "merged", "text": both }));
+    c.sync(0, 1);
+    for d in 0..2 {
+        let t = task(&c[d], &id);
+        assert_eq!(t["notes"], both.as_str(), "device {d}");
+        assert_eq!(t["title"], "Plan the weekend hike", "device {d}");
+        assert!(waiting(&c[d]).is_empty(), "device {d}");
     }
 }
 

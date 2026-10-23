@@ -72,7 +72,21 @@ function append(
   const counter = ms === r.lastMs ? r.lastCounter + 1 : 0;
   r.lastMs = ms;
   r.lastCounter = counter;
-  r.log.push({ entity, id, stamp: { ms, counter, device: r.device }, seq: ++r.seq, fields, prev });
+  const rec: Rec = {
+    entity,
+    id,
+    stamp: { ms, counter, device: r.device },
+    seq: ++r.seq,
+    fields,
+    prev,
+  };
+  if (fields.deleted_at != null) {
+    rec.seen = {};
+    for (const o of r.log)
+      if (o.entity === entity && o.stamp.device !== r.device)
+        rec.seen[o.stamp.device] = Math.max(rec.seen[o.stamp.device] ?? 0, o.seq);
+  }
+  r.log.push(rec);
 }
 
 function write(r: Replica, entity: Entity, id: string, values: Record<string, Json>, now: number) {

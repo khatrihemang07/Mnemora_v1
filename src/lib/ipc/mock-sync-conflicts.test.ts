@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ConflictRow } from './bindings';
 import { createConflictsMock, diffSpans } from './mock-sync-conflicts';
 
 describe('conflicts mock', () => {
@@ -50,5 +51,29 @@ describe('conflicts mock', () => {
     expect(() =>
       mock.handle('sync_resolution_use_other', { id: 'mock-resolved-priority' }),
     ).toThrow();
+  });
+
+  it('builds Edit merged from the live text, so a later edit is kept', () => {
+    const mock = createConflictsMock();
+    let live = 'Run, felt great.\nTea.\n';
+    mock.raise({
+      row: { id: 'live' } as ConflictRow,
+      base: 'Run.\nTea.\n',
+      showing: live,
+      other: 'Run, legs heavy.\nTea.\n',
+      live: () => live,
+      open: true,
+      resolution: null,
+    });
+    live += 'Walk home.\n';
+    expect(mock.handle('sync_conflict_draft', { id: 'live', choices: ['showing'] })).toBe(live);
+    expect(mock.handle('sync_conflict_draft', { id: 'live', choices: ['other'] })).toBe(
+      'Run, legs heavy.\nTea.\nWalk home.\n',
+    );
+    live = 'Run, felt really great.\nTea.\n';
+    const view = mock.handle('sync_conflict', { id: 'live' }) as {
+      pieces: { kind: string; showing?: string }[];
+    };
+    expect(view.pieces.find((p) => p.kind === 'clash')?.showing).toBe('felt really great.');
   });
 });
