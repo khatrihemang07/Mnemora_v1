@@ -21,6 +21,7 @@ use super::handshake::{Handshake, check};
 use super::identity::{DeviceIdentity, PublicKey};
 use super::tls::{SERVER_NAME, Trust, client_config, public_key_of, server_config};
 use crate::error::SyncError;
+use crate::pause::{Pause, pause_of};
 use crate::transport::Transport;
 use crate::wire::Message;
 
@@ -101,6 +102,8 @@ pub struct PeerInfo {
     /// Modules whose data versions differ from ours (see `Handshake::data_versions`); the
     /// session must not run while this is non-empty (#72).
     pub data_version_mismatch: Vec<String>,
+    /// Why no session may run with it (data versions or clocks); `None` when it may.
+    pub pause: Option<Pause>,
     /// Its socket address.
     pub remote: SocketAddr,
 }
@@ -239,11 +242,13 @@ async fn establish(config: &NetConfig, mut secured: Secured) -> Result<Establish
         })?;
     let mismatch =
         check(&local, &remote, &secured.key, &config.trust).map_err(NetError::Refused)?;
+    let pause = pause_of(&local, &remote);
     Ok(Established {
         peer: PeerInfo {
             key: secured.key,
             handshake: remote,
             data_version_mismatch: mismatch,
+            pause,
             remote: secured.remote,
         },
         transport: NetTransport::start(secured.channel.into_inner()),

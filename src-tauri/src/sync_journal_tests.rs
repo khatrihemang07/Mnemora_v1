@@ -182,6 +182,7 @@ fn the_edited_time_is_derived_from_when_the_text_was_changed() {
     assert_eq!(entry(&c[1], &id).unwrap()["edited_at"], Value::Null);
     // An hour later it is, at the moment it was made.
     c[0].clock().advance(3_600_000);
+    c[1].clock().advance(3_600_000); // devices more than 5 minutes apart would pause
     edit(&c[0], &id, "one two three four", "s2");
     c.sync(0, 1);
     let (here, there) = (entry(&c[0], &id).unwrap(), entry(&c[1], &id).unwrap());
@@ -191,6 +192,7 @@ fn the_edited_time_is_derived_from_when_the_text_was_changed() {
     // Ticking a checklist item is never an edit.
     let (c, id) = pair_with_entry("- [ ] milk");
     c[0].clock().advance(3_600_000);
+    c[1].clock().advance(3_600_000);
     c[0].invoke::<Value>("journal_entry_toggle_task", json!({ "id": id, "line": 0 }))
         .unwrap();
     c.sync(0, 1);
@@ -362,6 +364,9 @@ fn what_was_held_gives_the_same_edited_time_as_when_it_was_not_held() {
     edit(&c[0], &id, "written much later", "s-a");
     c[0].clock().advance(5 * 60 * 1000);
     move_to(&c[0], &id, "2026-10-27");
+    // The others' clocks keep up: devices more than 5 minutes apart would pause.
+    c[1].clock().advance(25 * 60 * 1000);
+    c[2].clock().advance(25 * 60 * 1000);
     c.sync(0, 1);
     c.sync(0, 2);
     release(&c[1], ENTRY, &id, "*");

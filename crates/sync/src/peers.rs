@@ -14,6 +14,7 @@ use crate::net::PublicKey;
 use crate::pair::msg::Member;
 use crate::pair::view::Platform;
 use crate::pair::{Paired, Stored};
+use crate::pause::Pause;
 use crate::peer_state::Route;
 
 /// How many other devices this one is paired with.
@@ -55,7 +56,7 @@ pub enum PeerState {
     Syncing,
     /// Not reachable right now.
     NotNearby,
-    /// Sync with it is paused (its data version differs).
+    /// Sync with it is paused (its data version or clock differs).
     Paused,
     /// It was forgotten group-wide (#69).
     Removed,
@@ -89,6 +90,8 @@ pub struct PeerRow {
     pub route: Option<Route>,
     /// How far the running session has got.
     pub progress: Option<Progress>,
+    /// Why sync with it is paused; set exactly while `state` is `Paused`.
+    pub pause: Option<Pause>,
 }
 
 /// The paired devices, most recently paired first.
@@ -109,6 +112,7 @@ pub fn list(conn: &Connection) -> AppResult<Vec<PeerRow>> {
             last_out: None,
             route: None,
             progress: None,
+            pause: None,
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)

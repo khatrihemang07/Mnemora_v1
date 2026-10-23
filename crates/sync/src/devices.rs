@@ -44,7 +44,7 @@ pub struct DevicesView {
 /// Where a device stands, from what the session manager says about it right now.
 pub(crate) fn state_of(live: Option<&PeerLive>) -> PeerState {
     match live {
-        Some(l) if l.paused => PeerState::Paused,
+        Some(l) if l.paused.is_some() => PeerState::Paused,
         Some(l) if l.syncing => PeerState::Syncing,
         Some(l) if l.reachable => PeerState::UpToDate,
         _ => PeerState::NotNearby,
@@ -68,6 +68,7 @@ fn enrich(
         row.last_out = kept.last_out;
         row.route = kept.route;
         row.progress = now.filter(|l| l.syncing).and_then(|l| l.progress);
+        row.pause = now.and_then(|l| l.paused.clone());
     }
     let reachable = |r: &PeerRow| r.state != PeerState::NotNearby;
     rows.sort_by(|a, b| {
@@ -166,6 +167,7 @@ mod tests {
             last_out: None,
             route: None,
             progress: None,
+            pause: None,
         }
     }
 
@@ -180,7 +182,7 @@ mod tests {
         reachable: true,
         syncing: false,
         progress: None,
-        paused: false,
+        paused: None,
     };
 
     #[test]
@@ -205,7 +207,7 @@ mod tests {
         };
         assert_eq!(state_of(Some(&syncing)), PeerState::Syncing);
         let paused = PeerLive {
-            paused: true,
+            paused: Some(crate::Pause::clock_ahead(1)),
             ..syncing
         };
         assert_eq!(state_of(Some(&paused)), PeerState::Paused);

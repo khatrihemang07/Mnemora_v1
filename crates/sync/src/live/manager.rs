@@ -26,6 +26,7 @@ use crate::activity::{self, Local, Why};
 use crate::discovery::{Browsing, Candidate, Discovery};
 use crate::error::SyncError;
 use crate::net::{Established, NetConfig};
+use crate::pause::Pause;
 use crate::peer_state::{self, Route};
 use crate::{peers, revoke};
 
@@ -182,7 +183,7 @@ impl Drop for Live {
 enum Done {
     Dial {
         peer: String,
-        established: Option<Established>,
+        established: Option<Box<Established>>,
     },
     Conn {
         peer: String,
@@ -407,7 +408,7 @@ impl Supervisor {
             let established = if addrs.is_empty() {
                 None
             } else {
-                race(&config, addrs, each).await
+                race(&config, addrs, each).await.map(Box::new)
             };
             Done::Dial {
                 peer: device,
@@ -469,7 +470,7 @@ impl Supervisor {
                         if reached != peer {
                             self.dial_failed(&peer);
                         }
-                        self.adopt(established, true).await;
+                        self.adopt(*established, true).await;
                     }
                     None => self.dial_failed(&peer),
                 }
@@ -515,6 +516,14 @@ impl Supervisor {
                     peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
                 }
                 peer.manual = false;
+                if let SyncError::ClockAhead { ahead_ms } = e {
+                    // A record from further ahead than five minutes was refused: the peer's
+                    // clock (or that of a device it relays) is wrong, whatever its handshake said.
+                    self.shared
+                        .update(id_of_peer, true, |l| l.reachable = false);
+                    self.pause(id_of_peer, Pause::clock_ahead(ahead_ms)).await;
+                    return;
+                }
                 // Only a line lost in the middle of a sync is news.
                 let mid_sync = self
                     .shared
@@ -537,12 +546,26 @@ impl Supervisor {
         }
     }
 
+    /// Marks `id` paused for `pause`: the Devices tab shows it, Activity says so once.
+    async fn pause(&self, id: &str, pause: Pause) {
+        self.shared.update(id, true, |l| {
+            l.paused = Some(pause.clone());
+            l.syncing = false;
+            l.progress = None;
+        });
+        self.note_pause(id, Some(&pause)).await;
+    }
+
     /// A device is met paused or running again: one line in Activity per change, which the log
     /// itself keeps track of (so a restart does not log it twice).
-    async fn note_pause(&self, peer: &str, paused: bool) {
+    async fn note_pause(&self, peer: &str, paused: Option<&Pause>) {
         let peer = peer.to_owned();
-        if paused {
-            self.note(move |conn, local| activity::log_paused(conn, local, &peer, Why::Update))
+        if let Some(pause) = paused {
+            let why = match pause {
+                Pause::Update { .. } => Why::Update,
+                Pause::Clock { .. } => Why::Clock,
+            };
+            self.note(move |conn, local| activity::log_paused(conn, local, &peer, why))
                 .await;
         } else {
             self.note(move |conn, local| activity::log_resumed(conn, local, &peer))
@@ -604,19 +627,14 @@ impl Supervisor {
             tracing::debug!(target: "sync", "a connection from a device that is not paired, closed");
             return;
         };
-        if !established.peer.data_version_mismatch.is_empty() {
-            // The other device's data has another shape (#72 explains it to the person): no
-            // session, and the usual backoff so neither side hammers the other.
-            tracing::info!(target: "sync", modules = ?established.peer.data_version_mismatch, "paused: data versions differ");
+        if let Some(pause) = established.peer.pause.clone() {
+            // Different data shapes or clocks too far apart: no session either way, and the
+            // usual backoff so neither side hammers the other. The Devices tab says why.
+            tracing::info!(target: "sync", modules = ?established.peer.data_version_mismatch, clock = matches!(pause, Pause::Clock { .. }), "paused");
             if automatic && by_me {
                 peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
             }
-            self.shared.update(&id, true, |l| {
-                l.paused = true;
-                l.syncing = false;
-                l.progress = None;
-            });
-            self.note_pause(&id, true).await;
+            self.pause(&id, pause).await;
             return;
         }
         if !by_me && !automatic && !peer.manual {
@@ -651,9 +669,9 @@ impl Supervisor {
         self.shared.set_dialled(&id, Some(by_me));
         self.shared.update(&id, true, |l| {
             l.reachable = true;
-            l.paused = false;
+            l.paused = None;
         });
-        self.note_pause(&id, false).await;
+        self.note_pause(&id, None).await;
         let remember = id.clone();
         let (app_version, versions) = (
             established.peer.handshake.app_version.clone(),

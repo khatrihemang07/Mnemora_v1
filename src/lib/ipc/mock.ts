@@ -140,6 +140,9 @@ export async function installMock() {
     () => void events.syncPeersEvent.emit(),
     conflicts.openCount,
   );
+  // `?paired=2&paused=update|me|both|clock|clock_me` starts with Pixel 8 paused for that reason.
+  const paused = query.get('paused');
+  if (paused) pairFlags.setPeer?.('paused', undefined, 0, paused);
   // Console: `__syncMock.newConflict()` acts out a conflict arriving; a toast shows if Settings ›
   // Sync is on "Show a toast" (Rust only sends the event to a device set to one).
   pairFlags.newConflict = () => {

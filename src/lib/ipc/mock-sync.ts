@@ -132,8 +132,8 @@ export function createSyncMock(
 
   const live = createLiveMock(peers, emitPeers, () => sync().enabled);
   // Console: `__syncMock.setPeer('syncing')` (see mock-sync-live.ts).
-  flags.setPeer = (state: PeerState, name?: string, daysAway?: number) =>
-    live.setPeer(state, name, daysAway);
+  flags.setPeer = (state: PeerState, name?: string, daysAway?: number, why?: string) =>
+    live.setPeer(state, name, daysAway, why);
 
   const deviceSheet = createDeviceMock({
     typed: typedAddresses,

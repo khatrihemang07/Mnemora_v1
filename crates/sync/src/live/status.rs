@@ -3,6 +3,8 @@
 use serde::Serialize;
 use specta::Type;
 
+use crate::pause::Pause;
+
 /// How far a running session has got.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 pub struct Progress {
@@ -13,7 +15,7 @@ pub struct Progress {
 }
 
 /// A device's live state. Absent from the manager's table means not reachable.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PeerLive {
     /// A connection is open (or was, and ended on purpose).
     pub reachable: bool,
@@ -21,6 +23,6 @@ pub struct PeerLive {
     pub syncing: bool,
     /// Progress of that session.
     pub progress: Option<Progress>,
-    /// Sync with it is paused (its data version differs).
-    pub paused: bool,
+    /// Why sync with it is paused (its data versions or its clock), if it is.
+    pub paused: Option<Pause>,
 }

@@ -126,6 +126,7 @@ mod tests {
             last_out: None,
             route: None,
             progress: None,
+            pause: None,
         }
     }
 

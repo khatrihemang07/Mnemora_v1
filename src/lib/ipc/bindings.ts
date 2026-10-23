@@ -1305,6 +1305,21 @@ export type Parsed = {
 	new_list: string | null,
 };
 
+/**  What stops sync with a device. The words are made in the UI. */
+export type Pause = 
+/**  The Modules' data versions differ. A Module absent on one side counts as older there. */
+{ kind: "update"; 
+/**  Modules whose data is older on this device. */
+older_here: string[]; 
+/**  Modules whose data is older on the other device. */
+older_there: string[] } | 
+/**  One clock is more than five minutes ahead of the other. */
+{ kind: "clock"; 
+/**  By how much, in milliseconds. */
+ahead_ms: number; 
+/**  Whether it is this device's clock that is ahead. */
+here: boolean };
+
 /**  A paired device as the Devices tab lists it. */
 export type PeerRow = {
 	/**  Its device id. */
@@ -1329,6 +1344,8 @@ export type PeerRow = {
 	route: Route | null,
 	/**  How far the running session has got. */
 	progress: Progress | null,
+	/**  Why sync with it is paused; set exactly while `state` is `Paused`. */
+	pause: Pause | null,
 };
 
 /**  Where a paired device stands, in the words the Devices tab uses. */
@@ -1339,7 +1356,7 @@ export type PeerState =
 "syncing" | 
 /**  Not reachable right now. */
 "not_nearby" | 
-/**  Sync with it is paused (its data version differs). */
+/**  Sync with it is paused (its data version or clock differs). */
 "paused" | 
 /**  It was forgotten group-wide (#69). */
 "removed";

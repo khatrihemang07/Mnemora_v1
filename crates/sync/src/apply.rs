@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 
 use mnemora_core::changelog::{self, ChangeOp, Remote};
+use mnemora_core::db::physical_now;
 use mnemora_core::editing;
 use mnemora_core::hlc::{Stamp, Timestamp};
 use mnemora_core::settings;
@@ -22,6 +23,7 @@ use crate::conflicts;
 use crate::error::SyncError;
 use crate::held::{self, HeldUnit};
 use crate::merge::{Verdict, decide};
+use crate::pause::MAX_AHEAD_MS;
 use crate::registry::Registry;
 use crate::resolutions::{self, Folded, Unit};
 use crate::texts;
@@ -63,6 +65,9 @@ pub fn apply_batch(
         ))
     });
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    // Nothing from further ahead than five minutes is stored or shown to the clock: it would win
+    // every merge until real time caught up. The exchange stops (the transaction rolls back).
+    let latest = physical_now(&tx).saturating_add(MAX_AHEAD_MS);
     let mut applied = Applied::default();
     let mut folded: BTreeSet<&str> = BTreeSet::new();
     let mut texts_to_settle: BTreeSet<(String, String, String)> = BTreeSet::new();
@@ -86,6 +91,11 @@ pub fn apply_batch(
             || record.origin_seq <= vector::seen(&tx, &record.entity, &record.origin_device)?
         {
             continue;
+        }
+        if record.hlc_ms > latest {
+            return Err(SyncError::ClockAhead {
+                ahead_ms: record.hlc_ms - latest + MAX_AHEAD_MS,
+            });
         }
         if folded.insert(&record.entity) {
             clocks::fold(&tx, schema, me)?;

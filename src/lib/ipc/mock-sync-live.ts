@@ -4,12 +4,14 @@
  * exercised in the dev browser. Mirrors `enrich` in crates/sync/src/devices.rs (reachable devices
  * first, then the most recently seen) and the `sync_now` command in src-tauri/src/sync.rs.
  *
- * In the console: `__syncMock.setPeer('syncing' | 'up_to_date' | 'not_nearby' | 'paused', name?, daysAway?)`
+ * In the console: `__syncMock.setPeer('syncing' | 'up_to_date' | 'not_nearby' | 'paused', name?, daysAway?, why?)`
  * puts "Pixel 8 (simulated)" (or the device called `name`) in a state; 'syncing' stays at
- * "120 of 340 changes" so the row can be looked at. "Sync now" runs a short simulated sync with every
+ * "120 of 340 changes" so the row can be looked at. A paused device shows one of the banners of #72:
+ * `why` is `update` (default: it has an older Todo), `me` (this device does), `both`, `clock` (3 h
+ * ahead) or `clock_me`; `?paired=2&paused=clock` starts that way. "Sync now" runs a short simulated sync with every
  * device that is reachable.
  */
-import type { PeerRow, PeerState, Progress, Route } from './bindings';
+import type { Pause, PeerRow, PeerState, Progress, Route } from './bindings';
 
 /** A paired device without its live state. */
 export type PairedBase = Pick<PeerRow, 'id' | 'name' | 'platform' | 'paired_at'>;
@@ -22,7 +24,17 @@ interface Sim {
   lastOut: number | null;
   route: Route | null;
   progress: Progress | null;
+  pause: Pause | null;
 }
+
+/** The pauses the console can show. */
+export const PAUSES: Record<string, Pause> = {
+  update: { kind: 'update', older_here: [], older_there: ['todo'] },
+  me: { kind: 'update', older_here: ['todo'], older_there: [] },
+  both: { kind: 'update', older_here: ['journal'], older_there: ['todo'] },
+  clock: { kind: 'clock', ahead_ms: 3 * 3_600_000, here: false },
+  clock_me: { kind: 'clock', ahead_ms: 3 * 3_600_000, here: true },
+};
 
 const MIN = 60_000;
 const DAY = 24 * 60 * MIN;
@@ -42,6 +54,7 @@ function initial(peer: PairedBase, now: number): Sim {
       lastOut: 2,
       route: 'tailscale',
       progress: null,
+      pause: null,
     };
   }
   const fresh = !peer.id.startsWith('mock-pixel');
@@ -53,6 +66,7 @@ function initial(peer: PairedBase, now: number): Sim {
     lastOut: fresh ? null : 3,
     route: 'wifi',
     progress: null,
+    pause: null,
   };
 }
 
@@ -74,6 +88,7 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
     Object.assign(s, {
       state: 'up_to_date',
       progress: null,
+      pause: null,
       seenAt: now,
       syncedAt: now,
       lastIn: TOTAL - 40,
@@ -116,6 +131,7 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
             last_out: s.lastOut,
             route: s.route,
             progress: s.state === 'syncing' ? s.progress : null,
+            pause: s.state === 'paused' ? s.pause : null,
           };
         })
         .sort(
@@ -154,13 +170,14 @@ export function createLiveMock(peers: PairedBase[], emit: () => void, enabled: (
     },
 
     /** Console helper: put a device in a state and leave it there. */
-    setPeer(state: PeerState, name = 'Pixel 8 (simulated)', daysAway = 0) {
+    setPeer(state: PeerState, name = 'Pixel 8 (simulated)', daysAway = 0, why = 'update') {
       const peer = peers.find((p) => p.name === name) ?? peers[0];
       if (!peer) return;
       cancel(peer.id);
       const s = sim(peer);
       s.state = state;
       s.progress = state === 'syncing' ? { done: 120, total: TOTAL } : null;
+      s.pause = state === 'paused' ? (PAUSES[why] ?? PAUSES.update ?? null) : null;
       // A device that is away was last seen `daysAway` days ago (16 shows the Home card).
       if (state !== 'not_nearby') s.seenAt = Date.now();
       else if (daysAway > 0) {

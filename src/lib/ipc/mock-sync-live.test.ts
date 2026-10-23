@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceSettings } from './bindings';
 import { createSyncMock } from './mock-sync';
+import { defaultPairingFlags } from './mock-sync-pairing';
 
 function setup(paired = 2) {
   const device: DeviceSettings = { sync: { enabled: true, name: 'Alex’s Mac' } };
@@ -70,5 +71,31 @@ describe('paired devices in the mock', () => {
     const { mock, peers } = setup();
     mock.handle('sync_leave', {});
     expect(peers()).toEqual([]);
+  });
+});
+
+describe('paused devices in the mock', () => {
+  it('show each reason of the paused banner and clear it again', () => {
+    const flags = defaultPairingFlags();
+    const mock = createSyncMock({ sync: { enabled: true } }, 2, () => {}, flags);
+    const pixel = () =>
+      (
+        mock.handle('sync_devices', {}) as {
+          peers: { name: string; state: string; pause: unknown }[];
+        }
+      ).peers.find((p) => p.name === 'Pixel 8 (simulated)');
+    flags.setPeer?.('paused');
+    expect(pixel()).toMatchObject({
+      state: 'paused',
+      pause: { kind: 'update', older_there: ['todo'] },
+    });
+    flags.setPeer?.('paused', undefined, 0, 'clock');
+    expect(pixel()?.pause).toMatchObject({ kind: 'clock', here: false });
+    flags.setPeer?.('paused', undefined, 0, 'clock_me');
+    expect(pixel()?.pause).toMatchObject({ kind: 'clock', here: true });
+    flags.setPeer?.('paused', undefined, 0, 'me');
+    expect(pixel()?.pause).toMatchObject({ kind: 'update', older_here: ['todo'] });
+    flags.setPeer?.('up_to_date');
+    expect(pixel()).toMatchObject({ state: 'up_to_date', pause: null });
   });
 });

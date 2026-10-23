@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use mnemora_core::db::migrate;
+use mnemora_core::db::{migrate, physical_now};
 use mnemora_core::env::Environment;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -32,10 +32,13 @@ pub struct Handshake {
     /// The group of paired devices this one belongs to; `None` before the first pairing.
     pub group: Option<String>,
     /// For each Module, how many migrations its schema has had. Different versions mean
-    /// different data shapes: the session pauses (#72); this is only carried and compared here.
+    /// different data shapes: sync with that device pauses (see `pause`).
     pub data_versions: BTreeMap<String, usize>,
     /// Where this device can be reached, as `ip:port` (gossiped to other peers).
     pub addresses: Vec<String>,
+    /// This device's wall clock when the handshake was made (UTC milliseconds). A clock more
+    /// than five minutes apart from the other's pauses sync (#72).
+    pub now_ms: i64,
 }
 
 impl Handshake {
@@ -55,6 +58,7 @@ impl Handshake {
             group,
             data_versions: migrate::versions(conn)?,
             addresses,
+            now_ms: physical_now(conn),
         })
     }
 
@@ -156,6 +160,7 @@ mod tests {
             group: None,
             data_versions: BTreeMap::from([("core".into(), 3), ("todo".into(), 5)]),
             addresses: vec![],
+            now_ms: 0,
         }
     }
 

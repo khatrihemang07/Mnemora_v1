@@ -27,6 +27,7 @@ mod name;
 pub mod net;
 mod network;
 pub mod pair;
+mod pause;
 mod peer_state;
 mod peers;
 mod registry;
@@ -83,6 +84,7 @@ pub use pair::msg::{Member, Who};
 pub use pair::{
     Older, Paired, Pairing, PairingError, PairingHost, PairingView, Platform, Stored, Timing,
 };
+pub use pause::{MAX_AHEAD_MS, Pause};
 pub use peer_state::{Route, worked as remember_worked};
 pub use peers::{
     PeerRow, forget_all, group, list as list_peers, members, name_of as peer_name, paired_count,

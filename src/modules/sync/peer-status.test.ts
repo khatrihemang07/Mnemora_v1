@@ -25,6 +25,7 @@ const peer = (over: Partial<PeerRow> = {}): PeerRow => ({
   last_out: 3,
   route: 'wifi',
   progress: null,
+  pause: null,
   ...over,
 });
 

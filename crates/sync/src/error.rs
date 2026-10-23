@@ -20,6 +20,13 @@ pub enum SyncError {
     /// The other device sent something this one cannot make sense of.
     #[error("Unexpected message from the other device: {0}")]
     Protocol(String),
+    /// A record is stamped more than five minutes in the future of this device's clock; nothing
+    /// of the exchange is stored (see `pause`).
+    #[error("The other device's clock is too far ahead")]
+    ClockAhead {
+        /// How far ahead of this device's clock the record is, in milliseconds.
+        ahead_ms: i64,
+    },
     /// A record of a kind no Module here syncs.
     #[error("The other device sent a kind of record this device does not know")]
     UnknownEntity,
@@ -40,7 +47,9 @@ impl From<SyncError> for AppError {
             SyncError::Validation(_) | SyncError::Off | SyncError::NotReady => {
                 Self::new(ErrorCode::Validation, e.to_string())
             }
-            SyncError::Disconnected => Self::new(ErrorCode::Io, e.to_string()),
+            SyncError::Disconnected | SyncError::ClockAhead { .. } => {
+                Self::new(ErrorCode::Io, e.to_string())
+            }
             SyncError::Protocol(ref why) => {
                 Self::new(ErrorCode::Internal, "Sync got an unexpected message").with_details(why)
             }

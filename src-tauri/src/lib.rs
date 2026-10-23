@@ -149,6 +149,8 @@ mod sync_live_tests;
 #[cfg(test)]
 mod sync_pairing_tests;
 #[cfg(test)]
+mod sync_pause_tests;
+#[cfg(test)]
 mod sync_resolutions_tests;
 #[cfg(test)]
 mod test_support;

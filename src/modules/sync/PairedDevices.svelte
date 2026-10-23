@@ -3,6 +3,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
+  import PausedBanner from './PausedBanner.svelte';
   import PeerList from './PeerList.svelte';
   import { devicesQuery, watchDevices } from './queries';
   import ThisDeviceCard from './ThisDeviceCard.svelte';
@@ -24,6 +25,7 @@
 {#if devices.isError}
   <ErrorBanner error={devices.error} onretry={() => devices.refetch()} />
 {:else if devices.data}
+  <PausedBanner peers={devices.data.peers} />
   <ThisDeviceCard device={devices.data.this_device} />
   <PeerList peers={devices.data.peers} />
 {:else}
