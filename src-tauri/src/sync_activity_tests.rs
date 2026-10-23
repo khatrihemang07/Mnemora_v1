@@ -327,7 +327,16 @@ fn a_list_merge_is_one_line_on_every_device() {
         .collect();
     assert_eq!(sets[0], sets[1]);
     assert_eq!(sets[1], sets[2]);
-    assert!(line(&of_kind(&c[0], "lists_merged")[0]).contains(" merged into "));
+    let said: Vec<String> = (0..3)
+        .map(|i| line(&of_kind(&c[i], "lists_merged")[0]))
+        .collect();
+    assert!(said.iter().all(|s| s.contains(" merged into ")), "{said:?}");
+    // A device that heard of the merge names the one that made it, in brackets.
+    assert!(
+        said.iter()
+            .any(|s| s.starts_with("groceries (") && s.contains(") merged into ")),
+        "{said:?}"
+    );
 }
 
 #[test]

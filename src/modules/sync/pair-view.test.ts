@@ -27,13 +27,33 @@ describe('problem', () => {
   });
 
   it('names the device to update when versions differ', () => {
-    const them = problem({ kind: 'version_mismatch', name: 'Pixel 8', older: 'them' }, true);
-    expect(them.title).toBe('Update Mnemora on Pixel 8 first.');
-    const me = problem({ kind: 'version_mismatch', name: 'Pixel 8', older: 'me' }, true);
-    expect(me.title).toBe('Update Mnemora on this device first.');
-    expect(problem({ kind: 'version_mismatch', name: 'Pixel 8', older: 'both' }, true).title).toBe(
-      'Update Mnemora on both devices first.',
+    const base = { kind: 'version_mismatch', name: 'Pixel 8' } as const;
+    const them = problem(
+      { ...base, older: 'them', older_here: [], older_there: ['todo', 'journal'] },
+      true,
     );
+    expect(them.title).toBe('Update Mnemora on Pixel 8 first (it has an older Todo and Journal).');
+    const me = problem({ ...base, older: 'me', older_here: ['core'], older_there: [] }, true);
+    expect(me.title).toBe('Update Mnemora on this device first (it has an older Settings).');
+    const both = problem(
+      { ...base, older: 'both', older_here: ['journal'], older_there: ['todo'] },
+      true,
+    );
+    expect(both.title).toBe('Update Mnemora on both devices first.');
+    expect(both.fix).toBe(
+      'Pixel 8 has an older Todo and this device an older Journal. Update both, then pair again.',
+    );
+    // Without the Modules (a refusal that did not say), the title still names the device.
+    expect(problem({ ...base, older: 'them', older_here: [], older_there: [] }, true).title).toBe(
+      'Update Mnemora on Pixel 8 first.',
+    );
+  });
+
+  it('says where to look when no device is waiting nearby', () => {
+    expect(problem({ kind: 'nothing_nearby' }, true)).toMatchObject({
+      title: 'No device waiting nearby.',
+      fix: 'Make sure both are on the same Wi-Fi, or pair by address.',
+    });
   });
 
   it('has a fix for every failure', () => {

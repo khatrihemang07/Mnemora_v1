@@ -97,6 +97,10 @@ pub enum PairingError {
         name: String,
         /// Which of the two must be updated.
         older: Older,
+        /// The Modules this device has older data for (Module ids), when known.
+        older_here: Vec<String>,
+        /// The Modules the other device has older data for (Module ids), when known.
+        older_there: Vec<String>,
     },
     /// Both devices already belong to a group of devices, not the same one.
     DifferentGroups,

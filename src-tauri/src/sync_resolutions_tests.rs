@@ -515,13 +515,9 @@ fn a_task_moved_into_a_list_deleted_elsewhere_lands_in_the_inbox_and_is_logged()
     for d in 0..2 {
         let rows = kind_of(&c[d], "task_inbox");
         assert_eq!(rows.len(), 1, "device {d}");
-        assert_eq!(rows[0]["title"], "‘Pack’ · List");
-        assert!(
-            rows[0]["detail"]
-                .as_str()
-                .unwrap()
-                .starts_with("Moved to the Inbox")
-        );
+        assert_eq!(rows[0]["title"], "‘Pack’ moved to Inbox");
+        // The device that deleted the List is named, whichever device is looking.
+        assert_eq!(rows[0]["detail"], "Trip was deleted on Mac", "device {d}");
     }
 }
 

@@ -1,4 +1,5 @@
 import type { Counts, PairingError, PairingView } from '../../lib/ipc/bindings';
+import { nameList } from './pause';
 
 /** A failure as the sheet words it: what happened, then what to do about it. */
 export interface PairProblem {
@@ -58,17 +59,23 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
       };
     case 'version_mismatch': {
       const who = error.older === 'me' ? 'this device' : error.name;
+      // The Modules that are older, as the Paused banner names them.
+      const modules = error.older === 'me' ? error.older_here : error.older_there;
       return {
         title:
           error.older === 'both'
             ? 'Update Mnemora on both devices first.'
-            : `Update Mnemora on ${who} first.`,
+            : modules.length > 0
+              ? `Update Mnemora on ${who} first (it has an older ${nameList(modules)}).`
+              : `Update Mnemora on ${who} first.`,
         fix:
           error.older === 'me'
             ? `${error.name} has newer data. Update this device, then pair again.`
             : error.older === 'them'
               ? `Its data is older than this device’s. Update it, then pair again.`
-              : 'Each has something the other lacks. Update both, then pair again.',
+              : error.older_here.length > 0 && error.older_there.length > 0
+                ? `${error.name} has an older ${nameList(error.older_there)} and this device an older ${nameList(error.older_here)}. Update both, then pair again.`
+                : 'Each has something the other lacks. Update both, then pair again.',
         deadCode: false,
       };
     }
@@ -81,7 +88,7 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
     case 'nothing_nearby':
       return {
         title: 'No device waiting nearby.',
-        fix: 'Make sure both are on the same Wi-Fi and the other one is showing a code, then try again.',
+        fix: 'Make sure both are on the same Wi-Fi, or pair by address.',
         deadCode: false,
       };
     case 'connection_lost':

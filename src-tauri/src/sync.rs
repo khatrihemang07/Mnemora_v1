@@ -41,7 +41,7 @@ pub fn sync_set_enabled<R: Runtime>(
     Ok(())
 }
 
-/// Renames this device (1 to 40 characters).
+/// Renames this device (1 to 40 characters, not a name another device of the group has).
 #[tauri::command]
 #[specta::specta]
 pub fn sync_rename(state: State<'_, AppState>, name: String) -> Result<(), AppError> {
@@ -51,6 +51,7 @@ pub fn sync_rename(state: State<'_, AppState>, name: String) -> Result<(), AppEr
         .sync
         .name
         .unwrap_or_else(mnemora_sync::default_device_name);
+    let name = mnemora_sync::check_own_name(&lock(&state.db), &name)?;
     mnemora_sync::rename(&state.device, &name)?;
     state.sync.refresh_advert();
     // A device that has no group yet has nobody to tell.

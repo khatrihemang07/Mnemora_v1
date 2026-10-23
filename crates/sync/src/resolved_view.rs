@@ -8,12 +8,12 @@
 
 use mnemora_core::error::AppResult;
 use mnemora_core::settings;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use serde_json::{Map, Value};
 use specta::Type;
 
-use crate::conflict_view::{ConflictSubject, subject_of};
+use crate::conflict_view::{ConflictSubject, minute_of_day, subject_of};
 use crate::peers;
 use crate::resolutions::{self, Folded, Kind, Row};
 use crate::texts;
@@ -276,13 +276,14 @@ fn target_words(
             (
                 ConflictSubject::Entry {
                     page_date,
-                    written_time,
+                    written_at,
+                    written_offset_min,
                 },
                 _,
             ) => format!(
                 "{} · {} Entry",
                 date_text(&page_date, f.date),
-                time_text(&written_time, f.time)
+                clock_words(minute_of_day(written_at, written_offset_min), f.time)
             ),
             _ => "Entry".to_owned(),
         },
@@ -417,6 +418,21 @@ fn value_words(
             .collect::<Vec<_>>()
             .join(" "),
     })
+}
+
+/// The device whose delete of the List is the newest one on record (empty when none is).
+fn list_deleter(conn: &Connection, list_id: &str) -> Result<String, crate::SyncError> {
+    Ok(conn
+        .query_row(
+            "SELECT origin_device FROM change_log
+             WHERE entity = 'todo_list' AND entity_id = ?1
+               AND json_extract(fields, '$.deleted_at') IS NOT NULL
+             ORDER BY hlc_ms DESC, hlc_counter DESC, origin_device DESC LIMIT 1",
+            [list_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or_default())
 }
 
 fn list_name(conn: &Connection, id: &str) -> Result<String, crate::SyncError> {
@@ -572,11 +588,11 @@ fn row_of(ctx: &Ctx<'_>, r: &Row) -> Result<Option<ResolvedRow>, crate::SyncErro
         Kind::TaskInbox => {
             row.kind = ResolvedKind::TaskInbox;
             row.icon = ResolvedIcon::Inbox;
-            row.title = format!("{} · List", name(&r.target, &r.target_id)?);
+            row.title = format!("{} moved to Inbox", name(&r.target, &r.target_id)?);
             row.detail = format!(
-                "Moved to the Inbox · ‘{}’ is gone · {} had moved it there",
+                "{} was deleted on {}",
                 list_name(ctx.conn, &r.extra)?,
-                ctx.who(&r.replaced_device)
+                ctx.who(&list_deleter(ctx.conn, &r.extra)?)
             );
         }
         Kind::ConflictDeleted => {

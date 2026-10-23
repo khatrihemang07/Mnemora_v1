@@ -403,8 +403,18 @@ impl Pairing {
             Err(Failure::Environment { theirs }) => {
                 self.notice(PairingError::DifferentEnvironment { theirs });
             }
-            Err(Failure::Version { name, older }) => {
-                self.notice(PairingError::VersionMismatch { name, older });
+            Err(Failure::Version {
+                name,
+                older,
+                older_here,
+                older_there,
+            }) => {
+                self.notice(PairingError::VersionMismatch {
+                    name,
+                    older,
+                    older_here,
+                    older_there,
+                });
             }
             Err(Failure::Refused {
                 reason: Reason::Groups,
@@ -677,7 +687,17 @@ fn rank(error: &PairingError) -> u8 {
 fn typer_error(failure: Failure) -> PairingError {
     match failure {
         Failure::WrongCode { tries_left, name } => PairingError::WrongCode { tries_left, name },
-        Failure::Version { name, older } => PairingError::VersionMismatch { name, older },
+        Failure::Version {
+            name,
+            older,
+            older_here,
+            older_there,
+        } => PairingError::VersionMismatch {
+            name,
+            older,
+            older_here,
+            older_there,
+        },
         Failure::Environment { theirs } => PairingError::DifferentEnvironment { theirs },
         Failure::Lost => PairingError::ConnectionLost,
         Failure::Refused { reason, name } => match reason {
@@ -692,6 +712,8 @@ fn typer_error(failure: Failure) -> PairingError {
             Reason::Version => PairingError::VersionMismatch {
                 name: name.unwrap_or_default(),
                 older: super::view::Older::Them,
+                older_here: Vec::new(),
+                older_there: Vec::new(),
             },
             Reason::Environment { sender } => PairingError::DifferentEnvironment { theirs: sender },
         },

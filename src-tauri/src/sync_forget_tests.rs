@@ -304,6 +304,28 @@ async fn the_sheet_shows_what_is_known_and_syncs_only_that_device() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn renaming_this_device_is_unique_in_the_group_too() {
+    let (a, _b, _c) = trio().await;
+    // Not a name a paired device has, whatever the case or accents; the message is the same.
+    for clash in ["bob", " BÓB "] {
+        let err = a
+            .app
+            .invoke::<()>("sync_rename", json!({ "name": clash }))
+            .unwrap_err();
+        assert_eq!(err["code"], "validation", "{clash}");
+        assert_eq!(
+            err["message"], "Another of your devices already has that name",
+            "{clash}"
+        );
+    }
+    assert_eq!(a.call::<Value>("sync_get", json!({}))["name"], "Alice");
+    // Its own name, in another case, is still its own.
+    a.call::<()>("sync_rename", json!({ "name": "ALICE" }));
+    a.call::<()>("sync_rename", json!({ "name": "Alicia" }));
+    assert_eq!(a.call::<Value>("sync_get", json!({}))["name"], "Alicia");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_rename_is_unique_and_reaches_every_device() {
     let (a, b, c) = trio().await;
     let c_id = id(&c);

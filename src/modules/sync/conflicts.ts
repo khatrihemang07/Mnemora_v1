@@ -14,10 +14,10 @@ export function pageLabel(pageDate: string): string {
 }
 
 /** What clashed and where (F2): "Wed 21 Oct · 09:12 Entry", "‘Plan weekend hike’ · notes". */
-export function rowTitle(subject: ConflictSubject): string {
+export function rowTitle(subject: ConflictSubject, format: TimeFormat): string {
   switch (subject.kind) {
     case 'entry':
-      return `${pageLabel(subject.page_date)} · ${subject.written_time} Entry`;
+      return `${pageLabel(subject.page_date)} · ${entryTime(subject.written_at, subject.written_offset_min, format)} Entry`;
     case 'task':
       return `‘${subject.title}’ · ${subject.field}`;
     case 'comment':
@@ -25,15 +25,19 @@ export function rowTitle(subject: ConflictSubject): string {
   }
 }
 
-/** "09:40" in the viewer's clock. */
-export function clockText(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+/** When an Entry was written, as the time of day in the zone it was written in. */
+function entryTime(writtenAt: number, offsetMin: number, format: TimeFormat): string {
+  const shifted = new Date(writtenAt + offsetMin * 60_000);
+  // The same hour and minute on the viewer's clock, so `timeText` can format it.
+  return timeText(
+    new Date(1970, 0, 1, shifted.getUTCHours(), shifted.getUTCMinutes()).getTime(),
+    format,
+  );
 }
 
 /** "Mac 09:40 · Pixel 8 09:31": the showing version first. */
-export function sidesText(row: Pick<ConflictRow, 'showing' | 'other'>): string {
-  return `${row.showing.device} ${clockText(row.showing.at)} · ${row.other.device} ${clockText(row.other.at)}`;
+export function sidesText(row: Pick<ConflictRow, 'showing' | 'other'>, format: TimeFormat): string {
+  return `${row.showing.device} ${timeText(row.showing.at, format)} · ${row.other.device} ${timeText(row.other.at, format)}`;
 }
 
 export interface DayGroup<T = ConflictRow> {

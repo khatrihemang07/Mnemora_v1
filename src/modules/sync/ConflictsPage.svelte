@@ -85,13 +85,13 @@
                 >
                   <Icon class="size-4" />
                 </span>
-                <span class="min-w-0 truncate font-medium">{rowTitle(row.subject)}</span>
+                <span class="min-w-0 truncate font-medium">{rowTitle(row.subject, timeFormat)}</span>
                 <span class="row-span-2 phone:col-start-2 phone:row-span-1 phone:mt-1.5">
                   <Button size="sm" onclick={() => moduleContext.navigate(`/sync/conflicts/${row.id}`)}>
                     Compare
                   </Button>
                 </span>
-                <span class="col-start-2 text-sm text-muted">{sidesText(row)}</span>
+                <span class="col-start-2 text-sm text-muted">{sidesText(row, timeFormat)}</span>
               </li>
             {/each}
           </ul>

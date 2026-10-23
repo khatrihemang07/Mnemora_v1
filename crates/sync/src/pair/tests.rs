@@ -532,7 +532,9 @@ async fn devices_on_different_data_versions_do_not_pair() {
         failed(&seen),
         &PairingError::VersionMismatch {
             name: "Mac".into(),
-            older: Older::Them
+            older: Older::Them,
+            older_here: vec![],
+            older_there: vec!["core".into()],
         }
     );
     let shown = a
@@ -548,7 +550,7 @@ async fn devices_on_different_data_versions_do_not_pair() {
         .await;
     assert!(matches!(
         shown,
-        PairingView::Showing { notice: Some(PairingError::VersionMismatch { ref name, older: Older::Me }), .. } if name == "Phone"
+        PairingView::Showing { notice: Some(PairingError::VersionMismatch { ref name, older: Older::Me, ref older_here, ref older_there }), .. } if name == "Phone" && older_here == &["core".to_owned()] && older_there.is_empty()
     ));
     assert!(a.peer_names().is_empty() && b.peer_names().is_empty());
 }

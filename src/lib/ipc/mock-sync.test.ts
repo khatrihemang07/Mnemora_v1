@@ -35,6 +35,19 @@ describe('device name rules (shared with Rust)', () => {
   });
 });
 
+describe('renaming this device in a group', () => {
+  it('refuses a name a paired device has, ignoring case and accents, saying so as for a paired one', () => {
+    const { mock } = fresh(1);
+    mock.handle('sync_rename', { name: 'Studio Mac' });
+    for (const clash of ['pixel 8 (simulated)', ' PÍXEL 8 (SIMULATED) ']) {
+      expect(() => mock.handle('sync_rename', { name: clash })).toThrow(
+        expect.objectContaining({ message: 'Another of your devices already has that name' }),
+      );
+    }
+    expect((mock.handle('sync_get', {}) as { name: string }).name).toBe('Studio Mac');
+  });
+});
+
 describe('Device settings', () => {
   it('Sync starts off, with Rust’s defaults', () => {
     const { mock } = fresh();

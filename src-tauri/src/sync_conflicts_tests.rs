@@ -194,6 +194,10 @@ fn overlapping_edits_raise_one_conflict_on_both_devices_and_the_newest_shows() {
     assert_eq!(row["module"], "journal");
     assert_eq!(row["subject"]["kind"], "entry");
     assert_eq!(row["subject"]["page_date"], "2026-10-21");
+    // The time is sent as a timestamp and zone, so the screen can follow the Time format.
+    assert!(row["subject"]["written_at"].as_i64().unwrap() > 0);
+    assert_eq!(row["subject"]["written_offset_min"], 0);
+    assert!(row["subject"].get("written_time").is_none());
     assert!(row["raised_at"].as_i64().unwrap() > 0);
     // More exchanges raise nothing new.
     c.sync_all();

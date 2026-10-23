@@ -77,11 +77,6 @@ export interface ActivityEvent {
   extra: Record<string, string>;
 }
 
-const HHMM = (ms: number) => {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
-
 const hash = (text: string) => {
   let h = 0;
   for (const c of text) h = (Math.imul(h, 31) + c.charCodeAt(0)) | 0;
@@ -205,7 +200,11 @@ export function createPixelMock(ports: PixelPorts) {
       return {
         kind: 'entry',
         page_date: String(entry?.values.page_date ?? ''),
-        written_time: HHMM(Number(entry?.values.written_at ?? c.theirsAt)),
+        written_at: Number(entry?.values.written_at ?? c.theirsAt),
+        written_offset_min: Number(
+          entry?.values.written_offset_min ??
+            -new Date(Number(entry?.values.written_at ?? c.theirsAt)).getTimezoneOffset(),
+        ),
       };
     }
     if (c.entity === 'comment') {
@@ -299,8 +298,8 @@ export function createPixelMock(ports: PixelPorts) {
         id: `pixel-inbox-${hash(`${i.task}/${i.list}/${i.at}`)}`,
         kind: 'task_inbox',
         icon: 'inbox',
-        title: `‘${titleOf(o, 'task', i.task)}’ · List`,
-        detail: `Moved to the Inbox · ‘${titleOf(o, 'list', i.list) || 'a List'}’ is gone · ${deviceName(i.mover)} had moved it there`,
+        title: `‘${titleOf(o, 'task', i.task)}’ moved to Inbox`,
+        detail: `${titleOf(o, 'list', i.list) || 'A List'} was deleted on ${deviceName(i.deleter)}`,
         action: null,
       });
     return rows;

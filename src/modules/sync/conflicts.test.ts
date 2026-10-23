@@ -4,7 +4,12 @@ import { conflictIdOf, groupByDay, pageLabel, rowTitle, sidesText, timeText } fr
 
 const row = (id: string, raised_at: number): ConflictRow => ({
   id,
-  subject: { kind: 'entry', page_date: '2026-10-21', written_time: '09:12' },
+  subject: {
+    kind: 'entry',
+    page_date: '2026-10-21',
+    written_at: Date.UTC(2026, 9, 21, 9, 12),
+    written_offset_min: 0,
+  },
   module: 'journal',
   raised_at,
   showing: { device: 'Mac', at: raised_at },
@@ -13,18 +18,28 @@ const row = (id: string, raised_at: number): ConflictRow => ({
 
 describe('conflict rows', () => {
   it('names what clashed and where', () => {
-    expect(rowTitle(row('a', 0).subject)).toBe('Wed 21 Oct · 09:12 Entry');
-    expect(rowTitle({ kind: 'task', title: 'Plan weekend hike', field: 'notes' })).toBe(
+    expect(rowTitle(row('a', 0).subject, '24h')).toBe('Wed 21 Oct · 09:12 Entry');
+    expect(rowTitle(row('a', 0).subject, '12h')).toBe('Wed 21 Oct · 9:12 AM Entry');
+    // Written at 23:30 where it is UTC-5 (04:30 UTC the next day): the time there, not here.
+    const late = {
+      kind: 'entry' as const,
+      page_date: '2026-10-21',
+      written_at: Date.UTC(2026, 9, 22, 4, 30),
+      written_offset_min: -300,
+    };
+    expect(rowTitle(late, '24h')).toBe('Wed 21 Oct · 23:30 Entry');
+    expect(rowTitle(late, '12h')).toBe('Wed 21 Oct · 11:30 PM Entry');
+    expect(rowTitle({ kind: 'task', title: 'Plan weekend hike', field: 'notes' }, '24h')).toBe(
       '‘Plan weekend hike’ · notes',
     );
-    expect(rowTitle({ kind: 'comment', task_title: 'Trip' })).toBe('‘Trip’ · comment');
+    expect(rowTitle({ kind: 'comment', task_title: 'Trip' }, '24h')).toBe('‘Trip’ · comment');
     expect(pageLabel('nonsense')).toBe('nonsense');
   });
 
   it('lists the showing device first', () => {
-    expect(sidesText(row('a', new Date(2026, 9, 21, 9, 40).getTime()))).toBe(
-      'Mac 09:40 · Pixel 8 09:39',
-    );
+    const r = row('a', new Date(2026, 9, 21, 21, 40).getTime());
+    expect(sidesText(r, '24h')).toBe('Mac 21:40 · Pixel 8 21:39');
+    expect(sidesText(r, '12h')).toBe('Mac 9:40 PM · Pixel 8 9:39 PM');
   });
 
   it('groups by day, newest first', () => {

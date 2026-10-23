@@ -25,8 +25,12 @@ pub enum ConflictSubject {
     Entry {
         /// The Page it is on, `YYYY-MM-DD`.
         page_date: String,
-        /// When it was written, `HH:MM` in the zone it was written in.
-        written_time: String,
+        /// When it was written: UTC milliseconds. The screen shows it as the time of day in the
+        /// zone it was written in (`written_offset_min`), in the Time format Preference.
+        #[specta(type = u32)]
+        written_at: i64,
+        /// Minutes east of UTC where it was written.
+        written_offset_min: i32,
     },
     /// A Task's title or notes: "‘Plan weekend hike’ · notes".
     Task {
@@ -171,6 +175,11 @@ fn subject(conn: &Connection, c: &Stored) -> Result<(ConflictSubject, &'static s
     subject_of(conn, &c.target, &c.target_id, &c.field)
 }
 
+/// The minute of the day (0 to 1439) an Entry was written, in the zone it was written in.
+pub(crate) fn minute_of_day(written_at: i64, offset_min: i32) -> i64 {
+    (written_at / 60_000 + i64::from(offset_min)).rem_euclid(1440)
+}
+
 /// What a record is, as the Conflicts tab names it, and the Module it belongs to.
 pub(crate) fn subject_of(
     conn: &Connection,
@@ -190,11 +199,11 @@ pub(crate) fn subject_of(
                 .and_then(|t| t.get("written_offset_min"))
                 .and_then(serde_json::Value::as_i64)
                 .unwrap_or_default();
-            let minute = (written / 60_000 + offset).rem_euclid(1440);
             (
                 ConflictSubject::Entry {
                     page_date: string_of(target, "page_date"),
-                    written_time: format!("{:02}:{:02}", minute / 60, minute % 60),
+                    written_at: written,
+                    written_offset_min: i32::try_from(offset).unwrap_or_default(),
                 },
                 "journal",
             )

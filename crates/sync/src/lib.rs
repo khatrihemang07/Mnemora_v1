@@ -91,7 +91,7 @@ pub use peers::{
     pinned, store_paired,
 };
 pub use registry::{Modules, Registry};
-pub use rename::{record_own as record_own_name, rename_peer};
+pub use rename::{check_own_name, record_own as record_own_name, rename_peer};
 pub use resolutions::{
     UsePlan, finish_use as resolution_finish_use, mark_visited as resolutions_visited,
     plan_use as resolution_plan_use,

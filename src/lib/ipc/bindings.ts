@@ -33,8 +33,8 @@ export const commands = {
 	 *  An editor opened or is still open on `scope` (a field, a group of fields, or `*` for the whole
 	 *  record) of one record: what other devices send for it waits. Call again about every 30
 	 *  seconds; the hold lapses after two minutes without a call, so an editor that vanished cannot
-	 *  hold changes back for ever. Answers whether Sync is on: with it off the editor has nothing to
-	 *  renew and starts no timer.
+	 *  hold changes back for ever. Answers whether Sync is on: with it off nothing is stored, the editor
+	 *  has nothing to renew and starts no timer.
 	 */
 	editingHold: (entity: string, entityId: string, scope: string) => typedError<boolean, AppError>(__TAURI_INVOKE("editing_hold", { entity, entityId, scope })),
 	/**
@@ -297,7 +297,7 @@ export const commands = {
 	 *  keeps the data and the paired devices.
 	 */
 	syncSetEnabled: (enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_enabled", { enabled })),
-	/**  Renames this device (1 to 40 characters). */
+	/**  Renames this device (1 to 40 characters, not a name another device of the group has). */
 	syncRename: (name: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_rename", { name })),
 	/**  Sets "Sync automatically", "Allow over mobile data" or "Visible on this network". */
 	syncSetOption: (option: SyncOption, enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_option", { option, enabled })),
@@ -639,8 +639,13 @@ export type ConflictSubject =
 { kind: "entry"; 
 /**  The Page it is on, `YYYY-MM-DD`. */
 page_date: string; 
-/**  When it was written, `HH:MM` in the zone it was written in. */
-written_time: string } | 
+/**
+ *  When it was written: UTC milliseconds. The screen shows it as the time of day in the
+ *  zone it was written in (`written_offset_min`), in the Time format Preference.
+ */
+written_at: number; 
+/**  Minutes east of UTC where it was written. */
+written_offset_min: number } | 
 /**  A Task's title or notes: "‘Plan weekend hike’ · notes". */
 { kind: "task"; 
 /**  The Task's title now. */
@@ -1185,7 +1190,11 @@ theirs: Environment } |
 /**  The other device. */
 name: string; 
 /**  Which of the two must be updated. */
-older: Older } | 
+older: Older; 
+/**  The Modules this device has older data for (Module ids), when known. */
+older_here: string[]; 
+/**  The Modules the other device has older data for (Module ids), when known. */
+older_there: string[] } | 
 /**  Both devices already belong to a group of devices, not the same one. */
 { kind: "different_groups" } | 
 /**  No device showing a code was found on the network. */

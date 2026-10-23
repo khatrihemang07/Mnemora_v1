@@ -304,8 +304,9 @@ fn describe(conn: &Connection, v: Viewer<'_>, row: &Row) -> ActivityRow {
         Some(Kind::ListsMerged) => {
             let mut t = vec![piece(str_of("from"), true)];
             if !row.peer.is_empty() {
-                t.push(piece(" from ", false));
+                t.push(piece(" (", false));
                 t.push(piece(name_of(&row.peer, &row.peer_name), true));
+                t.push(piece(")", false));
             }
             t.push(piece(" merged into ", false));
             t.push(piece(str_of("into"), true));

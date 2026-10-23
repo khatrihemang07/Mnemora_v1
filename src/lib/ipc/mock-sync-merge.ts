@@ -150,7 +150,7 @@ export interface Outcome {
   /** A record deleted by one device and edited later by another. */
   deleteEdits: { entity: Entity; id: string; deleter: string; editor: string; at: number }[];
   /** A Task put in the Inbox because its List is gone. */
-  inbox: { task: string; list: string; mover: string; at: number }[];
+  inbox: { task: string; list: string; deleter: string; at: number }[];
   /** Lists that merged into an older one with the same name. */
   mergedLists: { from: string; into: string; fromDevice: string; at: number }[];
 }
@@ -552,11 +552,16 @@ function rules(outcome: Outcome, log: Rec[]) {
       .sort(cmp)
       .reverse()
       .find((r) => r.entity === 'task' && r.id === task.id && 'list_id' in r.fields);
+    // The newest delete of the List says whose delete sent the Task here.
+    const deleter = [...log]
+      .sort(cmp)
+      .reverse()
+      .find((r) => r.entity === 'list' && r.id === named && r.fields.deleted_at != null);
     if (to === null)
       outcome.inbox.push({
         task: task.id,
         list: named,
-        mover: mover?.stamp.device ?? '',
+        deleter: deleter?.stamp.device ?? '',
         at: mover?.stamp.ms ?? 0,
       });
     // A merged List's Tasks come after the survivor's own.

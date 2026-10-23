@@ -11,6 +11,8 @@
   import GitMerge from '~icons/lucide/git-merge';
   import { type ClashChoice, commands, type ConflictChoice, type DiffSpan } from '../../lib/ipc/bindings';
   import { unwrap } from '../../lib/ipc/unwrap';
+  import { readCore } from '../../lib/settings/core';
+  import { settingsQuery } from '../../lib/settings/queries';
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
@@ -21,7 +23,7 @@
   import { notify, notifyError } from '../../lib/ui/toast';
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
-  import { clockText, conflictIdOf, rowTitle, usePossessive } from './conflicts';
+  import { conflictIdOf, rowTitle, timeText, usePossessive } from './conflicts';
   import { compareFlow, forgetCompareFlow } from './compare-flow.svelte';
   import { conflictQuery, watchConflicts } from './queries';
   import SyncFrame from './SyncFrame.svelte';
@@ -29,6 +31,8 @@
   const id = $derived(conflictIdOf(router.pathname) ?? '');
   const conflict = createQuery(() => conflictQuery(id));
   const view = $derived(conflict.data ?? null);
+  const settings = createQuery(() => settingsQuery);
+  const timeFormat = $derived(readCore(settings.data?.values).timeFormat);
 
   $effect(() => {
     let stop: (() => void) | undefined;
@@ -127,7 +131,7 @@
         </EmptyState>
       </Card>
     {:else}
-      <h1 class="font-display text-xl font-semibold">{step === 'compare' ? rowTitle(view.row.subject) : 'Edit merged'}</h1>
+      <h1 class="font-display text-xl font-semibold">{step === 'compare' ? rowTitle(view.row.subject, timeFormat) : 'Edit merged'}</h1>
       {#if step === 'compare'}
         <p class="mb-3 text-sm text-muted">
           Both devices rewrote the same words. {showingName}’s version shows in the {view.row.module === 'journal'
@@ -146,13 +150,13 @@
           {/if}
           <section class="overflow-hidden rounded-md border border-hue-sync bg-surface" data-side="showing">
             <header class="border-b border-line px-3 py-2 text-xs text-muted">
-              <b class="text-ink">Showing</b> {showingName} · {clockText(view.row.showing.at)}
+              <b class="text-ink">Showing</b> {showingName} · {timeText(view.row.showing.at, timeFormat)}
             </header>
             <div class="px-3.5 py-2.5">{@render words(view.showing, 'bg-diff-add')}</div>
           </section>
           <section class="overflow-hidden rounded-md border border-line bg-surface" data-side="other">
             <header class="border-b border-line px-3 py-2 text-xs text-muted">
-              <b class="text-ink">Other</b> {otherName} · {clockText(view.row.other.at)}
+              <b class="text-ink">Other</b> {otherName} · {timeText(view.row.other.at, timeFormat)}
             </header>
             <div class="px-3.5 py-2.5">{@render words(view.other, 'bg-diff-del', true)}</div>
           </section>

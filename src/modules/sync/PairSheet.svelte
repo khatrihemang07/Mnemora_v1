@@ -205,7 +205,7 @@
           <span class="flex-1"></span>
           <Button onclick={() => void pairing.close()}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={pairing.code.length !== 8 || pairing.address.trim() === ''}>
-            {view.state === 'failed' && !wrongCode ? 'Try again' : 'Pair'}
+            {view.state === 'failed' && !wrongCode ? 'Retry' : 'Pair'}
           </Button>
         </div>
       </form>
@@ -233,7 +233,7 @@
           <span class="flex-1"></span>
           <Button onclick={() => void pairing.close()}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={pairing.code.length !== 8}>
-            {view.state === 'failed' && !wrongCode ? 'Try again' : 'Pair'}
+            {view.state === 'failed' && !wrongCode ? 'Retry' : 'Pair'}
           </Button>
         </div>
       </form>

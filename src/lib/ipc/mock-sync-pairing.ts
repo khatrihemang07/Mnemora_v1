@@ -244,11 +244,29 @@ export function createPairingMock(deps: Deps) {
       case '40000000':
         return fail({ kind: 'different_environment', theirs: 'production' });
       case '50000000':
-        return fail({ kind: 'version_mismatch', name: PIXEL, older: 'them' });
+        return fail({
+          kind: 'version_mismatch',
+          name: PIXEL,
+          older: 'them',
+          older_here: [],
+          older_there: ['todo'],
+        });
       case '50000001':
-        return fail({ kind: 'version_mismatch', name: PIXEL, older: 'me' });
+        return fail({
+          kind: 'version_mismatch',
+          name: PIXEL,
+          older: 'me',
+          older_here: ['journal'],
+          older_there: [],
+        });
       case '50000002':
-        return fail({ kind: 'version_mismatch', name: PIXEL, older: 'both' });
+        return fail({
+          kind: 'version_mismatch',
+          name: PIXEL,
+          older: 'both',
+          older_here: ['journal'],
+          older_there: ['todo'],
+        });
       case '60000000':
         return fail({ kind: 'connection_lost' });
       case '70000000':

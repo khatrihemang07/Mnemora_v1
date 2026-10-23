@@ -17,7 +17,12 @@ import type {
 } from './bindings';
 import { createDeviceMock } from './mock-sync-devices';
 import { createLiveMock, type PairedBase } from './mock-sync-live';
-import { createPairingMock, defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
+import {
+  createPairingMock,
+  defaultPairingFlags,
+  type PairingFlags,
+  uniqueName,
+} from './mock-sync-pairing';
 
 const MAX_NAME_CHARS = 40;
 const COMPUTER_NAME = 'Alex’s MacBook Pro';
@@ -187,9 +192,19 @@ export function createSyncMock(
             live.reset();
           }
           return null;
-        case 'sync_rename':
-          s.name = validateName(String(a.name));
+        case 'sync_rename': {
+          const name = validateName(String(a.name));
+          if (
+            uniqueName(
+              name,
+              peers.map((p) => p.name),
+            ) !== name
+          ) {
+            throw err('Another of your devices already has that name');
+          }
+          s.name = name;
           return null;
+        }
         case 'sync_set_option': {
           const option = a.option as SyncOption;
           s[option] = a.enabled === true;

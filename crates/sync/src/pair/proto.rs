@@ -21,6 +21,7 @@
 //! 7. The showing device records the pairing and says `Accepted`; the typing device records it
 //!    and says `Done`.
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::time::Duration;
 
@@ -56,7 +57,12 @@ pub(crate) enum Failure {
     /// The other device runs the other Environment.
     Environment { theirs: Environment },
     /// Data versions differ.
-    Version { name: String, older: Older },
+    Version {
+        name: String,
+        older: Older,
+        older_here: Vec<String>,
+        older_there: Vec<String>,
+    },
     /// The connection failed, went quiet or spoke nonsense.
     Lost,
 }
@@ -183,23 +189,30 @@ pub(crate) fn compatible(me: &Who, them: &Who) -> Result<(), Failure> {
             theirs: them.environment,
         });
     }
-    let (mut mine_older, mut theirs_older) = (false, false);
-    for module in me.data_versions.keys().chain(them.data_versions.keys()) {
+    let (mut mine, mut theirs) = (Vec::<String>::new(), Vec::<String>::new());
+    let modules: BTreeSet<&String> = me
+        .data_versions
+        .keys()
+        .chain(them.data_versions.keys())
+        .collect();
+    for module in modules {
         let (a, b) = (me.data_versions.get(module), them.data_versions.get(module));
         if a < b {
-            mine_older = true;
+            mine.push(module.clone());
         } else if b < a {
-            theirs_older = true;
+            theirs.push(module.clone());
         }
     }
-    if mine_older || theirs_older {
+    if !mine.is_empty() || !theirs.is_empty() {
         return Err(Failure::Version {
             name: them.name.clone(),
-            older: match (mine_older, theirs_older) {
-                (true, true) => Older::Both,
-                (true, false) => Older::Me,
+            older: match (mine.is_empty(), theirs.is_empty()) {
+                (false, false) => Older::Both,
+                (false, true) => Older::Me,
                 _ => Older::Them,
             },
+            older_here: mine,
+            older_there: theirs,
         });
     }
     if let (Some(a), Some(b)) = (&me.group, &them.group)

@@ -210,9 +210,9 @@ export function describe(
     default:
       text = [
         piece(e.extra.from ?? '', true),
-        piece(' from '),
+        piece(' ('),
         piece(other, true),
-        piece(' merged into '),
+        piece(') merged into '),
         piece(e.extra.into ?? '', true),
       ];
   }

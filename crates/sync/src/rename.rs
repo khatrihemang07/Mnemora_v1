@@ -22,6 +22,8 @@ pub(crate) const DEVICE: SyncEntity = SyncEntity {
     fields: &[SyncField::value("name")],
 };
 
+const TAKEN: &str = "Another of your devices already has that name";
+
 /// Records that `device` is now called `name`, so the other devices take it.
 fn record(conn: &Connection, device: &str, name: &str) -> AppResult<()> {
     let existed: bool = conn.query_row(
@@ -82,9 +84,7 @@ pub fn rename_peer(
         );
     }
     if unique_name(&name, &others) != name {
-        return Err(SyncError::Validation(
-            "Another of your devices already has that name",
-        ));
+        return Err(SyncError::Validation(TAKEN));
     }
     if name == old {
         return Ok(name);
@@ -93,6 +93,19 @@ pub fn rename_peer(
     record(&tx, device, &name)?;
     crate::activity::log_renamed(&tx, device, &old, &name)?;
     tx.commit()?;
+    Ok(name)
+}
+
+/// The name this device may take: `wanted`, trimmed, when no paired device already has it.
+pub fn check_own_name(conn: &Connection, wanted: &str) -> Result<String, SyncError> {
+    let name = validate_name(wanted)?;
+    let mut stmt = conn.prepare("SELECT name FROM sync_peers")?;
+    let others = stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if unique_name(&name, &others) != name {
+        return Err(SyncError::Validation(TAKEN));
+    }
     Ok(name)
 }
 

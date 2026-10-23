@@ -89,8 +89,8 @@ function resolvedSamples(now: number): ResolvedRow[] {
       id: 'mock-resolved-inbox',
       kind: 'task_inbox',
       icon: 'inbox',
-      title: '‘Pack boots’ · List',
-      detail: 'Moved to the Inbox · ‘Trip’ is gone · Alex’s MacBook Pro had moved it there',
+      title: '‘Pack boots’ moved to Inbox',
+      detail: 'Trip was deleted on Pixel 8 (simulated)',
       at: at(8, 40),
       fresh: false,
     },
@@ -211,7 +211,12 @@ export function createConflictsMock(
       {
         row: {
           id: 'mock-conflict-entry',
-          subject: { kind: 'entry', page_date: '2026-10-21', written_time: '09:12' },
+          subject: {
+            kind: 'entry',
+            page_date: '2026-10-21',
+            written_at: at(9, 12),
+            written_offset_min: -new Date(at(9, 12)).getTimezoneOffset(),
+          },
           module: 'journal',
           raised_at: at(9, 40),
           showing: { device: 'Alex’s MacBook Pro', at: at(9, 40) },
