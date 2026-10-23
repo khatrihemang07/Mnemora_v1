@@ -44,6 +44,9 @@
   --hue-sync: oklch(55% 0.16 265);
   --on-hue-sync: oklch(99% 0 0);
   --hue-sync-soft: color-mix(in oklch, var(--hue-sync) 13%, transparent);
+  /* Compare: words the version showing has / words only the other version has. */
+  --diff-add: oklch(60% 0.14 150 / 0.2);
+  --diff-del: oklch(55% 0.18 27 / 0.16);
 
   /* S1 hero gradient: Module hues darkened so white text stays at least 4.5:1 (AA). */
   --hero-from: oklch(54% 0.13 58);
@@ -114,6 +117,8 @@
   --hue-sync: oklch(78% 0.1 265);
   --on-hue-sync: oklch(18% 0.03 265);
   --hue-sync-soft: color-mix(in oklch, var(--hue-sync) 16%, transparent);
+  --diff-add: oklch(70% 0.14 150 / 0.22);
+  --diff-del: oklch(70% 0.17 27 / 0.2);
 
   --elev-card: inset 0 1px 0 oklch(100% 0 0 / 0.035);
   --elev-pop: 0 0 0 1px var(--line);

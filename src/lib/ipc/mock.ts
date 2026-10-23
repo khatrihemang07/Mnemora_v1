@@ -9,6 +9,7 @@ import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bind
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
 import { createSyncMock } from './mock-sync';
+import { createConflictsMock } from './mock-sync-conflicts';
 import { defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
 import { createTodoMock } from './mock-todo';
 import { PREF_VALUES } from './mock-todo-arrange';
@@ -134,6 +135,8 @@ export async function installMock() {
     () => void events.syncPeersEvent.emit(),
   );
 
+  const conflicts = createConflictsMock(() => void events.syncConflictsEvent.emit());
+
   applyPrePaintAttributes(values);
 
   mockIPC(
@@ -220,6 +223,7 @@ export async function installMock() {
         case 'open_log_dir':
           return null;
         default:
+          if (conflicts.handles(cmd)) return conflicts.handle(cmd, a);
           if (sync.handles(cmd)) return sync.handle(cmd, a);
           if (todo.handles(cmd)) return todo.handle(cmd, a);
           return journal.handles(cmd) ? journal.handle(cmd, a) : undefined;

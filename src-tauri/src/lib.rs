@@ -91,6 +91,10 @@ macro_rules! specta_builder_for {
                 sync::sync_pair_cancel,
                 sync::sync_now,
                 sync::sync_resume,
+                sync_conflicts::sync_conflicts,
+                sync_conflicts::sync_conflict,
+                sync_conflicts::sync_conflict_draft,
+                sync_conflicts::sync_conflict_resolve,
             ])
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
@@ -99,6 +103,7 @@ macro_rules! specta_builder_for {
                 LinkOpenedEvent,
                 SyncPairingEvent,
                 SyncPeersEvent,
+                SyncConflictsEvent,
                 TodoListsMergedEvent
             ])
     };
@@ -113,6 +118,9 @@ mod state;
 mod sync;
 #[cfg(test)]
 mod sync_cluster_tests;
+mod sync_conflicts;
+#[cfg(test)]
+mod sync_conflicts_tests;
 #[cfg(test)]
 mod sync_journal_tests;
 #[cfg(test)]
@@ -212,6 +220,10 @@ pub struct SyncPairingEvent(pub mnemora_sync::PairingView);
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SyncPeersEvent;
 
+/// Sync raised, received or settled a Conflict: the Conflicts tab and Compare are stale.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncConflictsEvent;
+
 /// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct LinkOpenedEvent;
@@ -239,6 +251,7 @@ fn follow_remote<R: tauri::Runtime>(
         let sent = match event.module.as_str() {
             mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
             mnemora_journal::MODULE_ID => JournalChangedEvent.emit(&handle),
+            mnemora_sync::MODULE_ID => SyncConflictsEvent.emit(&handle),
             _ => Ok(()),
         };
         if let Err(e) = sent {
@@ -541,7 +554,12 @@ mod tests {
             "syncPairCancel",
             "syncNow",
             "syncResume",
+            "syncConflicts",
+            "syncConflict",
+            "syncConflictDraft",
+            "syncConflictResolve",
             "syncPeersEvent",
+            "syncConflictsEvent",
             "syncPairingEvent",
             "settingsChangedEvent",
             "linkOpenedEvent",

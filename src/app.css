@@ -48,6 +48,8 @@
   --color-hue-sync: var(--hue-sync);
   --color-on-hue-sync: var(--on-hue-sync);
   --color-hue-sync-soft: var(--hue-sync-soft);
+  --color-diff-add: var(--diff-add);
+  --color-diff-del: var(--diff-del);
   --color-hero-ink: var(--hero-ink);
   --color-hero-ink-muted: var(--hero-ink-muted);
 

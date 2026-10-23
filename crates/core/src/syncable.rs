@@ -4,7 +4,7 @@
 //! A Module lists its syncable **entities** (the names it uses in the change log) and classifies
 //! every field of each:
 //!
-//! - [`FieldClass::Text`]: text a person wrote. Newest wins for now; three-way merge later.
+//! - [`FieldClass::Text`]: text a person wrote. Merged three-way; a clash becomes a Conflict.
 //! - [`FieldClass::Value`]: newest wins.
 //! - [`FieldClass::Order`]: manual-order keys. Newest wins, and is reported apart from values.
 //! - [`FieldClass::Derived`]: recomputed locally from other fields, never synced.
@@ -157,6 +157,31 @@ pub enum SyncEvent {
         into_name: String,
         /// The device that made it.
         into_device: Option<String>,
+    },
+    /// Two devices rewrote the same words of a text: a Conflict now waits in the Sync Module
+    /// (raised by the engine itself when it merges text, never by a Module). The newest version
+    /// is what shows.
+    ConflictRaised {
+        /// The Conflict's id.
+        id: String,
+        /// The kind of record it is about (its change-log entity).
+        entity: String,
+        /// Its id.
+        entity_id: String,
+        /// The text field.
+        field: String,
+    },
+    /// A text clash on a record that is deleted was resolved without asking: nothing needs the
+    /// person. The hook for Resolved automatically.
+    ConflictAutoResolved {
+        /// The Conflict's id.
+        id: String,
+        /// The kind of record it is about.
+        entity: String,
+        /// Its id.
+        entity_id: String,
+        /// The text field.
+        field: String,
     },
     /// A Preference took another device's value.
     SettingChanged {

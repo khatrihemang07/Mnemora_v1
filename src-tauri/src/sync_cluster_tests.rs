@@ -729,7 +729,11 @@ fn random_action(
 ) {
     let known: Vec<Value> = ids.clone();
     let pick = |rng: &mut Rng| known.get(rng.below(known.len().max(1))).cloned();
-    let roll = rng.below(28);
+    let roll = rng.below(32);
+    if roll >= 28 {
+        let id = pick(rng);
+        return random_task_text_action(c, rng, d, step, id);
+    }
     if roll >= 20 {
         return random_entry_action(c, rng, d, step, journal);
     }
@@ -794,6 +798,49 @@ fn random_action(
     }
 }
 
+/// Words for texts that edits change a few of: few, so that two devices often pick the same.
+const WORDS: [&str; 7] = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta"];
+
+/// `text` with one random word replaced, or a random line appended; a few lines of a few words
+/// when there is no text yet. The edits two devices make this way overlap often enough to clash
+/// and often enough not to.
+fn tweak(text: &str, rng: &mut Rng) -> String {
+    let mut lines: Vec<String> = text.lines().map(str::to_owned).collect();
+    let word = |rng: &mut Rng| WORDS[rng.below(WORDS.len())];
+    if lines.is_empty() || rng.below(5) == 0 {
+        let line: Vec<&str> = (0..3 + rng.below(3)).map(|_| word(rng)).collect();
+        lines.push(line.join(" "));
+    } else {
+        let at = rng.below(lines.len());
+        let mut words: Vec<String> = lines[at].split(' ').map(str::to_owned).collect();
+        let w = rng.below(words.len());
+        words[w] = word(rng).to_owned();
+        lines[at] = words.join(" ");
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
+}
+
+/// A word of a Task's notes or title changed.
+fn random_task_text_action(c: &Cluster, rng: &mut Rng, d: usize, step: usize, id: Option<Value>) {
+    let Some(id) = id else { return };
+    let Ok(t) = task(&c[d], &id) else { return };
+    let notes = tweak(t["notes"].as_str().unwrap_or(""), rng);
+    let mut title = t["title"].as_str().unwrap_or("t").replace('\n', " ");
+    if rng.below(2) == 0 {
+        title = format!(
+            "{} {}",
+            title.split(' ').next().unwrap_or("t"),
+            WORDS[rng.below(WORDS.len())]
+        );
+    }
+    let _ = c[d].invoke::<Value>(
+        "todo_task_update",
+        json!({ "id": id, "title": title, "notes": notes.trim_end(), "sessionId": format!("n{step}-{}", rng.below(2)) }),
+    );
+}
+
 /// What the random run knows about the Journal: Entry ids and the editors left open.
 #[derive(Default)]
 struct Journal {
@@ -817,7 +864,7 @@ fn random_entry_action(c: &Cluster, rng: &mut Rng, d: usize, step: usize, journa
         .entries
         .get(rng.below(journal.entries.len().max(1)))
         .cloned();
-    match (rng.below(8), id) {
+    match (rng.below(11), id) {
         (0, _) | (_, None) => {
             let e = c[d]
                 .invoke::<Value>(
@@ -857,6 +904,15 @@ fn random_entry_action(c: &Cluster, rng: &mut Rng, d: usize, step: usize, journa
             let _ = c[d].invoke::<Value>("journal_entry_restore", json!({ "id": id }));
         }
         // An editor opens on an Entry and is left open for a while.
+        // A few words of the text changed: what two devices do to the same Entry offline.
+        (8..=10, Some(id)) => {
+            let text = tweak(&crate::sync_conflicts_tests::body(&c[d], &id), rng);
+            let session = format!("w{step}-{}", rng.below(2));
+            let _ = c[d].invoke::<Value>(
+                "journal_entry_update",
+                json!({ "id": id, "text": text, "sessionId": session }),
+            );
+        }
         (6, Some(id)) => {
             c[d].invoke::<bool>(
                 "editing_hold",
@@ -975,6 +1031,21 @@ fn converge(seed: u64) {
         c[d].clock()
             .advance(1 + i64::try_from(rng.below(40)).unwrap());
         random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids, &mut journal);
+        // Now and then the person settles a Conflict that waits on this device.
+        if rng.below(10) == 0 {
+            let waiting = crate::sync_conflicts_tests::ids(&c[d]);
+            if let Some(conflict) = waiting.get(rng.below(waiting.len().max(1))) {
+                let choice = match rng.below(3) {
+                    0 => json!({ "kind": "keep_this" }),
+                    1 => json!({ "kind": "keep_other" }),
+                    _ => json!({ "kind": "merged", "text": "settled by hand" }),
+                };
+                let _ = c[d].invoke::<()>(
+                    "sync_conflict_resolve",
+                    json!({ "id": conflict, "choice": choice }),
+                );
+            }
+        }
         if rng.below(4) == 0 {
             let (a, b) = (rng.below(3), rng.below(3));
             if a != b {
@@ -1011,6 +1082,23 @@ fn converge(seed: u64) {
             "seed {seed}: device {d} differs in Lists, Comments or Preferences"
         );
     }
+    // The same Conflicts wait on every device.
+    let waiting = crate::sync_conflicts_tests::ids(&c[0]);
+    let total: i64 = c[0].with_db(|db| {
+        db.query_row("SELECT COUNT(*) FROM sync_conflicts", [], |r| r.get(0))
+            .unwrap()
+    });
+    eprintln!(
+        "seed {seed}: {} waiting, {total} conflicts in all",
+        waiting.len()
+    );
+    for d in 1..3 {
+        assert_eq!(
+            crate::sync_conflicts_tests::ids(&c[d]),
+            waiting,
+            "seed {seed}: device {d} has other Conflicts waiting"
+        );
+    }
     // Look and feel is per device: the theme is whatever each device last set itself.
     for id in &ids {
         let first = seen(&c[0], id);
@@ -1026,7 +1114,7 @@ fn converge(seed: u64) {
 
 #[test]
 fn three_devices_with_random_edits_end_identical() {
-    for seed in [1, 7, 15, 17, 25, 42, 2026, 99_991, 31_337] {
+    for seed in [1, 7, 15, 17, 25, 42, 113, 2026, 99_991, 31_337] {
         converge(seed);
     }
 }

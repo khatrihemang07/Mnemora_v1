@@ -11,6 +11,8 @@ export const SYNC_TABS: { value: SyncTab; label: string; path: RoutePath }[] = [
 
 /** The tab an address belongs to; anything under `/sync` that is not a known page is Devices. */
 export function tabForPath(pathname: string): SyncTab {
+  // Compare (`/sync/conflicts/‹id›`) belongs to Conflicts.
+  if (pathname.startsWith('/sync/conflicts/')) return 'conflicts';
   return SYNC_TABS.find((t) => t.path === pathname)?.value ?? 'devices';
 }
 

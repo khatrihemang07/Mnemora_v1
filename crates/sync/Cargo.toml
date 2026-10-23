@@ -25,6 +25,8 @@ spake2.workspace = true
 mdns-sd.workspace = true
 ring.workspace = true
 if-addrs.workspace = true
+similar.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

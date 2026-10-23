@@ -17,10 +17,12 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use serde_json::{Map, Value};
 
 use crate::clocks;
+use crate::conflicts;
 use crate::error::SyncError;
 use crate::held::{self, HeldUnit};
 use crate::merge::{Verdict, decide};
 use crate::registry::Registry;
+use crate::texts;
 use crate::vector;
 use crate::wire::WireRecord;
 
@@ -37,6 +39,7 @@ pub struct Applied {
 }
 
 /// Applies `records` atomically: all of them, with the vector advanced, or none.
+#[allow(clippy::too_many_lines)] // one pass over a batch: reads best in order
 pub fn apply_batch(
     conn: &Connection,
     registry: &Registry,
@@ -56,6 +59,7 @@ pub fn apply_batch(
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     let mut applied = Applied::default();
     let mut folded: BTreeSet<&str> = BTreeSet::new();
+    let mut texts_to_settle: BTreeSet<(String, String, String)> = BTreeSet::new();
     // Editors that went away without letting go (their lease lapsed) hold nothing back now.
     let released = held::release_ready(&tx, registry, me, now_ms())?;
     applied.changed.extend(released.changed);
@@ -80,13 +84,13 @@ pub fn apply_batch(
         if folded.insert(&record.entity) {
             clocks::fold(&tx, schema, me)?;
         }
-        let (winners, kept_back) = decide_fields(&tx, schema, record, op)?;
+        let decided = decide_fields(&tx, schema, record, op)?;
         let change = RemoteChange {
             entity: &record.entity,
             entity_id: &record.entity_id,
             op,
             at: record.at,
-            fields: &winners,
+            fields: &decided.winners,
             settings: registry.settings(),
         };
         let outcome = module.apply_remote(&tx, &change)?;
@@ -106,6 +110,7 @@ pub fn apply_batch(
                     counter: record.hlc_counter,
                 },
                 fields: &record.fields,
+                prev: &record.prev,
             },
             &outcome.snapshot,
         )?;
@@ -126,7 +131,7 @@ pub fn apply_batch(
             },
             op,
             record.at,
-            &kept_back,
+            &decided.kept_back,
         )?;
         applied.stored += 1;
         applied.events.extend(outcome.events);
@@ -144,21 +149,52 @@ pub fn apply_batch(
             applied.changed.insert(module.id().to_owned());
         }
         applied.events.extend(settled.events);
+        // After the record is stored, so what is recorded now is stamped later than it.
+        applied
+            .events
+            .extend(after_record(&tx, registry, me, record, &outcome.snapshot)?);
+        for key in decided.text_units {
+            texts_to_settle.insert((record.entity.clone(), record.entity_id.clone(), key));
+        }
+    }
+    // Text last, once every record of the batch is stored: the text of a record is the replay of
+    // all of them, so it is worked out once with all of them in hand (and a clash is only
+    // raised for what is still a clash then).
+    for (entity, entity_id, key) in &texts_to_settle {
+        let settled = texts::settle_unit(&tx, registry, me, entity, entity_id, key)?;
+        applied.changed.extend(settled.changed);
+        applied.events.extend(settled.events);
     }
     tx.commit()?;
     Ok(applied)
+}
+
+/// What `decide_fields` made of a record.
+#[derive(Default)]
+struct Decided {
+    /// The values to write now, whole units at a time.
+    winners: Map<String, Value>,
+    /// Units an editor holds back until it lets go.
+    kept_back: Vec<HeldUnit>,
+    /// Text units the record touched that nothing holds back: settled once the batch is stored.
+    text_units: Vec<String>,
 }
 
 /// The values of `record` that win against the clocks held, whole groups at a time, and the
 /// winning units an editor holds back (kept apart until it lets go, see `held`). The clocks of
 /// the winners move to the record's either way. A record that creates its entity is never
 /// held: nothing can be editing what does not exist yet.
+///
+/// Text is not decided by the clock: the text of a record is the replay of every record that
+/// touched it, merged three-way where two devices edited from different texts (`texts`). That
+/// happens after the batch is stored, so a text unit contributes nothing here, except that the
+/// record which creates its entity brings its own text (nothing can be made without it).
 fn decide_fields(
     conn: &Connection,
     schema: &SyncEntity,
     record: &WireRecord,
     op: ChangeOp,
-) -> Result<(Map<String, Value>, Vec<HeldUnit>), SyncError> {
+) -> Result<Decided, SyncError> {
     let scopes = if op == ChangeOp::Create {
         Vec::new()
     } else {
@@ -188,30 +224,70 @@ fn decide_fields(
             None => units.push((key, vec![field.name], field.class)),
         }
     }
-    let mut winners = Map::new();
-    let mut kept_back = Vec::new();
+    let mut out = Decided::default();
     for (key, members, class) in units {
+        let is_text = class == FieldClass::Text;
         let newest_held = members.iter().filter_map(|m| held.get(*m)).max();
-        if decide(class, newest_held, &stamp) == Verdict::Take {
-            let waits = editing::is_held(&scopes, key);
-            let mut values = Map::new();
-            for member in members {
-                if let Some(value) = record.fields.get(member) {
-                    values.insert(member.to_owned(), value.clone());
-                    clocks::raise(conn, &record.entity, &record.entity_id, member, &stamp)?;
-                }
-            }
-            if waits {
-                kept_back.push(HeldUnit {
-                    unit: key.to_owned(),
-                    fields: values,
-                });
-            } else {
-                winners.extend(values);
+        if !is_text && decide(class, newest_held, &stamp) != Verdict::Take {
+            continue;
+        }
+        let mut values = Map::new();
+        for member in members {
+            if let Some(value) = record.fields.get(member) {
+                values.insert(member.to_owned(), value.clone());
+                clocks::raise(conn, &record.entity, &record.entity_id, member, &stamp)?;
             }
         }
+        if editing::is_held(&scopes, key) {
+            out.kept_back.push(HeldUnit {
+                unit: key.to_owned(),
+                fields: values,
+            });
+            continue;
+        }
+        if is_text {
+            out.text_units.push(key.to_owned());
+            if op != ChangeOp::Create {
+                continue;
+            }
+        }
+        out.winners.extend(values);
     }
-    Ok((winners, kept_back))
+    Ok(out)
+}
+
+/// What follows a stored record: Conflicts on it are settled if it is deleted; a Conflict
+/// received about a record is checked against the replay of that record's text, and ended if the
+/// record is deleted.
+fn after_record(
+    conn: &Connection,
+    registry: &Registry,
+    me: &str,
+    record: &WireRecord,
+    snapshot: &Value,
+) -> Result<Vec<SyncEvent>, SyncError> {
+    if record.entity == conflicts::ENTITY {
+        let Some(row) = conflicts::get(conn, &record.entity_id)? else {
+            return Ok(Vec::new());
+        };
+        if !row.open {
+            return Ok(Vec::new());
+        }
+        let mut events = conflicts::settle_deleted(conn, &row.target, &row.target_id)?;
+        // A Conflict made from fewer records than this device holds may not be one any more.
+        if let Some((_, schema)) = registry.find(&row.target)
+            && let Some(unit) = schema.field(&row.field).map(|f| f.group.unwrap_or(f.name))
+        {
+            let settled =
+                texts::settle_unit(conn, registry, me, &row.target, &row.target_id, unit)?;
+            events.extend(settled.events);
+        }
+        return Ok(events);
+    }
+    if snapshot.get("deleted_at").is_some_and(|d| !d.is_null()) {
+        return conflicts::settle_deleted(conn, &record.entity, &record.entity_id);
+    }
+    Ok(Vec::new())
 }
 
 #[cfg(test)]
@@ -299,6 +375,7 @@ mod tests {
             hlc_ms: 1_000 + seq,
             hlc_counter: 0,
             fields: fields.as_object().unwrap().clone(),
+            prev: Map::new(),
         }
     }
 

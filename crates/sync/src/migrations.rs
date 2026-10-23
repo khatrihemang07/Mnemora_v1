@@ -89,5 +89,31 @@ pub fn all() -> Migrations<'static> {
              PRIMARY KEY(entity, entity_id, unit, ms, counter, device)
          ) STRICT;",
         ),
+        // Conflicts (#66), synced as the change-log entity `sync_conflict`: two devices rewrote
+        // the same words of a text. `a_*` is the newest version (what was applied), `b_*` the
+        // other; `base` what both started from. `status` is `open` until a resolution is
+        // chosen (or the record turned out to be deleted).
+        M::up(
+            "CREATE TABLE sync_conflicts(
+             id TEXT PRIMARY KEY NOT NULL,
+             target TEXT NOT NULL,
+             target_id TEXT NOT NULL,
+             field TEXT NOT NULL,
+             base TEXT NOT NULL,
+             a_text TEXT NOT NULL,
+             a_device TEXT NOT NULL,
+             a_at INTEGER NOT NULL,
+             b_text TEXT NOT NULL,
+             b_device TEXT NOT NULL,
+             b_at INTEGER NOT NULL,
+             raised_at INTEGER NOT NULL,
+             status TEXT NOT NULL DEFAULT 'open',
+             resolution TEXT,
+             resolved_at INTEGER,
+             resolved_by TEXT
+         ) STRICT;
+         CREATE INDEX sync_conflicts_target ON sync_conflicts(target, target_id);
+         CREATE INDEX sync_conflicts_open ON sync_conflicts(status, raised_at);",
+        ),
     ])
 }

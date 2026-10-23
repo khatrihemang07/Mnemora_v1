@@ -48,6 +48,9 @@ spake2 = { version = "=0.4.0", features = ["std"] }
 mdns-sd = { version = "=0.21.6", default-features = false, features = ["async"] }
 ring = { version = "=0.17.14", default-features = false }
 if-addrs = "=0.15.0"
+# Three-way text merge (#66): Myers diff of lines and words. No default features: the slice diff
+# is all we use, and it then has no dependencies.
+similar = { version = "=2.7.0", default-features = false }
 # JNI glue for the Todo widget (ADR 0014); Android only.
 jni = "=0.21.1"
 

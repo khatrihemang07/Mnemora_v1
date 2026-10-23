@@ -83,17 +83,18 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
     // Every write ticks, a session's rewrite included: peers pick records up by sequence.
     let tick = hlc::tick(conn)?;
     let device = hlc::device_id(conn)?;
-    let fields = changed_fields(conn, change)?;
+    let touched = changed_fields(conn, change)?;
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
-                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13)
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields, prev)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?13, ?14)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
          DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
              snapshot = excluded.snapshot, at = excluded.at,
              origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
              hlc_counter = excluded.hlc_counter, seq = excluded.seq,
-             origin_seq = excluded.origin_seq, fields = excluded.fields",
+             origin_seq = excluded.origin_seq, fields = excluded.fields,
+             prev = excluded.prev",
         rusqlite::params![
             new_id(),
             change.module,
@@ -107,17 +108,30 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
             tick.clock.ms,
             tick.clock.counter,
             tick.seq,
-            fields.map(|f| Value::Object(f).to_string()),
+            touched.fields.map(|f| Value::Object(f).to_string()),
+            Value::Object(touched.prev).to_string(),
         ],
     )?;
     Ok(())
 }
 
+/// What a change touched, and what it replaced.
+struct Touched {
+    /// `{field: new value}`; `None` stands for "every field of the snapshot".
+    fields: Option<Map<String, Value>>,
+    /// `{field: value before}` for the touched fields whose earlier value is known.
+    prev: Map<String, Value>,
+}
+
 /// What `change` touched, as `{field: new value}`: the keys whose value differs from the
 /// entity's latest snapshot (all of them for a first record), plus, for a session's rewrite,
-/// what the session's record already held. `None` when the session's record predates this
-/// column: it keeps meaning "every field of the snapshot".
-fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Option<Map<String, Value>>> {
+/// what the session's record already held. `fields` is `None` when the session's record
+/// predates this column: it keeps meaning "every field of the snapshot".
+///
+/// `prev` says what each touched key held before: in the latest snapshot, or, for a key the
+/// session claimed earlier, what the session replaced when it first claimed it (the text the
+/// editor started from, however often it saved since).
+fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Touched> {
     let latest: Option<String> = conn
         .query_row(
             "SELECT snapshot FROM change_log WHERE entity = ?1 AND entity_id = ?2
@@ -129,20 +143,31 @@ fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Option<Map<St
     let before: Option<Value> = latest.and_then(|s| serde_json::from_str(&s).ok());
     let mut keys: Vec<String> = diff_keys(&change.snapshot, before.as_ref());
     let diff_now: Vec<String> = keys.clone();
+    // What the session's record held before this write.
+    let mut earlier_prev = Map::new();
+    let mut earlier_values = Map::new();
+    let mut earlier_keys: Vec<String> = Vec::new();
     if let Some(session) = &change.session_id {
-        let earlier: Option<Option<String>> = conn
+        let earlier: Option<(Option<String>, Option<String>)> = conn
             .query_row(
-                "SELECT fields FROM change_log
+                "SELECT fields, prev FROM change_log
                  WHERE entity = ?1 AND entity_id = ?2 AND session_id = ?3",
                 rusqlite::params![change.entity, change.entity_id, session],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
         match earlier {
             // A record from before `fields` existed stays "everything".
-            Some(None) => return Ok(None),
-            Some(Some(text)) => {
+            Some((None, _)) => {
+                return Ok(Touched {
+                    fields: None,
+                    prev: Map::new(),
+                });
+            }
+            Some((Some(text), prev)) => {
                 if let Ok(Value::Object(map)) = serde_json::from_str(&text) {
+                    earlier_keys = map.keys().cloned().collect();
+                    earlier_values.clone_from(&map);
                     // Still the session's own claim only while the value is still the one the
                     // session left: if another device's change landed since, and this write did
                     // not touch the key, the session must not re-stamp that value as its own.
@@ -153,19 +178,49 @@ fn changed_fields(conn: &Connection, change: &Change) -> AppResult<Option<Map<St
                         (untouched || diff_now.contains(&k)).then_some(k)
                     }));
                 }
+                if let Some(Ok(Value::Object(map))) =
+                    prev.map(|p| serde_json::from_str::<Value>(&p))
+                {
+                    earlier_prev = map;
+                }
             }
             None => {}
         }
     }
     let now = change.snapshot.as_object();
-    Ok(Some(
-        keys.into_iter()
-            .map(|k| {
-                let v = now.and_then(|n| n.get(&k)).cloned().unwrap_or(Value::Null);
-                (k, v)
-            })
-            .collect(),
-    ))
+    let was = before.as_ref().and_then(Value::as_object);
+    let mut prev = Map::new();
+    let fields = keys
+        .into_iter()
+        .map(|k| {
+            // What the session started from, unless something else has changed the value since
+            // the session left it: then this write replaces that newer value, and says so.
+            let moved_on = was.is_some_and(|w| {
+                earlier_values
+                    .get(&k)
+                    .is_some_and(|v| w.get(&k).unwrap_or(&Value::Null) != v)
+            });
+            if let Some(old) = earlier_prev.get(&k).filter(|_| !moved_on) {
+                prev.insert(k.clone(), old.clone());
+            } else if moved_on {
+                prev.insert(
+                    k.clone(),
+                    was.and_then(|w| w.get(&k)).cloned().unwrap_or(Value::Null),
+                );
+            } else if earlier_keys.contains(&k) {
+                // The session claimed it without knowing what it replaced (it made the record).
+            } else if let Some(was) = was {
+                // A key that did not exist before held nothing: null, like the record's own.
+                prev.insert(k.clone(), was.get(&k).cloned().unwrap_or(Value::Null));
+            }
+            let v = now.and_then(|n| n.get(&k)).cloned().unwrap_or(Value::Null);
+            (k, v)
+        })
+        .collect();
+    Ok(Touched {
+        fields: Some(fields),
+        prev,
+    })
 }
 
 /// The keys of `now` whose value differs from `before` (a key that vanished counts, and is
@@ -209,6 +264,9 @@ pub struct Remote<'a> {
     pub clock: hlc::Timestamp,
     /// What it changed, with the origin's values, exactly as sent (so this device can relay it).
     pub fields: &'a Map<String, Value>,
+    /// What the origin's change replaced, for the fields that travel with it (text), exactly as
+    /// sent.
+    pub prev: &'a Map<String, Value>,
 }
 
 /// Stores a record received from another device: shows the clock its timestamp, appends it
@@ -219,14 +277,15 @@ pub fn record_remote(conn: &Connection, remote: &Remote<'_>, snapshot: &Value) -
     let tick = hlc::observe_tick(conn, remote.clock)?;
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
-                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                                origin_device, hlc_ms, hlc_counter, seq, origin_seq, fields, prev)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
          ON CONFLICT(entity, entity_id, session_id) WHERE session_id IS NOT NULL
          DO UPDATE SET op = CASE WHEN op = 'create' THEN op ELSE excluded.op END,
              snapshot = excluded.snapshot, at = excluded.at,
              origin_device = excluded.origin_device, hlc_ms = excluded.hlc_ms,
              hlc_counter = excluded.hlc_counter, seq = excluded.seq,
-             origin_seq = excluded.origin_seq, fields = excluded.fields",
+             origin_seq = excluded.origin_seq, fields = excluded.fields,
+             prev = excluded.prev",
         rusqlite::params![
             new_id(),
             remote.module,
@@ -242,6 +301,7 @@ pub fn record_remote(conn: &Connection, remote: &Remote<'_>, snapshot: &Value) -
             tick.seq,
             remote.origin_seq,
             Value::Object(remote.fields.clone()).to_string(),
+            Value::Object(remote.prev.clone()).to_string(),
         ],
     )?;
     Ok(())
@@ -671,6 +731,76 @@ mod tests {
         );
     }
 
+    fn stored_prev(conn: &Connection) -> Vec<Value> {
+        let mut stmt = conn
+            .prepare("SELECT prev FROM change_log ORDER BY seq")
+            .unwrap();
+        stmt.query_map([], |r| r.get::<_, Option<String>>(0))
+            .unwrap()
+            .map(|f| {
+                f.unwrap()
+                    .map_or(Value::Null, |s| serde_json::from_str(&s).unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_record_keeps_what_each_changed_field_held_before() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"a": "one", "b": 1}))).unwrap();
+        record(&conn, &change("e1", None, json!({"a": "two", "b": 1}))).unwrap();
+        record(
+            &conn,
+            &change("e1", None, json!({"a": "two", "b": 2, "c": "new"})),
+        )
+        .unwrap();
+        assert_eq!(
+            stored_prev(&conn),
+            vec![json!({}), json!({"a": "one"}), json!({"b": 1, "c": null})],
+            "a first record replaced nothing; a key that did not exist held null"
+        );
+    }
+
+    #[test]
+    fn a_sessions_rewrite_keeps_the_text_the_session_started_from() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"a": "base", "b": 1}))).unwrap();
+        record(
+            &conn,
+            &change("e1", Some("s"), json!({"a": "typed", "b": 1})),
+        )
+        .unwrap();
+        record(
+            &conn,
+            &change("e1", Some("s"), json!({"a": "typed more", "b": 2})),
+        )
+        .unwrap();
+        assert_eq!(
+            stored_prev(&conn),
+            vec![json!({}), json!({"a": "base", "b": 1})],
+            "a is still measured from the text the session began with"
+        );
+        // A session that made the record never knew what it replaced.
+        record(&conn, &change("e2", Some("n"), json!({"a": "first"}))).unwrap();
+        record(&conn, &change("e2", Some("n"), json!({"a": "first, more"}))).unwrap();
+        assert_eq!(stored_prev(&conn)[2], json!({}));
+    }
+
+    #[test]
+    fn a_session_that_overwrites_a_value_changed_since_says_it_replaced_that_value() {
+        let conn = migrated();
+        record(&conn, &change("e1", None, json!({"a": "base"}))).unwrap();
+        record(&conn, &change("e1", Some("s"), json!({"a": "typed"}))).unwrap();
+        // Another device's text lands while the session is open and nothing holds it back.
+        record(&conn, &change("e1", None, json!({"a": "theirs"}))).unwrap();
+        record(&conn, &change("e1", Some("s"), json!({"a": "typed more"}))).unwrap();
+        assert_eq!(
+            stored_prev(&conn),
+            vec![json!({}), json!({"a": "typed"}), json!({"a": "theirs"})],
+            "the session's rewrite replaced \"theirs\", what its author held at that moment"
+        );
+    }
+
     #[test]
     fn a_session_record_from_before_fields_stays_everything() {
         let conn = migrated();
@@ -700,6 +830,7 @@ mod tests {
                 counter: 2,
             },
             fields,
+            prev: fields,
         }
     }
 
@@ -803,7 +934,7 @@ mod tests {
         .unwrap();
 
         let report = migrate::run(&mut conn, &[&CoreModule], dir.path()).unwrap();
-        assert_eq!(report.applied, vec![("core".into(), 1, 5)]);
+        assert_eq!(report.applied, vec![("core".into(), 1, 6)]);
         assert!(report.backup.is_some(), "existing data is backed up first");
         let theme: String = conn
             .query_row("SELECT value FROM settings WHERE key = 'theme'", [], |r| {

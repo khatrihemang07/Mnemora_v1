@@ -14,6 +14,10 @@ describe('tab routing', () => {
     expect(tabForPath('/sync/activity')).toBe('activity');
   });
 
+  it('keeps Compare under Conflicts', () => {
+    expect(tabForPath('/sync/conflicts/abc')).toBe('conflicts');
+  });
+
   it('falls back to Devices for an address it does not know', () => {
     expect(tabForPath('/sync/nowhere')).toBe('devices');
     expect(tabForPath('/')).toBe('devices');
@@ -25,6 +29,8 @@ describe('tab routing', () => {
 
   it('is registered as one route per tab, so Back returns to the previous tab', () => {
     const routes = buildRoutes([syncManifest]);
-    expect(Object.keys(routes).sort()).toEqual(SYNC_TABS.map((t) => t.path).sort());
+    expect(Object.keys(routes).sort()).toEqual(
+      [...SYNC_TABS.map((t) => t.path), '/sync/conflicts/:id'].sort(),
+    );
   });
 });

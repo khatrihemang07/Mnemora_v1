@@ -13,6 +13,7 @@ export const syncManifest: ModuleManifest = {
   routes: [
     { path: '/sync', component: () => import('./DevicesPage.svelte') },
     { path: '/sync/conflicts', component: () => import('./ConflictsPage.svelte') },
+    { path: '/sync/conflicts/:id', component: () => import('./ComparePage.svelte') },
     { path: '/sync/activity', component: () => import('./ActivityPage.svelte') },
   ],
   // Beside Settings in the sidebar's bottom group, with no ⌘-digit: the digits keep matching content Modules.

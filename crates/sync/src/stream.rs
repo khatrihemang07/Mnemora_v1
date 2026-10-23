@@ -9,8 +9,9 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use mnemora_core::changelog::ChangeOp;
+use mnemora_core::syncable::{FieldClass, SyncEntity};
 use rusqlite::Connection;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::error::SyncError;
 use crate::registry::{Registry, wire_fields};
@@ -156,7 +157,7 @@ fn records_after(
     let local_only = registry.local_only(entity);
     let mut stmt = conn.prepare(&format!(
         "SELECT module, entity_id, op, session_id, at, origin_seq, hlc_ms, hlc_counter, fields,
-                snapshot
+                snapshot, prev
          FROM change_log WHERE entity = ?1 AND origin_device = ?2 AND origin_seq > ?3
            AND entity_id NOT IN ({})
          ORDER BY origin_seq LIMIT ?4",
@@ -177,6 +178,9 @@ fn records_after(
                 _ => None,
             });
         let snapshot: Value = serde_json::from_str(&snapshot).unwrap_or(Value::Null);
+        let prev: Option<String> = row.get(10)?;
+        let fields = wire_fields(schema, fields, &snapshot, device == me);
+        let prev = text_prev(schema, &fields, prev);
         out.push(WireRecord {
             module: row.get(0)?,
             entity: entity.to_owned(),
@@ -188,10 +192,30 @@ fn records_after(
             origin_seq: row.get(5)?,
             hlc_ms: row.get(6)?,
             hlc_counter: row.get(7)?,
-            fields: wire_fields(schema, fields, &snapshot, device == me),
+            fields,
+            prev,
         });
     }
     // The op is checked on receipt; sending an unknown one would only be refused there.
     debug_assert!(out.iter().all(|r| ChangeOp::parse(&r.op).is_some()));
     Ok(out)
+}
+
+/// What the record's text fields replaced: the stored `prev` narrowed to the text fields the
+/// record sends.
+fn text_prev(
+    schema: &SyncEntity,
+    fields: &Map<String, Value>,
+    prev: Option<String>,
+) -> Map<String, Value> {
+    let Some(Ok(Value::Object(prev))) = prev.map(|p| serde_json::from_str::<Value>(&p)) else {
+        return Map::new();
+    };
+    prev.into_iter()
+        .filter(|(k, v)| {
+            v.is_string()
+                && fields.contains_key(k)
+                && schema.field(k).is_some_and(|f| f.class == FieldClass::Text)
+        })
+        .collect()
 }

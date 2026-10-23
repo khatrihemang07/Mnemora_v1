@@ -158,6 +158,11 @@ impl Module for CoreModule {
                  PRIMARY KEY(entity, entity_id, scope)
              ) STRICT;",
             ),
+            // Sync (ADR 0017, text merge): `prev` holds, for each field a record changed, the
+            // value it replaced on the author's device, as `{field: old value}`. A receiver
+            // merges two devices' texts three-way against it. Older rows have none, which
+            // means "unknown": their text simply replaces.
+            M::up("ALTER TABLE change_log ADD COLUMN prev TEXT;"),
         ])
     }
 

@@ -29,6 +29,7 @@ use serde_json::{Map, Value};
 use crate::clocks;
 use crate::error::SyncError;
 use crate::registry::Registry;
+use crate::texts;
 
 /// The values of one unit of a received record, kept until the hold on it ends.
 #[derive(Debug)]
@@ -119,9 +120,13 @@ pub fn release_ready(
         if folded.insert(entity.clone()) {
             clocks::fold(conn, schema, me)?;
         }
+        let mut folded_clocks_stale = false;
         let held = clocks::load(conn, &entity, &entity_id)?;
         let mut winning: Vec<&Row> = Vec::new();
-        for row in &rows {
+        for row in rows
+            .iter()
+            .filter(|r| texts::unit(schema, &r.unit).is_none())
+        {
             // Still the newest the clocks know for the unit: nothing newer landed since.
             let newest_held = schema
                 .fields
@@ -184,6 +189,21 @@ pub fn release_ready(
                 out.changed.insert(module.id().to_owned());
             }
             out.events.extend(settled.events);
+        }
+        // Text is not "still the newest or dropped": the person's own saves since the record
+        // arrived are records too, and the text is the replay of all of them, merged.
+        let mut replayed: BTreeSet<&str> = BTreeSet::new();
+        for row in &rows {
+            if texts::unit(schema, &row.unit).is_none() || !replayed.insert(&row.unit) {
+                continue;
+            }
+            let settled = texts::settle_unit(conn, registry, me, &entity, &entity_id, &row.unit)?;
+            folded_clocks_stale |= settled.recorded;
+            out.changed.extend(settled.changed);
+            out.events.extend(settled.events);
+        }
+        if folded_clocks_stale {
+            folded.clear();
         }
     }
     Ok(out)

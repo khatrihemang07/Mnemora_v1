@@ -32,3 +32,26 @@ export async function watchDevices(): Promise<() => void> {
     void queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey });
   });
 }
+
+/** "Needs you": the Conflicts that wait. */
+export const conflictsQuery = queryOptions({
+  queryKey: ['sync', 'conflicts'],
+  queryFn: () => unwrap(commands.syncConflicts()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/** One Conflict for Compare. */
+export const conflictQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['sync', 'conflict', id],
+    queryFn: () => unwrap(commands.syncConflict(id)),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+/** Reads Conflicts again when one is raised or settled (here or on another device). Returns what stops listening. */
+export async function watchConflicts(): Promise<() => void> {
+  return events.syncConflictsEvent.listen(() => {
+    void queryClient.invalidateQueries({ queryKey: ['sync', 'conflicts'] });
+    void queryClient.invalidateQueries({ queryKey: ['sync', 'conflict'] });
+  });
+}

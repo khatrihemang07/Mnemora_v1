@@ -327,6 +327,35 @@ export const commands = {
 	 *  are tried again from the start of the retry schedule.
 	 */
 	syncResume: () => __TAURI_INVOKE<void>("sync_resume"),
+	/**  "Needs you": the Conflicts that wait, newest first. */
+	syncConflicts: () => typedError<ConflictList, AppError>(__TAURI_INVOKE("sync_conflicts")),
+	/**  One Conflict for Compare, or nothing when there is none with that id. */
+	syncConflict: (id: string) => typedError<{
+	/**  The header. */
+	row: ConflictRow,
+	/**  Still waiting for a decision. */
+	open: boolean,
+	/**  How it ended, once it has. */
+	resolution: string | null,
+	/**  The text showing now, words the other version lacks marked. */
+	showing: DiffSpan[],
+	/**  The other version, words the showing text lacks marked. */
+	other: DiffSpan[],
+	/**  The text both devices started from. */
+	original: string,
+	/**  The text, cut at the clashes, for Edit merged. */
+	pieces: ClashPiece[],
+} | null, AppError>(__TAURI_INVOKE("sync_conflict", { id })),
+	/**
+	 *  The text Edit merged starts from: the agreed parts, each clash as chosen (in order; a clash
+	 *  without a choice takes the showing version).
+	 */
+	syncConflictDraft: (id: string, choices: ClashChoice[]) => typedError<string, AppError>(__TAURI_INVOKE("sync_conflict_draft", { id, choices })),
+	/**
+	 *  Settles a Conflict: keep what shows, write the other version, or write an edited merge. The
+	 *  text is written as an ordinary edit; the Conflict then reads resolved on every device.
+	 */
+	syncConflictResolve: (id: string, choice: ConflictChoice) => typedError<null, AppError>(__TAURI_INVOKE("sync_conflict_resolve", { id, choice })),
 };
 
 /** Events */
@@ -334,6 +363,7 @@ export const events = {
 	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
+	syncConflictsEvent: makeEvent<SyncConflictsEvent>("sync-conflicts-event"),
 	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
 	syncPeersEvent: makeEvent<SyncPeersEvent>("sync-peers-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
@@ -372,6 +402,30 @@ export type AppInfo = {
 	os_first_name: string,
 };
 
+/**  The choice for one clash in Edit merged. */
+export type ClashChoice = 
+/**  The newer version's words. */
+"showing" | 
+/**  The other version's words. */
+"other" | 
+/**  Both, the newer one first. */
+"both";
+
+/**  A part of the text for Edit merged: agreed, or a clash to choose for. */
+export type ClashPiece = 
+/**  Text both versions have. */
+{ kind: "agreed"; 
+/**  The text. */
+text: string } | 
+/**  Words both rewrote. */
+{ kind: "clash"; 
+/**  The newer version's words. */
+showing: string; 
+/**  The other version's words. */
+other: string; 
+/**  What both started from. */
+original: string };
+
 /**
  *  A note left on a Task. It belongs to the Task row it was written on: for a repeating Task, the
  *  current occurrence (completing moves it to the done copy).
@@ -400,6 +454,84 @@ export type Completion = {
 	 *  latest occurrence) is the Undo.
 	 */
 	occurrence: Task | null,
+};
+
+/**  How the person settles a Conflict. */
+export type ConflictChoice = 
+/**  Keep what shows. */
+{ kind: "keep_this" } | 
+/**  Replace with the other version. */
+{ kind: "keep_other" } | 
+/**  Replace with this text. */
+{ kind: "merged"; 
+/**  The edited merge. */
+text: string };
+
+/**  The Conflicts tab's "Needs you". */
+export type ConflictList = {
+	/**  Conflicts that wait, newest first. Its length is the count. */
+	needs_you: ConflictRow[],
+};
+
+/**  A row of "Needs you". */
+export type ConflictRow = {
+	/**  The Conflict's id. */
+	id: string,
+	/**  What it is about. */
+	subject: ConflictSubject,
+	/**  The Module it belongs to, for the row's icon: `journal` or `todo`. */
+	module: string,
+	/**  When the newest version was written: UTC milliseconds. Rows group by this day. */
+	raised_at: number,
+	/**  The newer version, the one that was applied. */
+	showing: ConflictSide,
+	/**  The other version. */
+	other: ConflictSide,
+};
+
+/**  One side of a Conflict: whose it was and when. */
+export type ConflictSide = {
+	/**  The device's name. */
+	device: string,
+	/**  When it was written: UTC milliseconds. */
+	at: number,
+};
+
+/**  What a Conflict is about, as the list names it. */
+export type ConflictSubject = 
+/**  A Journal Entry's text: "Wed 21 Oct · 09:12 Entry". */
+{ kind: "entry"; 
+/**  The Page it is on, `YYYY-MM-DD`. */
+page_date: string; 
+/**  When it was written, `HH:MM` in the zone it was written in. */
+written_time: string } | 
+/**  A Task's title or notes: "‘Plan weekend hike’ · notes". */
+{ kind: "task"; 
+/**  The Task's title now. */
+title: string; 
+/**  Which text. */
+field: TaskText } | 
+/**  A Comment on a Task. */
+{ kind: "comment"; 
+/**  The Task's title now. */
+task_title: string };
+
+/**  One Conflict for Compare. */
+export type ConflictView = {
+	/**  The header. */
+	row: ConflictRow,
+	/**  Still waiting for a decision. */
+	open: boolean,
+	/**  How it ended, once it has. */
+	resolution: string | null,
+	/**  The text showing now, words the other version lacks marked. */
+	showing: DiffSpan[],
+	/**  The other version, words the showing text lacks marked. */
+	other: DiffSpan[],
+	/**  The text both devices started from. */
+	original: string,
+	/**  The text, cut at the clashes, for Edit merged. */
+	pieces: ClashPiece[],
 };
 
 /**  The number of open Tasks due on one date. */
@@ -450,6 +582,14 @@ export type DevicesView = {
 	this_device: ThisDevice,
 	/**  The paired devices. */
 	peers: PeerRow[],
+};
+
+/**  A stretch of one text, and whether it differs from the other version. */
+export type DiffSpan = {
+	/**  The text, line breaks included. */
+	text: string,
+	/**  Words here are not in the other version. */
+	changed: boolean,
 };
 
 /**  The Tasks done on one day of Done. */
@@ -1167,6 +1307,9 @@ export type Span = {
 	matched: boolean,
 };
 
+/**  Sync raised, received or settled a Conflict: the Conflicts tab and Compare are stale. */
+export type SyncConflictsEvent = null;
+
 /**
  *  The Sync Module's choices for this device (ADR 0017). Never synced: each device decides for
  *  itself whether it talks to the network, so the on/off switch is a Device setting, not a
@@ -1326,6 +1469,13 @@ export type TaskState =
 "done" | 
 /**  Decided against; `closed_at` says when. */
 "wont";
+
+/**  Which text of a Task. */
+export type TaskText = 
+/**  Its title. */
+"title" | 
+/**  Its notes. */
+"notes";
 
 /**  A stretch of the text, in UTF-16 code units. */
 export type TextRange = {

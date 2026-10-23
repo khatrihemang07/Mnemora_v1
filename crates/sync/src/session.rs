@@ -230,7 +230,11 @@ impl Session {
                         device,
                     });
                 }
-                // Recorded by the Activity log (#67/#68); nothing shows it yet.
+                // Recorded by Activity and Resolved automatically (#67/#68); the Conflicts tab
+                // reads the table, and `RemoteChanged` for Sync refreshes it.
+                SyncEvent::ConflictRaised { .. } | SyncEvent::ConflictAutoResolved { .. } => {
+                    tracing::debug!(target: "sync", "a text clash was recorded");
+                }
                 SyncEvent::TaskToInbox { .. } => {
                     tracing::debug!(target: "sync", "a Task went to the Inbox: its List is gone");
                 }
