@@ -429,6 +429,22 @@ fn completing_the_same_repeating_task_offline_on_two_devices_gives_one_occurrenc
     }
 }
 
+#[test]
+fn the_same_occurrence_has_the_same_id_on_devices_that_never_exchanged_it() {
+    let c = Cluster::new(2);
+    let t = create_repeating(&c[0], "Take vitamins", "2026-10-22");
+    c.sync(0, 1);
+    // From here on the two databases do not talk: each completes the occurrence on its own.
+    let ids: Vec<Value> = (0..2)
+        .map(|d| complete(&c[d], &t["id"])["occurrence"]["id"].clone())
+        .collect();
+    assert!(ids[0].is_string());
+    assert_eq!(
+        ids[0], ids[1],
+        "the id comes from the Task and its due date"
+    );
+}
+
 // ---------------------------------------------------------------- the engine
 
 #[test]

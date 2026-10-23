@@ -178,6 +178,30 @@ fn same_name_lists_made_on_two_devices_merge_into_the_older_which_keeps_everythi
 }
 
 #[test]
+fn lists_differing_only_by_accents_and_case_merge_into_the_older() {
+    let c = Cluster::new(2);
+    let older = create_list(&c[0], "Café");
+    task_in(&c[0], "Espresso", Some(&older["id"]));
+    let newer = create_list(&c[1], "cafe");
+    task_in(&c[1], "Croissant", Some(&newer["id"]));
+    assert!(older["id"].as_str() < newer["id"].as_str());
+    c.sync(0, 1);
+    c.sync(0, 1);
+    for d in 0..2 {
+        assert_eq!(
+            lists(&c[d]),
+            vec![(older["id"].as_str().unwrap().into(), "Café".into())],
+            "device {d}"
+        );
+        assert!(list_gone(&c[d], &newer["id"]), "the newer is gone on {d}");
+        let mut titles = titles_in(&c[d], &older["id"]);
+        titles.sort();
+        assert_eq!(titles, ["Croissant", "Espresso"], "device {d}");
+    }
+    same_world(&c, 2);
+}
+
+#[test]
 fn the_newer_lists_tasks_join_the_end_of_the_older_ones_manual_order_in_their_own_order() {
     let (c, older, _) = clash_on_creation();
     // Manual order, so the page shows the stored order.

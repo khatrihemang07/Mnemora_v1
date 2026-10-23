@@ -188,15 +188,15 @@ Another device of yours that this one trusts and keeps in step with. Pairing wit
 _Avoid_: Peer, client, node
 
 **Pairing code**:
-The 8 digits one device shows and the other types to make them trust each other. It works once, for 2 minutes, and stops working after 3 wrong tries.
+The short number one device shows and the other types to make them trust each other. It is single-use and short-lived.
 _Avoid_: PIN, password, token
 
 **Conflict**:
-Text you wrote that two devices both rewrote in the same passage, so Sync cannot tell which to keep. It waits in the Sync Module for you to Keep this, Keep other, Edit merged or decide Later. Until then the newest version shows and nothing in Journal or Todo is marked. Only text (an Entry's body, a Task's title and notes, a Comment) can conflict.
+Text you wrote that two devices both rewrote in the same passage, so Sync cannot tell which to keep. It waits in the Sync Module for you to decide. Until then the newest version shows and nothing in Journal or Todo is marked. Only text (an Entry's body, a Task's title and notes, a Comment) can conflict.
 _Avoid_: Clash, merge error, collision
 
 **Resolved automatically**:
-A difference between devices that Sync settled for you by keeping the newest value (a Priority, a Due date, a delete against an edit). It is only a log, with what was kept and what was replaced and a one-click "Use ‹other› instead", and never needs dismissing.
+A difference between devices that Sync settled for you by keeping the newest value (a Priority, a Due date, a typed Address, a delete against an edit). It is only a log, with what was kept and what was replaced and a one-click "Use ‹other› instead", and never needs dismissing.
 _Avoid_: Auto-merge, silent conflict
 
 **Sync activity**:
