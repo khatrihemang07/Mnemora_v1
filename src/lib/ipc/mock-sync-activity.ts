@@ -18,7 +18,7 @@ const NAMES = new Map(DEVICES.map((d) => [d.id, d.name]));
 const MINUTE = 60_000;
 
 /** An event as the log holds it, before it is put in words for a viewer. */
-interface Event {
+export interface Event {
   id: string;
   kind: string;
   at: number;
@@ -223,6 +223,11 @@ const newestFirst = (a: Event, b: Event) => b.at - a.at || (a.id < b.id ? 1 : a.
 export function createActivityMock(count = 4000, now = Date.now()) {
   const events = makeEvents(count, now).sort(newestFirst);
   return {
+    /** Lines a sync wrote (the simulated device's), in with the rest. */
+    add(...added: Event[]) {
+      events.push(...added);
+      events.sort(newestFirst);
+    },
     handles: (cmd: string) => COMMANDS.includes(cmd),
     handle(cmd: string, a: Record<string, unknown>): unknown {
       if (cmd !== 'sync_activity') return undefined;

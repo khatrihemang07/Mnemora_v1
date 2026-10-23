@@ -15,7 +15,7 @@ import type {
   ResolvedRow,
 } from './bindings';
 
-interface Sample {
+export interface Sample {
   row: ConflictRow;
   base: string;
   showing: string;
@@ -23,6 +23,8 @@ interface Sample {
   pieces: ClashPiece[];
   open: boolean;
   resolution: string | null;
+  /** The simulated device's Conflicts: what to write into the data when a person chooses the other text. */
+  apply?: (text: string) => void;
 }
 
 const COMMANDS = [
@@ -248,6 +250,19 @@ export function createConflictsMock(emit: () => void = () => {}, now: () => numb
   };
 
   return {
+    /** A Conflict a sync found (false when this clash is already listed). */
+    raise(sample: Sample): boolean {
+      if (samples.has(sample.row.id)) return false;
+      samples.set(sample.row.id, sample);
+      emit();
+      return true;
+    },
+    /** Rows a sync added to "Resolved automatically", newest first. */
+    addResolved(rows: ResolvedRow[]) {
+      const known = new Set(resolved.map((r) => r.id));
+      for (const r of rows) if (!known.has(r.id)) resolved.unshift(r);
+      emit();
+    },
     /** How many conflicts wait, for the attention the Home card and badge read. */
     openCount: () => [...samples.values()].filter((s) => s.open).length,
     handles: (cmd: string) => COMMANDS.includes(cmd),
@@ -280,6 +295,7 @@ export function createConflictsMock(emit: () => void = () => {}, now: () => numb
           const choice = a.choice as ConflictChoice;
           if (choice.kind === 'keep_other') sample.showing = sample.other;
           if (choice.kind === 'merged') sample.showing = choice.text;
+          if (choice.kind !== 'keep_this') sample.apply?.(sample.showing);
           sample.open = false;
           sample.resolution = choice.kind === 'merged' ? 'merged' : choice.kind;
           emit();

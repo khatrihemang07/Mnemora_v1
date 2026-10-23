@@ -9,6 +9,7 @@ import type { AppError, Entry, NewEntry, Page, PageDirection } from './bindings'
 import { pageDates, validDate } from './mock-journal-pages';
 import { plainText, searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
+import type { Doc } from './mock-sync-merge';
 
 const MAX_OFFSET_MIN = 14 * 60;
 const MAX_ZONE_CHARS = 64;
@@ -111,6 +112,64 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
       }
       edit(entry, text);
       return true;
+    },
+
+    /** Sync's view of the Entries (mock-sync-merge.ts), deleted ones too. A browser-only seam. */
+    exportDocs(): Doc[] {
+      return all.map((e) => ({
+        entity: 'entry' as const,
+        id: e.id,
+        values: {
+          body: e.body,
+          page_date: e.page_date,
+          written_at: e.written_at,
+          written_offset_min: e.written_offset_min,
+          written_tz: e.written_tz,
+          created_at: e.created_at,
+          deleted_at: deleted.get(e.id) ?? null,
+        },
+      }));
+    },
+
+    /** Takes in what a sync merged; an Entry an editor holds waits for it to let go. True when anything changed now. */
+    importDocs(docs: Doc[]): boolean {
+      let changed = false;
+      for (const d of docs.filter((x) => x.entity === 'entry')) {
+        const v = d.values;
+        let entry = all.find((e) => e.id === d.id);
+        if (!entry) {
+          const now = Date.now();
+          entry = {
+            id: d.id,
+            page_date: String(v.page_date),
+            body: '',
+            written_at: Number(v.written_at),
+            written_offset_min: Number(v.written_offset_min),
+            written_tz: String(v.written_tz),
+            edited_at: null,
+            word_count: 0,
+            created_at: Number(v.created_at),
+            updated_at: now,
+          };
+          all.push(entry);
+          edit(entry, String(v.body));
+          entry.edited_at = null;
+          changed = true;
+        } else if (entry.body !== v.body) {
+          if (held.has(entry.id)) waiting.set(entry.id, String(v.body));
+          else {
+            edit(entry, String(v.body));
+            changed = true;
+          }
+        }
+        const gone = v.deleted_at ?? null;
+        if (gone === null && deleted.delete(d.id)) changed = true;
+        if (gone !== null && !deleted.has(d.id)) {
+          deleted.set(d.id, Number(gone));
+          changed = true;
+        }
+      }
+      return changed;
     },
 
     handle(cmd: string, a: Record<string, unknown>): unknown {

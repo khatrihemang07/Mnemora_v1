@@ -148,6 +148,8 @@ mod sync_lists_tests;
 #[cfg(test)]
 mod sync_live_tests;
 #[cfg(test)]
+mod sync_merge_fixture_tests;
+#[cfg(test)]
 mod sync_merge_preview_tests;
 #[cfg(test)]
 mod sync_pairing_tests;

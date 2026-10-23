@@ -3,6 +3,50 @@
  * http://localhost:47821 without Tauri. Loaded by a dynamic import guarded by
  * `import.meta.env.DEV`, so it never reaches a production build.
  * Settings validation mirrors crates/core/src/module.rs.
+ *
+ * Sync: a simulated second device, "Pixel 8 (simulated)" (mock-sync-pixel.ts), holds its own copy of
+ * the data, makes edits and syncs with this mock's Todo, Journal and Preferences through a
+ * TypeScript copy of the merge rules (mock-sync-merge.ts). That copy is guarded by
+ * fixtures/sync-merge-rules.json, which src-tauri/src/sync_merge_fixture_tests.rs runs on two real
+ * devices and mock-sync-merge.test.ts runs on the copy: change a rule in Rust and the Vitest case
+ * fails until the copy follows. Dev only (this file is never in a production build).
+ *   URL: `?sync=on` Sync on, nobody paired; `?paired=2` on with two paired devices (implies on);
+ *        `&paused=update|me|both|clock|clock_me`; `&activity=N` lines; `&paircode=SECONDS`.
+ *   Console: `__pixel.edit(op, args)`, `__pixel.sync()`, `__pixel.scenario(name)`, `__pixel.scenarios()`,
+ *        `__pixel.world()`; `__syncMock.*` (pairing flags, setPeer, check, newConflict);
+ *        `__listMergeMock(name?)`; `__journalRemoteMock(text, id?)`.
+ *
+ * Every Sync scenario of docs/design/sync-prototype.html (its SCENARIOS list) and how to reach it
+ * (P = `?paired=2`, which also turns Sync on):
+ *   off          /settings                         Settings › Modules, Sync still off (the default)
+ *   welcome      /sync?sync=on                     Sync on, no device paired: the Welcome card
+ *   settings     /settings?sync=on                 the Sync section (add &paired=2 for Leave)
+ *   turnoff      /settings?P                       switch Sync off: the dialog
+ *   home         /?P                               Home card + sidebar badge (the 2 sample Conflicts)
+ *   more         /?P in a window under 640 px      More sheet on the phone layout
+ *   palette      /?P, then ⌘K and type "sync"
+ *   devices      /sync?P                           add `__syncMock.setPeer('syncing')` for a row mid-sync
+ *   detail       /sync?P&device=mock-pixel         the device sheet
+ *   paused       /sync?P&paused=update             (other reasons: me, both, clock, clock_me)
+ *   forget       /sync?P&device=mock-pixel         Forget in the sheet
+ *   pairShow     /sync?sync=on, Pair a device      the phone types the code after a few seconds
+ *   pairPhone    /sync?sync=on, Pair a device › Enter a code instead
+ *   pairEnter    …Enter a code, type 12345678      (magic codes: mock-sync-pairing.ts header)
+ *   pairAllow    …Pair a device and wait           Allow / Deny appears (or type 12345678)
+ *   pairAddr     …Enter a code › Pair by address…  (`nowhere`, `closed` fail)
+ *   pairPreview  …type 92000000, or `__syncMock.pixel = 'merge'` while showing a code
+ *   pairDone     …type 12345678; 90000000 name clash; 91000000 joins a group
+ *   pairError    …type 11111111 (wrong code); 20000000 expired; 30000000 declined
+ *   conflicts    /sync/conflicts?P                 2 sample Conflicts and 5 Resolved rows; real ones
+ *                                                   from `__pixel.scenario('conflict')` and 'resolved'
+ *   compare      /sync/conflicts?P, open a row     (Compare)
+ *   merged       Compare › Edit merged
+ *   activity     /sync/activity?P                  4000 lines; `__pixel.sync()` adds new ones
+ *   remote       /todo?P on Today, then `__pixel.scenario('remote')`    "Call mum" changes under you
+ *   taskSheet    `__pixel.scenario('conflict')`, then open the URL it prints (/todo?task=ID)
+ *   remoteDelete `__pixel.scenario('remoteDelete')`, open the Task "Call mum", then `__pixel.sync()`
+ *   listMerged   `__pixel.scenario('listMerged')`, open the List "Groceries", then `__pixel.sync()`
+ *                (or `__listMergeMock('Groceries')`)
  */
 import { mockIPC } from '@tauri-apps/api/mocks';
 import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bindings';
@@ -11,7 +55,9 @@ import { createJournalMock } from './mock-journal';
 import { createSyncMock } from './mock-sync';
 import { createActivityMock } from './mock-sync-activity';
 import { createConflictsMock } from './mock-sync-conflicts';
+import type { Json } from './mock-sync-merge';
 import { defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
+import { createPixelMock } from './mock-sync-pixel';
 import { createTodoMock } from './mock-todo';
 import { PREF_VALUES } from './mock-todo-arrange';
 
@@ -88,6 +134,9 @@ export async function installMock() {
   };
 
   const query = new URLSearchParams(location.search);
+  // `?sync=on` (or any `?paired=N`) starts with Sync turned on, as if it had been set up before.
+  if (query.get('sync') === 'on' || Number(query.get('paired') ?? 0) > 0)
+    device.sync = { ...device.sync, enabled: true, name: 'Alex’s MacBook Pro' };
   const journalFlags = {
     failUpdate: query.get('fail') === 'journal_update',
     failPages: query.get('fail') === 'journal_pages',
@@ -149,6 +198,59 @@ export async function installMock() {
     const wants = (device.sync as { toast_conflicts?: boolean } | undefined)?.toast_conflicts;
     if (wants) void events.syncNewConflictsEvent.emit({ count: 1, device: 'Pixel 8 (simulated)' });
   };
+
+  // The simulated second device: `__pixel.edit(…)`, `__pixel.sync()`, `__pixel.scenario(…)`
+  // (mock-sync-pixel.ts). It syncs with this mock's Todo, Journal and Preferences through the TS
+  // merge (mock-sync-merge.ts).
+  const touchedPrefs = new Set<string>();
+  const pixel = createPixelMock({
+    data: { todo, journal },
+    settings: {
+      // A Preference is part of the data once it differs from its default (or did before).
+      exportDocs: () =>
+        Object.entries(values)
+          .filter(([k, v]) => {
+            if (LOOK_KEYS.includes(k) || !(k in DEFS)) return false;
+            if (JSON.stringify(v) !== JSON.stringify(DEFS[k]?.default)) touchedPrefs.add(k);
+            return touchedPrefs.has(k);
+          })
+          .map(([k, v]) => ({
+            entity: 'setting' as const,
+            id: k,
+            values: { value: v as unknown as Json },
+          })),
+      importDocs: (docs) => {
+        const changed: string[] = [];
+        for (const d of docs) {
+          const def = DEFS[d.id];
+          const value = d.values.value as JsonValue;
+          if (!def || def.validate(value) !== null) continue;
+          touchedPrefs.add(d.id);
+          if (JSON.stringify(values[d.id]) !== JSON.stringify(value)) {
+            values[d.id] = value;
+            changed.push(d.id);
+          }
+        }
+        return changed;
+      },
+    },
+    command: (cmd, a) => (todo.handles(cmd) ? todo.handle(cmd, a) : journal.handle(cmd, a)),
+    conflicts,
+    activity,
+    myName: () => (device.sync?.name as string | null) ?? 'Alex’s MacBook Pro',
+    announce: {
+      todoChanged: () => void events.todoChangedEvent.emit(),
+      journalChanged: () => void events.journalChangedEvent.emit(),
+      listsMerged: (e) => void events.todoListsMergedEvent.emit(e),
+      activityChanged: () => void events.syncActivityEvent.emit(),
+      settingsChanged: (module, keys) => void events.settingsChangedEvent.emit({ module, keys }),
+      newConflicts: (count, name) => {
+        if ((device.sync as { toast_conflicts?: boolean } | undefined)?.toast_conflicts)
+          void events.syncNewConflictsEvent.emit({ count, device: name });
+      },
+    },
+  });
+  (window as unknown as { __pixel: unknown }).__pixel = pixel;
 
   applyPrePaintAttributes(values);
 

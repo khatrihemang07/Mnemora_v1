@@ -68,6 +68,7 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 - Rust: unit tests beside the code in `#[cfg(test)]` for pure functions; database behaviour is tested against an in-memory SQLite (`db::open_in_memory`) or a `tempfile` dir. Business rules are tested through the commands with `TestApp`, not inside the crate ([ADR 0009](../adr/0009-rule-tests-at-the-command-layer.md)).
 - UI: Vitest, with `*.test.ts` next to the source. Keep logic in plain `.ts` so it is testable without a DOM.
 - The browser mock (`src/lib/ipc/mock-*.ts`) re-implements Rust rules, so each rule it mirrors has a case in a shared JSON fixture (`src/lib/ipc/fixtures/`) that both a `TestApp` test and a Vitest test against the mock run.
+  - Sync's merge rules are the largest copy: `mock-sync-merge.ts` (with `mock-sync-replica.ts`, the simulated "Pixel 8 (simulated)" in `mock-sync-pixel.ts`) is guarded by `fixtures/sync-merge-rules.json`, run on two real devices by `sync_merge_fixture_tests.rs` and on the copy by `mock-sync-merge.test.ts`. Change a merge rule in Rust and add or change a case there; the Vitest run fails until the copy follows. Keep the copy as small as the fixture allows.
 - No E2E for now ([ADR 0006](../adr/0006-no-e2e-tests.md)). Use the manual smoke checklist instead (below).
 - `make test` and `make lint` must pass before you finish.
 
