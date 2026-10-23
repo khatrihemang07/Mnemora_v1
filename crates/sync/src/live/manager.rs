@@ -3,7 +3,7 @@
 //! sessions when this device has changes to push. Everything it spawns lives in its [`JoinSet`],
 //! so aborting the supervisor (dropping [`Live`]) ends it all.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -59,42 +59,50 @@ impl Leaver {
     /// nobody answering in time, it returns at once or at the limit with 0.
     pub async fn farewell(&self, limit: std::time::Duration) -> usize {
         let deadline = Instant::now() + limit;
-        tell_everyone(deadline, || async {
+        tell_everyone(deadline, |told| {
             let (tx, rx) = oneshot::channel();
-            self.0.send(Cmd::Farewell(tx)).ok()?;
-            rx.await.ok()
+            let sent = self.0.send(Cmd::Farewell(told, tx)).is_ok();
+            async move {
+                if !sent {
+                    return None;
+                }
+                rx.await.ok()
+            }
         })
         .await
     }
 }
 
-/// Asks (through `ask`) for one farewell session per connection and waits for them until
-/// `deadline`. A connection that ends before its session ran (the other device dialled at the same
-/// moment and its connection replaced this one) drops its answer unsent, which is not "told": the
-/// ask is made again, to whatever connection stands now, until every answer arrives, nobody is
-/// connected any more, or the deadline passes. Returns how many sessions finished.
+/// Asks (through `ask`, given the devices already told) for one farewell session per connection
+/// of a device not yet told, and waits for them until `deadline`. A connection that ends before
+/// its session ran (the other device dialled at the same moment and its connection replaced this
+/// one) drops its answer unsent, which is not "told": the ask is made again, to whatever
+/// connection stands now, until every answer arrives, nobody is connected any more, or the
+/// deadline passes. Devices that did answer are not asked twice. Returns how many were told.
 async fn tell_everyone<F, Fut>(deadline: Instant, mut ask: F) -> usize
 where
-    F: FnMut() -> Fut,
-    Fut: std::future::Future<Output = Option<Vec<oneshot::Receiver<()>>>>,
+    F: FnMut(HashSet<String>) -> Fut,
+    Fut: std::future::Future<Output = Option<Vec<(String, oneshot::Receiver<()>)>>>,
 {
-    let mut finished = 0;
+    let mut told = HashSet::new();
     loop {
-        let Ok(Some(pending)) = tokio::time::timeout_at(deadline, ask()).await else {
-            return finished;
+        let Ok(Some(pending)) = tokio::time::timeout_at(deadline, ask(told.clone())).await else {
+            return told.len();
         };
         // The sessions run side by side, so waiting for them one after the other costs no more
         // than the slowest.
         let mut lost = false;
-        for done in pending {
+        for (peer, done) in pending {
             match tokio::time::timeout_at(deadline, done).await {
-                Ok(Ok(())) => finished += 1,
+                Ok(Ok(())) => {
+                    told.insert(peer);
+                }
                 Ok(Err(_)) => lost = true,
-                Err(_) => return finished,
+                Err(_) => return told.len(),
             }
         }
         if !lost {
-            return finished;
+            return told.len();
         }
         // Give the replacing connection a moment to be the one held.
         if tokio::time::timeout_at(
@@ -104,7 +112,7 @@ where
         .await
         .is_err()
         {
-            return finished;
+            return told.len();
         }
     }
 }
@@ -123,9 +131,13 @@ enum Cmd {
     Flush,
     Refresh,
     Reconfigure,
-    /// This device is leaving: every open connection runs one more session; the reply holds one
-    /// receiver per connection, each ready when that session has finished.
-    Farewell(oneshot::Sender<Vec<oneshot::Receiver<()>>>),
+    /// This device is leaving: every open connection to a device not in the set runs one more
+    /// session; the reply holds one receiver per connection, each ready when that session has
+    /// finished.
+    Farewell(
+        HashSet<String>,
+        oneshot::Sender<Vec<(String, oneshot::Receiver<()>)>>,
+    ),
 }
 
 impl Live {
@@ -394,13 +406,16 @@ impl Supervisor {
                 }
             }
             Cmd::Reconfigure => self.reconfigure().await,
-            Cmd::Farewell(reply) => {
+            Cmd::Farewell(told, reply) => {
                 let mut waits = Vec::new();
-                for peer in self.peers.values() {
+                for (id, peer) in &self.peers {
+                    if told.contains(id) {
+                        continue;
+                    }
                     if let Some(held) = &peer.conn {
                         let (tx, rx) = oneshot::channel();
                         if held.tx.send(ConnCmd::Farewell(tx)).is_ok() {
-                            waits.push(rx);
+                            waits.push((id.clone(), rx));
                         }
                     }
                 }
@@ -974,35 +989,42 @@ mod tests {
         rx
     }
 
+    fn peer(id: &str, rx: oneshot::Receiver<()>) -> (String, oneshot::Receiver<()>) {
+        (id.to_string(), rx)
+    }
+
     #[tokio::test]
-    async fn a_connection_replaced_before_its_farewell_ran_is_asked_again() {
-        let mut asked = 0;
-        let finished = tell_everyone(Instant::now() + Duration::from_secs(5), || {
-            asked += 1;
-            let first = asked == 1;
+    async fn a_connection_replaced_before_its_farewell_ran_is_asked_again_but_a_told_one_is_not() {
+        let mut asked = Vec::new();
+        let finished = tell_everyone(Instant::now() + Duration::from_secs(5), |told| {
+            let mut told: Vec<_> = told.into_iter().collect();
+            told.sort();
+            asked.push(told.clone());
+            let first = asked.len() == 1;
             async move {
-                // The first connection was closed unanswered (its sender dropped); the one that
-                // replaced it answers.
-                Some(vec![if first {
-                    oneshot::channel().1
+                // "b" was closed unanswered (its sender dropped) and its replacement answers;
+                // "a" answered at once and must not be asked again.
+                Some(if first {
+                    vec![peer("a", answered()), peer("b", oneshot::channel().1)]
                 } else {
-                    answered()
-                }])
+                    assert_eq!(told, ["a"]);
+                    vec![peer("b", answered())]
+                })
             }
         })
         .await;
-        assert_eq!((asked, finished), (2, 1));
+        assert_eq!((asked.len(), finished), (2, 2));
     }
 
     #[tokio::test]
     async fn nobody_connected_any_more_ends_the_farewell() {
         let mut asked = 0;
-        let finished = tell_everyone(Instant::now() + Duration::from_secs(5), || {
+        let finished = tell_everyone(Instant::now() + Duration::from_secs(5), |_| {
             asked += 1;
             let first = asked == 1;
             async move {
                 Some(if first {
-                    vec![oneshot::channel().1]
+                    vec![peer("a", oneshot::channel().1)]
                 } else {
                     Vec::new()
                 })
@@ -1017,8 +1039,8 @@ mod tests {
         let (_keep, silent) = oneshot::channel::<()>();
         let mut silent = Some(silent);
         let started = std::time::Instant::now();
-        let finished = tell_everyone(Instant::now() + Duration::from_millis(150), || {
-            let pending = silent.take().into_iter().collect();
+        let finished = tell_everyone(Instant::now() + Duration::from_millis(150), |_| {
+            let pending = silent.take().map(|rx| peer("a", rx)).into_iter().collect();
             async move { Some(pending) }
         })
         .await;
