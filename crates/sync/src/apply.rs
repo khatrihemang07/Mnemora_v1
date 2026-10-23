@@ -22,7 +22,7 @@ use crate::error::SyncError;
 use crate::held::{self, HeldUnit};
 use crate::merge::{Verdict, decide};
 use crate::registry::Registry;
-use crate::resolutions::{self, Clash, Folded, Observed, Unit};
+use crate::resolutions::{self, Folded, Unit};
 use crate::texts;
 use crate::vector;
 use crate::wire::WireRecord;
@@ -153,8 +153,19 @@ pub fn apply_batch(
             applied.changed.insert(module.id().to_owned());
         }
         applied.events.extend(settled.events);
-        // Logged after the record is stored too: what was decided is on the record.
-        resolutions::note_clashes(&tx, &record.entity, &record.entity_id, &decided.clashes)?;
+        // Logged after the record is stored too: a clash is read off the stored records.
+        for key in &decided.value_units {
+            if let Some(members) = resolutions::value_members(schema, key) {
+                resolutions::settle_value(
+                    &tx,
+                    me,
+                    &record.entity,
+                    &record.entity_id,
+                    key,
+                    &members,
+                )?;
+            }
+        }
         applied.folded.extend(decided.folded);
         for event in &applied.events[first_event..] {
             if let SyncEvent::TaskToInbox { task_id, list_id } = event {
@@ -196,8 +207,8 @@ struct Decided {
     kept_back: Vec<HeldUnit>,
     /// Text units the record touched that nothing holds back: settled once the batch is stored.
     text_units: Vec<String>,
-    /// Values that were changed beside the ones that stand here: logged as resolved automatically.
-    clashes: Vec<Clash>,
+    /// Value units the record touched: their clashes are read off the stored records.
+    value_units: Vec<String>,
     /// Order keys and Preferences that moved, for the session's folded line.
     folded: Vec<Folded>,
 }
@@ -261,17 +272,17 @@ fn decide_fields(
         let newest_held = members.iter().filter_map(|m| held.get(*m)).max();
         if !is_text {
             let take = decide(class, newest_held, &stamp) == Verdict::Take;
+            if class == FieldClass::Value {
+                out.value_units.push(key.to_owned());
+            }
             if let Some(current) = &current {
                 let unit = Unit {
                     key,
                     members: &members,
                     class,
                 };
-                match resolutions::observe(record, &unit, (newest_held, &stamp), take, current) {
-                    Some(Observed::Clash(c)) => out.clashes.push(c),
-                    Some(Observed::Folded(f)) => out.folded.push(f),
-                    None => {}
-                }
+                out.folded
+                    .extend(resolutions::observe(record, &unit, take, current));
             }
             if !take {
                 continue;
@@ -693,5 +704,133 @@ mod tests {
             .unwrap();
         assert_eq!(resumed.values, whole.values);
         assert_eq!(resumed.clashes, whole.clashes);
+    }
+
+    /// A change of the Value field `n` of thing `a`, clocked at `ms`, made from `prev`.
+    fn n_record(device: &str, seq: i64, ms: i64, n: i64, prev: Option<i64>) -> WireRecord {
+        let mut r = record(device, seq, "a", json!({ "n": n }));
+        r.hlc_ms = ms;
+        r.op = if prev.is_none() { "create" } else { "update" }.into();
+        if let Some(p) = prev {
+            r.prev = json!({ "n": p }).as_object().unwrap().clone();
+        }
+        r
+    }
+
+    /// The Resolved-automatically rows of kind value, as (id, kept, replaced, devices).
+    fn value_rows(conn: &Connection) -> Vec<(String, Value, Value, String, String)> {
+        let mut rows: Vec<_> = resolutions::all(conn)
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.kind == "value")
+            .map(|r| {
+                (
+                    r.id,
+                    Value::Object(r.kept),
+                    Value::Object(r.replaced),
+                    r.kept_device,
+                    r.replaced_device,
+                )
+            })
+            .collect();
+        rows.sort_by(|a, b| a.0.cmp(&b.0));
+        rows
+    }
+
+    #[test]
+    fn a_change_made_after_another_is_never_logged_as_a_clash_whatever_order_they_arrive_in() {
+        let make = n_record("a", 1, 1000, 1, None);
+        let by_a = n_record("a", 2, 1500, 2, Some(1));
+        // B had seen A's change when it made its own.
+        let by_b = n_record("b", 1, 2000, 3, Some(2));
+        for order in [
+            vec![vec![make.clone(), by_a.clone(), by_b.clone()]],
+            vec![vec![make.clone(), by_b.clone()], vec![by_a.clone()]],
+            vec![vec![by_b.clone()], vec![make.clone(), by_a.clone()]],
+        ] {
+            let (conn, registry) = device("c");
+            for batch in order {
+                apply_batch(&conn, &registry, "c", batch).unwrap();
+            }
+            assert!(value_rows(&conn).is_empty());
+            assert_eq!(count(&conn, "SELECT n FROM fake_things"), 3);
+        }
+    }
+
+    #[test]
+    fn a_clash_is_the_same_row_whatever_order_the_records_arrive_in() {
+        let make = n_record("a", 1, 1000, 1, None);
+        let by_a = n_record("a", 2, 1500, 2, Some(1));
+        let by_b = n_record("b", 1, 2000, 3, Some(1));
+        let later = n_record("a", 3, 3000, 4, Some(2));
+        let mut seen = Vec::new();
+        for order in [
+            vec![vec![
+                make.clone(),
+                by_a.clone(),
+                by_b.clone(),
+                later.clone(),
+            ]],
+            vec![vec![by_b.clone()], vec![make.clone(), by_a.clone()]],
+            vec![vec![make.clone(), by_b.clone()], vec![by_a.clone()]],
+        ] {
+            let (conn, registry) = device("c");
+            for batch in order {
+                apply_batch(&conn, &registry, "c", batch).unwrap();
+            }
+            seen.push(value_rows(&conn));
+        }
+        assert_eq!(seen[1].len(), 1, "{:?}", seen[1]);
+        assert_eq!(seen[1], seen[2]);
+        assert_eq!(seen[1][0].1, json!({"n": 3}));
+        assert_eq!(seen[1][0].2, json!({"n": 2}));
+        // `later` was made on A after A's own change; the newest value now beats B's, which is
+        // a second clash (A had not seen B's), kept 4 over 3.
+        assert_eq!(seen[0].len(), 2, "{:?}", seen[0]);
+    }
+
+    #[test]
+    fn a_row_logged_before_a_missing_record_arrived_is_taken_back() {
+        let (conn, registry) = device("c");
+        apply_batch(
+            &conn,
+            &registry,
+            "c",
+            vec![
+                n_record("a", 1, 1000, 1, None),
+                n_record("b", 1, 2000, 3, Some(2)),
+            ],
+        )
+        .unwrap();
+        // Without A's change in between, B's looks like a clash.
+        assert_eq!(value_rows(&conn).len(), 1);
+        apply_batch(
+            &conn,
+            &registry,
+            "c",
+            vec![n_record("a", 2, 1500, 2, Some(1))],
+        )
+        .unwrap();
+        assert!(value_rows(&conn).is_empty());
+    }
+
+    #[test]
+    fn records_from_before_the_replaced_value_travelled_are_never_logged() {
+        let (conn, registry) = device("c");
+        let mut old = n_record("b", 1, 2000, 3, Some(9));
+        old.prev.clear();
+        apply_batch(
+            &conn,
+            &registry,
+            "c",
+            vec![
+                n_record("a", 1, 1000, 1, None),
+                n_record("a", 2, 1500, 2, Some(1)),
+                old,
+            ],
+        )
+        .unwrap();
+        assert!(value_rows(&conn).is_empty());
+        assert_eq!(count(&conn, "SELECT n FROM fake_things"), 3);
     }
 }

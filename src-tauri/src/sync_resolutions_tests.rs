@@ -161,6 +161,58 @@ fn a_change_made_after_another_is_not_a_clash() {
 }
 
 #[test]
+fn both_deleting_or_both_completing_a_task_is_not_a_clash_though_the_moments_differ() {
+    let (c, id) = pair_with_task("Water plants");
+    c[0].clock().advance(1_000);
+    c[0].invoke::<()>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+    c[1].clock().advance(2_000);
+    c[1].invoke::<()>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+    let (c2, id2) = pair_with_task("Call bank");
+    for (d, ms) in [(0, 1_000), (1, 2_000)] {
+        c2[d].clock().advance(ms);
+        c2[d]
+            .invoke::<Value>("todo_task_complete", json!({ "id": id2, "local": local() }))
+            .unwrap();
+    }
+    c.sync(0, 1);
+    c2.sync(0, 1);
+    for d in 0..2 {
+        assert!(kind_of(&c[d], "value").is_empty(), "delete, device {d}");
+        assert!(kind_of(&c2[d], "value").is_empty(), "complete, device {d}");
+    }
+}
+
+#[test]
+fn a_task_status_that_gave_way_can_be_used_instead_unless_the_task_repeats() {
+    let (c, id) = pair_with_task("Water plants");
+    c[0].clock().advance(1_000);
+    c[0].invoke::<Value>("todo_task_complete", json!({ "id": id, "local": local() }))
+        .unwrap();
+    c[1].clock().advance(2_000);
+    c[1].invoke::<Value>("todo_task_wont_do", json!({ "id": id, "local": local() }))
+        .unwrap();
+    c.sync(0, 1);
+    assert_eq!(task(&c[0], &id)["state"], "wont");
+    let row = kind_of(&c[0], "value")[0].clone();
+    assert_eq!(row["title"], "‘Water plants’ · Status");
+    assert_eq!(row["action"], "Use Done instead");
+    c[0].clock().advance(10_000);
+    c[0].invoke::<()>("sync_resolution_use_other", json!({ "id": row["id"] }))
+        .unwrap();
+    assert_eq!(task(&c[0], &id)["state"], "done");
+    c.sync(0, 1);
+    assert_eq!(
+        task(&c[1], &id)["state"],
+        "done",
+        "it synced as a normal edit"
+    );
+    assert_eq!(kind_of(&c[1], "value").len(), 1);
+    assert_eq!(kind_of(&c[1], "value")[0]["used"], "Changed to Done");
+}
+
+#[test]
 fn both_choosing_the_same_value_is_not_a_clash() {
     let (c, id) = pair_with_task("Water plants");
     c[0].clock().advance(1_000);
@@ -274,6 +326,60 @@ fn a_delete_and_an_edit_on_different_devices_are_both_kept_and_logged_once() {
     assert_eq!(
         kind_of(&c[0], "delete_edit")[0]["id"],
         kind_of(&c[1], "delete_edit")[0]["id"]
+    );
+}
+
+#[test]
+fn a_delete_met_by_two_edits_is_one_row_the_same_on_three_devices_in_any_order() {
+    let c = Cluster::new(3);
+    let names = ["Mac", "Pixel 8", "Tablet"];
+    for (i, name) in names.iter().enumerate() {
+        c[i].invoke::<()>("sync_rename", json!({ "name": name }))
+            .unwrap();
+        for (j, other) in names.iter().enumerate().filter(|(j, _)| *j != i) {
+            let id = c[j].device_id();
+            c[i].with_db(|db| {
+                db.execute(
+                    "INSERT INTO sync_peers(id, name, paired_at) VALUES (?1, ?2, ?3)",
+                    (id.as_str(), *other, Cluster::START),
+                )
+                .unwrap();
+            });
+        }
+    }
+    let id = create(&c[0], "Water plants")["id"].clone();
+    c.sync_all();
+    c[0].clock().advance(1_000);
+    c[0].invoke::<()>("todo_task_delete", json!({ "id": id }))
+        .unwrap();
+    for (d, at, notes) in [(1, 2_000, "Fern first"), (2, 3_000, "Skip the cactus")] {
+        c[d].clock().advance(at);
+        c[d].invoke::<Value>(
+            "todo_task_update",
+            json!({ "id": id, "title": "Water plants", "notes": notes, "sessionId": format!("e{d}") }),
+        )
+        .unwrap();
+    }
+    // The later edit is met first on the Tablet and the Mac; the earlier one reaches each late.
+    c.sync(0, 2);
+    c.sync(0, 1);
+    c.sync(1, 2);
+    c.sync_all();
+    let rows: Vec<Value> = (0..3)
+        .map(|d| {
+            let rows = kind_of(&c[d], "delete_edit");
+            assert_eq!(rows.len(), 1, "device {d}");
+            rows[0].clone()
+        })
+        .collect();
+    for row in &rows {
+        assert_eq!(row["id"], rows[0]["id"]);
+        assert_eq!(row["detail"], rows[0]["detail"]);
+        assert_eq!(row["at"], rows[0]["at"]);
+    }
+    assert_eq!(
+        rows[0]["detail"],
+        "Deleted (Mac) kept · notes edited (Pixel 8) kept inside it"
     );
 }
 

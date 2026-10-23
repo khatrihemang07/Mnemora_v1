@@ -78,7 +78,9 @@ pub use search::{SnippetSource, TaskHit, TaskSearchResults, search};
 pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use steps::{open_steps, tick_all_steps};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
-pub use task_service::{delete_task, restore_task, set_priority, task, update_task, wont_do};
+pub use task_service::{
+    delete_task, restore_task, set_priority, set_task_state, task, update_task, wont_do,
+};
 pub use when::{LocalNow, NewWhen};
 pub use widget::{
     EmptyState, HeaderCount, Tone, WidgetGroup, WidgetList, WidgetLists, WidgetRow, WidgetSnapshot,

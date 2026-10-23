@@ -425,14 +425,27 @@ fn list_name(conn: &Connection, id: &str) -> Result<String, crate::SyncError> {
         .unwrap_or_else(|| "A List".to_owned()))
 }
 
-/// Whether "Use ‹other› instead" can write this unit back through its Module.
-fn can_write_back(target: &str, unit: &str) -> bool {
-    matches!(
-        (target, unit),
+/// Whether "Use ‹other› instead" can write this unit back through its Module. A Task's status
+/// can, unless the Task repeats (closing one is about its next date, so it has its own
+/// commands). A deletion never is: two devices deleting is not a clash, and a delete met by an
+/// edit is its own kind of row.
+fn can_write_back(
+    conn: &Connection,
+    target: &str,
+    id: &str,
+    unit: &str,
+) -> Result<bool, crate::SyncError> {
+    Ok(match (target, unit) {
+        ("todo_task", "state") => texts::current(conn, target, id)?.is_some_and(|t| {
+            ["repeat_freq", "repeat_of"]
+                .iter()
+                .all(|k| t.get(k).is_none_or(Value::is_null))
+        }),
         ("todo_task", "priority" | "when" | "list_id")
-            | ("todo_list", "name" | "emoji" | "task_sort" | "group_by")
-            | ("journal_entry", "page_date")
-    )
+        | ("todo_list", "name" | "emoji" | "task_sort" | "group_by")
+        | ("journal_entry", "page_date") => true,
+        _ => false,
+    })
 }
 
 // ---------------------------------------------------------------- rows
@@ -532,7 +545,7 @@ fn row_of(ctx: &Ctx<'_>, r: &Row) -> Result<Option<ResolvedRow>, crate::SyncErro
             );
             if r.used_at.is_some() {
                 row.used = Some(format!("Changed to {replaced}"));
-            } else if can_write_back(&r.target, &r.field) {
+            } else if can_write_back(ctx.conn, &r.target, &r.target_id, &r.field)? {
                 row.action = Some(format!("Use {replaced} instead"));
             }
         }

@@ -163,6 +163,12 @@ fn write_value(conn: &mut Connection, plan: &UsePlan) -> Result<(), AppError> {
                 .ok_or_else(|| invalid("That priority cannot be set"))?;
             mnemora_todo::set_priority(conn, id, priority)?;
         }
+        ("todo_task", "state") => {
+            let state = text("state")
+                .and_then(mnemora_todo::TaskState::parse)
+                .ok_or_else(|| invalid("That status cannot be set"))?;
+            mnemora_todo::set_task_state(conn, id, state)?;
+        }
         ("todo_task", "list_id") => {
             mnemora_todo::move_task(conn, id, text("list_id"))?;
         }

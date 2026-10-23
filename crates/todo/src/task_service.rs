@@ -91,6 +91,29 @@ pub fn wont_do(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<T
     Ok(task)
 }
 
+/// Puts a Task in the state it is asked to be in (open, done or Won't do), as the one change
+/// "Use ‹other› instead" makes in Sync's Resolved automatically. A repeating Task, or one of its
+/// occurrences, is closed and reopened by the ordinary commands, which know what it means for the
+/// next date: this refuses them.
+pub fn set_task_state(conn: &mut Connection, id: &str, state: TaskState) -> AppResult<Task> {
+    let tx = conn.transaction()?;
+    let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
+    if task.state == state {
+        return Ok(task);
+    }
+    if rule_of(&task)?.is_some() || task.repeat_of.is_some() {
+        return Err(TodoError::Validation("A repeating Task is changed from its own menu").into());
+    }
+    let now = now_ms();
+    task.state = state;
+    task.closed_at = (state != TaskState::Open).then_some(now);
+    task.updated_at = now;
+    repo::update_state(&tx, &task)?;
+    record(&tx, &task, ChangeOp::Tick)?;
+    tx.commit()?;
+    Ok(task)
+}
+
 /// Deletes a Task at once (soft: the row stays for good); `restore_task` is Undo. Only this
 /// row goes: the occurrences of a repeating Task stay in Done, and Comments stay with their Task.
 pub fn delete_task(conn: &mut Connection, id: &str) -> AppResult<()> {

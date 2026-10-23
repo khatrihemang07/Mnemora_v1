@@ -3,15 +3,20 @@
 //! another, a Task put in the Inbox because its List is gone, a text clash on something deleted.
 //!
 //! A row is `sync_resolutions` and travels as the change-log entity `sync_resolution`. Its id is
-//! derived from what was decided (the record, the field and the clocks of the two values), so
-//! every device that meets the same decision makes the same row and a device that learns of it
-//! from another finds it already there; whichever device decided, the log has it once. The one
-//! outcome ever added is "used": the person pressed "Use ‹other› instead".
+//! derived from what was decided (the record, the field and the clocks of the two values).
+//! Value clashes and a delete met by an edit are worked out on every device from the stored
+//! records themselves, replayed in clock order (`settle_value`, `note_delete_edit`), so the log
+//! is the same whatever order the records arrived in: a row made before a missing record turned
+//! up is taken back, and a copy of such a row from another device is never taken as it is (its
+//! outcome, "used", is). The one outcome ever added is "used": the person pressed "Use ‹other›
+//! instead".
 //!
 //! Order keys and Preferences are not logged one by one: a session folds them into one local
 //! line, "Order & preferences · N changes" (`fold_add`).
 //!
 //! Never log values.
+
+use std::fmt::Write;
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
 use mnemora_core::db::physical_now;
@@ -339,108 +344,167 @@ pub(crate) struct Unit<'a> {
     pub(crate) class: FieldClass,
 }
 
-/// What a received unit of fields amounted to.
-#[derive(Debug, PartialEq)]
-pub(crate) enum Observed {
-    Clash(Clash),
-    Folded(Folded),
-}
-
-/// What deciding one unit of `record` means for the log. `stored` is the newest clock held for
-/// the unit and `current` the record's state before this record (the values that stand);
-/// `take` says the record's values won.
+/// What deciding one order key or Preference of `record` means for the folded line: counted
+/// whenever the newest one takes and moves the value. `take` says the record's values won;
+/// `current` is the record's state before it.
 ///
-/// A clash is a different value that was changed BESIDE the stored one: the record's author
-/// replaced something other than what stands here (`prev`). A change made after another one
-/// replaced exactly what stands, and is just a change. Order keys and Preferences are counted
-/// for the folded line whenever the newest one takes and moves the value.
+/// Value fields are not looked at here: whether one was changed beside another is worked out
+/// from all the stored records (`settle_value`), so it cannot depend on delivery order.
 pub(crate) fn observe(
     record: &WireRecord,
     which: &Unit<'_>,
-    clocks: (Option<&Stamp>, &Stamp),
     take: bool,
     current: &Value,
-) -> Option<Observed> {
+) -> Option<Folded> {
     let Unit {
         key: unit,
         members,
         class,
     } = *which;
-    let (stored, incoming) = clocks;
-    let stands = |m: &str| current.get(m).unwrap_or(&Value::Null);
-    let theirs: Map<String, Value> = members
-        .iter()
-        .filter_map(|m| record.fields.get(*m).map(|v| ((*m).to_owned(), v.clone())))
-        .collect();
-    if theirs.iter().all(|(k, v)| stands(k) == v) {
+    if !(record.entity == settings::ENTITY || class == FieldClass::Order) || !take {
         return None;
     }
-    let ours: Map<String, Value> = members
+    let stands = |m: &str| current.get(m).unwrap_or(&Value::Null);
+    if members
         .iter()
-        .map(|m| ((*m).to_owned(), stands(m).clone()))
-        .collect();
-    if record.entity == settings::ENTITY || class == FieldClass::Order {
-        if !take {
-            return None;
-        }
-        let key = if record.entity == settings::ENTITY {
+        .filter_map(|m| record.fields.get(*m).map(|v| (m, v)))
+        .all(|(m, v)| stands(m) == v)
+    {
+        return None;
+    }
+    let preference = record.entity == settings::ENTITY;
+    Some(Folded {
+        kind: if preference { "preference" } else { "order" }.to_owned(),
+        entity: record.entity.clone(),
+        entity_id: record.entity_id.clone(),
+        key: if preference {
             record.entity_id.clone()
         } else {
             unit.to_owned()
-        };
-        return Some(Observed::Folded(Folded {
-            kind: if record.entity == settings::ENTITY {
-                "preference"
-            } else {
-                "order"
-            }
-            .to_owned(),
-            entity: record.entity.clone(),
-            entity_id: record.entity_id.clone(),
-            key,
-        }));
-    }
-    if class != FieldClass::Value || members.iter().any(|m| BOOKKEEPING.contains(m)) {
-        return None;
-    }
-    let stored = stored?;
-    let beside = members.iter().any(|m| {
-        record
-            .prev
-            .get(*m)
-            .is_some_and(|before| before != stands(m))
-    });
-    if !beside {
-        return None;
-    }
-    Some(Observed::Clash(if take {
-        Clash {
-            unit: unit.to_owned(),
-            kept: theirs,
-            kept_stamp: incoming.clone(),
-            replaced: ours,
-            replaced_stamp: stored.clone(),
-        }
-    } else {
-        Clash {
-            unit: unit.to_owned(),
-            kept: ours,
-            kept_stamp: stored.clone(),
-            replaced: theirs,
-            replaced_stamp: incoming.clone(),
-        }
-    }))
+        },
+    })
 }
 
-/// Logs the clashes found in one received record.
-pub(crate) fn note_clashes(
+/// The members of the Value unit `key` of `schema`, when the unit is one that is logged: a
+/// Value field (or group of them) of a record that is not Sync's own, none of it bookkeeping.
+pub(crate) fn value_members(schema: &SyncEntity, key: &str) -> Option<Vec<&'static str>> {
+    if schema.name.starts_with("sync_") || schema.name == settings::ENTITY {
+        return None;
+    }
+    let members: Vec<_> = schema
+        .fields
+        .iter()
+        .filter(|f| f.class != FieldClass::Derived && f.group.unwrap_or(f.name) == key)
+        .collect();
+    if members.is_empty()
+        || members
+            .iter()
+            .any(|f| f.class != FieldClass::Value || BOOKKEEPING.contains(&f.name))
+    {
+        return None;
+    }
+    Some(members.iter().map(|f| f.name).collect())
+}
+
+/// What of a value a person chose, for telling whether two devices chose the same: that a
+/// Task is deleted, not the moment it was; that it is Done, not when.
+fn essence(unit: &str, member: &str, value: Value) -> Value {
+    match (unit, member) {
+        ("deleted_at", _) => Value::Bool(!value.is_null()),
+        ("state", "closed_at") => Value::Null,
+        _ => value,
+    }
+}
+
+/// Every clash the stored records of one Value unit make: replayed in clock order, a record
+/// made from a value other than the one the replay holds was made BESIDE the one before it
+/// (its author had not seen it), and the later of the two (this record) is kept. A change made
+/// after another replaced exactly what stands, and is just a change. Pure function of the
+/// records, so delivery order cannot matter.
+fn replay_clashes(
     conn: &Connection,
+    me: &str,
+    (entity, entity_id, unit): (&str, &str, &str),
+    members: &[&str],
+) -> Result<Vec<Clash>, SyncError> {
+    // The values come from the record's own `fields`; a member the record does not carry is
+    // completed from the snapshot for this device's own rows, as `wire_fields` does for the wire.
+    let touched = members
+        .iter()
+        .map(|m| format!("json_type(fields, '$.{m}') IS NOT NULL"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let columns = members.iter().fold(String::new(), |mut sql, m| {
+        let _ = write!(
+            sql,
+            ", COALESCE(fields -> '$.{m}', CASE WHEN origin_device = ?3 THEN snapshot -> '$.{m}' END), prev -> '$.{m}'"
+        );
+        sql
+    });
+    let mut stmt = conn.prepare(&format!(
+        "SELECT origin_device, hlc_ms, hlc_counter{columns} FROM change_log
+         WHERE entity = ?1 AND entity_id = ?2 AND fields IS NOT NULL AND ({touched})
+         ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq"
+    ))?;
+    let mut rows = stmt.query(params![entity, entity_id, me])?;
+    let parse = |text: Option<String>| text.and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    let mut out = Vec::new();
+    let mut held: Option<(Map<String, Value>, Stamp)> = None;
+    while let Some(row) = rows.next()? {
+        let stamp = Stamp {
+            device: row.get(0)?,
+            ms: row.get(1)?,
+            counter: row.get(2)?,
+        };
+        let mut values = held.as_ref().map(|h| h.0.clone()).unwrap_or_default();
+        let mut beside = false;
+        let stands =
+            |before: &Map<String, Value>, m: &str| before.get(m).cloned().unwrap_or(Value::Null);
+        for (i, m) in members.iter().enumerate() {
+            if let Some(v) = parse(row.get(3 + 2 * i)?) {
+                if let Some(before) = parse(row.get(4 + 2 * i)?)
+                    && held.is_some()
+                    && before != stands(&values, m)
+                {
+                    beside = true;
+                }
+                values.insert((*m).to_owned(), v);
+            }
+        }
+        if let Some((replaced, replaced_stamp)) = held.take().filter(|_| beside) {
+            // Both chose the same value: nothing was lost.
+            if members.iter().any(|m| {
+                essence(unit, m, stands(&replaced, m)) != essence(unit, m, stands(&values, m))
+            }) {
+                out.push(Clash {
+                    unit: unit.to_owned(),
+                    kept: values.clone(),
+                    kept_stamp: stamp.clone(),
+                    replaced,
+                    replaced_stamp,
+                });
+            }
+        }
+        held = Some((values, stamp));
+    }
+    Ok(out)
+}
+
+/// Brings the log to what the stored records of one Value unit say: a row for every clash they
+/// make (once, from the same id on every device), and no row for one that a record turning up
+/// late showed was none. Called after each record is stored. A row someone already acted on
+/// ("Use ‹other› instead") stays.
+pub(crate) fn settle_value(
+    conn: &Connection,
+    me: &str,
     entity: &str,
     entity_id: &str,
-    clashes: &[Clash],
+    unit: &str,
+    members: &[&str],
 ) -> Result<(), SyncError> {
     let now = physical_now(conn);
-    for c in clashes {
+    let mut live = Vec::new();
+    for c in replay_clashes(conn, me, (entity, entity_id, unit), members)? {
         let id = make_id(&[
             "value",
             entity,
@@ -451,18 +515,47 @@ pub(crate) fn note_clashes(
         ]);
         let mut row = blank(
             Kind::Value,
-            id,
+            id.clone(),
             c.kept_stamp.ms.max(c.replaced_stamp.ms),
             now,
         );
         entity.clone_into(&mut row.target);
         entity_id.clone_into(&mut row.target_id);
         row.field.clone_from(&c.unit);
-        row.kept.clone_from(&c.kept);
+        row.kept = members
+            .iter()
+            .map(|m| {
+                (
+                    (*m).to_owned(),
+                    c.kept.get(*m).cloned().unwrap_or(Value::Null),
+                )
+            })
+            .collect();
         row.kept_device.clone_from(&c.kept_stamp.device);
-        row.replaced.clone_from(&c.replaced);
+        row.replaced = members
+            .iter()
+            .map(|m| {
+                (
+                    (*m).to_owned(),
+                    c.replaced.get(*m).cloned().unwrap_or(Value::Null),
+                )
+            })
+            .collect();
         row.replaced_device.clone_from(&c.replaced_stamp.device);
         note(conn, &row)?;
+        live.push(id);
+    }
+    let held: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT id FROM sync_resolutions
+             WHERE kind = 'value' AND target = ?1 AND target_id = ?2 AND field = ?3
+               AND used_at IS NULL",
+        )?;
+        stmt.query_map(params![entity, entity_id, unit], |r| r.get(0))?
+            .collect::<Result<_, _>>()?
+    };
+    for id in held.into_iter().filter(|id| !live.contains(id)) {
+        conn.execute("DELETE FROM sync_resolutions WHERE id = ?1", [&id])?;
     }
     Ok(())
 }
@@ -504,6 +597,7 @@ pub(crate) fn note_delete_edit(
         )
         .optional()?;
     let Some((edit_device, edit_ms, fields)) = edit else {
+        retract_delete_edits(conn, entity, entity_id, None)?;
         return Ok(());
     };
     let id = make_id(&[
@@ -531,7 +625,36 @@ pub(crate) fn note_delete_edit(
         .map(|k| (k.clone(), Value::Null))
         .collect();
     row.replaced_device = edit_device;
-    note(conn, &row)?;
+    retract_delete_edits(conn, entity, entity_id, Some(&row.id))?;
+    if !note(conn, &row)? {
+        // The edit that is first in clock order may have turned up after a later one made the
+        // row: it says who edited, whichever device saw which record first.
+        conn.execute(
+            "UPDATE sync_resolutions SET at = ?2, replaced = ?3, replaced_device = ?4 WHERE id = ?1",
+            params![
+                row.id,
+                row.at,
+                Value::Object(row.replaced.clone()).to_string(),
+                row.replaced_device
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+/// Takes back the delete-and-edit rows of a record that are not `keep`: they were made from a
+/// delete that a later one replaced, or before an edit's absence was known.
+fn retract_delete_edits(
+    conn: &Connection,
+    entity: &str,
+    entity_id: &str,
+    keep: Option<&str>,
+) -> Result<(), SyncError> {
+    conn.execute(
+        "DELETE FROM sync_resolutions
+         WHERE kind = 'delete_edit' AND target = ?1 AND target_id = ?2 AND id IS NOT ?3",
+        params![entity, entity_id, keep],
+    )?;
     Ok(())
 }
 
@@ -637,7 +760,14 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     let text = |k: &str| f.get(k).and_then(Value::as_str).map(str::to_owned);
     let int = |k: &str| f.get(k).and_then(Value::as_i64);
     let before = get(conn, id)?;
-    if before.is_none() {
+    // A value clash and a delete met by an edit are worked out on every device from the records
+    // themselves (a pure function of them): a copy made elsewhere may rest on records this
+    // device lacks, or not yet on a later one, so it is never taken as it is.
+    let derived = matches!(
+        text("kind").as_deref().and_then(Kind::parse),
+        Some(Kind::Value | Kind::DeleteEdit)
+    );
+    if before.is_none() && !derived {
         let made = (|| {
             let kind = text("kind").filter(|k| Kind::parse(k).is_some())?;
             Some(Row {
@@ -769,86 +899,11 @@ mod tests {
         Unit {
             key,
             members: match key {
-                "priority" => &["priority"],
                 "sort_key" => &["sort_key"],
-                "skipped" => &["skipped"],
                 _ => &["value"],
             },
             class,
         }
-    }
-
-    fn priority(take: bool, fields: Value, prev: Value, current: Value) -> Option<Observed> {
-        observe(
-            &record("todo_task", fields, prev),
-            &unit("priority", FieldClass::Value),
-            (Some(&stamp(5, "a")), &stamp(10, "b")),
-            take,
-            &current,
-        )
-    }
-
-    #[test]
-    fn a_value_changed_beside_the_one_that_stands_is_a_clash_either_way_round() {
-        let took = priority(
-            true,
-            json!({"priority": 2}),
-            json!({"priority": 4}),
-            json!({"priority": 1}),
-        );
-        let Some(Observed::Clash(c)) = took else {
-            panic!("expected a clash");
-        };
-        assert_eq!(c.kept["priority"], 2);
-        assert_eq!(c.replaced["priority"], 1);
-        assert_eq!(c.kept_stamp.device, "b");
-
-        let kept = priority(
-            false,
-            json!({"priority": 2}),
-            json!({"priority": 4}),
-            json!({"priority": 1}),
-        );
-        let Some(Observed::Clash(c)) = kept else {
-            panic!("expected a clash");
-        };
-        assert_eq!(c.kept["priority"], 1);
-        assert_eq!(c.replaced["priority"], 2);
-        assert_eq!(c.kept_stamp.device, "a", "the stored value's author");
-    }
-
-    #[test]
-    fn a_change_made_after_the_one_that_stands_is_not_a_clash() {
-        // The author replaced exactly what stands here.
-        assert!(
-            priority(
-                true,
-                json!({"priority": 2}),
-                json!({"priority": 1}),
-                json!({"priority": 1})
-            )
-            .is_none()
-        );
-        // Both devices chose the same value.
-        assert!(
-            priority(
-                true,
-                json!({"priority": 1}),
-                json!({"priority": 4}),
-                json!({"priority": 1})
-            )
-            .is_none()
-        );
-        // The earlier value is not known: nothing can be said.
-        assert!(
-            priority(
-                true,
-                json!({"priority": 2}),
-                json!({}),
-                json!({"priority": 1})
-            )
-            .is_none()
-        );
     }
 
     #[test]
@@ -861,15 +916,13 @@ mod tests {
         let seen = observe(
             &r,
             &unit("sort_key", FieldClass::Order),
-            (Some(&stamp(5, "a")), &stamp(10, "b")),
             true,
             &json!({"sort_key": "c"}),
         );
-        assert!(matches!(seen, Some(Observed::Folded(f)) if f.kind == "order"));
+        assert!(matches!(seen, Some(f) if f.kind == "order"));
         let lost = observe(
             &r,
             &unit("sort_key", FieldClass::Order),
-            (Some(&stamp(50, "a")), &stamp(10, "b")),
             false,
             &json!({"sort_key": "c"}),
         );
@@ -879,26 +932,33 @@ mod tests {
         let seen = observe(
             &pref,
             &unit("value", FieldClass::Value),
-            (Some(&stamp(5, "a")), &stamp(10, "b")),
             true,
             &json!({"value": "tue"}),
         );
-        assert!(matches!(seen, Some(Observed::Folded(f)) if f.kind == "preference"));
+        assert!(matches!(seen, Some(f) if f.kind == "preference"));
     }
 
     #[test]
-    fn bookkeeping_fields_are_never_logged() {
-        let r = record("todo_task", json!({"skipped": 2}), json!({"skipped": 1}));
-        assert!(
-            observe(
-                &r,
-                &unit("skipped", FieldClass::Value),
-                (Some(&stamp(5, "a")), &stamp(10, "b")),
-                true,
-                &json!({"skipped": 3}),
-            )
-            .is_none()
+    fn only_value_fields_that_a_person_decided_are_logged() {
+        const SCHEMA: SyncEntity = SyncEntity {
+            name: "todo_task",
+            fields: &[
+                SyncField::value("priority"),
+                SyncField::value("skipped"),
+                SyncField::order("sort_key"),
+                SyncField::text("title"),
+                SyncField::value("due_date").in_group("due"),
+                SyncField::value("due_time").in_group("due"),
+            ],
+        };
+        assert_eq!(value_members(&SCHEMA, "priority"), Some(vec!["priority"]));
+        assert_eq!(
+            value_members(&SCHEMA, "due"),
+            Some(vec!["due_date", "due_time"])
         );
+        for none in ["skipped", "sort_key", "title", "nothing"] {
+            assert_eq!(value_members(&SCHEMA, none), None, "{none}");
+        }
     }
 
     #[test]
