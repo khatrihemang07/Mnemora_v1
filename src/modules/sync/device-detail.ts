@@ -1,4 +1,5 @@
 import type { DeviceDetail, ModuleVersion } from '../../lib/ipc/bindings';
+import { IpcError } from '../../lib/ipc/unwrap';
 import { relativeTime } from '../../lib/time/relative';
 
 /** "Core" for `core`: the Module's name as the sheet shows it. */
@@ -48,4 +49,9 @@ export function addressLines(
 export function pairedText(detail: Pick<DeviceDetail, 'paired_at' | 'paired_by'>): string {
   const date = new Date(detail.paired_at).toLocaleDateString(undefined, { dateStyle: 'medium' });
   return detail.paired_by === null ? date : `${date}, by ${detail.paired_by}`;
+}
+
+/** Whether the sheet's device is not (or no longer) paired: a link to nothing, or Forgotten by another member while open. */
+export function deviceGone(error: unknown): boolean {
+  return error instanceof IpcError && error.code === 'not_found';
 }

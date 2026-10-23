@@ -199,7 +199,18 @@ fn record(conn: &Connection, row: &Row, existed: bool) -> AppResult<()> {
 /// The time of a new decision: now, but always after the one it replaces.
 fn next_at(conn: &Connection, previous: Option<&Row>) -> i64 {
     let now = physical_now(conn);
-    previous.map_or(now, |p| now.max(p.at + 1))
+    previous.map_or(now, |p| now.max(p.at.saturating_add(1)))
+}
+
+/// How far ahead of this device's clock a received decision may be dated. A member that dated one
+/// years ahead would make it impossible to take the device back (nothing could be newer).
+const MAX_AHEAD_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// Whether this device has been told it stands forgotten by the group: it syncs with nobody until
+/// it is paired again.
+pub fn removed_here(conn: &Connection) -> AppResult<bool> {
+    let me = hlc::device_id(conn)?;
+    Ok(is_revoked(conn, &me)?)
 }
 
 /// Whether `device` stands revoked here.
@@ -374,9 +385,21 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
         tracing::warn!(target: "sync", "a revocation with a bad signature was ignored");
         return nothing("bad signature");
     }
+    if row.at > physical_now(conn).saturating_add(MAX_AHEAD_MS) {
+        return nothing("dated in the future");
+    }
+    // A forgotten device has no say: what it signed before it was forgotten, and what reaches
+    // here after, is not taken.
+    if is_revoked(conn, &row.by)? {
+        return nothing("signer stands forgotten");
+    }
     let previous = read(conn, device)?;
     if previous.as_ref().is_some_and(|p| p.at >= row.at) {
         return nothing("not newer");
+    }
+    // Paired again since it was decided: the pairing is the newer word.
+    if row.state == REVOKED && paired_since(conn, device, &row)? {
+        return nothing("paired again since");
     }
     store(conn, &row)?;
     if device != me {
@@ -387,6 +410,19 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
         changed: false,
         events: Vec::new(),
     })
+}
+
+/// Whether `row.device` was paired here (under the key the decision names) after the decision was
+/// made, as when another member paired it again while this device had not heard of the Forget.
+fn paired_since(conn: &Connection, device: &str, row: &Row) -> AppResult<bool> {
+    let paired_at: Option<i64> = conn
+        .query_row(
+            "SELECT paired_at FROM sync_peers WHERE id = ?1 AND public_key = ?2",
+            params![device, row.public_key],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(paired_at.is_some_and(|at| at > row.at))
 }
 
 /// What a taken decision does to the paired devices.
@@ -635,5 +671,86 @@ mod tests {
             !lift(&conn, &me, "carol").unwrap(),
             "lifting twice does nothing"
         );
+    }
+
+    #[test]
+    fn a_decision_dated_far_ahead_is_not_taken_so_it_cannot_block_pairing_again() {
+        let conn = conn();
+        let alice = DeviceIdentity::generate().unwrap();
+        pair(&conn, "alice", "Alice", &alice);
+        receive(
+            &conn,
+            &decision("carol", "alice", &alice, "revoked", i64::MAX),
+        );
+        assert!(!is_revoked(&conn, "carol").unwrap());
+        let next = next_at(
+            &conn,
+            Some(&decision("carol", "alice", &alice, "revoked", i64::MAX)),
+        );
+        assert_eq!(next, i64::MAX, "no overflow");
+    }
+
+    #[test]
+    fn a_decision_a_forgotten_device_signed_is_not_taken_even_when_it_arrives_late() {
+        let conn = conn();
+        let (alice, mallory) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "alice", "Alice", &alice);
+        pair(&conn, "bob", "Bob", &DeviceIdentity::generate().unwrap());
+        pair(&conn, "mallory", "Mallory", &mallory);
+        let mut forgotten = decision("mallory", "alice", &alice, "revoked", 10);
+        forgotten.public_key = mallory.public_key().to_hex();
+        receive(&conn, &forgotten.signed(&alice).unwrap());
+        assert!(!paired(&conn, "mallory"));
+        // Mallory signed this before it was forgotten; it reaches this device afterwards.
+        receive(&conn, &decision("bob", "mallory", &mallory, "revoked", 5));
+        assert!(paired(&conn, "bob"));
+        assert!(!is_revoked(&conn, "bob").unwrap());
+        // Even if its row were back, a stood-forgotten signer counts for nothing.
+        pair(&conn, "mallory", "Mallory", &mallory);
+        receive(&conn, &decision("bob", "mallory", &mallory, "revoked", 6));
+        assert!(paired(&conn, "bob"));
+    }
+
+    #[test]
+    fn a_device_paired_again_after_a_decision_stays_when_the_old_decision_arrives() {
+        let conn = conn();
+        let (alice, carol) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "alice", "Alice", &alice);
+        pair(&conn, "carol", "Carol", &carol);
+        conn.execute(
+            "UPDATE sync_peers SET paired_at = 500 WHERE id = 'carol'",
+            [],
+        )
+        .unwrap();
+        let mut old = decision("carol", "alice", &alice, "revoked", 100);
+        old.public_key = carol.public_key().to_hex();
+        receive(&conn, &old.signed(&alice).unwrap());
+        assert!(paired(&conn, "carol"));
+        assert!(revoked_keys(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_device_told_it_was_forgotten_is_removed_until_it_is_paired_again() {
+        let conn = conn();
+        let (alice, me) = (
+            DeviceIdentity::generate().unwrap(),
+            DeviceIdentity::generate().unwrap(),
+        );
+        pair(&conn, "alice", "Alice", &alice);
+        assert!(!removed_here(&conn).unwrap());
+        let mut row = decision("me", "alice", &alice, "revoked", 10);
+        row.public_key = me.public_key().to_hex();
+        receive(&conn, &row.signed(&alice).unwrap());
+        assert!(removed_here(&conn).unwrap());
+        assert!(paired(&conn, "alice"), "nothing is wiped");
+        // Pairing again lifts the decision about this device too.
+        assert!(lift(&conn, &me, "me").unwrap());
+        assert!(!removed_here(&conn).unwrap());
     }
 }

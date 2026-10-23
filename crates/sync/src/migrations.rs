@@ -209,5 +209,9 @@ pub fn all() -> Migrations<'static> {
              signature TEXT NOT NULL
          ) STRICT;",
         ),
+        // The name a device was last renamed to, as asked for. The name shown (`name`) may carry a
+        // number when two devices were given one name; deriving it from every wish in a fixed
+        // order keeps the devices in agreement (#69 review). Local.
+        M::up("ALTER TABLE sync_peers ADD COLUMN wanted_name TEXT;"),
     ])
 }

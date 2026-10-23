@@ -121,7 +121,11 @@ pub fn detail(
         id: device.to_owned(),
         name,
         platform: Platform::parse(&platform),
-        state: state_of(live.get(device)),
+        state: if crate::revoke::removed_here(conn)? {
+            PeerState::Removed
+        } else {
+            state_of(live.get(device))
+        },
         paired_at,
         paired_by,
         last_seen_at: seen,

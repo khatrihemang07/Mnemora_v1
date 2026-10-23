@@ -313,6 +313,10 @@ impl Supervisor {
     /// Reads the paired devices: new ones are tracked, forgotten ones dropped.
     async fn reload(&mut self) {
         let (ids, pinned, revoked) = blocking(self.host(), |conn| {
+            // A device the group has forgotten syncs with nobody: it dials no one, answers no one.
+            if revoke::removed_here(conn)? {
+                return Ok((Vec::new(), Vec::new(), Vec::new()));
+            }
             let ids = peers::list(conn)?
                 .into_iter()
                 .map(|p| p.id)

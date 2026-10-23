@@ -72,7 +72,12 @@ impl Address {
         }
         if let Some(rest) = text.strip_prefix('[') {
             let (inner, after) = rest.split_once(']').ok_or(AddressError::Host)?;
-            let ip: Ipv6Addr = inner.parse().map_err(|_| AddressError::Host)?;
+            // No embedded IPv4 (`::ffff:1.2.3.4`): the browser mock does not read it either.
+            let ip: Ipv6Addr = inner
+                .parse()
+                .ok()
+                .filter(|_| !inner.contains('.'))
+                .ok_or(AddressError::Host)?;
             let port = match after {
                 "" => None,
                 _ => Some(port_of(after.strip_prefix(':').ok_or(AddressError::Host)?)?),

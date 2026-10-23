@@ -9,9 +9,20 @@ use specta::Type;
 use crate::address::{Address, ResolveError};
 use crate::net::{NetConfig, NetError, Probed, Refusal, probe};
 
-/// How long a name may take to look up, and each address to answer.
-const LOOKUP: Duration = Duration::from_secs(3);
-const EACH: Duration = Duration::from_secs(4);
+/// How long a Check may take: a name to look up, each address to answer, and all of it. A Check
+/// never hangs, whatever is (or is not) at the other end.
+#[derive(Debug, Clone, Copy)]
+struct Limits {
+    lookup: Duration,
+    each: Duration,
+    total: Duration,
+}
+
+const LIMITS: Limits = Limits {
+    lookup: Duration::from_secs(3),
+    each: Duration::from_secs(4),
+    total: Duration::from_secs(10),
+};
 
 /// What a Check found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
@@ -102,11 +113,21 @@ pub async fn check(
     text: &str,
     name_of: impl Fn(&str) -> Option<String>,
 ) -> (CheckResult, Option<SocketAddr>) {
+    check_within(LIMITS, config, expect, text, name_of).await
+}
+
+async fn check_within(
+    limits: Limits,
+    config: &NetConfig,
+    expect: &Expect<'_>,
+    text: &str,
+    name_of: impl Fn(&str) -> Option<String>,
+) -> (CheckResult, Option<SocketAddr>) {
     let address = match Address::parse(text) {
         Ok(a) => a,
         Err(e) => return (CheckResult::failed(CheckKind::Invalid, e.message()), None),
     };
-    let addrs = match address.resolve(LOOKUP).await {
+    let addrs = match address.resolve(limits.lookup).await {
         Ok(a) => a,
         Err(ResolveError::NotFound) => {
             return (
@@ -127,7 +148,12 @@ pub async fn check(
     let started = Instant::now();
     let mut last = None;
     for addr in addrs {
-        match tokio::time::timeout(EACH, probe(config, addr)).await {
+        let left = limits.total.saturating_sub(started.elapsed());
+        if left.is_zero() {
+            last = Some(NetError::Timeout);
+            break;
+        }
+        match tokio::time::timeout(limits.each.min(left), probe(config, addr)).await {
             Ok(Ok(found)) => {
                 let ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
                 return (verdict(&found, expect, ms, &name_of), Some(addr));
@@ -175,6 +201,38 @@ mod tests {
             device: "pixel",
             name: "Pixel 8",
         }
+    }
+
+    #[tokio::test]
+    async fn a_listener_that_never_answers_times_out() {
+        use crate::net::{DeviceIdentity, LocalHandshake, Trust};
+        use std::sync::Arc;
+        // Accepts and says nothing, as a dead host behind a firewall might.
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = silent.local_addr().unwrap().port();
+        let config = NetConfig {
+            identity: Arc::new(DeviceIdentity::generate().unwrap()),
+            trust: Trust::new(),
+            local: LocalHandshake::new(|| Err(crate::error::SyncError::NotReady)),
+        };
+        let limits = Limits {
+            lookup: Duration::from_millis(200),
+            each: Duration::from_millis(300),
+            total: Duration::from_millis(500),
+        };
+        let started = Instant::now();
+        let (result, worked) = check_within(
+            limits,
+            &config,
+            &expect(),
+            &format!("127.0.0.1:{port}"),
+            |_| None,
+        )
+        .await;
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(result.kind, CheckKind::TimedOut, "{result:?}");
+        assert!(worked.is_none());
+        drop(silent);
     }
 
     #[test]

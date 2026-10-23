@@ -86,7 +86,19 @@ pub(crate) fn peer_rows(
     conn: &Connection,
     live: &HashMap<String, PeerLive>,
 ) -> AppResult<Vec<PeerRow>> {
-    Ok(enrich(peers::list(conn)?, &peer_state::all(conn)?, live))
+    rows_of(conn, live)
+}
+
+/// The rows as `enrich` makes them; all of them "Removed" on a device the group has forgotten.
+fn rows_of(conn: &Connection, live: &HashMap<String, PeerLive>) -> AppResult<Vec<PeerRow>> {
+    let mut rows = enrich(peers::list(conn)?, &peer_state::all(conn)?, live);
+    if crate::revoke::removed_here(conn)? {
+        for row in &mut rows {
+            row.state = PeerState::Removed;
+            row.progress = None;
+        }
+    }
+    Ok(rows)
 }
 
 /// The Devices tab's data. `listening` is where the listener is bound, if it is; `live` is what
@@ -112,7 +124,7 @@ pub fn view(
                 Vec::new()
             },
         },
-        peers: enrich(peers::list(conn)?, &peer_state::all(conn)?, live),
+        peers: rows_of(conn, live)?,
     })
 }
 
@@ -209,5 +221,38 @@ mod tests {
         let by_id = |id: &str| rows.iter().find(|r| r.id == id).unwrap().progress;
         assert_eq!(by_id("a"), progress);
         assert_eq!(by_id("b"), None);
+    }
+
+    #[test]
+    fn every_device_shows_as_removed_on_one_the_group_forgot() {
+        use mnemora_core::{db, hlc};
+        let mut conn = db::open_in_memory().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        db::migrate::run(
+            &mut conn,
+            &[&mnemora_core::module::CoreModule, &crate::SyncModule],
+            dir.path(),
+        )
+        .unwrap();
+        hlc::set_device_id(&conn, "me").unwrap();
+        conn.execute("INSERT INTO sync_group(one, id) VALUES (1, 'g')", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO sync_peers(id, name, paired_at, platform) VALUES ('a', 'Alice', 1, 'phone')",
+            [],
+        )
+        .unwrap();
+        let live = HashMap::new();
+        assert_eq!(
+            rows_of(&conn, &live).unwrap()[0].state,
+            PeerState::NotNearby
+        );
+        conn.execute(
+            "INSERT INTO sync_revocations(device, public_key, name, platform, state, at, by_device, signature)
+             VALUES ('me', 'k', 'Me', 'phone', 'revoked', 5, 'a', 's')",
+            [],
+        )
+        .unwrap();
+        assert_eq!(rows_of(&conn, &live).unwrap()[0].state, PeerState::Removed);
     }
 }

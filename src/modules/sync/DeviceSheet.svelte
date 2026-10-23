@@ -25,7 +25,7 @@
   import Sheet from '../../lib/ui/Sheet.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import { notifyError } from '../../lib/ui/toast';
-  import { addressLines, pairedText, versionsText } from './device-detail';
+  import { addressLines, deviceGone, pairedText, versionsText } from './device-detail';
   import { deviceSheet } from './device-sheet.svelte';
   import { devicesQuery, deviceDetailQuery, watchDevices } from './queries';
   import { statusWord, syncedText } from './peer-status';
@@ -35,6 +35,14 @@
 
   const detail = createQuery(() => deviceDetailQuery(id));
   const d = $derived(detail.data);
+
+  // A link to a device that is not paired, or a device another member just forgot: the sheet has
+  // nothing to show, so it closes and says why.
+  $effect(() => {
+    if (!deviceGone(detail.error)) return;
+    deviceSheet.dismiss();
+    notifyError('That device is not paired');
+  });
 
   // Status changes while the sheet is open (a sync finishes, the device goes away) arrive as events.
   $effect(() => {

@@ -379,13 +379,12 @@ impl<R: Runtime> PairingHost for AppHost<R> {
         let mut conn = lock(&state.db);
         let stored = mnemora_sync::store_paired(&mut conn, &device, &name, paired)?;
         // A device that was forgotten and is paired again: the group takes it back too.
-        if mnemora_sync::lift_revocation(
-            &conn,
-            &identity(&state).map_err(SyncError::App)?,
-            &paired.who.device,
-        )? {
+        let identity = identity(&state).map_err(SyncError::App)?;
+        if mnemora_sync::lift_revocation(&conn, &identity, &paired.who.device)? {
             tracing::info!(target: "sync", "a forgotten device was paired again");
         }
+        // This device was forgotten itself and is being paired again: it syncs once more.
+        mnemora_sync::lift_revocation(&conn, &identity, &device)?;
         Ok(stored)
     }
 

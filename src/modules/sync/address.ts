@@ -47,7 +47,7 @@ function isIpv6(text: string): boolean {
 }
 
 function hostName(text: string): string | null {
-  const name = (text.endsWith('.') ? text.slice(0, -1) : text).toLowerCase();
+  const name = asciiLower(text.endsWith('.') ? text.slice(0, -1) : text);
   if (name === '' || name.length > 253 || /^[0-9.]+$/.test(name)) return null;
   const label = /^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$/;
   return name.split('.').every((l) => label.test(l)) ? name : null;
@@ -90,7 +90,39 @@ export function parseAddress(raw: string): AddressResult {
   return { ok: true, stored: port === null ? name : `${name}:${port}`, port: port ?? DEFAULT_PORT };
 }
 
-/** Lower case. Rust also compresses runs of zeros when it stores an address; the browser mock does not. */
+/** Lower-cases ASCII letters only, as Rust does (`toLowerCase` also turns the Kelvin sign into a `k`). */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]/g, (c) => c.toLowerCase());
+}
+
+/**
+ * An IPv6 address the way Rust prints it: lower case, no leading zeros, and the longest run of
+ * zero groups (two or more; the first of equals) written `::`. `text` passed `isIpv6`.
+ */
 function normalizeIpv6(text: string): string {
-  return text.toLowerCase();
+  const [head = '', tail] = text.split('::');
+  const groups = (part: string) => (part === '' ? [] : part.split(':'));
+  const left = groups(head);
+  const right = tail === undefined ? [] : groups(tail);
+  const zeros = tail === undefined ? [] : Array<string>(8 - left.length - right.length).fill('0');
+  const all = [...left, ...zeros, ...right].map((g) => Number.parseInt(g, 16));
+  let best = { start: -1, length: 0 };
+  for (let i = 0; i < all.length; ) {
+    if (all[i] !== 0) {
+      i += 1;
+      continue;
+    }
+    let end = i;
+    while (end < all.length && all[end] === 0) end += 1;
+    if (end - i > best.length) best = { start: i, length: end - i };
+    i = end;
+  }
+  const hex = (n: number) => n.toString(16);
+  if (best.length < 2) return all.map(hex).join(':');
+  const before = all.slice(0, best.start).map(hex).join(':');
+  const after = all
+    .slice(best.start + best.length)
+    .map(hex)
+    .join(':');
+  return `${before}::${after}`;
 }
