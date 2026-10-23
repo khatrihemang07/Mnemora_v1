@@ -1,4 +1,5 @@
 import type { ConflictRow, ConflictSubject } from '../../lib/ipc/bindings';
+import { doneHeading } from '../../lib/time/day-heading';
 import { clockParts, type TimeFormat } from '../../lib/time/format';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -52,21 +53,16 @@ export function groupByDay<T = ConflictRow>(
   when: (row: T) => number = (row) => (row as ConflictRow).raised_at,
 ): DayGroup<T>[] {
   const groups = new Map<string, DayGroup<T>>();
-  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-  const today = dayKey(now);
-  const yesterday = dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const dayOf = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const today = dayOf(now);
   for (const row of [...rows].sort((a, b) => when(b) - when(a))) {
-    const d = new Date(when(row));
-    const key = dayKey(d);
+    const key = dayOf(new Date(when(row)));
     let group = groups.get(key);
     if (!group) {
-      const long = `${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
-      group = {
-        key,
-        title: key === today ? 'Today' : key === yesterday ? 'Yesterday' : (DAYS[d.getDay()] ?? ''),
-        subtitle: long,
-        rows: [],
-      };
+      // The heading Done and Activity use, so the three screens read alike.
+      const heading = doneHeading(key, today);
+      group = { key, title: heading.name, subtitle: heading.small, rows: [] };
       groups.set(key, group);
     }
     group.rows.push(row);

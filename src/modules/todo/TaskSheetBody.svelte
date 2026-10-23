@@ -63,6 +63,7 @@
   import { TaskEditing } from './task-editing';
   import { IDLE_KEYS, reduceKey } from './task-keymap';
   import { inSheetScope } from './task-keys.svelte';
+  import { remoteDeletes } from './remote-delete';
   import { taskSheet } from './task-sheet.svelte';
   import { nextText } from './dates';
   import { priorityTone, PRIORITY_NAMES } from './tasks';
@@ -167,7 +168,9 @@
   // A Task that is gone (deleted elsewhere, a stale link): say so and close.
   $effect(() => {
     if (!deleting && query.isError && query.error instanceof IpcError && query.error.code === 'not_found') {
-      notifyError('That Task no longer exists');
+      // Sync already told the person (with Restore) when another device deleted it.
+      if (remoteDeletes.has(id)) remoteDeletes.clear(id);
+      else notifyError('That Task no longer exists');
       taskSheet.close();
     }
   });

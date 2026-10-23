@@ -9,7 +9,6 @@
   import ArrowLeft from '~icons/lucide/arrow-left';
   import Check from '~icons/lucide/check';
   import GitMerge from '~icons/lucide/git-merge';
-  import RadioTower from '~icons/lucide/radio-tower';
   import { type ClashChoice, commands, type ConflictChoice, type DiffSpan } from '../../lib/ipc/bindings';
   import { unwrap } from '../../lib/ipc/unwrap';
   import Button from '../../lib/ui/Button.svelte';
@@ -17,16 +16,14 @@
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import MarkdownEditor from '../../lib/ui/MarkdownEditor.svelte';
-  import PageHeader from '../../lib/ui/PageHeader.svelte';
-  import SegmentedControl from '../../lib/ui/SegmentedControl.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import { notify, notifyError } from '../../lib/ui/toast';
-  import { viewport } from '../../lib/viewport.svelte';
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
   import { clockText, conflictIdOf, rowTitle, usePossessive } from './conflicts';
   import { conflictQuery, watchConflicts } from './queries';
+  import SyncFrame from './SyncFrame.svelte';
 
   const id = $derived(conflictIdOf(router.pathname) ?? '');
   const conflict = createQuery(() => conflictQuery(id));
@@ -88,16 +85,14 @@
   });
 </script>
 
-{#snippet words(spans: DiffSpan[], tint: string)}
+{#snippet words(spans: DiffSpan[], tint: string, removed = false)}
   <p class="font-display leading-relaxed whitespace-pre-wrap">
-    {#each spans as s}{#if s.changed}<mark class="rounded-[3px] px-px text-ink {tint}">{s.text}</mark>{:else}{s.text}{/if}{/each}
+    {#each spans as s}{#if s.changed}<mark class="rounded-[3px] px-px text-ink {tint} {removed ? 'line-through' : ''}">{s.text}</mark>{:else}{s.text}{/if}{/each}
   </p>
 {/snippet}
 
-<div data-sync class="selectable h-full overflow-y-auto p-(--pad)">
-  <!-- The top bar says "Sync" as on the other Sync pages; a phone has its own back row instead. -->
-  {#if !viewport.isPhone}<PageHeader title="Sync" icon={RadioTower} hue="--hue-sync" />{/if}
-  <div class="mx-auto max-w-4xl">
+<!-- The Sync header and tabs stay (Conflicts is the one on show), at the width of the other Sync pages. -->
+<SyncFrame tab="conflicts">
     <div class="mb-2 flex items-center gap-2">
       <Button variant="ghost" size="sm" onclick={back}>
         <ArrowLeft class="size-3.5" /> Conflicts
@@ -154,7 +149,7 @@
             <header class="border-b border-line px-3 py-2 text-xs text-muted">
               <b class="text-ink">Other</b> {otherName} · {clockText(view.row.other.at)}
             </header>
-            <div class="px-3.5 py-2.5">{@render words(view.other, 'bg-diff-del')}</div>
+            <div class="px-3.5 py-2.5">{@render words(view.other, 'bg-diff-del', true)}</div>
           </section>
         </div>
         {#if view.open}
@@ -185,17 +180,26 @@
                   <span class="block bg-diff-del px-2.5 py-1.5 {choices[n] !== 'showing' ? 'shadow-[inset_3px_0_0_var(--hue-sync)]' : ''}">
                     <b>{otherName}</b> {p.other}
                   </span>
-                  <span class="block px-2.5 py-2">
-                    <SegmentedControl
-                      label="Which words for clash {n + 1}"
-                      value={choices[n] ?? 'showing'}
-                      options={[
-                        { value: 'showing', label: usePossessive(showingName) },
-                        { value: 'other', label: usePossessive(otherName) },
-                        { value: 'both', label: 'Both' },
-                      ]}
-                      onchange={(v) => pick(n, v)}
-                    />
+                  <!-- Buttons, not a SegmentedControl: the device names are long, so they wrap (and stack on a phone), and the chosen one carries a check as well as the tint. -->
+                  <span
+                    class="flex flex-wrap gap-1 px-2.5 py-2 phone:flex-col"
+                    role="radiogroup"
+                    aria-label="Which words for clash {n + 1}"
+                  >
+                    {#each [['showing', usePossessive(showingName)], ['other', usePossessive(otherName)], ['both', 'Both']] as [value, text] (value)}
+                      {@const chosen = (choices[n] ?? 'showing') === value}
+                      <Button
+                        size="sm"
+                        role="radio"
+                        aria-checked={chosen}
+                        data-chosen={chosen}
+                        class="max-w-full phone:justify-start {chosen ? 'border-hue-sync! bg-hue-sync-soft!' : ''}"
+                        onclick={() => pick(n, value as ClashChoice)}
+                      >
+                        {#if chosen}<Check class="size-3.5 shrink-0" />{/if}
+                        <span class="truncate">{text}</span>
+                      </Button>
+                    {/each}
                   </span>
                 </span>
               {/if}
@@ -223,5 +227,4 @@
         </div>
       {/if}
     {/if}
-  </div>
-</div>
+</SyncFrame>

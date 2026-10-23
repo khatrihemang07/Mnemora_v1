@@ -128,11 +128,12 @@
   }
 </script>
 
-<Sheet open title={d?.name ?? 'Device'} centered closable onclose={() => deviceSheet.close()}>
+<!-- `bare`: the name is the title (the sheet's own small label would say it twice), so the sheet lays itself out. -->
+<Sheet open title={d?.name ?? 'Device'} centered bare onclose={() => deviceSheet.close()}>
   {#if detail.isError}
-    <ErrorBanner error={detail.error} onretry={() => detail.refetch()} />
+    <div class="p-4"><ErrorBanner error={detail.error} onretry={() => detail.refetch()} /></div>
   {:else if d}
-    <div class="flex flex-col gap-4" data-device={d.id}>
+    <div class="flex flex-col gap-4 px-4 pt-5 pb-4" data-device={d.id}>
       <div class="flex items-center gap-3">
         <span class="relative grid size-10 shrink-0 place-items-center rounded-md bg-hue-sync-soft text-hue-sync">
           <Icon class="size-5" />
@@ -231,13 +232,18 @@
           <Pencil class="size-3.5" /> Rename
         </Button>
         <span class="flex-1"></span>
-        <Button size="sm" variant="danger" onclick={() => (forgetting = true)}>
+        <!-- Outline, not filled: the Dialog it opens asks first, and that one has the filled Forget. -->
+        <Button
+          size="sm"
+          class="border-danger! text-danger!"
+          onclick={() => (forgetting = true)}
+        >
           <Unlink class="size-3.5" /> Forget…
         </Button>
       </div>
     </div>
   {:else}
-    <Skeleton class="h-40 w-full" />
+    <Skeleton class="m-4 h-40" />
   {/if}
 </Sheet>
 

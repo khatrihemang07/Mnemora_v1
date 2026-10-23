@@ -156,7 +156,17 @@ pub fn apply_batch(
             .moved
             .push((record.module.clone(), record.entity.clone()));
         let first_event = applied.events.len();
-        applied.events.extend(outcome.events);
+        applied
+            .events
+            .extend(outcome.events.into_iter().map(|event| match event {
+                // The Module cannot know who made the record.
+                SyncEvent::TaskDeleted { task_id, title, .. } => SyncEvent::TaskDeleted {
+                    task_id,
+                    title,
+                    device: Some(record.origin_device.clone()),
+                },
+                other => other,
+            }));
         if outcome.changed && record.entity != settings::ENTITY {
             applied.changed.insert(record.module.clone());
         }

@@ -271,8 +271,7 @@ export function worldOf(r: Replica, ids: Ids, defaults: Record<string, Json> = {
     for (const [l, v] of ids.labels) if (v === id) return l;
     return '?';
   };
-  const merged = new Set(o.mergedLists.map((m) => m.from));
-  const lists = live(o, 'list').filter((l) => !merged.has(l.id));
+  const lists = live(o, 'list');
   const order = (list: string | null) =>
     live(o, 'task')
       .filter((t) => t.values.list_id === list && t.values.state === 'open')

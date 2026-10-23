@@ -169,8 +169,17 @@ function draftOf(pieces: ClashPiece[], choices: ClashChoice[]): string {
 
 const at = (h: number, m: number) => new Date(2026, 9, 21, h, m).getTime();
 
-export function createConflictsMock(emit: () => void = () => {}, now: () => number = Date.now) {
+/**
+ * `paired` says whether any device is paired: the ready-made samples (two Conflicts, five Resolved
+ * rows) only exist with one. What a sync of the simulated device adds is always listed.
+ */
+export function createConflictsMock(
+  emit: () => void = () => {},
+  now: () => number = Date.now,
+  paired: () => boolean = () => true,
+) {
   const resolved = resolvedSamples(now());
+  const sampleIds = new Set(resolved.map((r) => r.id));
   const entryShowing =
     'Went for a run along the canal, felt great after the rain.\nCoffee with Sam after.\n';
   const entryOther =
@@ -236,6 +245,10 @@ export function createConflictsMock(emit: () => void = () => {}, now: () => numb
     ],
   ]);
 
+  for (const id of samples.keys()) sampleIds.add(id);
+  const shown = (id: string) => !sampleIds.has(id) || paired();
+  const openSamples = () => [...samples.values()].filter((s) => s.open && shown(s.row.id));
+
   const view = (s: Sample): ConflictView => {
     const [showing, other] = diffSpans(s.showing, s.other);
     return {
@@ -264,15 +277,19 @@ export function createConflictsMock(emit: () => void = () => {}, now: () => numb
       emit();
     },
     /** How many conflicts wait, for the attention the Home card and badge read. */
-    openCount: () => [...samples.values()].filter((s) => s.open).length,
+    openCount: () => openSamples().length,
+    /** Whether this Conflict still waits for the person (the Activity line's Review link). */
+    isOpen: (id: string) => openSamples().some((s) => s.row.id === id),
     handles: (cmd: string) => COMMANDS.includes(cmd),
     handle(cmd: string, a: Record<string, unknown>): unknown {
       const sample = samples.get(String(a.id));
       switch (cmd) {
         case 'sync_conflicts':
           return {
-            needs_you: [...samples.values()].filter((s) => s.open).map((s) => s.row),
-            resolved: resolved.map((r) => ({ ...r, changes: [...r.changes] })),
+            needs_you: openSamples().map((s) => s.row),
+            resolved: resolved
+              .filter((r) => shown(r.id))
+              .map((r) => ({ ...r, changes: [...r.changes] })),
           } satisfies ConflictList;
         case 'sync_resolution_use_other': {
           const row = resolved.find((r) => r.id === String(a.id));

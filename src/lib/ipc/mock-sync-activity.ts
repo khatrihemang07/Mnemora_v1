@@ -78,6 +78,7 @@ export function makeEvents(count: number, now: number): Event[] {
   const pick = <T>(xs: T[]): T => xs[Math.floor(rand() * xs.length)] as T;
   const events: Event[] = [];
   let at = now - 2 * MINUTE;
+  const waiting = ['mock-conflict-notes', 'mock-conflict-entry'];
   for (let i = 0; i < count; i++) {
     at -= (4 + Math.floor(rand() * 70)) * MINUTE;
     const r = rand();
@@ -103,7 +104,11 @@ export function makeEvents(count: number, now: number): Event[] {
         ...none,
         kind: 'conflict_raised',
         // Only the newest still wait; the rest were settled since.
-        extra: { subject: 'a Task’s notes', ...(at > now - 24 * 60 * MINUTE ? { open: '1' } : {}) },
+        extra: {
+          subject: 'a Task’s notes',
+          // The newest two are the mock's two sample Conflicts; the rest were settled since.
+          ...(at > now - 24 * 60 * MINUTE && waiting.length ? { conflict: waiting.shift() } : {}),
+        },
       });
     } else if (r < 0.9) {
       events.push({
@@ -152,7 +157,11 @@ export function makeEvents(count: number, now: number): Event[] {
 const piece = (text: string, strong = false): Piece => ({ text, strong });
 
 /** The event as `viewer` reads it (the Rust `describe`, in short). */
-export function describe(e: Event, viewer: string): ActivityRow {
+export function describe(
+  e: Event,
+  viewer: string,
+  isOpen: (conflict: string) => boolean = () => false,
+): ActivityRow {
   const name = (id: string) => NAMES.get(id) ?? 'another device';
   const aboutMe = e.peer === viewer;
   const other = name(aboutMe ? e.device : e.peer);
@@ -205,7 +214,11 @@ export function describe(e: Event, viewer: string): ActivityRow {
     on: e.device !== viewer && !aboutMe && !named ? name(e.device) : null,
     at: e.at,
     breakdown: e.breakdown,
-    link: e.kind === 'conflict_raised' && e.extra.open === '1' ? 'conflicts' : null,
+    // Like Rust: the link is there while the Conflict still waits, whatever the line said when written.
+    link:
+      e.kind === 'conflict_raised' && e.extra.conflict && isOpen(e.extra.conflict)
+        ? 'conflicts'
+        : null,
   };
 }
 
@@ -220,7 +233,11 @@ const invalid = (message: string): AppError => ({ code: 'validation', message, d
 /** Sorted newest first, ties by id descending (the Rust order). */
 const newestFirst = (a: Event, b: Event) => b.at - a.at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
 
-export function createActivityMock(count = 4000, now = Date.now()) {
+export function createActivityMock(
+  count = 4000,
+  now = Date.now(),
+  isOpen: (conflict: string) => boolean = () => true,
+) {
   const events = makeEvents(count, now).sort(newestFirst);
   return {
     /** Lines a sync wrote (the simulated device's), in with the rest. */
@@ -252,7 +269,7 @@ export function createActivityMock(count = 4000, now = Date.now()) {
       const page = matching.slice(0, limit);
       const last = page.at(-1);
       return {
-        rows: page.map((e) => describe(e, ME)),
+        rows: page.map((e) => describe(e, ME, isOpen)),
         next: matching.length > limit && last ? `${last.at}:${last.id}` : null,
       } satisfies ActivityPage;
     },

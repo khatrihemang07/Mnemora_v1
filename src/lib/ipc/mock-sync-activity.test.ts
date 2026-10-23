@@ -32,6 +32,20 @@ describe('the Activity mock', () => {
     expect(page(m, { kind: 'all' }, null).rows).toHaveLength(100);
   });
 
+  it('offers Review only while the Conflict waits', () => {
+    const open = new Set(['mock-conflict-notes', 'mock-conflict-entry']);
+    const m = createActivityMock(1200, NOW, (id) => open.has(id));
+    const links = () =>
+      everything(m, { kind: 'all' })
+        .filter((r) => r.link === 'conflicts')
+        .map((r) => r.id);
+    expect(links()).toHaveLength(2);
+    open.delete('mock-conflict-notes');
+    expect(links()).toHaveLength(1);
+    open.clear();
+    expect(links()).toHaveLength(0);
+  });
+
   it('filters by device, and "this device" is the ones it took part in', () => {
     const m = mock();
     const all = everything(m, { kind: 'all' });

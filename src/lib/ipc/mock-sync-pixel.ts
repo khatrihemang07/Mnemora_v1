@@ -25,6 +25,7 @@ import type {
   ResolvedIcon,
   ResolvedRow,
   TodoListsMergedEvent,
+  TodoTaskDeletedEvent,
 } from './bindings';
 import type { Sample } from './mock-sync-conflicts';
 import {
@@ -58,6 +59,7 @@ export interface PixelPorts {
     todoChanged(): void;
     journalChanged(): void;
     listsMerged(e: TodoListsMergedEvent): void;
+    taskDeleted(e: TodoTaskDeletedEvent): void;
     activityChanged(): void;
     settingsChanged(module: string, keys: string[]): void;
     newConflicts(count: number, device: string): void;
@@ -333,7 +335,21 @@ export function createPixelMock(ports: PixelPorts) {
           .filter((k) => k.startsWith(`${module}.`))
           .map((k) => k.slice(module.length + 1)),
       );
+    const liveTasks = new Set(
+      ports.data.todo
+        .exportDocs()
+        .filter((d) => d.entity === 'task' && d.values.deleted_at == null)
+        .map((d) => d.id),
+    );
     const todoChanged = ports.data.todo.importDocs(o.docs);
+    // A Task that was showing here and was deleted on the phone: the open sheet is told.
+    for (const d of o.docs)
+      if (d.entity === 'task' && d.values.deleted_at != null && liveTasks.has(d.id))
+        ports.announce.taskDeleted({
+          task_id: d.id,
+          title: String(d.values.title ?? ''),
+          device: PIXEL.name,
+        });
     const journalChanged = ports.data.journal.importDocs(o.docs);
 
     // What is new.
@@ -396,8 +412,9 @@ export function createPixelMock(ports: PixelPorts) {
           : subject.kind === 'task'
             ? `a Task’s ${subject.field}`
             : 'a Comment';
-      ports.conflicts.raise(conflictOf(c, o, writeText(c)));
-      add('conflict_raised', { subject: words, open: '1' });
+      const sample = conflictOf(c, o, writeText(c));
+      ports.conflicts.raise(sample);
+      add('conflict_raised', { subject: words, conflict: sample.row.id });
     }
     for (const m of merges) {
       const [from, into] = [titleOf(o, 'list', m.from), titleOf(o, 'list', m.into)];
@@ -482,9 +499,21 @@ export function createPixelMock(ports: PixelPorts) {
       sync: true,
       stage() {
         flush();
-        const id = taskNamed('Call mum') ?? makeTask('Call mum', '', null, true);
+        // The Task exists here and on the phone before the phone changes it, so the change
+        // updates it in place; running this again starts from "Call mum" again.
+        const id = taskNamed('Call mum') ?? taskNamed('Call mum at 6');
+        if (id) {
+          const task = ports.command('todo_task', { id }) as { notes: string };
+          ports.command('todo_task_update', {
+            id,
+            title: 'Call mum',
+            notes: task.notes,
+            sessionId: `stage-${now()}`,
+          });
+        }
+        const target = id ?? makeTask('Call mum', '', null, true);
         rebase();
-        edit('task_edit', { task: id, title: 'Call mum at 6' });
+        edit('task_edit', { task: target, title: 'Call mum at 6' });
         return 'Open Today first: the title changes under you when this runs.';
       },
     },
@@ -544,13 +573,16 @@ export function createPixelMock(ports: PixelPorts) {
       sync: false,
       stage() {
         flush();
-        const list =
-          listNamed('Groceries') ??
-          (ports.command('todo_list_create', { name: 'Groceries' }) as { id: string }).id;
-        if (!taskNamed('Oat milk')) makeTask('Oat milk', '', list);
         rebase();
+        // The phone made its "Groceries" first, so it is the older and is kept; the one made here
+        // now (the one you open) is the one that goes away.
         edit('list_create', { list: 'phone-groceries', name: 'Groceries' });
         edit('task_create', { task: 'phone-eggs', title: 'Eggs', list: 'phone-groceries' });
+        const made = Date.now();
+        for (let i = 0; i < 1e6 && Date.now() <= made + 1; i++);
+        const list = (ports.command('todo_list_create', { name: 'Groceries' }) as { id: string })
+          .id;
+        makeTask('Oat milk', '', list);
         return 'Open the List "Groceries", then run __pixel.sync(): you are moved to the kept List and told.';
       },
     },

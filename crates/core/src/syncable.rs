@@ -187,6 +187,16 @@ pub enum SyncEvent {
         /// The List it was meant for.
         list_id: String,
     },
+    /// A Task that was showing here was deleted on another device. `device` is filled in by
+    /// the engine (the record's origin), never by the Module.
+    TaskDeleted {
+        /// The Task.
+        task_id: String,
+        /// Its title.
+        title: String,
+        /// The device that deleted it.
+        device: Option<String>,
+    },
     /// Two Lists with the same name became one: `from` was soft-deleted and its Tasks joined
     /// the end of `into`.
     ListsMerged {

@@ -9,6 +9,7 @@
   import { settingsQuery } from '../../lib/settings/queries';
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
+  import DayHeading from '../../lib/ui/DayHeading.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
@@ -68,10 +69,7 @@
         Needs you · {rows.length}
       </h2>
       {#each groups as group (group.key)}
-        <div class="flex items-baseline gap-2 border-b border-line px-1 pt-3 pb-1.5">
-          <b class="font-display text-lg font-semibold">{group.title}</b>
-          <small class="text-xs text-faint">{group.subtitle}</small>
-        </div>
+        <DayHeading name={group.title} small={group.subtitle} />
         <Card class="mt-2" padded={false}>
           <ul>
             {#each group.rows as row (row.id)}

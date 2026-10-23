@@ -25,6 +25,18 @@ describe('conflicts mock', () => {
     ).toThrow();
   });
 
+  it('has no sample Conflicts or Resolved rows until a device is paired', () => {
+    let paired = false;
+    const mock = createConflictsMock(undefined, undefined, () => paired);
+    const list = () =>
+      mock.handle('sync_conflicts', {}) as { needs_you: unknown[]; resolved: unknown[] };
+    expect(list()).toEqual({ needs_you: [], resolved: [] });
+    expect(mock.openCount()).toBe(0);
+    paired = true;
+    expect(list().needs_you).toHaveLength(2);
+    expect(mock.openCount()).toBe(2);
+  });
+
   it('lists what was resolved automatically, new ones until visited, and Use other once', () => {
     const mock = createConflictsMock();
     type Resolved = { id: string; fresh: boolean; action: string | null; used: string | null };

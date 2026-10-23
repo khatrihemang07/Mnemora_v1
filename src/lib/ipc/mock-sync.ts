@@ -165,6 +165,7 @@ export function createSyncMock(
   });
 
   return {
+    pairedCount: () => peers.length,
     handles: (cmd: string) =>
       COMMANDS.includes(cmd) ||
       pairing.commands.includes(cmd) ||

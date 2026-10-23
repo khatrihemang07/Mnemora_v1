@@ -12,12 +12,14 @@
   import PageHeader from '../../lib/ui/PageHeader.svelte';
   import Tabs from '../../lib/ui/Tabs.svelte';
   import { moduleContext } from '../../shell/module-context';
-  import { syncQuery } from './queries';
-  import { pathForTab, SYNC_TABS, type SyncTab } from './tabs';
+  import { attentionQuery, syncQuery } from './queries';
+  import { pathForTab, type SyncTab, tabsWithCounts } from './tabs';
 
   let { tab, fill = false, children }: { tab: SyncTab; fill?: boolean; children: Snippet } = $props();
 
   const sync = createQuery(() => syncQuery);
+  // The pill on Conflicts: how many wait for the person.
+  const attention = createQuery(() => attentionQuery);
   // Nothing to sync with until the first pairing.
   const alone = $derived((sync.data?.paired_devices ?? 0) === 0);
 </script>
@@ -37,7 +39,7 @@
   <div class="mx-auto w-full max-w-3xl {fill ? 'min-h-0 flex-1' : ''}">
     <Tabs
       value={tab}
-      tabs={SYNC_TABS}
+      tabs={tabsWithCounts(attention.data?.conflicts ?? 0)}
       label="Sync pages"
       hue="--hue-sync"
       onHue="--on-hue-sync"

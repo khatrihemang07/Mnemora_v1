@@ -179,8 +179,18 @@ export async function installMock() {
   (window as unknown as { __syncMock: PairingFlags }).__syncMock = pairFlags;
   // Thousands of lines to scroll: `?activity=20000` for more. It shows on the Activity tab with a
   // paired device (`?paired=2`).
-  const activity = createActivityMock(Number(query.get('activity') ?? 0) || 4000);
-  const conflicts = createConflictsMock(() => void events.syncConflictsEvent.emit());
+  // The Review link on an Activity line follows the Conflict: gone once it is resolved.
+  const activity = createActivityMock(
+    Number(query.get('activity') ?? 0) || 4000,
+    Date.now(),
+    (id) => conflicts.isOpen(id),
+  );
+  // The sample Conflicts and Resolved rows exist only once a device is paired.
+  const conflicts = createConflictsMock(
+    () => void events.syncConflictsEvent.emit(),
+    Date.now,
+    () => sync.pairedCount() > 0,
+  );
   const sync = createSyncMock(
     device,
     Number(query.get('paired') ?? 0) || 0,
@@ -242,6 +252,7 @@ export async function installMock() {
       todoChanged: () => void events.todoChangedEvent.emit(),
       journalChanged: () => void events.journalChangedEvent.emit(),
       listsMerged: (e) => void events.todoListsMergedEvent.emit(e),
+      taskDeleted: (e) => void events.todoTaskDeletedEvent.emit(e),
       activityChanged: () => void events.syncActivityEvent.emit(),
       settingsChanged: (module, keys) => void events.settingsChangedEvent.emit({ module, keys }),
       newConflicts: (count, name) => {

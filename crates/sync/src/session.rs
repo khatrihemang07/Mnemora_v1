@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use mnemora_core::events::{
     ConflictsRaised, DeviceRenamed, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded,
-    SettingsChanged,
+    SettingsChanged, TaskDeletedRemotely,
 };
 use mnemora_core::syncable::SyncEvent;
 use rusqlite::Connection;
@@ -311,6 +311,22 @@ impl Session {
                 }
                 SyncEvent::ConflictAutoResolved { .. } => {
                     tracing::debug!(target: "sync", "a text clash was resolved on its own");
+                }
+                SyncEvent::TaskDeleted {
+                    task_id,
+                    title,
+                    device,
+                } => {
+                    // The origin's id was put in `device` by the engine; a name if it is paired.
+                    let device = device
+                        .filter(|d| *d != self.me)
+                        .and_then(|d| peers::name_of(conn, &d).ok().flatten());
+                    tracing::debug!(target: "sync", "a Task was deleted on another device");
+                    self.bus.publish(&TaskDeletedRemotely {
+                        task_id,
+                        title,
+                        device,
+                    });
                 }
                 SyncEvent::TaskToInbox { .. } => {
                     tracing::debug!(target: "sync", "a Task went to the Inbox: its List is gone");

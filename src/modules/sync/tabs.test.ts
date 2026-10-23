@@ -1,11 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { buildRoutes } from '../../lib/router/routes';
 import { syncManifest } from './manifest';
-import { pathForTab, SYNC_TABS, tabForPath } from './tabs';
+import { pathForTab, SYNC_TABS, tabForPath, tabsWithCounts } from './tabs';
 
 describe('tab routing', () => {
   it('gives every tab its own address', () => {
     expect(SYNC_TABS.map((t) => t.path)).toEqual(['/sync', '/sync/conflicts', '/sync/activity']);
+  });
+
+  it('shows the Needs you count on Conflicts only', () => {
+    expect(tabsWithCounts(2).map((t) => [t.value, t.count])).toEqual([
+      ['devices', undefined],
+      ['conflicts', 2],
+      ['activity', undefined],
+    ]);
   });
 
   it('reads the tab from the address', () => {

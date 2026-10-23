@@ -504,13 +504,16 @@ function rules(outcome: Outcome, log: Rec[]) {
     const key = nameKey(String(l.values.name));
     const kept = survivor.get(key);
     if (!kept) survivor.set(key, l);
-    else
+    else {
       outcome.mergedLists.push({
         from: l.id,
         into: kept.id,
         fromDevice: log.find((r) => r.entity === 'list' && r.id === l.id)?.stamp.device ?? '',
         at: Number(l.values.created_at),
       });
+      // The List that went away is deleted (Rust records that Delete), so it leaves the sidebar.
+      l.values.deleted_at = Math.max(Number(l.values.created_at), Number(kept.values.created_at));
+    }
   }
   const nameOf = new Map(
     outcome.docs.filter((d) => d.entity === 'list').map((d) => [d.id, String(d.values.name)]),

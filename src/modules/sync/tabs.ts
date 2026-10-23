@@ -20,3 +20,10 @@ export function tabForPath(pathname: string): SyncTab {
 export function pathForTab(tab: SyncTab): RoutePath {
   return SYNC_TABS.find((t) => t.value === tab)?.path ?? '/sync';
 }
+
+/** The tabs with the Conflicts count (what Needs you) as the pill on Conflicts: "Conflicts 2". */
+export function tabsWithCounts(
+  conflicts: number,
+): { value: SyncTab; label: string; path: RoutePath; count?: number }[] {
+  return SYNC_TABS.map((t) => (t.value === 'conflicts' ? { ...t, count: conflicts } : t));
+}

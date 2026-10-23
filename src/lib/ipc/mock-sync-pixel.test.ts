@@ -10,11 +10,12 @@ function setup() {
   const todo = createTodoMock();
   const journal = createJournalMock();
   const conflicts = createConflictsMock();
-  const activity = createActivityMock(0);
+  const activity = createActivityMock(0, Date.now(), (id) => conflicts.isOpen(id));
   const announce = {
     todoChanged: vi.fn(),
     journalChanged: vi.fn(),
     listsMerged: vi.fn(),
+    taskDeleted: vi.fn(),
     activityChanged: vi.fn(),
     settingsChanged: vi.fn(),
     newConflicts: vi.fn(),
@@ -116,6 +117,25 @@ describe('the simulated Pixel 8', () => {
     expect(t.lists().needs_you).toHaveLength(1);
   });
 
+  it('takes the Review link off a Conflict’s Activity line once it is resolved', () => {
+    const t = setup();
+    t.pixel.scenario('conflict');
+    const rows = () =>
+      (
+        t.activity.handle('sync_activity', {
+          filter: { kind: 'all' },
+          cursor: null,
+          limit: 50,
+        }) as {
+          rows: { kind: string; link: string | null }[];
+        }
+      ).rows.filter((r) => r.kind === 'conflict_raised');
+    expect(rows().map((r) => r.link)).toEqual(['conflicts', 'conflicts']);
+    for (const c of t.lists().needs_you)
+      t.conflicts.handle('sync_conflict_resolve', { id: c.id, choice: { kind: 'keep_this' } });
+    expect(rows().map((r) => r.link)).toEqual([null, null]);
+  });
+
   it('puts a Priority clash, a delete that met an edit and a Task sent to the Inbox in Resolved automatically', () => {
     const t = setup();
     t.pixel.scenario('resolved');
@@ -136,11 +156,34 @@ describe('the simulated Pixel 8', () => {
     expect(t.announce.listsMerged).not.toHaveBeenCalled();
     t.pixel.sync();
     expect(t.announce.listsMerged).toHaveBeenCalledOnce();
+    const groceries = t.todo
+      .exportDocs()
+      .filter((d) => d.entity === 'list' && d.values.name === 'Groceries');
+    const kept = groceries.filter((d) => d.values.deleted_at == null);
+    expect(kept).toHaveLength(1);
+    // The one made here is the one that went away, and its Task moved to the kept List.
+    expect(t.announce.listsMerged.mock.calls[0]?.[0]).toMatchObject({
+      from_id: groceries.find((d) => d.values.deleted_at != null)?.id,
+      into_id: kept[0]?.id,
+    });
+    const oat = t.todo
+      .exportDocs()
+      .find((d) => d.entity === 'task' && d.values.title === 'Oat milk');
+    expect(oat?.values.list_id).toBe(kept[0]?.id);
     expect(t.announce.listsMerged.mock.calls[0]?.[0]).toMatchObject({
       from_name: 'Groceries',
       into_name: 'Groceries',
       device: 'Pixel 8 (simulated)',
     });
+  });
+
+  it('updates "Call mum" in place every time the remote scenario runs', () => {
+    const t = setup();
+    t.pixel.scenario('remote');
+    expect(t.titles()).toEqual(['Call mum at 6']);
+    t.pixel.scenario('remote');
+    expect(t.titles()).toEqual(['Call mum at 6']);
+    expect(t.lists().needs_you).toEqual([]);
   });
 
   it('deletes a Task here when the phone deleted it', () => {
@@ -149,6 +192,13 @@ describe('the simulated Pixel 8', () => {
     expect(t.titles()).toEqual(['Call mum']);
     t.pixel.sync();
     expect(t.titles()).toEqual([]);
+    expect(t.announce.taskDeleted).toHaveBeenCalledOnce();
+    expect(t.announce.taskDeleted.mock.calls[0]?.[0]).toMatchObject({
+      title: 'Call mum',
+      device: 'Pixel 8 (simulated)',
+    });
+    t.pixel.sync();
+    expect(t.announce.taskDeleted).toHaveBeenCalledOnce();
   });
 
   it('words a session’s breakdown as Rust does', () => {

@@ -411,6 +411,7 @@ export const events = {
 	syncPeersEvent: makeEvent<SyncPeersEvent>("sync-peers-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
 	todoListsMergedEvent: makeEvent<TodoListsMergedEvent>("todo-lists-merged-event"),
+	todoTaskDeletedEvent: makeEvent<TodoTaskDeletedEvent>("todo-task-deleted-event"),
 };
 
 /* Types */
@@ -1943,6 +1944,19 @@ export type TodoListsMergedEvent = {
 	/**  Its name. */
 	into_name: string,
 	/**  The other device whose List it was. */
+	device: string | null,
+};
+
+/**
+ *  A Task was deleted on another device: if it is open in the sheet, the sheet closes with a toast
+ *  naming `device`, and Restore brings it back (as an ordinary change).
+ */
+export type TodoTaskDeletedEvent = {
+	/**  The Task. */
+	task_id: string,
+	/**  Its title. */
+	title: string,
+	/**  The device that deleted it, when it is a paired one. */
 	device: string | null,
 };
 

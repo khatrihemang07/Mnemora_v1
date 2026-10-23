@@ -38,9 +38,13 @@ describe('conflict rows', () => {
       ],
       now,
     );
-    expect(groups.map((g) => g.title)).toEqual(['Today', 'Yesterday', 'Mon']);
+    // The same heading Done and Activity have: the day's name, the small date beside it.
+    expect(groups.map((g) => [g.title, g.subtitle])).toEqual([
+      ['Today', '21 Oct'],
+      ['Yesterday', '20 Oct'],
+      ['Monday', '19 Oct'],
+    ]);
     expect(groups[0]?.rows.map((r) => r.id)).toEqual(['b', 'a']);
-    expect(groups[0]?.subtitle).toBe('Wednesday 21 Oct');
   });
 
   it('groups any rows by the time it is given, Resolved automatically by when it was decided', () => {

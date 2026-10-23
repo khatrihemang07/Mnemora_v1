@@ -329,6 +329,46 @@ fn a_merged_away_list_is_reported_with_the_name_of_the_device_it_came_from() {
     assert_eq!(events[0]["device"], "Pixel 8");
 }
 
+#[test]
+fn a_task_deleted_on_another_device_is_reported_with_that_devices_name() {
+    let c = Cluster::new(2);
+    let made = task_in(&c[0], "Plan weekend hike", None);
+    c.sync(0, 1);
+    let a_id = c[0].device_id();
+    c[1].with_db(|db| {
+        db.execute(
+            "INSERT INTO sync_peers(id, name, paired_at) VALUES (?1, 'Pixel 8', 1)",
+            [&a_id],
+        )
+        .unwrap();
+    });
+    let seen = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let sink = Arc::clone(&seen);
+    tauri_specta::Event::listen(
+        &c[1].handle(),
+        move |e: tauri_specta::TypedEvent<crate::TodoTaskDeletedEvent>| {
+            sink.lock()
+                .unwrap()
+                .push(serde_json::to_value(&e.payload).unwrap());
+        },
+    );
+    c[0].invoke::<Value>("todo_task_delete", json!({ "id": made["id"] }))
+        .unwrap();
+    c.sync(0, 1);
+    c.sync(0, 1);
+    let events = seen.lock().unwrap().clone();
+    assert_eq!(events.len(), 1, "once: {events:?}");
+    assert_eq!(events[0]["task_id"], made["id"]);
+    assert_eq!(events[0]["title"], "Plan weekend hike");
+    assert_eq!(events[0]["device"], "Pixel 8");
+
+    // A Task that was already deleted here is not announced again by a later record.
+    c[0].invoke::<Value>("todo_task_restore", json!({ "id": made["id"] }))
+        .unwrap();
+    c.sync(0, 1);
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
 // ---------------------------------------------------------------- order keys
 
 #[test]

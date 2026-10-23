@@ -118,7 +118,8 @@ macro_rules! specta_builder_for {
                 SyncConflictsEvent,
                 SyncActivityEvent,
                 SyncNewConflictsEvent,
-                TodoListsMergedEvent
+                TodoListsMergedEvent,
+                TodoTaskDeletedEvent
             ])
     };
 }
@@ -186,7 +187,7 @@ use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
 use mnemora_core::events::{
     ConflictsRaised, DeviceRenamed, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded,
-    SettingsChanged,
+    SettingsChanged, TaskDeletedRemotely,
 };
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
@@ -244,6 +245,18 @@ pub struct TodoListsMergedEvent {
     pub device: Option<String>,
 }
 
+/// A Task was deleted on another device: if it is open in the sheet, the sheet closes with a toast
+/// naming `device`, and Restore brings it back (as an ordinary change).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct TodoTaskDeletedEvent {
+    /// The Task.
+    pub task_id: String,
+    /// Its title.
+    pub title: String,
+    /// The device that deleted it, when it is a paired one.
+    pub device: Option<String>,
+}
+
 /// The pairing sheet's state changed (a code is shown, someone asks, it worked or failed).
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct SyncPairingEvent(pub mnemora_sync::PairingView);
@@ -294,6 +307,7 @@ fn follow_remote<R: tauri::Runtime>(
     widgets: &Arc<widget::signal::WidgetSignal>,
 ) {
     let handle_for_merges = handle.clone();
+    let handle_for_deletes = handle.clone();
     let toast_handle = handle.clone();
     let rename_handle = handle.clone();
     bus.subscribe(move |event: &RemoteChanged| {
@@ -339,6 +353,17 @@ fn follow_remote<R: tauri::Runtime>(
         };
         if let Err(e) = event.emit(&merged_handle) {
             tracing::warn!(target: "sync", error = %e, "could not emit the List merge event");
+        }
+    });
+    let deleted_handle = handle_for_deletes;
+    bus.subscribe(move |event: &TaskDeletedRemotely| {
+        let event = TodoTaskDeletedEvent {
+            task_id: event.task_id.clone(),
+            title: event.title.clone(),
+            device: event.device.clone(),
+        };
+        if let Err(e) = event.emit(&deleted_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the Task delete event");
         }
     });
     bus.subscribe(move |event: &ConflictsRaised| {

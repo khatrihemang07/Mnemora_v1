@@ -85,6 +85,17 @@ pub struct ListsMerged {
     pub device: Option<String>,
 }
 
+/// A Task was deleted on another device. Whoever has it open is told, with a way to Restore it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskDeletedRemotely {
+    /// The Task.
+    pub task_id: String,
+    /// Its title.
+    pub title: String,
+    /// The device that deleted it (its name), when known.
+    pub device: Option<String>,
+}
+
 /// A sync session left new Conflicts waiting for the person (raised here or learned from the other
 /// device). The app shows a toast if this device is set to.
 #[derive(Debug, Clone, PartialEq, Eq)]

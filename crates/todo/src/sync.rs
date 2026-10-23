@@ -225,6 +225,16 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
             None => Ok(Value::Null),
         }
     };
+    if let Some(task) = &before
+        && before_snapshot.as_ref().is_some_and(is_live)
+        && repo::deleted_at(conn, id)?.is_some()
+    {
+        events.push(SyncEvent::TaskDeleted {
+            task_id: id.to_owned(),
+            title: task.title.clone(),
+            device: None,
+        });
+    }
     let changed = before_snapshot.as_ref().map(strip_updated)
         != Some(strip_updated(&snapshot_now(conn, false)?));
     if changed {
@@ -237,6 +247,11 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
         changed,
         events,
     })
+}
+
+/// Whether a snapshot is of a Task that is not deleted.
+fn is_live(snapshot: &Value) -> bool {
+    snapshot.get("deleted_at").is_none_or(Value::is_null)
 }
 
 /// A snapshot without `updated_at`, which is derived and says nothing about what changed.
