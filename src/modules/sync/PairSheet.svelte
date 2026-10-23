@@ -50,7 +50,13 @@
     };
   });
 
-  const view = $derived(pairing.view);
+  // While the sheet fades out, Rust's next view (idle, after Deny or Cancel) must not replace what it
+  // shows: it keeps the last view it had when open until the close transition ends.
+  let held = $state.raw(pairing.view);
+  $effect.pre(() => {
+    if (pairing.open) held = pairing.view;
+  });
+  const view = $derived(pairing.open ? pairing.view : held);
   const byAddress = $derived(pairing.mode === 'address');
   const typing = $derived(pairing.mode !== 'show');
   const failure = $derived(view.state === 'failed' ? problem(view.error, typing) : null);
