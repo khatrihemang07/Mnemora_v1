@@ -11,7 +11,7 @@ use crate::test_support::{Cluster, TestApp};
 const NAMES: [&str; 4] = ["Mac", "Pixel 8", "Tablet", "Watch"];
 
 /// `n` devices, each named and knowing the others as paired devices of one group.
-fn group(n: usize) -> Cluster {
+pub(crate) fn group(n: usize) -> Cluster {
     let c = Cluster::new(n);
     let ids: Vec<String> = (0..n).map(|i| c[i].device_id()).collect();
     for i in 0..n {

@@ -1099,7 +1099,8 @@ fn random_list_action(
 }
 
 fn converge(seed: u64) {
-    let c = Cluster::new(3);
+    // Paired and named, so that the Address typed for a device has someone to be typed for.
+    let c = crate::sync_address_tests::group(3);
     let mut rng = Rng(seed);
     let mut ids: Vec<Value> = Vec::new();
     let mut list_ids: Vec<Value> = Vec::new();
@@ -1109,6 +1110,18 @@ fn converge(seed: u64) {
         c[d].clock()
             .advance(1 + i64::try_from(rng.below(40)).unwrap());
         random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids, &mut journal);
+        // Now and then a member types, changes or clears the Address of another device.
+        if rng.below(12) == 0 {
+            let target = (d + 1 + rng.below(2)) % 3;
+            let address = match rng.below(4) {
+                0 => String::new(),
+                n => format!("10.0.{n}.{}", rng.below(5) + 1),
+            };
+            let _ = c[d].invoke::<Value>(
+                "sync_device_address",
+                json!({ "id": c[target].device_id(), "address": address }),
+            );
+        }
         // Now and then the person settles a Conflict that waits on this device.
         if rng.below(10) == 0 {
             let waiting = crate::sync_conflicts_tests::ids(&c[d]);
@@ -1148,6 +1161,46 @@ fn converge(seed: u64) {
         c.sync_all();
     }
     assert_devices_agree(&c, seed, &ids);
+}
+
+/// The Address typed for a device, and the lines about it, read the same on the two devices that
+/// keep them; the device itself keeps none.
+fn assert_addresses_agree(c: &Cluster, seed: u64) {
+    for target in 0..3 {
+        let id = c[target].device_id();
+        let typed = |d: usize| -> Value {
+            c[d].invoke::<Value>("sync_device", json!({ "id": id }))
+                .map_or(Value::Null, |s| s["typed_address"].clone())
+        };
+        let others: Vec<usize> = (0..3).filter(|d| *d != target).collect();
+        assert_eq!(
+            typed(others[0]),
+            typed(others[1]),
+            "seed {seed}: devices differ on the Address typed for device {target}"
+        );
+    }
+    for target in 0..3 {
+        let id = c[target].device_id();
+        let about = |d: usize| -> Vec<String> {
+            let mut lines: Vec<String> = address_lines(&c[d])
+                .into_iter()
+                .filter(|(device, _)| *device == id)
+                .map(|(_, line)| line)
+                .collect();
+            lines.sort();
+            lines
+        };
+        assert!(
+            about(target).is_empty(),
+            "seed {seed}: device {target} logged a clash over its own Address"
+        );
+        let others: Vec<usize> = (0..3).filter(|d| *d != target).collect();
+        assert_eq!(
+            about(others[0]),
+            about(others[1]),
+            "seed {seed}: the Address lines for device {target} differ"
+        );
+    }
 }
 
 /// What every device must agree on once everything has synced.
@@ -1209,6 +1262,7 @@ fn assert_devices_agree(c: &Cluster, seed: u64, ids: &[Value]) {
             );
         }
     }
+    assert_addresses_agree(c, seed);
     // Resolved automatically (what was decided, and what was changed back) and Activity (every
     // line of the log) are the same on every device.
     let (resolved_first, activity_first) = (resolutions_of(&c[0]), activity_ids(&c[0]));
@@ -1230,9 +1284,15 @@ fn assert_devices_agree(c: &Cluster, seed: u64, ids: &[Value]) {
 /// a per device record of one session): which decision, and whether it was changed back. The
 /// wording names devices from the point of view of the one reading, so it is not compared.
 fn resolutions_of(app: &TestApp) -> Vec<(String, String, bool)> {
+    let addresses = address_lines(app);
     let mut rows: Vec<(String, String, bool)> = resolved_rows(app)
         .into_iter()
         .filter(|r| r["kind"] != "order_prefs")
+        .filter(|r| {
+            !addresses
+                .iter()
+                .any(|(_, id)| Some(id.as_str()) == r["id"].as_str())
+        })
         .map(|r| {
             (
                 r["id"].as_str().unwrap().to_owned(),
@@ -1243,6 +1303,20 @@ fn resolutions_of(app: &TestApp) -> Vec<(String, String, bool)> {
         .collect();
     rows.sort();
     rows
+}
+
+/// The lines of Resolved automatically about an Address typed for a device: `(that device, id)`.
+/// The device itself ignores the Address typed for it, so it has none.
+fn address_lines(app: &TestApp) -> Vec<(String, String)> {
+    app.with_db(|db| {
+        let mut stmt = db
+            .prepare("SELECT target_id, id FROM sync_resolutions WHERE target = 'sync_device'")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    })
 }
 
 /// The ids of every Activity line, all pages.
