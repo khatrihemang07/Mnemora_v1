@@ -335,6 +335,9 @@ pub struct Record {
     /// What the author changed, with the author's values: the same on every device. `None` for
     /// a record from before `fields` existed, which stands for every field of its snapshot.
     pub fields: Option<Map<String, Value>>,
+    /// Made on this device. Only an own record has to be completed (a group whole) the way it is
+    /// sent; a received one already carries whole groups.
+    pub local: bool,
 }
 
 /// Every record of one entity, oldest first by clock `(ms, counter, origin device)`: the same
@@ -342,7 +345,8 @@ pub struct Record {
 /// skipped: the log must never stop a screen from loading.
 pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<Record>> {
     let mut stmt = conn.prepare(
-        "SELECT op, session_id, snapshot, at, fields FROM change_log
+        "SELECT op, session_id, snapshot, at, fields,
+                origin_device = (SELECT device_id FROM device_clock) FROM change_log
          WHERE entity = ?1 AND entity_id = ?2
          ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq",
     )?;
@@ -353,11 +357,12 @@ pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<R
             r.get::<_, String>(2)?,
             r.get::<_, i64>(3)?,
             r.get::<_, Option<String>>(4)?,
+            r.get::<_, Option<bool>>(5)?.unwrap_or(false),
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (op, session_id, snapshot, at, fields) = row?;
+        let (op, session_id, snapshot, at, fields, local) = row?;
         if let Ok(snapshot) = serde_json::from_str(&snapshot) {
             out.push(Record {
                 op,
@@ -368,6 +373,7 @@ pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<R
                     Ok(Value::Object(map)) => Some(map),
                     _ => None,
                 }),
+                local,
             });
         }
     }

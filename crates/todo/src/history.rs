@@ -6,6 +6,7 @@
 
 use mnemora_core::changelog::{self, Record};
 use mnemora_core::error::AppResult;
+use mnemora_core::syncable::wire_fields;
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -320,9 +321,26 @@ fn record_lines(
 /// record changes the running state by its own `fields` (the author's values), never by the
 /// snapshot, which on a received record is this device's merged state and differs between
 /// devices after concurrent edits. A record without `fields` (from before Sync) is its snapshot.
+/// An own record is completed the way it is sent (a change to the Due date carries the whole When),
+/// so that its author reads the same History as the devices that received it.
 fn advance(state: &Value, record: &Record) -> (Value, Value) {
     let mut next = match &record.fields {
         Some(fields) => {
+            let fields = if record.local {
+                let mut whole = wire_fields(
+                    &crate::sync::TASK,
+                    Some(fields.clone()),
+                    &record.snapshot,
+                    true,
+                );
+                // `skipped` is a marker of the record, not a field Sync knows.
+                if let Some(skipped) = fields.get("skipped") {
+                    whole.insert("skipped".to_owned(), skipped.clone());
+                }
+                whole
+            } else {
+                fields.clone()
+            };
             let mut next = if state.is_object() {
                 state.clone()
             } else {

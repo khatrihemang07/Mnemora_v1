@@ -77,6 +77,23 @@ fn history(app: &TestApp, id: &Value) -> Vec<String> {
         .collect()
 }
 
+/// A Task's History as a device reads it, or the error it answers with.
+fn history_seen(app: &TestApp, id: &Value) -> Result<Vec<String>, Value> {
+    let lines: Vec<Value> = app
+        .invoke("todo_task_history", json!({ "id": id }))
+        .map_err(|e: Value| e["code"].clone())?;
+    Ok(lines
+        .iter()
+        .map(|l| {
+            format!(
+                "{} {}",
+                l["kind"].as_str().unwrap(),
+                l["text"].as_str().unwrap()
+            )
+        })
+        .collect())
+}
+
 /// Titles of every Task Done shows, across all days.
 fn done_titles(app: &TestApp) -> Vec<String> {
     let view: Value = app
@@ -734,7 +751,13 @@ fn random_action(
 ) {
     let known: Vec<Value> = ids.clone();
     let pick = |rng: &mut Rng| known.get(rng.below(known.len().max(1))).cloned();
-    let roll = rng.below(32);
+    let roll = rng.below(40);
+    if roll >= 36 {
+        return random_use_other(c, rng, d);
+    }
+    if roll >= 32 {
+        return random_reorder(c, rng, d, &known);
+    }
     if roll >= 28 {
         let id = pick(rng);
         return random_task_text_action(c, rng, d, step, id);
@@ -801,6 +824,40 @@ fn random_action(
         }
         (_, Some(_)) => {}
     }
+}
+
+/// A Task dragged between two neighbours of the manual order (any of them may be gone, done or
+/// in another List: the command then refuses or places it, and devices must agree either way).
+fn random_reorder(c: &Cluster, rng: &mut Rng, d: usize, ids: &[Value]) {
+    let pick = |rng: &mut Rng| ids.get(rng.below(ids.len().max(1))).cloned();
+    let (Some(id), before, after) = (pick(rng), pick(rng), pick(rng)) else {
+        return;
+    };
+    let (before, after) = (
+        before.filter(|_| rng.below(4) != 0),
+        after.filter(|_| rng.below(4) != 0),
+    );
+    let _ = c[d].invoke::<Value>(
+        "todo_task_reorder",
+        json!({ "id": id, "before": before, "after": after, "target": [], "local": local() }),
+    );
+}
+
+/// The person presses "Use <other> instead" on a line of Resolved automatically.
+fn random_use_other(c: &Cluster, rng: &mut Rng, d: usize) {
+    let rows: Vec<Value> = resolved_rows(&c[d])
+        .into_iter()
+        .filter(|r| !r["action"].is_null())
+        .collect();
+    if let Some(row) = rows.get(rng.below(rows.len().max(1))) {
+        let _ = c[d].invoke::<()>("sync_resolution_use_other", json!({ "id": row["id"] }));
+    }
+}
+
+/// Resolved automatically as a device lists it.
+fn resolved_rows(app: &TestApp) -> Vec<Value> {
+    let list: Value = app.invoke("sync_conflicts", json!({})).unwrap();
+    list["resolved"].as_array().unwrap().clone()
 }
 
 /// Words for texts that edits change a few of: few, so that two devices often pick the same.
@@ -1065,6 +1122,20 @@ fn converge(seed: u64) {
         release_entry(&c[d], &id);
     }
     c.sync_all();
+    // A session that moves only Activity logs no line, so the chain of lines ends by itself; it
+    // may take a few rounds for the last line to reach the device farthest from its author.
+    for _ in 0..6 {
+        let first = activity_ids(&c[0]);
+        if (1..3).all(|d| activity_ids(&c[d]) == first) {
+            break;
+        }
+        c.sync_all();
+    }
+    assert_devices_agree(&c, seed, &ids);
+}
+
+/// What every device must agree on once everything has synced.
+fn assert_devices_agree(c: &Cluster, seed: u64, ids: &[Value]) {
     let lists_first = crate::sync_lists_tests::world(&c[0]);
     for d in 1..3 {
         let other = crate::sync_lists_tests::world(&c[d]);
@@ -1105,21 +1176,127 @@ fn converge(seed: u64) {
         );
     }
     // Look and feel is per device: the theme is whatever each device last set itself.
-    for id in &ids {
+    for id in ids {
         let first = seen(&c[0], id);
+        let first_history = history_seen(&c[0], id);
         for d in 1..3 {
             assert_eq!(
                 seen(&c[d], id),
                 first,
                 "seed {seed}: device {d} differs on {id}"
             );
+            // History is a function of the records, so it reads the same everywhere.
+            assert_eq!(
+                history_seen(&c[d], id),
+                first_history,
+                "seed {seed}: device {d} reads {id}'s History differently"
+            );
         }
     }
+    // Resolved automatically (what was decided, and what was changed back) and Activity (every
+    // line of the log) are the same on every device.
+    let (resolved_first, activity_first) = (resolutions_of(&c[0]), activity_ids(&c[0]));
+    for d in 1..3 {
+        assert_eq!(
+            resolutions_of(&c[d]),
+            resolved_first,
+            "seed {seed}: device {d} has other Resolved automatically lines"
+        );
+        assert_eq!(
+            activity_ids(&c[d]),
+            activity_first,
+            "seed {seed}: device {d} has other Activity lines"
+        );
+    }
+}
+
+/// The lines of Resolved automatically that are synced (the folded Order and Preferences line is
+/// a per device record of one session): which decision, and whether it was changed back. The
+/// wording names devices from the point of view of the one reading, so it is not compared.
+fn resolutions_of(app: &TestApp) -> Vec<(String, String, bool)> {
+    let mut rows: Vec<(String, String, bool)> = resolved_rows(app)
+        .into_iter()
+        .filter(|r| r["kind"] != "order_prefs")
+        .map(|r| {
+            (
+                r["id"].as_str().unwrap().to_owned(),
+                r["kind"].as_str().unwrap().to_owned(),
+                !r["used"].is_null(),
+            )
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+/// The ids of every Activity line, all pages.
+fn activity_ids(app: &TestApp) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut cursor = Value::Null;
+    loop {
+        let page: Value = app
+            .invoke(
+                "sync_activity",
+                json!({ "filter": { "kind": "all" }, "cursor": cursor, "limit": 100 }),
+            )
+            .unwrap();
+        ids.extend(
+            page["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|r| r["id"].as_str().unwrap().to_owned()),
+        );
+        if page["next"].is_null() {
+            break;
+        }
+        cursor = page["next"].clone();
+    }
+    ids.sort();
+    ids
+}
+
+/// Runs one seed; on a failure prints the seed and how to run just it. Returns whether it passed.
+fn converge_reporting(seed: u64) -> bool {
+    let passed = std::panic::catch_unwind(|| converge(seed)).is_ok();
+    if !passed {
+        eprintln!(
+            "CONVERGENCE FAILED for seed {seed}; run it alone with: \
+             MNEMORA_CONVERGE_SEED={seed} cargo test -p mnemora-app --lib three_devices_with_random_edits"
+        );
+    }
+    passed
+}
+
+/// Seeds that always run (`make test`). `MNEMORA_CONVERGE_SEED=n` runs just seed n;
+/// `MNEMORA_CONVERGE_SEEDS=n` runs seeds 1..=n instead (from `MNEMORA_CONVERGE_FIRST`, default 1),
+/// for hunting locally: about 0.5 s per seed.
+///
+/// 2, 5, 7, 8 and 42 each found a divergence that was fixed (Resolved automatically lines, the
+/// History of a Task whose author sent a whole When, a clash only the author could see).
+const FIXED_SEEDS: [u64; 13] = [1, 2, 5, 7, 8, 15, 17, 25, 42, 113, 2026, 99_991, 31_337];
+
+fn env_number(name: &str) -> Option<u64> {
+    std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
 }
 
 #[test]
 fn three_devices_with_random_edits_end_identical() {
-    for seed in [1, 7, 15, 17, 25, 42, 113, 2026, 99_991, 31_337] {
-        converge(seed);
-    }
+    let seeds: Vec<u64> = if let Some(seed) = env_number("MNEMORA_CONVERGE_SEED") {
+        vec![seed]
+    } else if let Some(count) = env_number("MNEMORA_CONVERGE_SEEDS") {
+        let first = env_number("MNEMORA_CONVERGE_FIRST").unwrap_or(1);
+        (first..first + count).collect()
+    } else {
+        FIXED_SEEDS.to_vec()
+    };
+    // Every seed runs, so that a hunt lists all the seeds that fail, not just the first.
+    let failed: Vec<u64> = seeds
+        .into_iter()
+        .filter(|seed| !converge_reporting(*seed))
+        .collect();
+    assert!(
+        failed.is_empty(),
+        "devices did not converge for seeds {failed:?}"
+    );
 }

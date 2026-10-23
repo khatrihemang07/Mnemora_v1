@@ -38,7 +38,7 @@ pub(crate) const ENTITIES: &[SyncEntity] =
     &[TASK, crate::list_sync::LIST, crate::comment_sync::COMMENT];
 
 /// The Task entity's fields and how each merges.
-const TASK: SyncEntity = SyncEntity {
+pub(crate) const TASK: SyncEntity = SyncEntity {
     name: ENTITY,
     fields: &[
         SyncField::value("list_id"),

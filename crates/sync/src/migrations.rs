@@ -230,5 +230,14 @@ pub fn all() -> Migrations<'static> {
         // Whether the signer paired the device itself; signed, and the only kind that can undo a
         // Forget (#70 review). Introductions made before this were direct pairings.
         M::up("ALTER TABLE sync_introductions ADD COLUMN direct INTEGER NOT NULL DEFAULT 1;"),
+        // How far this device's own change-log records have been looked at for Value clashes with
+        // records received earlier (local; one row). See `resolutions::settle_local`.
+        M::up(
+            "CREATE TABLE sync_local_settled(
+             one INTEGER PRIMARY KEY NOT NULL CHECK (one = 1),
+             seq INTEGER NOT NULL
+         ) STRICT;
+         INSERT INTO sync_local_settled(one, seq) SELECT 1, COALESCE(MAX(seq), 0) FROM change_log;",
+        ),
     ])
 }

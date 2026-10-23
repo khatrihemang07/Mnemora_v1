@@ -27,8 +27,10 @@ use rusqlite::{Connection, params};
 use serde_json::{Map, Value};
 
 use crate::clocks;
+use crate::conflicts;
 use crate::error::SyncError;
 use crate::registry::Registry;
+use crate::resolutions;
 use crate::texts;
 
 /// The values of one unit of a received record, kept until the hold on it ends.
@@ -205,8 +207,34 @@ pub fn release_ready(
         if folded_clocks_stale {
             folded.clear();
         }
+        after_release(conn, schema, &entity, &entity_id, &mut out)?;
     }
     Ok(out)
+}
+
+/// What follows a record whose held units were just applied: an edit made beside a delete, and
+/// Conflicts on a deleted record, are judged now, as on a device that held nothing back (the
+/// delete itself may have been held).
+fn after_release(
+    conn: &Connection,
+    schema: &SyncEntity,
+    entity: &str,
+    entity_id: &str,
+    out: &mut Released,
+) -> Result<(), SyncError> {
+    resolutions::note_delete_edit(conn, schema, entity_id)?;
+    let deleted: bool = conn.query_row(
+        "SELECT COALESCE((SELECT json_extract(snapshot, '$.deleted_at') IS NOT NULL
+                          FROM change_log WHERE entity = ?1 AND entity_id = ?2
+                          ORDER BY seq DESC LIMIT 1), 0)",
+        params![entity, entity_id],
+        |r| r.get(0),
+    )?;
+    if deleted {
+        out.events
+            .extend(conflicts::settle_deleted(conn, entity, entity_id)?);
+    }
+    Ok(())
 }
 
 /// The held rows of a record whose unit is no longer held, oldest clock first.

@@ -212,6 +212,9 @@ pub fn apply_batch(
         applied.changed.extend(settled.changed);
         applied.events.extend(settled.events);
     }
+    // A delete made here since may have replaced the one a line was made for.
+    resolutions::settle_local(&tx, registry, me)?;
+    resolutions::refresh_delete_edits(&tx, registry)?;
     activity::note_events(&tx, &applied.events)?;
     tx.commit()?;
     Ok(applied)
@@ -360,10 +363,13 @@ fn after_record(
         }
         return Ok(events);
     }
+    // A delete met by an edit stays on record when the entity is restored later: judged from the
+    // records, whatever the entity looks like now (a device that held the delete back, or got
+    // the restore with the edit, must make the same line).
+    if let Some((_, schema)) = registry.find(&record.entity) {
+        resolutions::note_delete_edit(conn, schema, &record.entity_id)?;
+    }
     if snapshot.get("deleted_at").is_some_and(|d| !d.is_null()) {
-        if let Some((_, schema)) = registry.find(&record.entity) {
-            resolutions::note_delete_edit(conn, schema, &record.entity_id)?;
-        }
         return conflicts::settle_deleted(conn, &record.entity, &record.entity_id);
     }
     Ok(Vec::new())

@@ -5,9 +5,8 @@ use std::sync::Arc;
 
 use mnemora_core::module::Module;
 use mnemora_core::settings::{self, SettingsRegistry};
-use mnemora_core::syncable::{FieldClass, Holdings, SyncEntity};
+use mnemora_core::syncable::{Holdings, SyncEntity};
 use rusqlite::Connection;
-use serde_json::{Map, Value};
 
 use crate::SyncError;
 
@@ -78,53 +77,12 @@ impl Registry {
     }
 }
 
-/// The fields of a record that travel and count, with their values.
-///
-/// `fields` is what the record says it changed (`None` for a record from before the change log
-/// kept that: every field of the snapshot). Derived fields and keys the Module does not list
-/// are dropped. With `complete_groups`, a group with any member present gets all its members,
-/// the missing ones read from `snapshot`: a change to the Due date sends the whole When. Do
-/// that only for records made on this device; a received record already carries whole groups,
-/// and its snapshot holds this device's merged values, not the sender's.
-pub fn wire_fields(
-    entity: &SyncEntity,
-    fields: Option<Map<String, Value>>,
-    snapshot: &Value,
-    complete_groups: bool,
-) -> Map<String, Value> {
-    let base = fields.unwrap_or_else(|| snapshot.as_object().cloned().unwrap_or_default());
-    let mut out = Map::new();
-    for field in entity.fields {
-        if field.class != FieldClass::Derived
-            && let Some(value) = base.get(field.name)
-        {
-            out.insert(field.name.to_owned(), value.clone());
-        }
-    }
-    if complete_groups {
-        let groups: Vec<&str> = entity
-            .fields
-            .iter()
-            .filter(|f| f.class != FieldClass::Derived && out.contains_key(f.name))
-            .filter_map(|f| f.group)
-            .collect();
-        for group in groups {
-            for member in entity.members(group) {
-                if !out.contains_key(member.name)
-                    && let Some(value) = snapshot.get(member.name)
-                {
-                    out.insert(member.name.to_owned(), value.clone());
-                }
-            }
-        }
-    }
-    out
-}
+pub use mnemora_core::syncable::wire_fields;
 
 #[cfg(test)]
 mod tests {
     use mnemora_core::syncable::SyncField;
-    use serde_json::json;
+    use serde_json::{Map, Value, json};
 
     use super::*;
 

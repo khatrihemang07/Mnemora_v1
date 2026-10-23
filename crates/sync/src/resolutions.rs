@@ -16,6 +16,7 @@
 //!
 //! Never log values.
 
+use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
@@ -438,6 +439,55 @@ fn essence(unit: &str, member: &str, value: Value) -> Value {
     }
 }
 
+/// Looks at the Value units of this device's own records made since the last time, for clashes
+/// with records it had received before. A clash is read off the records when one is stored, and
+/// an own record is not "stored" by Sync: made from a value other than the one the records say
+/// stands (a Task sitting in the Inbox because its List merged away, then moved), it clashes with
+/// the received record before it, which the other devices see and this one would otherwise
+/// never log.
+pub(crate) fn settle_local(
+    conn: &Connection,
+    registry: &crate::registry::Registry,
+    me: &str,
+) -> Result<(), SyncError> {
+    let mark: i64 = conn.query_row("SELECT seq FROM sync_local_settled", [], |r| r.get(0))?;
+    let top: i64 = conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM change_log", [], |r| {
+        r.get(0)
+    })?;
+    if top <= mark {
+        return Ok(());
+    }
+    let own: Vec<(String, String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT entity, entity_id, fields FROM change_log
+             WHERE seq > ?1 AND origin_device = ?2 AND op <> 'create' AND fields IS NOT NULL
+               AND entity NOT LIKE 'sync\\_%' ESCAPE '\\'
+             ORDER BY seq",
+        )?;
+        stmt.query_map(params![mark, me], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    let mut done: BTreeSet<(String, String, String)> = BTreeSet::new();
+    for (entity, entity_id, fields) in own {
+        let Some((_, schema)) = registry.find(&entity) else {
+            continue;
+        };
+        for name in object(&fields).keys() {
+            let Some(field) = schema.field(name) else {
+                continue;
+            };
+            let key = field.group.unwrap_or(field.name);
+            if let Some(members) = value_members(schema, key)
+                && done.insert((entity.clone(), entity_id.clone(), key.to_owned()))
+            {
+                settle_value(conn, me, &entity, &entity_id, key, &members)?;
+            }
+        }
+    }
+    conn.execute("UPDATE sync_local_settled SET seq = ?1", [top])?;
+    Ok(())
+}
+
 /// Every clash the stored records of one Value unit make: replayed in clock order, a record
 /// made from a value other than the one the replay holds was made BESIDE the one before it
 /// (its author had not seen it), and the later of the two (this record) is kept. A change made
@@ -607,14 +657,29 @@ pub(crate) fn note_delete_edit(
     let Some((ms, counter, device)) = delete else {
         return Ok(());
     };
+    // Whoever restored it had seen the delete, and so has everything written after that.
+    let restored: (i64, i64) = conn
+        .query_row(
+            "SELECT hlc_ms, hlc_counter FROM change_log
+             WHERE entity = ?1 AND entity_id = ?2 AND (hlc_ms, hlc_counter) > (?3, ?4)
+               AND json_type(fields, '$.deleted_at') = 'null'
+             ORDER BY hlc_ms, hlc_counter LIMIT 1",
+            params![entity, entity_id, ms, counter],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?
+        .unwrap_or((i64::MAX, 0));
     let edit: Option<(String, i64, String)> = conn
         .query_row(
             "SELECT origin_device, hlc_ms, fields FROM change_log
              WHERE entity = ?1 AND entity_id = ?2 AND origin_device != ?3
-               AND (hlc_ms, hlc_counter) > (?4, ?5) AND fields IS NOT NULL
+               AND (hlc_ms, hlc_counter) > (?4, ?5) AND (hlc_ms, hlc_counter) < (?6, ?7)
+               AND fields IS NOT NULL
                AND json_type(fields, '$.deleted_at') IS NULL AND op != 'delete'
              ORDER BY hlc_ms, hlc_counter, origin_device LIMIT 1",
-            params![entity, entity_id, device, ms, counter],
+            params![
+                entity, entity_id, device, ms, counter, restored.0, restored.1
+            ],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()?;
@@ -660,6 +725,28 @@ pub(crate) fn note_delete_edit(
                 row.replaced_device
             ],
         )?;
+    }
+    Ok(())
+}
+
+/// Judges again every record that has a delete-and-edit line: a delete made on this device
+/// since (it is not a received record, so nothing else looks) may be newer than the one the line
+/// was made for, which then no longer stands. Cheap: there are few such lines.
+pub(crate) fn refresh_delete_edits(
+    conn: &Connection,
+    registry: &crate::registry::Registry,
+) -> Result<(), SyncError> {
+    let records: Vec<(String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT target, target_id FROM sync_resolutions WHERE kind = 'delete_edit'",
+        )?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    for (entity, entity_id) in records {
+        if let Some((_, schema)) = registry.find(&entity) {
+            note_delete_edit(conn, schema, &entity_id)?;
+        }
     }
     Ok(())
 }
