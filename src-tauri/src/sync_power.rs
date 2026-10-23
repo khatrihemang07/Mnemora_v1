@@ -363,6 +363,15 @@ mod tests {
     }
 
     #[test]
+    fn only_one_start_can_be_in_flight() {
+        let power = Power::with_grace(GRACE);
+        assert!(power.begin_start());
+        assert!(!power.begin_start(), "a second start while one binds");
+        power.end_start();
+        assert!(power.begin_start());
+    }
+
+    #[test]
     fn link_codes_match_the_android_side() {
         assert_eq!(Link::from_code(0), Link::Offline);
         assert_eq!(Link::from_code(1), Link::Wifi);

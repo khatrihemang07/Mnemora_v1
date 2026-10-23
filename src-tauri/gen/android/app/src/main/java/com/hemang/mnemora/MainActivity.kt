@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.net.wifi.WifiManager
 import android.os.Bundle
+import android.os.PowerManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
@@ -18,6 +19,9 @@ class MainActivity : TauriActivity() {
   // this is true AND the activity is in front: the activity lifecycle is the authority, so the lock
   // cannot outlive the screen even if the WebView never reports the page as hidden.
   private var wantMulticast = false
+  // Keeps the CPU awake for the 5 s flush after the app leaves the front (screen off would
+  // otherwise let it sleep mid-session). Timed, so it can never be held longer.
+  private var flushLock: PowerManager.WakeLock? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -32,12 +36,14 @@ class MainActivity : TauriActivity() {
     super.onResume()
     applyMulticastLock(true)
     // Rust starts Sync's network (or keeps it, back inside the flush window) and runs a round.
+    flushLock?.takeIf { it.isHeld }?.release()
     SyncBridge.foreground(true)
   }
 
   override fun onPause() {
     applyMulticastLock(false)
     // Rust flushes pending changes for up to 5 s on its own timer, then stops everything.
+    holdForFlush()
     SyncBridge.foreground(false)
     super.onPause()
   }
@@ -45,8 +51,21 @@ class MainActivity : TauriActivity() {
   override fun onDestroy() {
     wantMulticast = false
     applyMulticastLock(false)
-    SyncBridge.unwatch()
+    flushLock?.takeIf { it.isHeld }?.release()
+    SyncBridge.unwatch(this)
     super.onDestroy()
+  }
+
+  // Only when Sync is on (the page said so), and for 6 s at most: nothing runs in the background after that.
+  private fun holdForFlush() {
+    if (!wantMulticast) return
+    val lock = flushLock ?: (getSystemService(Context.POWER_SERVICE) as? PowerManager)
+      ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "mnemora:sync-flush")
+      ?.also {
+        it.setReferenceCounted(false)
+        flushLock = it
+      }
+    lock?.acquire(6_000L)
   }
 
   // Must run on the UI thread. `inFront` is false from onPause on.

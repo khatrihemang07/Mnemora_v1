@@ -35,9 +35,18 @@ pub fn early() -> Early {
     *early_mut()
 }
 
-/// From now on reports act on the running app.
+/// From now on reports act on the running app. A report that arrived after `Power::new` read
+/// the early values but before this call reached nobody, so what was said is applied again (both
+/// are idempotent).
 pub fn register_app(app: AppHandle<tauri::Wry>) {
-    let _ = APP.set(app);
+    let _ = APP.set(app.clone());
+    let early = early();
+    if early.link != Link::Unknown {
+        super::link(&app, early.link);
+    }
+    if !early.front {
+        super::foreground(&app, false);
+    }
 }
 
 /// `SyncBridge.nativeForeground(front)`: `onResume` is true, `onPause` false.

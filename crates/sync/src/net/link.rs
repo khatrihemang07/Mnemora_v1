@@ -168,8 +168,10 @@ const KEEPALIVE_PROBES: u32 = 3;
 fn keep_alive(tcp: &TcpStream) {
     let probe = socket2::TcpKeepalive::new()
         .with_time(KEEPALIVE_IDLE)
-        .with_interval(KEEPALIVE_EVERY)
-        .with_retries(KEEPALIVE_PROBES);
+        .with_interval(KEEPALIVE_EVERY);
+    // Windows has no probe count to set.
+    #[cfg(not(windows))]
+    let probe = probe.with_retries(KEEPALIVE_PROBES);
     if let Err(e) = socket2::SockRef::from(tcp).set_tcp_keepalive(&probe) {
         tracing::debug!(target: "sync", error = %e, "could not turn on keepalive");
     }
@@ -542,6 +544,7 @@ mod keepalive_tests {
         assert!(socket.keepalive().unwrap());
         assert_eq!(socket.tcp_keepalive_time().unwrap(), KEEPALIVE_IDLE);
         assert_eq!(socket.tcp_keepalive_interval().unwrap(), KEEPALIVE_EVERY);
+        #[cfg(not(windows))]
         assert_eq!(socket.tcp_keepalive_retries().unwrap(), KEEPALIVE_PROBES);
         // 5 s idle + 3 unanswered probes 3 s apart: well inside the 15 s the spec asks for.
         let worst = KEEPALIVE_IDLE + KEEPALIVE_EVERY * KEEPALIVE_PROBES;

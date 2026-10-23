@@ -28,6 +28,9 @@ object SyncBridge {
 
     private var manager: ConnectivityManager? = null
     private var callback: ConnectivityManager.NetworkCallback? = null
+    // The activity that registered it: a recreated activity (rotation) registers anew, and the old
+    // one's late onDestroy must not remove the new one's callback.
+    private var owner: Context? = null
     // The non-VPN networks that are up, by handle. Touched from the connectivity thread and from
     // watch/unwatch, so guarded by itself.
     private val nets = HashMap<Network, SyncLink.Net>()
@@ -57,11 +60,12 @@ object SyncBridge {
 
     /**
      * Starts watching the phone's networks and reports the current state at once. VPNs (Tailscale)
-     * are left out of the request, so what is reported is the network underneath. Safe to call
-     * again; [unwatch] stops it.
+     * are left out of the request, so what is reported is the network underneath. Calling it again
+     * replaces the earlier registration, so there is never more than one callback; [unwatch] stops it.
      */
+    @Synchronized
     fun watch(context: Context) {
-        if (callback != null) return
+        removeCallback()
         val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
           ?: return
         val request = NetworkRequest.Builder()
@@ -89,10 +93,17 @@ object SyncBridge {
         }
         manager = cm
         callback = cb
+        owner = context
         // Until the first callback arrives the state is unknown to Rust, which never blocks Sync.
     }
 
-    fun unwatch() {
+    /** Stops watching, if [context] is the activity that started it. */
+    @Synchronized
+    fun unwatch(context: Context) {
+        if (owner === context) removeCallback()
+    }
+
+    private fun removeCallback() {
         val cb = callback ?: return
         try {
             manager?.unregisterNetworkCallback(cb)
@@ -100,6 +111,7 @@ object SyncBridge {
         }
         callback = null
         manager = null
+        owner = null
         synchronized(nets) { nets.clear() }
     }
 }

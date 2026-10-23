@@ -120,3 +120,23 @@ async fn the_screen_and_link_are_remembered_for_the_next_decision() {
     assert!(stopped(&mac));
     assert_eq!(sync_power::test_screen(&state), Screen::Away);
 }
+
+#[tokio::test]
+async fn rapid_leaving_and_returning_never_duplicates_the_network() {
+    let (mac, phone) = paired_pair(quick()).await;
+    meet(&mac, &phone);
+    until("connected", || peer_of(&mac)["state"] == "up_to_date").await;
+    let before = mac.app.sync_probe();
+    let handle = mac.app.handle();
+    for _ in 0..25 {
+        sync_power::foreground(&handle, false);
+        sync_power::foreground(&handle, true);
+    }
+    // Past every flush timer that was started: none of them may stop the network now.
+    tokio::time::sleep(Duration::from_millis(1_800)).await;
+    let after = mac.app.sync_probe();
+    assert_eq!(after.listeners, before.listeners);
+    assert_eq!(after.advertisements, before.advertisements);
+    assert_eq!(after.tasks, before.tasks);
+    assert_eq!(sync_power::test_screen(&handle), Screen::Front);
+}
