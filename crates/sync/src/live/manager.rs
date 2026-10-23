@@ -59,22 +59,53 @@ impl Leaver {
     /// nobody answering in time, it returns at once or at the limit with 0.
     pub async fn farewell(&self, limit: std::time::Duration) -> usize {
         let deadline = Instant::now() + limit;
-        let (tx, rx) = oneshot::channel();
-        if self.0.send(Cmd::Farewell(tx)).is_err() {
-            return 0;
-        }
-        let Ok(Ok(pending)) = tokio::time::timeout_at(deadline, rx).await else {
-            return 0;
+        tell_everyone(deadline, || async {
+            let (tx, rx) = oneshot::channel();
+            self.0.send(Cmd::Farewell(tx)).ok()?;
+            rx.await.ok()
+        })
+        .await
+    }
+}
+
+/// Asks (through `ask`) for one farewell session per connection and waits for them until
+/// `deadline`. A connection that ends before its session ran (the other device dialled at the same
+/// moment and its connection replaced this one) drops its answer unsent, which is not "told": the
+/// ask is made again, to whatever connection stands now, until every answer arrives, nobody is
+/// connected any more, or the deadline passes. Returns how many sessions finished.
+async fn tell_everyone<F, Fut>(deadline: Instant, mut ask: F) -> usize
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Option<Vec<oneshot::Receiver<()>>>>,
+{
+    let mut finished = 0;
+    loop {
+        let Ok(Some(pending)) = tokio::time::timeout_at(deadline, ask()).await else {
+            return finished;
         };
         // The sessions run side by side, so waiting for them one after the other costs no more
         // than the slowest.
-        let mut finished = 0;
+        let mut lost = false;
         for done in pending {
-            if matches!(tokio::time::timeout_at(deadline, done).await, Ok(Ok(()))) {
-                finished += 1;
+            match tokio::time::timeout_at(deadline, done).await {
+                Ok(Ok(())) => finished += 1,
+                Ok(Err(_)) => lost = true,
+                Err(_) => return finished,
             }
         }
-        finished
+        if !lost {
+            return finished;
+        }
+        // Give the replacing connection a moment to be the one held.
+        if tokio::time::timeout_at(
+            deadline,
+            tokio::time::sleep(std::time::Duration::from_millis(50)),
+        )
+        .await
+        .is_err()
+        {
+            return finished;
+        }
     }
 }
 
@@ -933,5 +964,65 @@ mod tests {
             &[a("192.168.1.9:1"), a("10.0.0.5:1")]
         ));
         assert!(same_addresses(&[], &[]));
+    }
+
+    use std::time::Duration;
+
+    fn answered() -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        tx.send(()).unwrap();
+        rx
+    }
+
+    #[tokio::test]
+    async fn a_connection_replaced_before_its_farewell_ran_is_asked_again() {
+        let mut asked = 0;
+        let finished = tell_everyone(Instant::now() + Duration::from_secs(5), || {
+            asked += 1;
+            let first = asked == 1;
+            async move {
+                // The first connection was closed unanswered (its sender dropped); the one that
+                // replaced it answers.
+                Some(vec![if first {
+                    oneshot::channel().1
+                } else {
+                    answered()
+                }])
+            }
+        })
+        .await;
+        assert_eq!((asked, finished), (2, 1));
+    }
+
+    #[tokio::test]
+    async fn nobody_connected_any_more_ends_the_farewell() {
+        let mut asked = 0;
+        let finished = tell_everyone(Instant::now() + Duration::from_secs(5), || {
+            asked += 1;
+            let first = asked == 1;
+            async move {
+                Some(if first {
+                    vec![oneshot::channel().1]
+                } else {
+                    Vec::new()
+                })
+            }
+        })
+        .await;
+        assert_eq!((asked, finished), (2, 0));
+    }
+
+    #[tokio::test]
+    async fn a_session_that_never_answers_stops_at_the_deadline() {
+        let (_keep, silent) = oneshot::channel::<()>();
+        let mut silent = Some(silent);
+        let started = std::time::Instant::now();
+        let finished = tell_everyone(Instant::now() + Duration::from_millis(150), || {
+            let pending = silent.take().into_iter().collect();
+            async move { Some(pending) }
+        })
+        .await;
+        assert_eq!(finished, 0);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

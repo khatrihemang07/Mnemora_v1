@@ -61,7 +61,9 @@ impl Device {
     }
 
     pub(crate) async fn until(&self, state: &str) -> Value {
-        for _ in 0..600 {
+        // Generous: the whole suite runs these in parallel on a small machine.
+        let start = std::time::Instant::now();
+        while start.elapsed() < Duration::from_secs(20) {
             let view = self.pairing();
             if view["state"] == state {
                 return view;

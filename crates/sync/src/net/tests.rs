@@ -162,6 +162,19 @@ async fn next_peer(listener: &mut Listener) -> Established {
     }
 }
 
+/// The ways a server's refusal of a dialler's certificate reaches the dialler (see its test).
+fn refused_by_the_server(e: &NetError) -> bool {
+    use std::io::ErrorKind::{BrokenPipe, ConnectionAborted, ConnectionReset, UnexpectedEof};
+    match e {
+        NetError::Tls(_) | NetError::Closed => true,
+        NetError::Io(io) => matches!(
+            io.kind(),
+            BrokenPipe | ConnectionReset | ConnectionAborted | UnexpectedEof
+        ),
+        _ => false,
+    }
+}
+
 async fn nothing_arrives(listener: &mut Listener) {
     assert!(
         tokio::time::timeout(Duration::from_millis(400), listener.accept())
@@ -241,9 +254,14 @@ async fn a_dialler_the_listener_has_not_pinned_is_refused() {
     let mut listener = listen(&a).await;
 
     let result = dial(&b.config, listener.local_addr()).await;
+    // TLS 1.3 lets the dialler finish its side before the server has judged its certificate, so
+    // the refusal reaches it as the server's alert (Tls) or, when the server has already closed
+    // and the dialler writes its handshake or reads first, as the closed line (broken pipe, reset,
+    // end of stream). Which of them depends on timing; what matters is that it failed.
     assert!(
-        matches!(result, Err(NetError::Tls(_))),
-        "the server's TLS alert reaches the dialler"
+        matches!(&result, Err(e) if refused_by_the_server(e)),
+        "the dialler must be turned away, got {:?}",
+        result.as_ref().err()
     );
     nothing_arrives(&mut listener).await;
 }
