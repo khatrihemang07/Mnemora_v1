@@ -814,3 +814,32 @@ describe('simulated List merge', () => {
     expect(createTodoMock().simulateMerge(undefined, 'Pixel 8')).toBeNull();
   });
 });
+
+describe('Sync docs of the Todo mock', () => {
+  it('carry the repeat rule and the understood words, so a sync keeps Repeat (M1)', () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', {
+      title: 'Water plants',
+      listId: null,
+      when: { date: '2026-10-22', time: null, local: LOCAL },
+      details: {
+        repeat: { freq: 'week', every: 2, days: null, mode: 'fixed' },
+        understood: '["every 2 weeks"]',
+      },
+    }) as Task;
+    const doc = mock.exportDocs().find((d) => d.id === task.id);
+    expect(doc?.values).toMatchObject({
+      repeat_freq: 'week',
+      repeat_every: 2,
+      repeat_days: null,
+      repeat_mode: 'fixed',
+      understood: '["every 2 weeks"]',
+    });
+    // Taking the docs back (what a sync does) leaves the rule alone.
+    mock.importDocs(mock.exportDocs());
+    expect(mock.exportDocs().find((d) => d.id === task.id)?.values).toMatchObject({
+      repeat_freq: 'week',
+      repeat_every: 2,
+    });
+  });
+});

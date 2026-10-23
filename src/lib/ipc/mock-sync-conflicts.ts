@@ -15,6 +15,7 @@ import type {
   DiffSpan,
   ResolvedRow,
 } from './bindings';
+import { type Event, lineNow, subjectWords } from './mock-sync-activity';
 import { type Piece, textMerge } from './mock-sync-merge';
 
 export interface Sample {
@@ -186,6 +187,13 @@ function draftOf(pieces: ClashPiece[], choices: ClashChoice[]): string {
     .join('');
 }
 
+/** "an Entry’s text", "a Task’s notes": the Conflict as Activity names it (activity_view.rs `conflict_subject`). */
+function subjectOfRow(subject: ConflictRow['subject']): string {
+  if (subject.kind === 'entry') return subjectWords('entry', 'text');
+  if (subject.kind === 'task') return subjectWords('task', subject.field);
+  return subjectWords('comment', '');
+}
+
 const at = (h: number, m: number) => new Date(2026, 9, 21, h, m).getTime();
 
 /**
@@ -196,6 +204,8 @@ export function createConflictsMock(
   emit: () => void = () => {},
   now: () => number = Date.now,
   paired: () => boolean = () => true,
+  /** Writes a line to Activity: resolving a Conflict logs "Conflict in … resolved" (Rust `log_conflict_resolved`). */
+  log: (line: Event) => void = () => {},
 ) {
   const resolved = resolvedSamples(now());
   const sampleIds = new Set(resolved.map((r) => r.id));
@@ -204,6 +214,8 @@ export function createConflictsMock(
   const entryOther =
     'Went for a run along the canal, legs heavy but good.\nCoffee with Sam after.\n';
   let arrived = 0;
+  /** What "Use ‹other› instead" does for a row a sync made: writes the value that gave way back. */
+  const writers = new Map<string, () => void>();
   const notesBase = 'Route: to decide\nBring the stove\n';
   const notesShowing = 'Route: ridge loop from the north\nBring the stove\n';
   const notesOther = 'Route: lake path from the south\nBring the stove\n';
@@ -298,10 +310,18 @@ export function createConflictsMock(
       this.raise(sample);
       return sample;
     },
-    /** Rows a sync added to "Resolved automatically", newest first. */
-    addResolved(rows: ResolvedRow[]) {
+    /**
+     * Rows a sync added to "Resolved automatically", newest first. `uses` holds, by row id, what
+     * the button does: the replaced value written back as an ordinary edit.
+     */
+    addResolved(rows: ResolvedRow[], uses: Map<string, () => void> = new Map()) {
       const known = new Set(resolved.map((r) => r.id));
-      for (const r of rows) if (!known.has(r.id)) resolved.unshift(r);
+      for (const r of rows)
+        if (!known.has(r.id)) {
+          resolved.unshift(r);
+          const use = uses.get(r.id);
+          if (use) writers.set(r.id, use);
+        }
       emit();
     },
     /** How many conflicts wait, for the attention the Home card and badge read. */
@@ -322,6 +342,7 @@ export function createConflictsMock(
         case 'sync_resolution_use_other': {
           const row = resolved.find((r) => r.id === String(a.id));
           if (!row?.action || row.used) throw gone('That cannot be changed');
+          writers.get(row.id)?.();
           row.used = row.action.replace(/^Use (.*) instead$/, 'Changed to $1');
           row.action = null;
           emit();
@@ -343,6 +364,11 @@ export function createConflictsMock(
           if (choice.kind !== 'keep_this') sample.apply?.(sample.showing);
           sample.open = false;
           sample.resolution = choice.kind === 'merged' ? 'merged' : choice.kind;
+          log(
+            lineNow('conflict_resolved', now(), {
+              extra: { subject: subjectOfRow(sample.row.subject) },
+            }),
+          );
           emit();
           return null;
         }

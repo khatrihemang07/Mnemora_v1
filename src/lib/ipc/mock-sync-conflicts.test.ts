@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ConflictRow } from './bindings';
+import { type Event, describe as lineOf } from './mock-sync-activity';
 import { createConflictsMock, diffSpans } from './mock-sync-conflicts';
 
 describe('conflicts mock', () => {
@@ -24,6 +25,39 @@ describe('conflicts mock', () => {
     expect(() =>
       mock.handle('sync_conflict_resolve', { id, choice: { kind: 'keep_this' } }),
     ).toThrow();
+  });
+
+  it('resolving a Conflict logs "Conflict in … resolved" (M4)', () => {
+    const log: Event[] = [];
+    const mock = createConflictsMock(
+      undefined,
+      () => 1_000,
+      undefined,
+      (e) => log.push(e),
+    );
+    mock.handle('sync_conflict_resolve', {
+      id: 'mock-conflict-notes',
+      choice: { kind: 'keep_this' },
+    });
+    mock.handle('sync_conflict_resolve', {
+      id: 'mock-conflict-entry',
+      choice: { kind: 'merged', text: 'x' },
+    });
+    expect(
+      log.map((e) =>
+        lineOf(e, 'mock-me')
+          .text.map((p) => p.text)
+          .join(''),
+      ),
+    ).toEqual(['Conflict in a Task’s notes resolved', 'Conflict in an Entry’s text resolved']);
+    // A Conflict that is already settled writes nothing more.
+    expect(() =>
+      mock.handle('sync_conflict_resolve', {
+        id: 'mock-conflict-entry',
+        choice: { kind: 'keep_this' },
+      }),
+    ).toThrow();
+    expect(log).toHaveLength(2);
   });
 
   it('has no sample Conflicts or Resolved rows until a device is paired', () => {

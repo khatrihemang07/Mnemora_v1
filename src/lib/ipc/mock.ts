@@ -53,7 +53,12 @@ import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bind
 import { events } from './bindings';
 import { createJournalMock } from './mock-journal';
 import { createSyncMock } from './mock-sync';
-import { createActivityMock } from './mock-sync-activity';
+import {
+  type Event as ActivityLine,
+  createActivityMock,
+  lineNow,
+  subjectWords,
+} from './mock-sync-activity';
 import { createConflictsMock } from './mock-sync-conflicts';
 import type { Json } from './mock-sync-merge';
 import { defaultPairingFlags, type PairingFlags } from './mock-sync-pairing';
@@ -170,6 +175,50 @@ export async function installMock() {
     void events.todoChangedEvent.emit();
     return merged;
   };
+  // The person typed in an Entry while a change for it waited: when the editor lets go, the
+  // typing shows and the other text becomes a Conflict (Rust held.rs + texts.rs).
+  let heldClashes = 0;
+  journal.onHeldClash = ({ entry, base, showing, other }) => {
+    const at = Date.now();
+    const id = `held-conflict-${entry.id}-${++heldClashes}`;
+    const mine = () => (device.sync?.name as string | null) ?? 'Alex’s MacBook Pro';
+    const docOf = () => journal.exportDocs().find((d) => d.id === entry.id);
+    conflicts.raise({
+      row: {
+        id,
+        subject: {
+          kind: 'entry',
+          page_date: entry.page_date,
+          written_at: entry.written_at,
+          written_offset_min: entry.written_offset_min,
+        },
+        module: 'journal',
+        raised_at: at,
+        showing: { device: mine(), at },
+        other: { device: 'Pixel 8 (simulated)', at: at - 1 },
+      },
+      base,
+      showing,
+      other,
+      open: true,
+      resolution: null,
+      live: () => {
+        const v = docOf()?.values.body;
+        return typeof v === 'string' ? v : undefined;
+      },
+      apply: (text) => {
+        const doc = docOf();
+        if (doc) journal.importDocs([{ ...doc, values: { ...doc.values, body: text } }]);
+        void events.journalChangedEvent.emit();
+      },
+    });
+    logActivity(
+      lineNow('conflict_raised', at, {
+        peer: 'mock-pixel',
+        extra: { subject: subjectWords('entry', 'text'), conflict: id },
+      }),
+    );
+  };
   // `?paired=2` shows Sync with two paired devices (Leave enabled, no Welcome page).
   // `__syncMock` steers the simulated second device (see mock-sync-pairing.ts); `?paircode=SECONDS`
   // makes a shown code expire sooner.
@@ -185,11 +234,16 @@ export async function installMock() {
     Date.now(),
     (id) => conflicts.isOpen(id),
   );
+  function logActivity(line: ActivityLine) {
+    activity.add(line);
+    void events.syncActivityEvent.emit();
+  }
   // The sample Conflicts and Resolved rows exist only once a device is paired.
   const conflicts = createConflictsMock(
     () => void events.syncConflictsEvent.emit(),
     Date.now,
     () => sync.pairedCount() > 0,
+    logActivity,
   );
   const sync = createSyncMock(
     device,
@@ -198,6 +252,7 @@ export async function installMock() {
     pairFlags,
     () => void events.syncPeersEvent.emit(),
     conflicts.openCount,
+    logActivity,
   );
   // `?paired=2&paused=update|me|both|clock|clock_me` starts with Pixel 8 paused for that reason.
   const paused = query.get('paused');

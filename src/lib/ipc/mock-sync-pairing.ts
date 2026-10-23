@@ -12,7 +12,7 @@
  * `__syncMock.lifeMs` (or `?paircode=SECONDS` in the address for a short-lived code) change the timing.
  *
  * Typing a code ("Enter a code") uses magic codes:
- *   12345678  right: waits for Allow, then pairs            11111111 (or any other)  wrong: 2, 1, then 0 tries left
+ *   12345678  right: waits for Allow, then pairs            11111111 (or any other)  wrong: 2, 1, then 0 tries left; after that every code is refused
  *   00000000  nothing found nearby                           20000000  the code expired
  *   30000000  declined                                       40000000  the other device is Production
  *   50000000  its data is older (50000001: this device's, 50000002: both)
@@ -229,6 +229,9 @@ export function createPairingMock(deps: Deps) {
   function typed(code: string, address?: string) {
     const fail = (error: PairingError) => set({ state: 'failed', error });
     const after = (ms: number, fn: () => void) => later(ms, fn);
+    // Three wrong tries killed the shown code and it stays dead: even the right one is refused (the
+    // connection is dropped), like the shower's code in Rust. Pairing, Cancel or a reload lifts it.
+    if (wrongStreak >= MAX_TRIES && code !== '00000000') return fail({ kind: 'connection_lost' });
     switch (code) {
       case '12345678':
       case '90000000':
@@ -300,7 +303,6 @@ export function createPairingMock(deps: Deps) {
       default: {
         wrongStreak += 1;
         const tries_left = Math.max(0, MAX_TRIES - wrongStreak);
-        if (tries_left === 0) wrongStreak = 0;
         return fail({ kind: 'wrong_code', tries_left, name: PIXEL });
       }
     }

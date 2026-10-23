@@ -22,6 +22,7 @@ import type {
   KnownAddress,
   PeerRow,
 } from './bindings';
+import { type Event, lineNow } from './mock-sync-activity';
 import type { PairedBase } from './mock-sync-live';
 import { uniqueName } from './mock-sync-pairing';
 
@@ -124,6 +125,8 @@ export interface DeviceMockOptions {
   forced: () => CheckKind | undefined;
   /** Typed Addresses by device id; shared with pairing by address. */
   typed?: Map<string, string>;
+  /** Writes a line to Activity (Forget and Rename each log one, as in Rust). */
+  log?: (line: Event) => void;
 }
 
 export function createDeviceMock(o: DeviceMockOptions) {
@@ -176,6 +179,14 @@ export function createDeviceMock(o: DeviceMockOptions) {
           if (uniqueName(name, others) !== name) {
             throw error('validation', 'Another of your devices already has that name');
           }
+          // Nothing changed, nothing logged (rename.rs).
+          if (name !== peer.name)
+            o.log?.(
+              lineNow('renamed', Date.now(), {
+                device: peer.id,
+                extra: { old: peer.name, new: name },
+              }),
+            );
           peer.name = name;
           o.emitPeers();
           return name;
@@ -203,6 +214,9 @@ export function createDeviceMock(o: DeviceMockOptions) {
           return null;
         case 'sync_device_forget':
           typed.delete(peer.id);
+          o.log?.(
+            lineNow('forgot', Date.now(), { peer: peer.id, extra: { peer_name: peer.name } }),
+          );
           o.forget(peer.id);
           return null;
         default:

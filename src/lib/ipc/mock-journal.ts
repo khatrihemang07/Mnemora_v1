@@ -9,7 +9,7 @@ import type { AppError, Entry, NewEntry, Page, PageDirection } from './bindings'
 import { pageDates, validDate } from './mock-journal-pages';
 import { plainText, searchEntries } from './mock-journal-search';
 import { seedJournalEntries } from './mock-journal-seed';
-import type { Doc } from './mock-sync-merge';
+import { type Doc, textMerge, textOf } from './mock-sync-merge';
 
 const MAX_OFFSET_MIN = 14 * 60;
 const MAX_ZONE_CHARS = 64;
@@ -83,6 +83,12 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
   /** Entries an editor holds (Rust: `editing_hold` with scope `*`), and the text waiting for them. */
   const held = new Set<string>();
   const waiting = new Map<string, string>();
+  /** The text an Entry had when a change for it first had to wait: what the person went on typing from. */
+  const bases = new Map<string, string>();
+  const wait = (entry: Entry, text: string) => {
+    if (!waiting.has(entry.id)) bases.set(entry.id, entry.body);
+    waiting.set(entry.id, text);
+  };
 
   const edit = (entry: Entry, text: string) => {
     const now = Date.now();
@@ -95,6 +101,13 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
   return {
     /** Set by the IPC mock: tells the UI that Journal data changed behind its back. */
     onRemoteChange: undefined as (() => void) | undefined,
+    /**
+     * Set by the IPC mock: a held change and the person's own typing clashed when the editor let
+     * go. The typing shows (it is the newer); the Conflict keeps the other text, as in Rust.
+     */
+    onHeldClash: undefined as
+      | ((c: { entry: Entry; base: string; showing: string; other: string }) => void)
+      | undefined,
 
     handles: (cmd: string) => cmd.startsWith('journal_') || cmd.startsWith('editing_'),
 
@@ -107,7 +120,7 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
       const entry = id ? find(id) : live().sort((x, y) => y.written_at - x.written_at)[0];
       if (!entry) return false;
       if (held.has(entry.id)) {
-        waiting.set(entry.id, text);
+        wait(entry, text);
         return false;
       }
       edit(entry, text);
@@ -156,7 +169,7 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           entry.edited_at = null;
           changed = true;
         } else if (entry.body !== v.body) {
-          if (held.has(entry.id)) waiting.set(entry.id, String(v.body));
+          if (held.has(entry.id)) wait(entry, String(v.body));
           else {
             edit(entry, String(v.body));
             changed = true;
@@ -181,11 +194,23 @@ export function createJournalMock(seed = false, flags: JournalMockFlags = { fail
           const id = a.entityId as string;
           held.delete(id);
           const text = waiting.get(id);
+          const base = bases.get(id);
           waiting.delete(id);
+          bases.delete(id);
           const entry = find(id);
           if (text !== undefined && entry) {
-            edit(entry, text);
-            this.onRemoteChange?.();
+            // Rust (held.rs, texts.rs): the text is the three-way merge of what waited and what the
+            // person typed since. They typed after it arrived, so on a clash their words show.
+            const typed = entry.body;
+            const merged =
+              base === undefined || typed === base ? text : textOf(textMerge(base, text, typed));
+            if (merged !== entry.body) {
+              edit(entry, merged);
+              this.onRemoteChange?.();
+            }
+            if (base !== undefined && typed !== base && merged !== text && typed !== text)
+              if (textMerge(base, text, typed).some((p) => 'clash' in p))
+                this.onHeldClash?.({ entry, base, showing: merged, other: text });
           }
           return null;
         }

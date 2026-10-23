@@ -157,6 +157,17 @@ describe('typing a code', () => {
     });
   });
 
+  it('once the tries are spent the lockout stays: every code is refused, the right one too (M7)', () => {
+    const s = setup();
+    for (const code of ['11111111', '22222222', '33333333']) type(s, code, 900);
+    expect(type(s, '44444444', 900)).toMatchObject({ error: { kind: 'connection_lost' } });
+    expect(type(s, '12345678', 900)).toMatchObject({ error: { kind: 'connection_lost' } });
+    s.call('sync_pair_cancel');
+    expect(type(s, '11111111', 900)).toMatchObject({
+      error: { kind: 'wrong_code', tries_left: 2 },
+    });
+  });
+
   const failures: [string, string][] = [
     ['00000000', 'nothing_nearby'],
     ['20000000', 'code_expired'],

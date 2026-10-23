@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CheckResult, DeviceDetail, DeviceSettings } from './bindings';
 import { createSyncMock } from './mock-sync';
+import { describe as describeLine, type Event } from './mock-sync-activity';
 import { defaultPairingFlags } from './mock-sync-pairing';
 
 const PIXEL = 'mock-pixel';
@@ -125,5 +126,50 @@ describe('Forget', () => {
       .peers;
     expect(rows.find((p) => p.id === PIXEL)?.state).toBe('syncing');
     expect(rows.find((p) => p.id === AIR)?.state).toBe('not_nearby');
+  });
+});
+
+describe('Activity lines Forget, Rename and Leave write (M6)', () => {
+  const lines = () => {
+    const device: DeviceSettings = { sync: { enabled: true, name: 'Alex’s Mac' } };
+    const log: Event[] = [];
+    const mock = createSyncMock(
+      device,
+      2,
+      () => {},
+      defaultPairingFlags(),
+      () => {},
+      () => 0,
+      (e) => log.push(e),
+    );
+    const words = () =>
+      log.map((e) => {
+        const row = describeLine(e, 'mock-me');
+        return { kind: row.kind, text: row.text.map((p) => p.text).join(''), on: row.on };
+      });
+    return { mock, words };
+  };
+
+  it('Rename logs "‹old› renamed to ‹new›" and nothing when the name did not change', () => {
+    const { mock, words } = lines();
+    mock.handle('sync_device_rename', { id: PIXEL, name: 'Pixel 8 (simulated)' });
+    expect(words()).toEqual([]);
+    mock.handle('sync_device_rename', { id: PIXEL, name: 'Pixel 9' });
+    expect(words()).toEqual([
+      { kind: 'renamed', text: 'Pixel 8 (simulated) renamed to Pixel 9', on: null },
+    ]);
+  });
+
+  it('Forget logs "Forgot ‹name›", by the name it had', () => {
+    const { mock, words } = lines();
+    mock.handle('sync_device_forget', { id: AIR });
+    expect(words()).toEqual([{ kind: 'forgot', text: 'Forgot MacBook Air (simulated)', on: null }]);
+  });
+
+  it('Leave logs "Left the group" once, and not with nobody paired', () => {
+    const { mock, words } = lines();
+    mock.handle('sync_leave', {});
+    mock.handle('sync_leave', {});
+    expect(words()).toEqual([{ kind: 'left', text: 'Left the group', on: null }]);
   });
 });

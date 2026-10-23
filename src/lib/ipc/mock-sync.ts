@@ -15,6 +15,7 @@ import type {
   SyncOption,
   SyncState,
 } from './bindings';
+import { type Event, lineNow } from './mock-sync-activity';
 import { createDeviceMock } from './mock-sync-devices';
 import { createLiveMock, type PairedBase } from './mock-sync-live';
 import {
@@ -98,6 +99,8 @@ export function createSyncMock(
   flags: PairingFlags = defaultPairingFlags(),
   emitPeers: () => void = () => {},
   openConflicts: () => number = () => 0,
+  /** Writes a line to Activity (Leave, Forget and Rename each log one, as in Rust). */
+  log: (line: Event) => void = () => {},
 ) {
   const peers: PairedBase[] = FAKE_PEERS.slice(0, pairedDevices).map((p) => ({ ...p }));
   const sync = () => {
@@ -165,6 +168,7 @@ export function createSyncMock(
     emitPeers,
     syncOne: (id) => live.syncOne(id),
     forget: (id) => live.forget(id),
+    log,
     forced: () => flags.check,
   });
 
@@ -222,6 +226,7 @@ export function createSyncMock(
           return null;
         }
         case 'sync_leave':
+          if (peers.length > 0) log(lineNow('left', Date.now()));
           peers.length = 0;
           live.reset();
           return null;

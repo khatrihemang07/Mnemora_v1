@@ -34,7 +34,30 @@ export interface Event {
 export function subjectWords(entity: string, field: string): string {
   if (entity === 'entry') return 'an Entry’s text';
   if (entity === 'task') return `a Task’s ${field}`;
-  return 'a Comment';
+  return 'a Comment’s text';
+}
+
+let written = 0;
+/**
+ * A line this device writes now (the mock's counterpart of Rust's `blank` row): by this device
+ * unless `device` says another made it, about `peer` when there is one.
+ */
+export function lineNow(
+  kind: string,
+  at: number,
+  rest: { device?: string; peer?: string; extra?: Record<string, string> } = {},
+): Event {
+  return {
+    id: `mock-act-now-${at}-${String(++written).padStart(4, '0')}`,
+    kind,
+    at,
+    device: rest.device ?? ME,
+    peer: rest.peer ?? '',
+    n_in: 0,
+    n_out: 0,
+    breakdown: null,
+    extra: rest.extra ?? {},
+  };
 }
 
 /** A small seeded generator, so the same log is made every time. */
@@ -172,7 +195,8 @@ export function describe(
   viewer: string,
   isOpen: (conflict: string) => boolean = () => false,
 ): ActivityRow {
-  const name = (id: string) => NAMES.get(id) ?? 'another device';
+  const name = (id: string) =>
+    NAMES.get(id) ?? (id === e.peer ? e.extra.peer_name : undefined) ?? 'another device';
   const aboutMe = e.peer === viewer;
   const other = name(aboutMe ? e.device : e.peer);
   let text: Piece[];
@@ -193,6 +217,9 @@ export function describe(
       break;
     case 'paired':
       text = [piece('Paired with '), piece(other, true)];
+      break;
+    case 'forgot':
+      text = [piece('Forgot '), piece(name(e.peer), true)];
       break;
     case 'renamed':
       text = [
@@ -223,7 +250,7 @@ export function describe(
         piece(e.extra.into ?? '', true),
       ];
   }
-  const named = e.kind === 'renamed' || e.kind === 'left';
+  const named = e.kind === 'renamed' || e.kind === 'left' || e.kind === 'forgot';
   return {
     id: e.id,
     kind: e.kind,

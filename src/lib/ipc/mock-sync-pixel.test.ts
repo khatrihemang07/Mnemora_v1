@@ -4,9 +4,10 @@ import { createJournalMock } from './mock-journal';
 import { createActivityMock } from './mock-sync-activity';
 import { createConflictsMock } from './mock-sync-conflicts';
 import { breakdown, createPixelMock } from './mock-sync-pixel';
+import type { Formats } from './mock-sync-words';
 import { createTodoMock } from './mock-todo';
 
-function setup() {
+function setup(formats?: () => Formats) {
   const todo = createTodoMock();
   const journal = createJournalMock();
   const conflicts = createConflictsMock();
@@ -39,6 +40,7 @@ function setup() {
     conflicts,
     activity,
     myName: () => 'Mac',
+    formats,
     announce,
   });
   // The mock also keeps its sample rows; these are the ones a sync made.
@@ -142,7 +144,7 @@ describe('the simulated Pixel 8', () => {
     expect(rows().map((r) => r.link)).toEqual([null, null]);
   });
 
-  it('puts a Priority clash, a delete that met an edit and a Task sent to the Inbox in Resolved automatically', () => {
+  it('puts a Priority clash, a delete that met an edit, a Task sent to the Inbox and the folded order line in Resolved automatically', () => {
     const t = setup();
     t.pixel.scenario('resolved');
     expect(
@@ -150,10 +152,119 @@ describe('the simulated Pixel 8', () => {
         .lists()
         .resolved.map((r) => r.kind)
         .sort(),
-    ).toEqual(['delete_edit', 'task_inbox', 'value']);
+    ).toEqual(['delete_edit', 'order_prefs', 'task_inbox', 'value']);
     const value = t.lists().resolved.find((r) => r.kind === 'value');
     expect(value?.title).toBe('‘Water plants’ · Priority');
     expect(value?.detail).toBe('P2 (Mac) kept · P1 (Pixel 8 (simulated)) replaced');
+  });
+
+  it('"Use P1 instead" writes the other value as a real edit, once (M2)', () => {
+    const t = setup();
+    t.pixel.scenario('resolved');
+    const row = t.lists().resolved.find((r) => r.kind === 'value');
+    expect(row?.action).toBe('Use P1 instead');
+    const water = t.todo
+      .exportDocs()
+      .find((d) => d.entity === 'task' && d.values.title === 'Water plants') as { id: string };
+    expect((t.todo.handle('todo_task', { id: water.id }) as Task).priority).toBe(2);
+    t.announce.todoChanged.mockClear();
+    t.conflicts.handle('sync_resolution_use_other', { id: row?.id });
+    expect((t.todo.handle('todo_task', { id: water.id }) as Task).priority).toBe(1);
+    expect(t.announce.todoChanged).toHaveBeenCalled();
+    expect(t.lists().resolved.find((r) => r.id === row?.id)).toMatchObject({
+      action: null,
+      used: 'Changed to P1',
+    });
+    const history = t.todo.handle('todo_task_history', { id: water.id }) as unknown[];
+    expect(JSON.stringify(history)).toContain('priority');
+    expect(() => t.conflicts.handle('sync_resolution_use_other', { id: row?.id })).toThrow();
+    // …and the change reaches the phone on the next sync.
+    t.pixel.sync();
+    expect(t.pixel.world().find((d) => d.id === water.id)?.values.priority).toBe(1);
+  });
+
+  it('writes dates and times in the Preferences’ format, not as raw ISO (M3)', () => {
+    const rows = (formats: Formats) => {
+      const t = setup(() => formats);
+      const task = t.todo.handle('todo_task_create', {
+        title: 'Call bank',
+        listId: null,
+        when: {
+          date: '2026-11-01',
+          time: '18:00',
+          local: { today: '2026-10-22', now: '10:00', offset_min: 0 },
+        },
+      }) as Task;
+      t.pixel.sync();
+      t.pixel.edit('task_when', { task: task.id, date: '2026-11-05', time: '09:00' });
+      t.todo.handle('todo_tasks_restore_when', {
+        changes: [{ id: task.id, due_date: '2026-11-07', due_time: '21:30', repeat: null }],
+      });
+      t.pixel.sync();
+      return t.lists().resolved.find((r) => r.title.endsWith('Due date'));
+    };
+    expect(rows({ date: 'long', time: '24h' })).toMatchObject({
+      title: '‘Call bank’ · Due date',
+      detail: 'Sat 7 Nov 21:30 (Mac) kept · Thu 5 Nov 09:00 (Pixel 8 (simulated)) replaced',
+      action: 'Use Thu 5 Nov 09:00 instead',
+    });
+    expect(rows({ date: 'short', time: '12h' })?.detail).toBe(
+      'Nov 7, 2026 9:30 PM (Mac) kept · Nov 5, 2026 9:00 AM (Pixel 8 (simulated)) replaced',
+    );
+    expect(rows({ date: 'iso', time: '24h' })?.action).toBe('Use 2026-11-05 09:00 instead');
+  });
+
+  it('keeps Repeat and the understood words on a Task the phone synced (M1)', () => {
+    const t = setup();
+    const task = t.todo.handle('todo_task_create', {
+      title: 'Water plants',
+      listId: null,
+      when: {
+        date: '2026-10-22',
+        time: null,
+        local: { today: '2026-10-22', now: '10:00', offset_min: 0 },
+      },
+      details: {
+        repeat: { freq: 'week', every: 1, days: null, mode: 'fixed' },
+        understood: '["weekly"]',
+      },
+    }) as Task;
+    t.pixel.sync();
+    t.pixel.edit('task_edit', { task: task.id, title: 'Water the plants' });
+    t.pixel.sync();
+    const back = t.todo.exportDocs().find((d) => d.id === task.id);
+    expect(back?.values).toMatchObject({
+      title: 'Water the plants',
+      repeat_freq: 'week',
+      repeat_every: 1,
+      repeat_mode: 'fixed',
+      understood: '["weekly"]',
+    });
+    expect(t.pixel.world().find((d) => d.id === task.id)?.values.repeat_freq).toBe('week');
+  });
+
+  it('folds the order keys and Preferences a sync took into one line (M5)', () => {
+    const t = setup();
+    t.todo.handle('todo_task_create', { title: 'Call mum', listId: null });
+    t.todo.handle('todo_task_create', { title: 'Buy oat milk', listId: null });
+    t.pixel.sync();
+    t.pixel.edit('task_place', { task: 'Buy oat milk', before: 'Call mum' });
+    t.pixel.edit('pref', { key: 'core.week_start', value: 'sun' });
+    t.pixel.edit('pref', { key: 'core.time_format', value: '12h' });
+    t.pixel.sync();
+    const fold = t.lists().resolved.find((r) => r.kind === 'order_prefs');
+    expect(fold).toMatchObject({
+      title: 'Order & preferences · 3 changes',
+      detail: 'Pixel 8 (simulated)',
+      module: 'sync',
+      icon: 'order',
+      action: null,
+    });
+    expect(fold?.changes).toEqual(['‘Buy oat milk’ moved', 'Week start', 'Time format']);
+    // Nothing new, no new line.
+    const before = t.lists().resolved.length;
+    t.pixel.sync();
+    expect(t.lists().resolved).toHaveLength(before);
   });
 
   it('merges Lists with one name and tells the follower, once the person has had time to open one', () => {

@@ -28,8 +28,16 @@ import type {
 } from './bindings';
 import { subjectWords } from './mock-sync-activity';
 import type { Sample } from './mock-sync-conflicts';
-import { type Doc, fold, type Json, type Outcome, type TextClash } from './mock-sync-merge';
+import { type Doc, fold, type Outcome, type TextClash, type ValueClash } from './mock-sync-merge';
 import { capture, createIds, createReplica, perform, syncReplicas } from './mock-sync-replica';
+import {
+  clockWords,
+  DEFAULT_FORMATS,
+  dateText,
+  type Formats,
+  UNIT_WORDS,
+  valueWords,
+} from './mock-sync-words';
 
 export const PIXEL = { id: 'mock-pixel', name: 'Pixel 8 (simulated)' };
 const ME_ID = 'mock-me';
@@ -43,11 +51,13 @@ export interface PixelPorts {
   command(cmd: string, args: Record<string, unknown>): unknown;
   conflicts: {
     raise(sample: Sample): boolean;
-    addResolved(rows: ResolvedRow[]): void;
+    addResolved(rows: ResolvedRow[], uses?: Map<string, () => void>): void;
   };
   activity: { add(...events: ActivityEvent[]): void };
   /** This device's name in Sync. */
   myName(): string;
+  /** How dates and times are written (the Date and Time format Preferences); long and 24 hour by default. */
+  formats?: () => Formats;
   announce: {
     todoChanged(): void;
     journalChanged(): void;
@@ -107,15 +117,35 @@ export function breakdown(entities: string[]): string | null {
   return [...modules].map(([m, words]) => `${m}: ${words.join(', ')}`).join(' · ');
 }
 
-const UNIT_WORDS: Record<string, [string, ResolvedIcon]> = {
-  priority: ['Priority', 'flag'],
-  when: ['Due date', 'calendar'],
-  state: ['Status', 'check'],
-  list_id: ['List', 'list'],
-  name: ['Name', 'list'],
-  emoji: ['Emoji', 'list'],
-  page_date: ['Page', 'other'],
-  value: ['Preference', 'order'],
+/** The icon a unit wears (resolved_view.rs `icon_of`). */
+function iconOf(unit: string): ResolvedIcon {
+  switch (unit) {
+    case 'deleted_at':
+      return 'trash';
+    case 'priority':
+      return 'flag';
+    case 'when':
+    case 'page_date':
+    case 'written':
+      return 'calendar';
+    case 'state':
+      return 'check';
+    case 'list_id':
+    case 'task_id':
+    case 'name':
+    case 'emoji':
+    case 'task_sort':
+    case 'group_by':
+      return 'list';
+    default:
+      return 'other';
+  }
+}
+
+/** `core.week_start` -> "Week start". */
+const humanize = (key: string): string => {
+  const spaced = (key.split('.').pop() ?? key).replaceAll('_', ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 };
 
 export function createPixelMock(ports: PixelPorts) {
@@ -148,10 +178,30 @@ export function createPixelMock(ports: PixelPorts) {
     if (!started) rebase();
   };
 
+  const formats = () => ports.formats?.() ?? DEFAULT_FORMATS;
+
   const docs = (o: Outcome, entity: string) => o.docs.filter((d) => d.entity === entity);
   const titleOf = (o: Outcome, entity: string, id: string): string => {
     const d = o.docs.find((x) => x.entity === entity && x.id === id);
     return d ? String(d.values.title ?? d.values.name ?? d.values.body ?? '') : '';
+  };
+
+  /** A record's name in a title, as `target_words` writes it: a Task in quotes, a List, a Comment, an Entry's moment. */
+  const targetWords = (o: Outcome, entity: string, id: string): string => {
+    const quoted = (t: string) => (t === '' ? 'Untitled' : `‘${t}’`);
+    const d = o.docs.find((x) => x.entity === entity && x.id === id);
+    if (entity === 'task') return quoted(String(d?.values.title ?? ''));
+    if (entity === 'list') return `List ${quoted(String(d?.values.name ?? ''))}`;
+    if (entity === 'comment')
+      return `Comment on ${quoted(titleOf(o, 'task', String(d?.values.task_id ?? '')))}`;
+    if (entity === 'entry') {
+      const f = formats();
+      const at = Number(d?.values.written_at ?? 0);
+      const offset = Number(d?.values.written_offset_min ?? 0);
+      const local = Math.floor(at / 60_000) + offset;
+      return `${dateText(String(d?.values.page_date ?? ''), f.date)} · ${clockWords(((local % 1440) + 1440) % 1440, f.time)} Entry`;
+    }
+    return 'Something';
   };
 
   /** Finds what a person names: an id, or a Task's title, a List's name, or the start of a text. */
@@ -248,14 +298,80 @@ export function createPixelMock(ports: PixelPorts) {
     };
   };
 
-  const show = (unit: string, v: Record<string, Json>): string => {
-    if (unit === 'priority') return `P${String(v.priority)}`;
-    if (unit === 'when') return [v.due_date, v.due_time].filter(Boolean).join(' ') || 'no date';
-    if (unit === 'state') return String(v.state);
-    return String(Object.values(v)[0] ?? '');
+  const listNameIn = (o: Outcome) => (id: string) => {
+    const name = o.docs.find((d) => d.entity === 'list' && d.id === id)?.values.name;
+    return typeof name === 'string' && name !== '' ? name : 'A List';
+  };
+  const words = (o: Outcome, v: ValueClash, which: 'kept' | 'replaced') =>
+    valueWords(v.entity, v.unit, v[which], formats(), listNameIn(o));
+
+  /**
+   * What "Use ‹other› instead" does for a clash: the replaced value written back through the
+   * Todo commands (so it validates, reads as a History line and syncs like any edit), or null where
+   * Rust offers no button (`can_write_back`: a repeating Task's status, a deletion, Entries).
+   */
+  const writeBack = (o: Outcome, v: ValueClash): (() => void) | null => {
+    const r = v.replaced;
+    const text = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : null);
+    const doc = o.docs.find((d) => d.entity === v.entity && d.id === v.id);
+    const run = (cmd: string, args: Record<string, unknown>) => () => {
+      ports.command(cmd, args);
+      ports.announce.todoChanged();
+    };
+    if (v.entity === 'task') {
+      switch (v.unit) {
+        case 'priority':
+          return run('todo_task_set_priority', { id: v.id, priority: r.priority });
+        case 'list_id':
+          return run('todo_task_move', { id: v.id, listId: text('list_id') });
+        case 'when': {
+          const freq = text('repeat_freq');
+          return run('todo_tasks_restore_when', {
+            changes: [
+              {
+                id: v.id,
+                due_date: text('due_date'),
+                due_time: text('due_time'),
+                repeat: freq
+                  ? {
+                      freq,
+                      every: Number(r.repeat_every ?? 1),
+                      days: (r.repeat_days ?? null) as number | null,
+                      mode: text('repeat_mode') ?? 'fixed',
+                    }
+                  : null,
+              },
+            ],
+          });
+        }
+        case 'state': {
+          if (doc?.values.repeat_freq != null || doc?.values.repeat_of != null) return null;
+          const cmd =
+            r.state === 'done'
+              ? 'todo_task_complete'
+              : r.state === 'wont'
+                ? 'todo_task_wont_do'
+                : 'todo_task_reopen';
+          return run(cmd, { id: v.id, local: local() });
+        }
+      }
+    }
+    if (v.entity === 'list') {
+      switch (v.unit) {
+        case 'name':
+          return run('todo_list_rename', { id: v.id, name: text('name') ?? '' });
+        case 'emoji':
+          return run('todo_list_set_emoji', { id: v.id, emoji: text('emoji') });
+        case 'task_sort':
+          return run('todo_list_set_sort', { id: v.id, sort: text('task_sort') });
+        case 'group_by':
+          return run('todo_list_set_group', { id: v.id, groupBy: text('group_by') });
+      }
+    }
+    return null;
   };
 
-  /** Rows for "Resolved automatically" from what a sync found. */
+  /** Rows for "Resolved automatically" from what a sync found, and what their buttons do. */
   const resolvedRows = (
     o: Outcome,
     fresh: {
@@ -263,25 +379,25 @@ export function createPixelMock(ports: PixelPorts) {
       deleteEdits: Outcome['deleteEdits'];
       inbox: Outcome['inbox'];
     },
-  ): ResolvedRow[] => {
+    changes: string[],
+  ): { rows: ResolvedRow[]; uses: Map<string, () => void> } => {
     const at = now();
     const base = { module: 'todo', fresh: true, used: null, changes: [] as string[], at };
     const rows: ResolvedRow[] = [];
+    const uses = new Map<string, () => void>();
     for (const v of fresh.values) {
-      const [word, icon] = UNIT_WORDS[v.unit] ?? [v.unit, 'other' as ResolvedIcon];
-      const title = titleOf(o, v.entity, v.id);
+      const id = `pixel-value-${hash(`${v.entity}/${v.id}/${v.unit}/${v.at}/${v.keptDevice}`)}`;
+      const use = writeBack(o, v);
+      if (use) uses.set(id, use);
       rows.push({
         ...base,
-        id: `pixel-value-${hash(`${v.entity}/${v.id}/${v.unit}/${v.at}/${v.keptDevice}`)}`,
+        id,
         kind: 'value',
         module: v.entity === 'entry' ? 'journal' : 'todo',
-        icon,
-        title: `‘${title || v.entity}’ · ${word}`,
-        detail: `${show(v.unit, v.kept)} (${deviceName(v.keptDevice)}) kept · ${show(v.unit, v.replaced)} (${deviceName(v.replacedDevice)}) replaced`,
-        action:
-          v.unit === 'priority' || v.unit === 'when'
-            ? `Use ${show(v.unit, v.replaced)} instead`
-            : null,
+        icon: iconOf(v.unit),
+        title: `${targetWords(o, v.entity, v.id)} · ${UNIT_WORDS[v.unit] ?? humanize(v.unit)}`,
+        detail: `${words(o, v, 'kept')} (${deviceName(v.keptDevice)}) kept · ${words(o, v, 'replaced')} (${deviceName(v.replacedDevice)}) replaced`,
+        action: use ? `Use ${words(o, v, 'replaced')} instead` : null,
       });
     }
     for (const d of fresh.deleteEdits)
@@ -291,7 +407,7 @@ export function createPixelMock(ports: PixelPorts) {
         kind: 'delete_edit',
         module: d.entity === 'entry' ? 'journal' : 'todo',
         icon: 'trash',
-        title: `‘${titleOf(o, d.entity, d.id) || d.entity}’ · Deleted`,
+        title: `${targetWords(o, d.entity, d.id)} · Deleted`,
         detail: `Deleted (${deviceName(d.deleter)}) kept · edited (${deviceName(d.editor)}) kept inside it`,
         action: null,
       });
@@ -301,11 +417,24 @@ export function createPixelMock(ports: PixelPorts) {
         id: `pixel-inbox-${hash(`${i.task}/${i.list}/${i.at}`)}`,
         kind: 'task_inbox',
         icon: 'inbox',
-        title: `‘${titleOf(o, 'task', i.task)}’ moved to Inbox`,
-        detail: `${titleOf(o, 'list', i.list) || 'A List'} was deleted on ${deviceName(i.deleter)}`,
+        title: `${targetWords(o, 'task', i.task)} moved to Inbox`,
+        detail: `${listNameIn(o)(i.list)} was deleted on ${deviceName(i.deleter)}`,
         action: null,
       });
-    return rows;
+    // One folded line for the session: the order keys and Preferences it took (`fold_add`).
+    if (changes.length > 0)
+      rows.push({
+        ...base,
+        id: `pixel-fold-${at}-${++counter}`,
+        kind: 'order_prefs',
+        module: 'sync',
+        icon: 'order',
+        title: `Order & preferences · ${changes.length} ${changes.length === 1 ? 'change' : 'changes'}`,
+        detail: PIXEL.name,
+        action: null,
+        changes,
+      });
+    return { rows, uses };
   };
 
   /** This device and the phone sync. Returns what it found, in words. */
@@ -314,6 +443,7 @@ export function createPixelMock(ports: PixelPorts) {
     const at = now();
     // What a person did here since the last sync is written down now, after the phone's edits.
     capture(me, localDocs(), Math.max(at, phone.lastMs + 1));
+    const before = new Map(localDocs().map((d) => [`${d.entity}/${d.id}`, d]));
     const mine = new Set(me.log.map((r) => `${r.stamp.device}/${r.seq}`));
     const theirs = new Set(phone.log.map((r) => `${r.stamp.device}/${r.seq}`));
     const incoming = phone.log.filter((r) => !mine.has(`${r.stamp.device}/${r.seq}`));
@@ -433,8 +563,28 @@ export function createPixelMock(ports: PixelPorts) {
         device: PIXEL.name,
       });
     }
-    const rows = resolvedRows(o, { values, deleteEdits, inbox });
-    if (rows.length) ports.conflicts.addResolved(rows);
+    // Order keys and Preferences this sync took, for the session's folded line.
+    const taken = new Set<string>();
+    for (const r of incoming) {
+      const was = before.get(`${r.entity}/${r.id}`);
+      const now = o.docs.find((d) => d.entity === r.entity && d.id === r.id);
+      if (r.entity === 'setting') {
+        if (JSON.stringify(was?.values.value) !== JSON.stringify(now?.values.value))
+          taken.add(humanize(r.id));
+      } else if (
+        'sort_key' in r.fields &&
+        was &&
+        now?.values.sort_key === r.fields.sort_key &&
+        was.values.sort_key !== r.fields.sort_key
+      )
+        taken.add(`${targetWords(o, r.entity, r.id)} moved`);
+    }
+    const { rows, uses } = resolvedRows(
+      o,
+      { values, deleteEdits, inbox },
+      [...taken].slice(0, 100),
+    );
+    if (rows.length) ports.conflicts.addResolved(rows, uses);
     if (events.length) {
       ports.activity.add(...events);
       ports.announce.activityChanged();
