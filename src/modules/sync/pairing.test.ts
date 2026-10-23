@@ -1,8 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const enterAt = vi.fn(async () => ({ status: 'ok', data: null }));
+// Deny: the other device's view change arrives while the command is still being answered.
+const decide = vi.fn(
+  async (_allow: boolean): Promise<{ status: 'ok'; data: null }> => ({
+    status: 'ok',
+    data: null,
+  }),
+);
+vi.mock('../../lib/ui/toast', () => ({ notify: vi.fn() }));
 vi.mock('../../lib/ipc/bindings', () => ({
-  commands: { syncPairEnterAt: (...a: unknown[]) => enterAt(...(a as [])) },
+  commands: {
+    syncPairEnterAt: (...a: unknown[]) => enterAt(...(a as [])),
+    syncPairDecide: (allow: boolean) => decide(allow),
+  },
   events: {},
 }));
 vi.mock('./queries', () => ({ refreshSync: vi.fn() }));
@@ -39,5 +50,42 @@ describe('pairing by address', () => {
     await pairing.submitAddress();
     expect(pairing.addressError).toBeNull();
     expect(enterAt).toHaveBeenCalledWith('mac.tail1234.ts.net', '12345678');
+  });
+});
+
+describe('editing after a failure', () => {
+  const failed = {
+    state: 'failed',
+    error: { kind: 'address_unreachable' },
+  } as const;
+
+  it('clears the failure banner as soon as the address or the code is edited', () => {
+    pairing.view = failed;
+    pairing.editAddress('mac.tail1234.ts.net');
+    expect(pairing.view.state).toBe('idle');
+    pairing.view = failed;
+    pairing.editCode('1234');
+    expect(pairing.view.state).toBe('idle');
+  });
+
+  it('leaves other views alone', () => {
+    pairing.view = { state: 'searching' } as never;
+    pairing.editCode('1234');
+    expect((pairing.view as { state: string }).state).toBe('searching');
+  });
+});
+
+describe('denying', () => {
+  it('closes the sheet before the answer comes back, so it never shows an empty step', async () => {
+    pairing.open = true;
+    pairing.view = { state: 'asking', name: 'Pixel 8' } as never;
+    let openWhenAnswered: boolean | null = null;
+    decide.mockImplementationOnce(async () => {
+      openWhenAnswered = pairing.open;
+      return { status: 'ok', data: null };
+    });
+    await pairing.decide(false);
+    expect(openWhenAnswered).toBe(false);
+    expect(pairing.open).toBe(false);
   });
 });

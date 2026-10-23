@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ConflictRow } from './bindings';
 import { createConflictsMock, diffSpans } from './mock-sync-conflicts';
 
@@ -75,5 +75,18 @@ describe('conflicts mock', () => {
       pieces: { kind: string; showing?: string }[];
     };
     expect(view.pieces.find((p) => p.kind === 'clash')?.showing).toBe('felt really great.');
+  });
+
+  it('adds a Needs-you row each time a new Conflict arrives', () => {
+    const emit = vi.fn();
+    const mock = createConflictsMock(emit);
+    const before = mock.openCount();
+    const a = mock.raiseNew();
+    const b = mock.raiseNew();
+    expect(a.row.id).not.toBe(b.row.id);
+    expect(mock.openCount()).toBe(before + 2);
+    expect(emit).toHaveBeenCalledTimes(2);
+    const list = mock.handle('sync_conflicts', {}) as { needs_you: { id: string }[] };
+    expect(list.needs_you.map((r) => r.id)).toContain(a.row.id);
   });
 });

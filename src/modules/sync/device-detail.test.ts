@@ -53,14 +53,18 @@ describe('addressLines', () => {
 });
 
 describe('pairedText', () => {
+  const now = new Date(2026, 9, 22, 10);
   const base: Pick<DeviceDetail, 'paired_at' | 'paired_by'> = {
-    paired_at: Date.UTC(2026, 9, 14, 12),
+    paired_at: new Date(2026, 9, 14, 12).getTime(),
     paired_by: 'Hemang’s MacBook Pro',
   };
   it('names the device that paired it', () => {
-    expect(pairedText(base)).toMatch(/2026, by Hemang’s MacBook Pro$/);
+    expect(pairedText(base, now)).toBe('Wed 14 Oct, by Hemang’s MacBook Pro');
   });
   it('leaves the "by" out when it is not known', () => {
-    expect(pairedText({ ...base, paired_by: null })).toMatch(/2026$/);
+    expect(pairedText({ ...base, paired_by: null }, now)).toBe('Wed 14 Oct');
+  });
+  it('names the year when it is not this year, like every other date', () => {
+    expect(pairedText({ ...base, paired_by: null }, new Date(2027, 0, 5))).toBe('Wed 14 Oct 2026');
   });
 });

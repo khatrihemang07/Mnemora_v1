@@ -94,6 +94,12 @@ describe('the simulated Pixel 8', () => {
     expect(t.lists().needs_you).toEqual([]);
   });
 
+  it('tells the open Journal about the Entry a scenario staged', () => {
+    const t = setup();
+    t.pixel.scenario('conflict');
+    expect(t.announce.journalChanged).toHaveBeenCalled();
+  });
+
   it('raises Conflicts for the same words and writes the chosen text back', () => {
     const t = setup();
     const { result } = t.pixel.scenario('conflict');
@@ -162,6 +168,8 @@ describe('the simulated Pixel 8', () => {
     const kept = groceries.filter((d) => d.values.deleted_at == null);
     expect(kept).toHaveLength(1);
     // The one made here is the one that went away, and its Task moved to the kept List.
+    // The phone's List is the kept one, so the List you are on is the one that goes away.
+    expect(kept[0]?.id).toMatch(/^-pixel-list-/);
     expect(t.announce.listsMerged.mock.calls[0]?.[0]).toMatchObject({
       from_id: groceries.find((d) => d.values.deleted_at != null)?.id,
       into_id: kept[0]?.id,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PeerRow } from '../../lib/ipc/bindings';
 import {
+  absoluteTime,
   countsText,
   progressText,
   routeWord,
@@ -81,7 +82,7 @@ describe('relative times', () => {
 
   it('switch to a date after a week, and say so when it never happened', () => {
     const old = now.getTime() - 9 * 24 * 60 * MIN;
-    expect(syncedText(peer({ last_synced_at: old }), now)).toBe('synced Oct 14, 2026');
+    expect(syncedText(peer({ last_synced_at: old }), now)).toBe('synced Wed 14 Oct');
     expect(syncedText(peer({ last_synced_at: null }), now)).toBe('not synced yet');
   });
 
@@ -115,5 +116,13 @@ describe('the row line', () => {
 
   it('syncing without a size yet is just "Syncing…"', () => {
     expect(rowParts(peer({ state: 'syncing' }), now)).toEqual(['Syncing…']);
+  });
+});
+
+describe('absoluteTime', () => {
+  it('uses the app’s day style and the Time format Preference', () => {
+    const at = new Date(2026, 9, 14, 15, 5).getTime();
+    expect(absoluteTime(at, '24h', now)).toBe('Wed 14 Oct, 15:05');
+    expect(absoluteTime(at, '12h', now)).toBe('Wed 14 Oct, 3:05 PM');
   });
 });

@@ -122,7 +122,10 @@ export function createPixelMock(ports: PixelPorts) {
   const now = ports.now ?? Date.now;
   const me = createReplica(ME_ID);
   const phone = createReplica(PIXEL.id);
-  const ids = createIds('pixel-');
+  const ids =
+    createIds(
+      '-pixel-',
+    ) /* '-' sorts below a uuid: the phone's ids read as the older, like Rust's time-ordered ids */;
   let started = false;
   let counter = 0;
   /** What was already shown, so a sync only adds what is new. */
@@ -578,7 +581,8 @@ export function createPixelMock(ports: PixelPorts) {
         flush();
         rebase();
         // The phone made its "Groceries" first, so it is the older and is kept; the one made here
-        // now (the one you open) is the one that goes away.
+        // now (the one you open) is the one that goes away. Rust keeps the lower id (ids are
+        // time-ordered), hence the leading "-" on the phone's ids: below any uuid made here.
         edit('list_create', { list: 'phone-groceries', name: 'Groceries' });
         edit('task_create', { task: 'phone-eggs', title: 'Eggs', list: 'phone-groceries' });
         const made = Date.now();
@@ -625,9 +629,10 @@ export function createPixelMock(ports: PixelPorts) {
       const s = SCENARIOS[name];
       if (!s) throw new Error(`unknown scenario ${name}: ${Object.keys(SCENARIOS).join(', ')}`);
       const hint = s.stage();
-      // Staging writes through the mock's commands, which tell no one: the lists and Tasks on show
+      // Staging writes through the mock's commands, which tell no one: the lists, Tasks and Entries on show
       // are read again, as the real path does after a change.
       ports.announce.todoChanged();
+      ports.announce.journalChanged();
       const result = s.sync ? sync() : null;
       return { hint, result };
     },

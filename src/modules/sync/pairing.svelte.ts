@@ -86,14 +86,33 @@ class Pairing {
     await this.run(() => unwrap(commands.syncPairEnterAt(this.address, this.code)));
   }
 
+  /** The address was edited: the failure about the old one no longer applies. */
+  editAddress(value: string) {
+    this.address = value;
+    this.addressError = null;
+    this.forgetFailure();
+  }
+
+  /** The code was edited: the failure about the old one no longer applies. */
+  editCode(value: string) {
+    if (value === this.code) return;
+    this.code = value;
+    this.forgetFailure();
+  }
+
+  private forgetFailure() {
+    if (this.view.state === 'failed') this.view = { state: 'idle' };
+  }
+
   async decide(allow: boolean) {
     const asked = this.view.state === 'asking' ? this.view.name : null;
-    await this.run(() => unwrap(commands.syncPairDecide(allow)));
     // Deny ends the pairing (the other device is told it was declined), so the sheet has nothing
-    // left to show; a short note says what happened.
+    // left to show: it closes at once, before the new view arrives and shows an empty step.
+    if (!allow) this.open = false;
+    await this.run(() => unwrap(commands.syncPairDecide(allow)));
     if (!allow) {
-      this.open = false;
-      if (!this.commandError) notify(asked ? `Declined ${asked}` : 'Declined');
+      if (this.commandError) this.open = true;
+      else notify(asked ? `Declined ${asked}` : 'Declined');
     }
   }
 

@@ -1,6 +1,6 @@
 import type { DeviceDetail, ModuleVersion } from '../../lib/ipc/bindings';
 import { IpcError } from '../../lib/ipc/unwrap';
-import { relativeTime } from '../../lib/time/relative';
+import { absoluteDay, relativeTime } from '../../lib/time/relative';
 
 /** "Core" for `core`: the Module's name as the sheet shows it. */
 function moduleName(id: string): string {
@@ -45,9 +45,12 @@ export function addressLines(
   }));
 }
 
-/** "14 Oct 2026, by Hemang's MacBook Pro". */
-export function pairedText(detail: Pick<DeviceDetail, 'paired_at' | 'paired_by'>): string {
-  const date = new Date(detail.paired_at).toLocaleDateString(undefined, { dateStyle: 'medium' });
+/** "Wed 14 Oct, by Hemang's MacBook Pro". */
+export function pairedText(
+  detail: Pick<DeviceDetail, 'paired_at' | 'paired_by'>,
+  now: Date = new Date(),
+): string {
+  const date = absoluteDay(new Date(detail.paired_at), now);
   return detail.paired_by === null ? date : `${date}, by ${detail.paired_by}`;
 }
 

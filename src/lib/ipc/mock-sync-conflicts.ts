@@ -203,6 +203,8 @@ export function createConflictsMock(
     'Went for a run along the canal, felt great after the rain.\nCoffee with Sam after.\n';
   const entryOther =
     'Went for a run along the canal, legs heavy but good.\nCoffee with Sam after.\n';
+  let arrived = 0;
+  const notesBase = 'Route: to decide\nBring the stove\n';
   const notesShowing = 'Route: ridge loop from the north\nBring the stove\n';
   const notesOther = 'Route: lake path from the south\nBring the stove\n';
   const samples = new Map<string, Sample>([
@@ -240,7 +242,7 @@ export function createConflictsMock(
           showing: { device: 'Pixel 8 (simulated)', at: at(8, 5) },
           other: { device: 'Alex’s MacBook Pro', at: at(7, 58) },
         },
-        base: 'Route: to decide\nBring the stove\n',
+        base: notesBase,
         showing: notesShowing,
         other: notesOther,
         open: true,
@@ -273,6 +275,28 @@ export function createConflictsMock(
       samples.set(sample.row.id, sample);
       emit();
       return true;
+    },
+    /** Console `__syncMock.newConflict()`: one more Conflict arrives, so the list, the badge and the Home count follow. */
+    raiseNew(): Sample {
+      const n = ++arrived;
+      const stamp = now();
+      const sample: Sample = {
+        row: {
+          id: `mock-conflict-new-${n}`,
+          subject: { kind: 'task', title: `Plan weekend hike (${n})`, field: 'notes' },
+          module: 'todo',
+          raised_at: stamp,
+          showing: { device: 'Pixel 8 (simulated)', at: stamp },
+          other: { device: 'Alex’s MacBook Pro', at: stamp - 60_000 },
+        },
+        base: notesBase,
+        showing: notesShowing,
+        other: notesOther,
+        open: true,
+        resolution: null,
+      };
+      this.raise(sample);
+      return sample;
     },
     /** Rows a sync added to "Resolved automatically", newest first. */
     addResolved(rows: ResolvedRow[]) {

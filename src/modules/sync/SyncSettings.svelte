@@ -122,6 +122,7 @@
 
 <Dialog
   open={leaving}
+  locked={leaveBusy}
   title="Leave and forget all devices?"
   description="This device forgets all {paired} paired {paired === 1 ? 'device' : 'devices'} and stops syncing with them. Its data stays here. To sync again you pair again."
   onclose={() => {

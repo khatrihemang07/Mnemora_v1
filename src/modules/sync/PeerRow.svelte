@@ -5,10 +5,13 @@
   sync is still running after 600ms.
 -->
 <script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
   import { onDestroy } from 'svelte';
   import Laptop from '~icons/lucide/laptop';
   import Smartphone from '~icons/lucide/smartphone';
   import type { PeerRow } from '../../lib/ipc/bindings';
+  import { readCore } from '../../lib/settings/core';
+  import { settingsQuery } from '../../lib/settings/queries';
   import { clock } from '../../lib/time/clock.svelte';
   import ProgressBar from '../../lib/ui/ProgressBar.svelte';
   import { BarGate } from './bar-gate';
@@ -21,10 +24,12 @@
   // A relative time moves on while the page is open.
   $effect(() => clock.subscribe());
 
+  const settings = createQuery(() => settingsQuery);
+  const timeFormat = $derived(readCore(settings.data?.values).timeFormat);
   const Icon = $derived(peer.platform === 'phone' ? Smartphone : Laptop);
   const parts = $derived(rowParts(peer, clock.now));
   const detail = $derived(parts.slice(1).join(' · '));
-  const hover = $derived(peer.last_synced_at === null ? undefined : absoluteTime(peer.last_synced_at));
+  const hover = $derived(peer.last_synced_at === null ? undefined : absoluteTime(peer.last_synced_at, timeFormat, clock.now));
   const syncing = $derived(peer.state === 'syncing');
   const fraction = $derived(
     peer.progress === null || peer.progress.total === 0 ? 0 : peer.progress.done / peer.progress.total,

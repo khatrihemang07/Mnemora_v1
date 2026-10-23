@@ -1,4 +1,4 @@
-import { formatDate } from './format';
+import { dayText } from '../ui/when-grid';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -13,5 +13,13 @@ export function relativeTime(date: Date, now: Date = new Date()): string {
   const days = Math.floor(diff / DAY);
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days} days ago`;
-  return formatDate(date, 'short');
+  return absoluteDay(date, now);
+}
+
+const ymd = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** "Wed 14 Oct", with the year when it is not `now`'s year: the app's style for a date named in a sentence. */
+export function absoluteDay(date: Date, now: Date = new Date()): string {
+  return dayText(ymd(date), ymd(now));
 }

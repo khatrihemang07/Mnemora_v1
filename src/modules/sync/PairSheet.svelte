@@ -184,7 +184,7 @@
         <Input
           label="Other device’s address"
           placeholder="mac.tail1234.ts.net"
-          bind:value={() => pairing.address, (v) => { pairing.address = v; pairing.addressError = null; }}
+          bind:value={() => pairing.address, (v) => pairing.editAddress(v)}
           invalid={addressWrong || pairing.addressError !== null}
           onblur={() => pairing.checkAddress()}
           autocapitalize="off"
@@ -196,7 +196,7 @@
           <p role="alert" class="mt-1 text-sm text-danger">{pairing.addressError}</p>
         {/if}
         <div class="mt-3 mb-1 text-xs text-muted">Code</div>
-        <CodeInput bind:value={pairing.code} label="Pairing code" invalid={wrongCode && pairing.code.length > 0} />
+        <CodeInput bind:value={() => pairing.code, (v) => pairing.editCode(v)} label="Pairing code" invalid={wrongCode && pairing.code.length > 0} />
         {#if failure}{@render banner(failure.title, failure.fix)}{/if}
         <div class="mt-4 flex items-center gap-2">
           <button type="button" class="text-sm text-hue-sync underline-offset-2 hover:underline" onclick={() => void pairing.switchTo('enter')}>
@@ -218,7 +218,7 @@
           void pairing.submit();
         }}
       >
-        <CodeInput bind:value={pairing.code} label="Pairing code" invalid={wrongCode && pairing.code.length > 0} autofocus />
+        <CodeInput bind:value={() => pairing.code, (v) => pairing.editCode(v)} label="Pairing code" invalid={wrongCode && pairing.code.length > 0} autofocus />
         {#if failure}{@render banner(failure.title, failure.fix)}{/if}
         <p class="mt-3 text-sm text-muted">
           Not on the same Wi-Fi?

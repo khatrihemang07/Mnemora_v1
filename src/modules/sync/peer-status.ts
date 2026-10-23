@@ -1,5 +1,6 @@
 import type { PeerRow, PeerState, Progress, Route } from '../../lib/ipc/bindings';
-import { relativeTime } from '../../lib/time/relative';
+import { clockParts, type TimeFormat } from '../../lib/time/format';
+import { absoluteDay, relativeTime } from '../../lib/time/relative';
 
 /** The words a paired device's state is shown with (D3: plain). */
 export const STATUS_WORDS: Record<PeerState, string> = {
@@ -44,9 +45,11 @@ export function syncedText(
   return `${peer.state === 'paused' ? 'last synced' : 'synced'} ${when}`;
 }
 
-/** The full date and time, for the hover on a relative time. */
-export function absoluteTime(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+/** The full date and time, for the hover on a relative time: "Wed 14 Oct, 15:05". */
+export function absoluteTime(ms: number, format: TimeFormat, now: Date = new Date()): string {
+  const at = new Date(ms);
+  const { hm, period } = clockParts(at, format);
+  return `${absoluteDay(at, now)}, ${hm}${period ? ` ${period}` : ''}`;
 }
 
 /**
