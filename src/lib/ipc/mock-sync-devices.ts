@@ -3,6 +3,9 @@
  * Address, Check and Forget. Mirrors crates/sync/src/detail.rs, check.rs, rename.rs and revoke.rs
  * and the commands in src-tauri/src/sync.rs.
  *
+ * The Address typed for a device is one value for the group (a synced `sync_device` field); the
+ * mock has one device of its own, so `__syncMock.memberTypedAddress(text, id?)` plays another member.
+ *
  * Check has no network to dial, so the typed text decides what it finds:
  *   anything valid          Reached ‹name› in 84 ms        …closed…      nothing answered
  *   …timeout…               timed out                       …nowhere…     the name does not resolve

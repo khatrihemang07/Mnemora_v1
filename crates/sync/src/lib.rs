@@ -45,6 +45,8 @@ pub mod transport;
 mod vector;
 mod wire;
 
+use mnemora_core::db::migrate::MigrationReport;
+use mnemora_core::device::DeviceStore;
 use mnemora_core::error::{AppError, AppResult, ErrorCode};
 use mnemora_core::module::Module;
 use mnemora_core::settings::SettingsRegistry;
@@ -72,6 +74,7 @@ pub use conflict_view::{
 pub use conflicts::{Resolution as ConflictResolution, open_count as conflict_count};
 pub use detail::{
     DeviceDetail, KnownAddress, ModuleVersion, detail as device_detail, set_typed_address,
+    typed_for_dial,
 };
 pub use devices::{DevicesView, ThisDevice, view as devices_view};
 pub use error::SyncError;
@@ -91,7 +94,9 @@ pub use peers::{
     pinned, store_paired,
 };
 pub use registry::{Modules, Registry};
-pub use rename::{check_own_name, record_own as record_own_name, rename_peer};
+pub use rename::{
+    adopt_local_addresses, check_own_name, record_own as record_own_name, rename_peer,
+};
 pub use resolutions::{
     UsePlan, finish_use as resolution_finish_use, mark_visited as resolutions_visited,
     plan_use as resolution_plan_use,
@@ -158,6 +163,15 @@ impl Module for SyncModule {
     /// Sync has no Preferences: its choices are Device settings (`DeviceSettings::sync`).
     fn register_settings(&self, _reg: &mut SettingsRegistry) {}
 
-    // `on_startup` stays the trait's no-op: with Sync off there is nothing to start, and the app
-    // shell starts `SyncRuntime` only when the Device setting says it is on.
+    /// Addresses typed before they synced join the log (once). The network itself is started by
+    /// the app shell, only when the Device setting says Sync is on.
+    fn on_startup(
+        &self,
+        conn: &mut Connection,
+        _device: &DeviceStore,
+        _report: &MigrationReport,
+    ) -> AppResult<()> {
+        rename::adopt_local_addresses(conn)
+            .map_err(|e| AppError::new(ErrorCode::Internal, e.to_string()))
+    }
 }

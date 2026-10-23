@@ -3,7 +3,7 @@
  * src-tauri/src/sync.rs; fixtures/sync-rules.json keeps the two in step (ADR 0009).
  */
 
-import { routeOfAddress } from '../../modules/sync/address';
+import { parseAddress, routeOfAddress } from '../../modules/sync/address';
 import type {
   AppError,
   Attention,
@@ -145,6 +145,17 @@ export function createSyncMock(
   // Console: `__syncMock.setPeer('syncing')` (see mock-sync-live.ts).
   flags.setPeer = (state: PeerState, name?: string, daysAway?: number, why?: string) =>
     live.setPeer(state, name, daysAway, why);
+
+  // Console: `__syncMock.memberTypedAddress('100.64.0.7')`. The Address of a device is one value
+  // for the whole group (newest edit wins), so what another member typed shows here too.
+  flags.memberTypedAddress = (address: string, id?: string) => {
+    const peer = peers.find((p) => p.id === id) ?? peers[0];
+    if (!peer) return;
+    const parsed = parseAddress(address);
+    if (address.trim() === '') typedAddresses.delete(peer.id);
+    else if (parsed.ok) typedAddresses.set(peer.id, parsed.stored);
+    emitPeers();
+  };
 
   const deviceSheet = createDeviceMock({
     typed: typedAddresses,

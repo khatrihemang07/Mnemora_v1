@@ -13,7 +13,7 @@
  *   URL: `?sync=on` Sync on, nobody paired; `?paired=2` on with two paired devices (implies on);
  *        `&paused=update|me|both|clock|clock_me`; `&activity=N` lines; `&paircode=SECONDS`.
  *   Console: `__pixel.edit(op, args)`, `__pixel.sync()`, `__pixel.scenario(name)`, `__pixel.scenarios()`,
- *        `__pixel.world()`; `__syncMock.*` (pairing flags, setPeer, check, newConflict);
+ *        `__pixel.world()`; `__syncMock.*` (pairing flags, setPeer, check, newConflict, memberTypedAddress);
  *        `__listMergeMock(name?)`; `__journalRemoteMock(text, id?)`.
  *
  * Every Sync scenario of docs/design/sync-prototype.html (its SCENARIOS list) and how to reach it

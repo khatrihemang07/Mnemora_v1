@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use mnemora_core::error::AppResult;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
 use specta::Type;
 
@@ -175,10 +175,7 @@ pub fn set_typed_address(
                 .normalized(),
         )
     };
-    conn.execute(
-        "UPDATE sync_peers SET typed_address = ?2 WHERE id = ?1",
-        params![device, stored],
-    )?;
+    crate::rename::set_address(conn, device, stored.as_deref())?;
     Ok(stored)
 }
 

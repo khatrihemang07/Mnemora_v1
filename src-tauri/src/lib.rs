@@ -136,6 +136,8 @@ mod sync;
 #[cfg(test)]
 mod sync_activity_tests;
 #[cfg(test)]
+mod sync_address_tests;
+#[cfg(test)]
 mod sync_cluster_tests;
 mod sync_conflicts;
 #[cfg(test)]

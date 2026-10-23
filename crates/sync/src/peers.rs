@@ -234,6 +234,7 @@ pub fn store_paired(
          ON CONFLICT(id) DO UPDATE SET name = ?2, paired_at = ?3, public_key = ?4, platform = ?5, paired_by = ?6",
         params![who.device, name, now, who.key, who.platform.as_str(), my_device],
     )?;
+    crate::rename::refresh_address(&tx, &who.device)?;
     taken.push(name.clone());
     let local = crate::activity::Local {
         device: my_device,
@@ -273,6 +274,7 @@ pub fn store_paired(
                 who.device
             ],
         )?;
+        crate::rename::refresh_address(&tx, &member.device)?;
         taken.push(member_name.clone());
         crate::activity::log_joined(&tx, local, &member.device, &member_name)?;
         also_joined.push(member_name);

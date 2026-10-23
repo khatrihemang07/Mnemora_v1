@@ -373,6 +373,7 @@ fn take_in(conn: &Connection, row: &Row) -> AppResult<()> {
             )?;
             // Names settle from the wishes alone, so every device ends with the same ones.
             crate::rename::settle(conn, &row.device, &row.name)?;
+            crate::rename::refresh_address(conn, &row.device)?;
             tracing::info!(target: "sync", "a device paired by another member was accepted");
         }
         // A new key for a device already paired: only from the member that paired that key.

@@ -2,14 +2,19 @@
 //! rename (of this device in Settings, or of a paired device from its sheet) is a record of the
 //! change-log entity `sync_device` (id: the device renamed, one Value field `name`) and the newest
 //! wins. Names are unique across the group, ignoring case, accents and spacing.
+//!
+//! The same entity carries the Address typed for a device (Value field `address`, one per device,
+//! newest wins, null once cleared). Every member keeps it in `sync_peers.typed_address` (a cache of
+//! the newest record) and dials it; a device ignores the one typed for itself.
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
 use mnemora_core::error::AppResult;
 use mnemora_core::hlc;
 use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity, SyncEvent, SyncField};
 use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
+use crate::address::Address;
 use crate::error::SyncError;
 use crate::name::validate_name;
 use crate::peers::unique_name;
@@ -19,18 +24,39 @@ pub const ENTITY: &str = "sync_device";
 
 pub(crate) const DEVICE: SyncEntity = SyncEntity {
     name: ENTITY,
-    fields: &[SyncField::value("name")],
+    fields: &[SyncField::value("name"), SyncField::value("address")],
 };
 
 const TAKEN: &str = "Another of your devices already has that name";
 
-/// Records that `device` is now called `name`, so the other devices take it.
-fn record(conn: &Connection, device: &str, name: &str) -> AppResult<()> {
+/// The state of `device`'s record as last stored (empty when there is none).
+fn latest(conn: &Connection, device: &str) -> AppResult<Map<String, Value>> {
+    let text: Option<String> = conn
+        .query_row(
+            "SELECT snapshot FROM change_log WHERE entity = ?1 AND entity_id = ?2
+             ORDER BY seq DESC LIMIT 1",
+            params![ENTITY, device],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(text
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default())
+}
+
+/// Records what changed about `device` (`name`, `address` or both), so the other devices take
+/// it. The snapshot keeps what the record already said about the rest.
+fn record(conn: &Connection, device: &str, changed: Value) -> AppResult<()> {
     let existed: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM change_log WHERE entity = ?1 AND entity_id = ?2)",
         params![ENTITY, device],
         |r| r.get(0),
     )?;
+    let mut snapshot = latest(conn, device)?;
+    if let Value::Object(changed) = changed {
+        snapshot.extend(changed);
+    }
     changelog::record(
         conn,
         &Change {
@@ -43,7 +69,7 @@ fn record(conn: &Connection, device: &str, name: &str) -> AppResult<()> {
                 ChangeOp::Create
             },
             session_id: None,
-            snapshot: json!({ "name": name }),
+            snapshot: Value::Object(snapshot),
         },
     )
 }
@@ -54,7 +80,7 @@ pub fn record_own(conn: &Connection, name: &str) -> Result<(), SyncError> {
         return Ok(());
     }
     let me = hlc::device_id(conn)?;
-    Ok(record(conn, &me, name)?)
+    Ok(record(conn, &me, json!({ "name": name }))?)
 }
 
 /// Renames the paired device `device` for the whole group. `my_name` is this device's own name,
@@ -90,7 +116,7 @@ pub fn rename_peer(
         return Ok(name);
     }
     settle(&tx, device, &name)?;
-    record(&tx, device, &name)?;
+    record(&tx, device, json!({ "name": name }))?;
     crate::activity::log_renamed(&tx, device, &old, &name)?;
     tx.commit()?;
     Ok(name)
@@ -161,34 +187,111 @@ fn settle_family(conn: &Connection, name: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Takes a rename received from another device. A name that would clash here gets a number, the
-/// way a name does at pairing.
+/// Takes what another device recorded about `device`: a rename, or the Address typed for it. A
+/// name that would clash here gets a number, the way a name does at pairing.
 pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
     let device = change.entity_id;
-    let Some(name) = change
+    let mut snapshot = latest(conn, device)?;
+    let name = change
         .fields
         .get("name")
         .and_then(Value::as_str)
-        .and_then(|n| validate_name(n).ok())
-    else {
-        return Ok(Applied {
-            snapshot: Value::Object(change.fields.clone()),
-            changed: false,
-            events: Vec::new(),
-        });
+        .and_then(|n| validate_name(n).ok());
+    let address = match change.fields.get("address") {
+        Some(Value::Null) => Some(None),
+        Some(Value::String(a)) => Address::parse(a).ok().map(|a| Some(a.normalized())),
+        _ => None,
     };
     let me = hlc::device_id(conn)?;
     let mut events = Vec::new();
-    if device == me {
-        events.push(SyncEvent::DeviceRenamed { name: name.clone() });
-    } else {
-        settle(conn, device, &name)?;
+    if let Some(name) = name {
+        if device == me {
+            events.push(SyncEvent::DeviceRenamed { name: name.clone() });
+        } else {
+            settle(conn, device, &name)?;
+        }
+        snapshot.insert("name".to_owned(), Value::String(name));
+    }
+    if let Some(address) = address {
+        // Typed for this device: nobody dials itself, so there is nothing to keep.
+        if device != me {
+            conn.execute(
+                "UPDATE sync_peers SET typed_address = ?2 WHERE id = ?1",
+                params![device, address],
+            )?;
+        }
+        snapshot.insert(
+            "address".to_owned(),
+            address.map_or(Value::Null, Value::String),
+        );
     }
     Ok(Applied {
-        snapshot: json!({ "name": name }),
+        snapshot: Value::Object(snapshot),
         changed: false,
         events,
     })
+}
+
+/// Saves the Address typed for the paired device `device` (`None` clears it) and tells the group.
+/// Nothing is recorded when it is what the device already has, or there is no group.
+pub(crate) fn set_address(
+    conn: &Connection,
+    device: &str,
+    address: Option<&str>,
+) -> Result<(), SyncError> {
+    let held: Option<Option<String>> = conn
+        .query_row(
+            "SELECT typed_address FROM sync_peers WHERE id = ?1",
+            [device],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(held) = held else {
+        return Ok(());
+    };
+    if held.as_deref() == address {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE sync_peers SET typed_address = ?2 WHERE id = ?1",
+        params![device, address],
+    )?;
+    if crate::peers::group(conn)?.is_some() {
+        record(conn, device, json!({ "address": address }))?;
+    }
+    Ok(())
+}
+
+/// Takes the newest Address the group has recorded for `device`, for a device that has just been
+/// added to the paired ones (the log may know it from before).
+pub(crate) fn refresh_address(conn: &Connection, device: &str) -> AppResult<()> {
+    if let Some(address) = latest(conn, device)?.get("address") {
+        conn.execute(
+            "UPDATE sync_peers SET typed_address = ?2 WHERE id = ?1",
+            params![device, address.as_str()],
+        )?;
+    }
+    Ok(())
+}
+
+/// Puts the Addresses typed before they synced into the log, once: a paired device whose Address
+/// the log has never heard of. Runs at every start; a no-op once done.
+pub fn adopt_local_addresses(conn: &Connection) -> Result<(), SyncError> {
+    if crate::peers::group(conn)?.is_none() {
+        return Ok(());
+    }
+    let typed: Vec<(String, String)> = {
+        let mut stmt = conn
+            .prepare("SELECT id, typed_address FROM sync_peers WHERE typed_address IS NOT NULL")?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    for (device, address) in typed {
+        if !latest(conn, &device)?.contains_key("address") {
+            record(conn, &device, json!({ "address": address }))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -263,6 +263,7 @@ fn target_words(
     Ok(match target {
         "todo_task" => quoted(&text("title")),
         "todo_list" => format!("List {}", quoted(&text("name"))),
+        "sync_device" => peers::name_of(conn, id)?.unwrap_or_else(|| "A device".to_owned()),
         "todo_comment" => {
             let task = texts::current(conn, "todo_task", &text("task_id"))?;
             let title = task
@@ -383,6 +384,7 @@ fn value_words(
             None => "Inbox".to_owned(),
             Some(id) => list_name(conn, id)?,
         },
+        ("sync_device", "address") => text_of(get("address")).unwrap_or("No address").to_owned(),
         ("todo_list", "name") => text_of(get("name")).unwrap_or("Untitled").to_owned(),
         ("todo_list", "emoji") => text_of(get("emoji")).unwrap_or("No emoji").to_owned(),
         ("todo_list", "task_sort" | "group_by") => text_of(get(unit))

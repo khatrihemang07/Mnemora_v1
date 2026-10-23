@@ -411,7 +411,9 @@ pub(crate) fn observe(
 /// The members of the Value unit `key` of `schema`, when the unit is one that is logged: a
 /// Value field (or group of them) of a record that is not Sync's own, none of it bookkeeping.
 pub(crate) fn value_members(schema: &SyncEntity, key: &str) -> Option<Vec<&'static str>> {
-    if schema.name.starts_with("sync_") || schema.name == settings::ENTITY {
+    // Sync's own records are not logged, but for the Address typed for a device.
+    let own_address = schema.name == crate::rename::ENTITY && key == "address";
+    if (schema.name.starts_with("sync_") && !own_address) || schema.name == settings::ENTITY {
         return None;
     }
     let members: Vec<_> = schema
@@ -461,7 +463,7 @@ pub(crate) fn settle_local(
         let mut stmt = conn.prepare(
             "SELECT entity, entity_id, fields FROM change_log
              WHERE seq > ?1 AND origin_device = ?2 AND op <> 'create' AND fields IS NOT NULL
-               AND entity NOT LIKE 'sync\\_%' ESCAPE '\\'
+               AND (entity NOT LIKE 'sync\\_%' ESCAPE '\\' OR entity = 'sync_device')
              ORDER BY seq",
         )?;
         stmt.query_map(params![mark, me], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
@@ -574,6 +576,10 @@ pub(crate) fn settle_value(
     unit: &str,
     members: &[&str],
 ) -> Result<(), SyncError> {
+    // The Address typed for this device is ignored here, so a clash over it means nothing.
+    if entity == crate::rename::ENTITY && entity_id == me {
+        return Ok(());
+    }
     let now = physical_now(conn);
     let mut live = Vec::new();
     for c in replay_clashes(conn, me, (entity, entity_id, unit), members)? {

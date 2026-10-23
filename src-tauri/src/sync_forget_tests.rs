@@ -261,6 +261,43 @@ async fn a_typed_address_is_a_way_to_reach_the_device() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_address_typed_on_one_device_is_dialled_by_another() {
+    let (a, b, c) = trio().await;
+    let (a_id, b_id) = (id(&a), id(&b));
+    // Carol has no other way to Bob: nothing announced, nothing remembered. Alice and Bob do
+    // reach each other, and Carol reaches Alice, so the typed Address is the only news.
+    for d in [&b, &c] {
+        d.app.with_db(|db| {
+            db.execute("DELETE FROM sync_peer_addresses", []).unwrap();
+        });
+    }
+    a.found.announce(&id(&c), c.address());
+    c.found.announce(&a_id, a.address());
+    // Alice types it; it reaches Carol with the next session.
+    let stored: Value = a.call(
+        "sync_device_address",
+        json!({ "id": b_id, "address": format!("localhost:{}", b.address().port()) }),
+    );
+    until("Carol to hold the Address typed on Alice", || {
+        c.call::<Value>("sync_device", json!({ "id": b_id }))["typed_address"] == stored
+    })
+    .await;
+    // It is what Carol's dial race to Bob would try third.
+    let port = b.address().port();
+    let dialled = c
+        .app
+        .with_db(|db| mnemora_sync::typed_for_dial(db, &b_id).unwrap())
+        .expect("an Address to dial");
+    assert_eq!(dialled.port(), port);
+    // Bob ignores what is typed for himself.
+    assert!(b.call::<Value>("sync_device", json!({ "id": a_id }))["typed_address"].is_null());
+    until("Carol to reach Bob through it", || {
+        row_named(&c, "Bob")["state"] == "up_to_date"
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_sheet_shows_what_is_known_and_syncs_only_that_device() {
     let (a, b, c) = trio().await;
     // Alice only syncs when asked; Carol takes nothing it did not ask for, so Bob's own

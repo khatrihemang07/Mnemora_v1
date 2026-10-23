@@ -53,6 +53,14 @@ describe('rename', () => {
 });
 
 describe('the typed Address', () => {
+  it('is one value for the group: another member typing or clearing it shows here', () => {
+    const { call, flags } = setup();
+    flags.memberTypedAddress?.('100.64.0.7', PIXEL);
+    expect(call<DeviceDetail>('sync_device', { id: PIXEL }).typed_address).toBe('100.64.0.7');
+    flags.memberTypedAddress?.('');
+    expect(call<DeviceDetail>('sync_device', { id: PIXEL }).typed_address).toBeNull();
+  });
+
   it('is stored as normalised, refused with the reason, and cleared by empty text', () => {
     const { call } = setup();
     expect(call('sync_device_address', { id: PIXEL, address: ' Pixel.Tail1234.TS.net ' })).toBe(
