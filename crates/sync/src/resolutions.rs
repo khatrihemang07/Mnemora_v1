@@ -860,24 +860,56 @@ pub(crate) fn fold_add(
 
 // ---------------------------------------------------------------- remote rows
 
+/// The fields of the record that created the line `id`, as stored in the change log.
+fn creation_fields(conn: &Connection, id: &str) -> AppResult<Option<Map<String, Value>>> {
+    let fields: Option<String> = conn
+        .query_row(
+            "SELECT fields FROM change_log WHERE entity = ?1 AND entity_id = ?2 AND op = 'create'
+             ORDER BY hlc_ms, hlc_counter, origin_device LIMIT 1",
+            params![ENTITY, id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(fields.and_then(|f| match serde_json::from_str(&f) {
+        Ok(Value::Object(map)) => Some(map),
+        _ => None,
+    }))
+}
+
 /// Takes the values of a resolution received from another device (Sync's side of the Module
 /// contract). The row is made from a record that has all of it; the outcome only ever moves
 /// from unused to used.
 pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
     let id = change.entity_id;
     let f = change.fields;
-    let text = |k: &str| f.get(k).and_then(Value::as_str).map(str::to_owned);
-    let int = |k: &str| f.get(k).and_then(Value::as_i64);
     let before = get(conn, id)?;
     // A value clash and a delete met by an edit are worked out on every device from the records
     // themselves (a pure function of them): a copy made elsewhere may rest on records this
-    // device lacks, or not yet on a later one, so it is never taken as it is.
-    let derived = matches!(
-        text("kind").as_deref().and_then(Kind::parse),
-        Some(Kind::Value | Kind::DeleteEdit)
-    );
-    if before.is_none() && !derived {
-        let made = (|| {
+    // device lacks, or not yet on a later one, so it is never taken as it is. The exception is a
+    // line somebody used (changed back): it stays however the records read later, so a device
+    // that took it back before hearing of that makes it again from its creation record.
+    // The kind is in the record that creates a line, not in the update that uses it.
+    let from_creation;
+    let g = if f.contains_key("kind") {
+        Some(f)
+    } else if before.is_none() {
+        from_creation = creation_fields(conn, id)?;
+        from_creation.as_ref()
+    } else {
+        None
+    };
+    let derived = g.is_some_and(|g| {
+        matches!(
+            g.get("kind").and_then(Value::as_str).and_then(Kind::parse),
+            Some(Kind::Value | Kind::DeleteEdit)
+        )
+    });
+    let text = |k: &str| f.get(k).and_then(Value::as_str).map(str::to_owned);
+    let int = |k: &str| f.get(k).and_then(Value::as_i64);
+    if before.is_none() && (!derived || f.contains_key("used_at")) {
+        let made = g.and_then(|g| {
+            let text = |k: &str| g.get(k).and_then(Value::as_str).map(str::to_owned);
+            let int = |k: &str| g.get(k).and_then(Value::as_i64);
             let kind = text("kind").filter(|k| Kind::parse(k).is_some())?;
             Some(Row {
                 id: id.to_owned(),
@@ -897,7 +929,7 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
                 count: 0,
                 detail: Vec::new(),
             })
-        })();
+        });
         let Some(row) = made else {
             tracing::debug!(target: "sync", "a resolution record without its creation, kept for relay only");
             return Ok(Applied {

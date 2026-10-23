@@ -103,6 +103,20 @@ pub fn release_ready(
     me: &str,
     now: i64,
 ) -> Result<Released, SyncError> {
+    let mut out = release_held(conn, registry, me, now)?;
+    // What this device saved while an editor held back the replay is settled now it may be.
+    let local = texts::settle_local(conn, registry, me, now)?;
+    out.changed.extend(local.changed);
+    out.events.extend(local.events);
+    Ok(out)
+}
+
+fn release_held(
+    conn: &Connection,
+    registry: &Registry,
+    me: &str,
+    now: i64,
+) -> Result<Released, SyncError> {
     let mut out = Released::default();
     let records: Vec<(String, String)> = {
         let mut stmt = conn.prepare("SELECT DISTINCT entity, entity_id FROM sync_held")?;

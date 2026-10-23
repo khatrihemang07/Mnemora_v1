@@ -239,5 +239,15 @@ pub fn all() -> Migrations<'static> {
          ) STRICT;
          INSERT INTO sync_local_settled(one, seq) SELECT 1, COALESCE(MAX(seq), 0) FROM change_log;",
         ),
+        // The same for text: how far this device's own records have been replayed against the
+        // records received (`texts::settle_local`), kept apart because an open editor holds it back.
+        M::up(
+            "ALTER TABLE sync_local_settled ADD COLUMN texts INTEGER NOT NULL DEFAULT 0;
+         UPDATE sync_local_settled SET texts = seq;",
+        ),
+        // A text replay memo also remembers the local sequences of the rows it covered: a session's
+        // record rewritten in place moves between two places before the memo point without
+        // changing their count. Memos made before have -1 and are simply not used.
+        M::up("ALTER TABLE sync_text_replay ADD COLUMN seqs INTEGER NOT NULL DEFAULT -1;"),
     ])
 }

@@ -212,6 +212,10 @@ pub fn apply_batch(
         applied.changed.extend(settled.changed);
         applied.events.extend(settled.events);
     }
+    // And what this device itself saved since: its text is the replay of the records too.
+    let local = texts::settle_local(&tx, registry, me, now_ms())?;
+    applied.changed.extend(local.changed);
+    applied.events.extend(local.events);
     // A delete made here since may have replaced the one a line was made for.
     resolutions::settle_local(&tx, registry, me)?;
     resolutions::refresh_delete_edits(&tx, registry)?;

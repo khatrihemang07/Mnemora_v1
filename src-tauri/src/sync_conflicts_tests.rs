@@ -626,3 +626,55 @@ fn text_typed_over_the_same_words_while_editing_raises_a_conflict_after_release(
     assert_eq!(body(&c[0], &id), YOURS);
     assert_eq!(ids(&c[0]), ids(&c[1]));
 }
+
+/// An editing session that saves again after another session has built on its first save gets a
+/// new clock, and the text that other session was made from is no longer in the log. The
+/// author's own text must still be what every device replays the records to (found by
+/// `MNEMORA_CONVERGE_SEED=137`).
+#[test]
+fn a_rewritten_editing_session_leaves_the_author_with_the_text_everyone_replays() {
+    let c = Cluster::new(2);
+    let base = "one\ntwo\nthree\n";
+    let id = create_entry(&c[0], base)["id"].clone();
+    c.sync(0, 1);
+    c[0].clock().advance(1_000);
+    edit(&c[0], &id, "ONE\ntwo\nthree\n", "s");
+    c[0].clock().advance(1_000);
+    edit(&c[0], &id, "ONE\nTWO\nthree\n", "t");
+    c[0].clock().advance(1_000);
+    // Session `s` saves again: its record moves after `t`, and `t` was made from the first save.
+    edit(&c[0], &id, "ONE\nTWO\nTHREE\n", "s");
+    c.sync(0, 1);
+    c.sync(0, 1);
+    let (a, b) = (body(&c[0], &id), body(&c[1], &id));
+    assert_eq!(a, b, "both devices hold the same text");
+}
+
+/// A session record rewritten in place on its author moves from one place to another before the
+/// point the receiver's replay had got to; the replay must start over, not carry on from what it
+/// worked out from the old version (found by seeds 88, 133 and 326).
+#[test]
+fn a_replay_is_redone_when_a_session_record_it_covered_was_rewritten_elsewhere() {
+    let c = Cluster::new(2);
+    let id = create_entry(&c[0], "one\ntwo\nthree\n")["id"].clone();
+    c.sync(0, 1);
+    c[0].clock().advance(1_000);
+    edit(&c[0], &id, "ONE\ntwo\nthree\n", "s");
+    c.sync(0, 1);
+    c[1].clock().advance(5_000);
+    edit(&c[1], &id, "ONE\ntwo\nTHREE\n", "u");
+    // B's own save is replayed (its text memo now covers both records).
+    c[1].invoke::<()>(
+        "editing_release",
+        json!({ "entity": ENTRY, "entityId": id, "scope": "*" }),
+    )
+    .unwrap();
+    // A saves its session again before it has heard of B's: the record moves, B's stays.
+    c[0].clock().advance(1_000);
+    edit(&c[0], &id, "ONE\nTWO\nthree\n", "s");
+    c.sync(0, 1);
+    c.sync(0, 1);
+    let (a, b) = (body(&c[0], &id), body(&c[1], &id));
+    assert_eq!(a, b, "both devices hold the same text");
+    assert_eq!(a, "ONE\nTWO\nTHREE\n", "both edits are in it");
+}

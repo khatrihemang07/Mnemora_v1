@@ -104,7 +104,7 @@ pub(crate) struct Folded {
 
 /// Where a replay got to, as kept in `sync_text_replay`.
 struct Memo {
-    n: i64,
+    rows: Rows,
     folded: Folded,
 }
 
@@ -122,8 +122,9 @@ pub(crate) fn fold(
     entity_id: &str,
     unit: &TextUnit,
 ) -> Result<Option<Folded>, SyncError> {
-    let memo = load_memo(conn, entity, entity_id, unit.text)?
-        .filter(|m| count_upto(conn, entity, entity_id, &m.folded).is_ok_and(|n| n == m.n));
+    let memo = load_memo(conn, entity, entity_id, unit.text)?.filter(|m| {
+        count_upto(conn, entity, entity_id, &m.folded).is_ok_and(|rows| rows == m.rows)
+    });
     let after = memo.as_ref().map(|m| &m.folded);
     let mut recs = history(conn, schema, me, entity, entity_id, unit, after)?;
     recs.sort_by(|a, b| (&a.stamp, a.origin_seq).cmp(&(&b.stamp, b.origin_seq)));
@@ -136,15 +137,24 @@ pub(crate) fn fold(
     Ok(folded)
 }
 
-/// How many change-log rows of the record sort at or before `to`.
+/// What the change-log rows of a record sorting at or before a clock look like: how many, and
+/// their local sequences added up. A row stored, or rewritten in place (it gets a new local
+/// sequence, also when its clock moves from one place before the point to another), changes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rows {
+    n: i64,
+    seqs: i64,
+}
+
+/// The [`Rows`] of the record that sort at or before `to`.
 fn count_upto(
     conn: &Connection,
     entity: &str,
     entity_id: &str,
     to: &Folded,
-) -> Result<i64, SyncError> {
+) -> Result<Rows, SyncError> {
     Ok(conn.query_row(
-        "SELECT COUNT(*) FROM change_log WHERE entity = ?1 AND entity_id = ?2
+        "SELECT COUNT(*), COALESCE(SUM(seq), 0) FROM change_log WHERE entity = ?1 AND entity_id = ?2
            AND (hlc_ms, hlc_counter, origin_device, origin_seq) <= (?3, ?4, ?5, ?6)",
         params![
             entity,
@@ -154,7 +164,12 @@ fn count_upto(
             to.stamp.device,
             to.seq
         ],
-        |r| r.get(0),
+        |r| {
+            Ok(Rows {
+                n: r.get(0)?,
+                seqs: r.get(1)?,
+            })
+        },
     )?)
 }
 
@@ -164,9 +179,9 @@ fn load_memo(
     entity_id: &str,
     unit: &str,
 ) -> Result<Option<Memo>, SyncError> {
-    let row: Option<(i64, i64, String, i64, i64, String)> = conn
+    let row: Option<(i64, i64, String, i64, i64, i64, String)> = conn
         .query_row(
-            "SELECT ms, counter, device, seq, n, state FROM sync_text_replay
+            "SELECT ms, counter, device, seq, n, seqs, state FROM sync_text_replay
              WHERE entity = ?1 AND entity_id = ?2 AND unit = ?3",
             params![entity, entity_id, unit],
             |r| {
@@ -177,11 +192,12 @@ fn load_memo(
                     r.get(3)?,
                     r.get(4)?,
                     r.get(5)?,
+                    r.get(6)?,
                 ))
             },
         )
         .optional()?;
-    let Some((ms, counter, device, seq, n, state)) = row else {
+    let Some((ms, counter, device, seq, n, seqs, state)) = row else {
         return Ok(None);
     };
     // A memo that cannot be read is just not used.
@@ -198,7 +214,7 @@ fn load_memo(
         return Ok(None);
     };
     Ok(Some(Memo {
-        n,
+        rows: Rows { n, seqs },
         folded: Folded {
             values,
             op,
@@ -238,13 +254,13 @@ fn save_memo(
     })
     // Cannot fail for these types; an empty state is simply not used when read back.
     .unwrap_or_default();
-    let n = count_upto(conn, entity, entity_id, f)?;
+    let rows = count_upto(conn, entity, entity_id, f)?;
     conn.execute(
-        "INSERT INTO sync_text_replay(entity, entity_id, unit, ms, counter, device, seq, n, state)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO sync_text_replay(entity, entity_id, unit, ms, counter, device, seq, n, seqs, state)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(entity, entity_id, unit) DO UPDATE SET ms = excluded.ms,
              counter = excluded.counter, device = excluded.device, seq = excluded.seq,
-             n = excluded.n, state = excluded.state",
+             n = excluded.n, seqs = excluded.seqs, state = excluded.state",
         params![
             entity,
             entity_id,
@@ -253,7 +269,8 @@ fn save_memo(
             f.stamp.counter,
             f.stamp.device,
             f.seq,
-            n,
+            rows.n,
+            rows.seqs,
             state
         ],
     )?;
@@ -502,6 +519,72 @@ pub(crate) fn settle_unit(
         }
     }
     conflicts::supersede(conn, entity, entity_id, unit.text, &live)?;
+    Ok(out)
+}
+
+/// Brings the text of this device's own records to the replay too. A device's own save is a
+/// record like any other, but nothing "receives" it, so without this its stored text is whatever
+/// its author last typed, while every other device replays the same records to something else
+/// whenever the replay does not simply end on that save: an editing session saves again in
+/// place, which gives its record a new clock and drops the text other records were made from.
+/// Looks at the own records made since the last time; a unit an editor holds is left for the
+/// next time (the mark stays before it).
+pub(crate) fn settle_local(
+    conn: &Connection,
+    registry: &Registry,
+    me: &str,
+    now: i64,
+) -> Result<Settled, SyncError> {
+    let mut out = Settled::default();
+    let mark: i64 = conn.query_row("SELECT texts FROM sync_local_settled", [], |r| r.get(0))?;
+    let top: i64 = conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM change_log", [], |r| {
+        r.get(0)
+    })?;
+    if top <= mark {
+        return Ok(out);
+    }
+    let own: Vec<(i64, String, String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT seq, entity, entity_id, fields FROM change_log
+             WHERE seq > ?1 AND origin_device = ?2 AND fields IS NOT NULL
+               AND entity NOT LIKE 'sync\\_%' ESCAPE '\\'
+             ORDER BY seq",
+        )?;
+        stmt.query_map(params![mark, me], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<Result<_, _>>()?
+    };
+    let mut done: BTreeSet<(String, String, String)> = BTreeSet::new();
+    let mut held_back: Option<i64> = None;
+    for (seq, entity, entity_id, fields) in own {
+        let Some((_, schema)) = registry.find(&entity) else {
+            continue;
+        };
+        let Ok(Value::Object(fields)) = serde_json::from_str::<Value>(&fields) else {
+            continue;
+        };
+        let scopes = mnemora_core::editing::held(conn, &entity, &entity_id, now)?;
+        for name in fields.keys() {
+            let Some(field) = schema.field(name) else {
+                continue;
+            };
+            let key = field.group.unwrap_or(field.name);
+            if unit(schema, key).is_none() {
+                continue;
+            }
+            if mnemora_core::editing::is_held(&scopes, key) {
+                held_back.get_or_insert(seq);
+            } else if done.insert((entity.clone(), entity_id.clone(), key.to_owned())) {
+                let settled = settle_unit(conn, registry, me, &entity, &entity_id, key)?;
+                out.changed.extend(settled.changed);
+                out.events.extend(settled.events);
+                out.recorded |= settled.recorded;
+            }
+        }
+    }
+    let next = held_back.map_or(top, |seq| seq - 1);
+    conn.execute("UPDATE sync_local_settled SET texts = ?1", [next])?;
     Ok(out)
 }
 

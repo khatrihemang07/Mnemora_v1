@@ -1273,8 +1273,12 @@ fn converge_reporting(seed: u64) -> bool {
 /// for hunting locally: about 0.5 s per seed.
 ///
 /// 2, 5, 7, 8 and 42 each found a divergence that was fixed (Resolved automatically lines, the
-/// History of a Task whose author sent a whole When, a clash only the author could see).
-const FIXED_SEEDS: [u64; 13] = [1, 2, 5, 7, 8, 15, 17, 25, 42, 113, 2026, 99_991, 31_337];
+/// History of a Task whose author sent a whole When, a clash only the author could see); 137
+/// (an author's own text never replayed after a session rewrote in place), 88, 133 and 326 (a text
+/// replay carried on from a rewritten record) and 173, 263 and 293 (a used line taken back).
+const FIXED_SEEDS: [u64; 20] = [
+    1, 2, 5, 7, 8, 15, 17, 25, 42, 88, 113, 133, 137, 173, 263, 293, 326, 2026, 99_991, 31_337,
+];
 
 fn env_number(name: &str) -> Option<u64> {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok())
