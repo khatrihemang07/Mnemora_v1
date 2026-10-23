@@ -17,20 +17,20 @@
   import Button from '../../lib/ui/Button.svelte';
   import CodeInput from '../../lib/ui/CodeInput.svelte';
   import Input from '../../lib/ui/Input.svelte';
+  import { clock as appClock } from '../../lib/time/clock.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import CountdownRing from './CountdownRing.svelte';
   import { clock, fractionLeft, previewStats, problem, remaining } from './pair-view';
   import { pairing } from './pairing.svelte';
 
   // Rust sends the time left when a view arrives; the sheet counts down from there.
-  let now = $state(Date.now());
   const counting = $derived(pairing.view.state === 'showing' || pairing.view.state === 'asking');
   $effect(() => {
     if (!pairing.open || !counting) return;
-    const tick = setInterval(() => (now = Date.now()), 250);
-    return () => clearInterval(tick);
+    return appClock.subscribe();
   });
-  const left = $derived(remaining(pairing.view, now - pairing.arrivedAt));
+  const now = $derived(appClock.now.getTime());
+  const left = $derived(remaining(pairing.view, Math.max(0, now - pairing.arrivedAt)));
   const life = $derived(
     pairing.view.state === 'showing' || pairing.view.state === 'asking' ? pairing.view.life_ms : 0,
   );
@@ -90,7 +90,7 @@
   <h2 class="mb-1.5 text-base font-semibold text-ink">{text}</h2>
 {/snippet}
 
-<Sheet open={pairing.open} {title} onclose={() => void pairing.close()} centered bare>
+<Sheet open={pairing.open} {title} onclose={() => void pairing.close()} centered bare returnFocus>
   <div class="px-5 pt-6 pb-5" data-pairing={view.state}>
     {#if pairing.commandError}
       {@render heading(title)}

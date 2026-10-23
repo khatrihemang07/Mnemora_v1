@@ -279,7 +279,7 @@ pub(crate) fn log(conn: &Connection, row: &Row) -> Result<bool, SyncError> {
             snapshot: json_of(row),
         },
     )?;
-    tracing::info!(target: "sync", kind = %row.kind, "activity logged");
+    tracing::debug!(target: "sync", kind = %row.kind, "activity logged");
     Ok(true)
 }
 

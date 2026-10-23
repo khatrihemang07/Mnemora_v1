@@ -1,8 +1,8 @@
 <!--
   Sheet: a bottom sheet (the phone "More" menu, pickers). Marked `data-editor-popup` so an open
   Entry editor does not close when the sheet is used. `restoreFocus` decides where focus goes on
-  close; without it focus goes back to what had it when the sheet opened (on a desktop). `centered` makes it a panel in the middle of the
-  window on desktop (still a bottom sheet on a phone); `bare` leaves the padding and the title row
+  close; `returnFocus` sends it back to what had it when the sheet opened (on a desktop, when
+  nothing else decides). `centered` makes it a panel in the middle of the window on desktop (still a bottom sheet on a phone); `bare` leaves the padding and the title row
   to the caller, who lays the whole sheet out (the title is then for screen readers only), and
   `autoFocus={false}` keeps focus on the sheet itself instead of its first field. On a phone every
   sheet can be pulled down to close (see sheet-swipe.ts), rises above the on-screen keyboard, and
@@ -33,6 +33,8 @@
     autoFocus?: boolean;
     /** Nearly full height on a phone, for a sheet that is a page of its own. */
     tall?: boolean;
+    /** On a desktop, hand focus back to the element that had it when the sheet opened. */
+    returnFocus?: boolean;
     children: Snippet;
   }
   let {
@@ -46,6 +48,7 @@
     bare = false,
     autoFocus = true,
     tall = false,
+    returnFocus = false,
     children,
   }: Props = $props();
 
@@ -109,7 +112,7 @@
         // sheet, if that is still on screen.
         if (!restoreFocus) {
           if (viewport.isPhone) e.preventDefault();
-          else if (opener instanceof HTMLElement && opener !== document.body && opener.isConnected) {
+          else if (returnFocus && opener instanceof HTMLElement && opener !== document.body && opener.isConnected) {
             e.preventDefault();
             opener.focus();
           }

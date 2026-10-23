@@ -287,7 +287,7 @@ fn note(conn: &Connection, row: &Row) -> Result<bool, SyncError> {
     }
     take_used_before_made(conn, &row.id)?;
     record(conn, row, ChangeOp::Create)?;
-    tracing::info!(target: "sync", kind = %row.kind, "an automatic decision was logged");
+    tracing::debug!(target: "sync", kind = %row.kind, "an automatic decision was logged");
     Ok(true)
 }
 

@@ -128,6 +128,8 @@ mod commands;
 mod editing;
 mod env_guard;
 mod journal;
+#[cfg(test)]
+mod legacy_db_tests;
 mod links;
 mod state;
 mod sync;

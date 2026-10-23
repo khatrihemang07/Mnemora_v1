@@ -37,8 +37,8 @@ fn known(modules: &Modules, entity: &str, scope: &str) -> bool {
 /// An editor opened or is still open on `scope` (a field, a group of fields, or `*` for the whole
 /// record) of one record: what other devices send for it waits. Call again about every 30
 /// seconds; the hold lapses after two minutes without a call, so an editor that vanished cannot
-/// hold changes back for ever. Answers whether Sync is on: with it off the editor has nothing to
-/// renew and starts no timer.
+/// hold changes back for ever. Answers whether Sync is on: with it off nothing is stored, the editor
+/// has nothing to renew and starts no timer.
 #[tauri::command]
 #[specta::specta]
 pub fn editing_hold(
@@ -50,8 +50,12 @@ pub fn editing_hold(
     if entity_id.len() > MAX_NAME || !known(&state.modules, &entity, &scope) {
         return Err(invalid());
     }
+    // With Sync off nothing arrives to be held back: write nothing (Sync is inert when off).
+    if !state.device.get().sync.enabled {
+        return Ok(false);
+    }
     editing::hold(&lock(&state.db), &entity, &entity_id, &scope, now_ms())?;
-    Ok(state.device.get().sync.enabled)
+    Ok(true)
 }
 
 /// The editor is done (its text is saved): what was held back is merged now, and the screens
@@ -66,6 +70,11 @@ pub fn editing_release(
 ) -> Result<(), AppError> {
     if entity_id.len() > MAX_NAME || !known(&state.modules, &entity, &scope) {
         return Err(invalid());
+    }
+    // Holds exist only while Sync is on; whatever a switched-off Sync left held is merged at the
+    // next start.
+    if !state.device.get().sync.enabled {
+        return Ok(());
     }
     let me = state.device.device_id();
     let changed = {

@@ -129,7 +129,7 @@
 </script>
 
 <!-- `bare`: the name is the title (the sheet's own small label would say it twice), so the sheet lays itself out. -->
-<Sheet open title={d?.name ?? 'Device'} centered bare onclose={() => deviceSheet.close()}>
+<Sheet open title={d?.name ?? 'Device'} centered bare returnFocus onclose={() => deviceSheet.close()}>
   {#if detail.isError}
     <div class="p-4"><ErrorBanner error={detail.error} onretry={() => detail.refetch()} /></div>
   {:else if d}
@@ -252,6 +252,7 @@
   title="Forget {d?.name ?? 'this device'}?"
   description="It won’t sync with any of your devices again. Its data stays on it. To sync it later, pair it again."
   onclose={() => (forgetting = false)}
+  overSheet
 >
   {#snippet actions()}
     <Button onclick={() => (forgetting = false)}>Cancel</Button>

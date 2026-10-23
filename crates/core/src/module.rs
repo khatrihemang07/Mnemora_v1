@@ -65,8 +65,7 @@ pub trait Module: Send + Sync {
         Ok(Holdings::default())
     }
 
-    /// Work to do once per app start, after every Module's migrations ran (housekeeping such as
-    /// purging old rows, or upgrade steps keyed on what `report` says this run applied). No
+    /// Work to do once per app start, after every Module's migrations ran (housekeeping, or upgrade steps keyed on what `report` says this run applied). No
     /// polling: nothing calls this again. Never log user content.
     fn on_startup(
         &self,

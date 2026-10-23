@@ -297,7 +297,7 @@ pub(crate) fn raise(
         };
         crate::activity::log_conflict_raised(conn, &id, target, field, row.raised_at, other)?;
     }
-    tracing::info!(target: "sync", auto = deleted, "a text clash was recorded");
+    tracing::debug!(target: "sync", auto = deleted, "a text clash was recorded");
     let (entity, entity_id, field) = (target.to_owned(), target_id.to_owned(), field.to_owned());
     Ok(Some(if deleted {
         SyncEvent::ConflictAutoResolved {

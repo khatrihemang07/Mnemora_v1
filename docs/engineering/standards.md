@@ -351,7 +351,12 @@ Example id: `journal`.
        fn id(&self) -> &'static str { "journal" }
        fn migrations(&self) -> Migrations<'static> { /* M::up(...) list */ }
        fn register_settings(&self, reg: &mut SettingsRegistry) { /* reg.register("journal", key, default, validator) */ }
-       // Optional: fn on_startup(&self, conn: &mut Connection) -> AppResult<()>, run once per start after migrations.
+       // Optional: fn on_startup(&self, conn, device, report) -> AppResult<()>, run once per start after migrations.
+       // Optional: fn default_enabled(&self) -> bool (false = off until the user opts in, as Sync).
+       // Optional, to sync: fn sync_entities (every entity and the class of each field: text, value, order, derived),
+       //   fn apply_remote (store remote values through your own repository, recording nothing),
+       //   fn settle_remote (finish what a stored remote record implies, as ordinary recorded changes),
+       //   fn holdings (what the first-merge preview counts).
    }
    ```
 3. Migrations are append-only and tracked per Module. Tables use a UUIDv7 text id, `created_at`/`updated_at`, and a nullable `deleted_at` for soft delete ([ADR 0003](../adr/0003-sync-ready-sqlite.md)).
@@ -363,5 +368,5 @@ Example id: `journal`.
 6. Create `src/modules/journal/` with `manifest.ts` exporting a `ModuleManifest` (`id`, `name`, Lucide `icon`, `accentVar` such as `--hue-journal`, `routes` with lazy `component: () => import('./JournalPage.svelte')`, `nav: { order, shortcut }`).
 7. Add `JournalPage.svelte` (start it with `<PageHeader title="Journal" />`), and `queries.ts` with TanStack Query definitions that call `commands.*` through `unwrap`. Mutations invalidate by query key; Rust events already invalidate Settings.
 8. Build screens only from `src/lib/ui`. Settings for the Module go in a Settings section that follows the section/row/save-bar pattern; forms use the SaveBar (long-form writing autosaves instead).
-9. Register the manifest in `src/shell/registry.ts`. Routes, sidebar entry, tab chooser, palette and shortcuts follow from the manifest, and only while the Module is enabled. Optional manifest hooks: `homeCard` (lazy Home card), `settingsSection` (replaces step 8's hand wiring), `create` (⌘N), `paletteActions` (a `queryLabel` makes one act on typed text, a `queryPreview` says what it would do; actions that depend on loaded data are set from the Module's `overlay` with `dynamicActions`), `bareKeys`, `overlay` and `useBadge` (a count beside the Module in the sidebar and tab bar).
+9. Register the manifest in `src/shell/registry.ts`. Routes, sidebar entry, tab chooser, palette and shortcuts follow from the manifest, and only while the Module is enabled. Optional manifest hooks: `homeCard` (lazy Home card), `settingsSection` (replaces step 8's hand wiring), `create` (⌘N), `paletteActions` (a `queryLabel` makes one act on typed text, a `queryPreview` says what it would do; actions that depend on loaded data are set from the Module's `overlay` with `dynamicActions`), `bareKeys`, `overlay` and `useBadge` (a count beside the Module in the sidebar and tab bar), `defaultEnabled: false` (opt-in Module), `deviceSwitch` (an on/off that is a Device setting) and `phoneBadge: false` (no badge on the phone tab bar). A syncable Module records every mutation in the change log, stamps `updated_at`, and has any editor of synced text take `editingHold(entity, id)` from `src/lib/editing-hold.ts` so a remote change waits for the editing session.
 10. Add a hue token if the Module needs one (`--hue-journal` exists already), unit-test the logic, run `make lint test`, then update the glossary or add an ADR if you settled a term or decision.

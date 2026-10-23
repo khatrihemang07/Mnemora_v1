@@ -109,8 +109,22 @@ impl TestApp {
     /// Like [`new`](Self::new), for an install that already has data: `seed` writes to the
     /// freshly migrated database and `device` is what `device.toml` held, then the Modules'
     /// startup work runs as it does when the app starts.
-    #[allow(clippy::unwrap_used, clippy::expect_used)]
     pub fn upgrading(seed: impl FnOnce(&db::Connection), device: DeviceSettings) -> Self {
+        Self::boot(|_| {}, seed, device)
+    }
+
+    /// An install made by the previous release: `old` builds the database as that release left
+    /// it (before any migration of this one runs), then the app starts on it.
+    pub fn legacy(old: impl FnOnce(&mut db::Connection), device: DeviceSettings) -> Self {
+        Self::boot(old, |_| {}, device)
+    }
+
+    #[allow(clippy::unwrap_used, clippy::expect_used)]
+    fn boot(
+        old: impl FnOnce(&mut db::Connection),
+        seed: impl FnOnce(&db::Connection),
+        device: DeviceSettings,
+    ) -> Self {
         let dir = tempfile::tempdir().expect("temp dir");
         let paths = AppPaths::resolve(Environment::Production, dir.path(), None);
 
@@ -120,6 +134,7 @@ impl TestApp {
         let clock = Arc::new(TestClock::default());
         let source = Arc::clone(&clock);
         db::set_time_source(&conn, Arc::new(move || source.now())).unwrap();
+        old(&mut conn);
         let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir).unwrap();
         seed(&conn);
         let device = Arc::new(DeviceStore::new(paths.device_file(), device));

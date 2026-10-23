@@ -296,7 +296,7 @@ impl Session {
                         .flatten()
                         .find(|d| *d != self.me);
                     let device = other.and_then(|d| peers::name_of(conn, &d).ok().flatten());
-                    tracing::info!(target: "sync", "two Lists with the same name merged");
+                    tracing::debug!(target: "sync", "two Lists with the same name merged");
                     self.bus.publish(&ListsMerged {
                         from_id,
                         from_name,
@@ -332,7 +332,7 @@ impl Session {
                     tracing::debug!(target: "sync", "a Task went to the Inbox: its List is gone");
                 }
                 SyncEvent::DeviceRenamed { name } => {
-                    tracing::info!(target: "sync", "another device renamed this one");
+                    tracing::debug!(target: "sync", "another device renamed this one");
                     self.bus.publish(&DeviceRenamed { name });
                 }
             }
