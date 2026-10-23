@@ -24,6 +24,15 @@ impl Device {
     }
 
     pub(crate) async fn with_pace(name: &str, pace: Pace) -> Self {
+        Self::build(name, pace, None).await
+    }
+
+    /// Also listening on the IPv6 loopback, on the port of the IPv4 one.
+    async fn dual_stack(name: &str) -> Self {
+        Self::build(name, Pace::default(), Some(std::net::Ipv6Addr::LOCALHOST)).await
+    }
+
+    async fn build(name: &str, pace: Pace, ip6: Option<std::net::Ipv6Addr>) -> Self {
         let app = TestApp::syncing();
         app.invoke::<()>("sync_rename", json!({ "name": name }))
             .unwrap();
@@ -31,6 +40,7 @@ impl Device {
         let options = NetworkOptions {
             ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
             port: 0,
+            ip6,
             timing: Timing {
                 search: Duration::from_millis(800),
                 ..Timing::default()
@@ -191,4 +201,123 @@ fn pairing_commands_are_refused_before_the_network_is_up() {
         app.invoke::<Value>("sync_pair_state", json!({})).unwrap()["state"],
         "idle"
     );
+}
+
+#[tokio::test]
+async fn pairing_by_address_needs_no_discovery_and_remembers_the_address() {
+    use crate::sync_live_tests::{peer_of, quick, until};
+    let (mac, phone) = (
+        Device::with_pace("Mac", quick()).await,
+        Device::with_pace("Pixel 8", quick()).await,
+    );
+    mac.call::<()>("sync_pair_show", json!({}));
+    let code = mac.pairing()["code"].as_str().unwrap().to_owned();
+    // The phone finds nothing on the network: only the typed address leads to the Mac.
+    let address = mac.address().to_string();
+    phone.call::<()>(
+        "sync_pair_enter_at",
+        json!({ "address": address, "code": code }),
+    );
+    assert_eq!(mac.until("asking").await["name"], "Pixel 8");
+    mac.call::<()>("sync_pair_decide", json!({ "allow": true }));
+    assert_eq!(phone.until("paired").await["name"], "Mac");
+    assert_eq!(mac.until("paired").await["name"], "Pixel 8");
+
+    let mac_id = phone.devices()["peers"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let sheet: Value = phone.call("sync_device", json!({ "id": mac_id }));
+    assert_eq!(sheet["typed_address"], json!(address));
+    // The Mac showed the code, so it dialled nothing: the typed Address is what connects them.
+    until("connected by the typed address", || {
+        peer_of(&phone)["state"] == "up_to_date"
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn pairing_by_address_says_why_it_did_not_work() {
+    let (mac, phone) = (Device::new("Mac").await, Device::new("Pixel 8").await);
+    let invalid = phone
+        .app
+        .invoke::<()>(
+            "sync_pair_enter_at",
+            json!({ "address": "pixel 8", "code": "12345678" }),
+        )
+        .unwrap_err();
+    assert_eq!(invalid["code"], "validation");
+    assert_eq!(
+        invalid["message"],
+        "That isn't a host name or an IP address"
+    );
+    let short = phone
+        .app
+        .invoke::<()>(
+            "sync_pair_enter_at",
+            json!({ "address": "127.0.0.1", "code": "123" }),
+        )
+        .unwrap_err();
+    assert_eq!(short["code"], "validation");
+
+    // Nothing listens there.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap();
+    phone.call::<()>(
+        "sync_pair_enter_at",
+        json!({ "address": closed.to_string(), "code": "12345678" }),
+    );
+    let failed = phone.until("failed").await;
+    assert_eq!(failed["error"]["kind"], "address_unreachable");
+
+    // A device that shows a code, and a wrong one: the usual pairing error, naming the device.
+    mac.call::<()>("sync_pair_show", json!({}));
+    let code = mac.pairing()["code"].as_str().unwrap().replace(' ', "");
+    let wrong = if code == "00000000" {
+        "11111111"
+    } else {
+        "00000000"
+    };
+    phone.call::<()>(
+        "sync_pair_enter_at",
+        json!({ "address": mac.address().to_string(), "code": wrong }),
+    );
+    let failed = phone.until("failed").await;
+    assert_eq!(failed["error"]["kind"], "wrong_code");
+    assert_eq!(failed["error"]["tries_left"], 2);
+    assert_eq!(phone.listed(), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn a_device_can_be_paired_over_its_ipv6_address() {
+    let (mac, phone) = (
+        Device::dual_stack("Mac").await,
+        Device::new("Pixel 8").await,
+    );
+    mac.call::<()>("sync_pair_show", json!({}));
+    let code = mac.pairing()["code"].as_str().unwrap().to_owned();
+    let address = format!("[::1]:{}", mac.address().port());
+    phone.call::<()>(
+        "sync_pair_enter_at",
+        json!({ "address": address, "code": code }),
+    );
+    assert_eq!(mac.until("asking").await["name"], "Pixel 8");
+    mac.call::<()>("sync_pair_decide", json!({ "allow": true }));
+    assert_eq!(phone.until("paired").await["name"], "Mac");
+}
+
+#[tokio::test]
+async fn sync_off_closes_the_ipv6_port_too() {
+    let mac = Device::dual_stack("Mac").await;
+    let port = mac.address().port();
+    mac.call::<()>("sync_set_enabled", json!({ "enabled": false }));
+    assert_eq!(mac.app.sync_probe().tasks, 0);
+    let v6 = std::net::SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, port));
+    // The listener tasks are aborted, which takes effect at their next poll.
+    crate::sync_live_tests::until("the IPv6 port to close", || {
+        std::net::TcpStream::connect_timeout(&v6, Duration::from_millis(200)).is_err()
+    })
+    .await;
 }

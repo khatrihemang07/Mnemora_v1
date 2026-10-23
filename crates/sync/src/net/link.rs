@@ -250,6 +250,24 @@ async fn establish(config: &NetConfig, mut secured: Secured) -> Result<Establish
     })
 }
 
+/// A listening socket on `ip:port`. An IPv6 address is bound IPv6-only, so a `::` listener can
+/// share its port with the `0.0.0.0` one on every platform (dual-stack is the default on some and
+/// not on others).
+fn open_socket(ip: IpAddr, port: u16) -> std::io::Result<TcpListener> {
+    use socket2::{Domain, Socket, Type};
+    let addr = SocketAddr::new(ip, port);
+    let socket = Socket::new(Domain::for_address(addr), Type::STREAM, None)?;
+    if ip.is_ipv6() {
+        socket.set_only_v6(true)?;
+    }
+    #[cfg(not(windows))]
+    socket.set_reuse_address(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&addr.into())?;
+    socket.listen(1024)?;
+    TcpListener::from_std(socket.into())
+}
+
 /// Accepts connections on one port.
 pub struct Listener {
     addr: SocketAddr,
@@ -262,21 +280,37 @@ impl Listener {
     /// Listens on `ip:preferred_port`, or on an ephemeral port of `ip` if that one is busy.
     /// Pass [`DEFAULT_PORT`] in the app; tests pass a port of their own so a busy 47311 on the
     /// machine cannot fail them.
+    #[allow(
+        clippy::unused_async,
+        reason = "async so it can only be called inside the Tokio runtime the socket registers with"
+    )]
     pub async fn bind(
         config: NetConfig,
         ip: IpAddr,
         preferred_port: u16,
     ) -> Result<Self, NetError> {
-        let acceptor = TlsAcceptor::from(server_config(&config.identity, &config.trust)?);
-        let (socket, fell_back) = match TcpListener::bind((ip, preferred_port)).await {
+        let (socket, fell_back) = match open_socket(ip, preferred_port) {
             Ok(socket) => (socket, false),
-            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                (TcpListener::bind((ip, 0)).await?, true)
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => (open_socket(ip, 0)?, true),
             Err(e) => return Err(e.into()),
         };
+        Self::serve(config, socket, fell_back)
+    }
+
+    /// Listens on exactly `ip:port` (no fallback): the second listener of a device, which must
+    /// share the first one's port because that is the one advertised.
+    #[allow(
+        clippy::unused_async,
+        reason = "async so it can only be called inside the Tokio runtime the socket registers with"
+    )]
+    pub async fn bind_exact(config: NetConfig, ip: IpAddr, port: u16) -> Result<Self, NetError> {
+        Self::serve(config, open_socket(ip, port)?, false)
+    }
+
+    fn serve(config: NetConfig, socket: TcpListener, fell_back: bool) -> Result<Self, NetError> {
+        let acceptor = TlsAcceptor::from(server_config(&config.identity, &config.trust)?);
         let addr = socket.local_addr()?;
-        tracing::info!(target: "sync", port = addr.port(), fell_back, "listening");
+        tracing::info!(target: "sync", port = addr.port(), fell_back, v6 = addr.is_ipv6(), "listening");
         let (tx, incoming) = unbounded_channel();
         let task = tokio::spawn(accept_loop(socket, acceptor, config, tx));
         Ok(Self {

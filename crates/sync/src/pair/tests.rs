@@ -148,6 +148,7 @@ impl Dev {
         let options = NetworkOptions {
             ip: LOCALHOST,
             port: 0,
+            ip6: None,
             timing: Timing {
                 search: Duration::from_millis(800),
                 ..timing

@@ -90,6 +90,18 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
         fix: 'Check that both devices are on the same network, then try again.',
         deadCode: false,
       };
+    case 'address_not_found':
+      return {
+        title: "That name wasn't found.",
+        fix: 'Check the spelling, and that Tailscale is on for both devices.',
+        deadCode: false,
+      };
+    case 'address_unreachable':
+      return {
+        title: 'Nothing answered at that address.',
+        fix: 'Check the address, that Mnemora is open on the other device with a code showing, and that both devices are on Tailscale.',
+        deadCode: false,
+      };
     case 'busy':
       return {
         title: 'That device is pairing with another one.',

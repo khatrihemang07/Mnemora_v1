@@ -102,6 +102,10 @@ pub enum PairingError {
     NothingNearby,
     /// The other device went away or could not be reached.
     ConnectionLost,
+    /// The typed address is a name that does not resolve (Pair by address).
+    AddressNotFound,
+    /// Nothing answered at the typed address in time, or it is not Mnemora (Pair by address).
+    AddressUnreachable,
     /// The other device is already pairing with someone.
     Busy,
     /// Sync is not ready (still starting, or off).

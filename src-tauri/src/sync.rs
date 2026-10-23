@@ -284,6 +284,18 @@ pub fn sync_pair_enter(state: State<'_, AppState>, code: String) -> Result<(), A
     Ok(state.sync.pairing()?.enter(&code)?)
 }
 
+/// "Pair by address…": dials the typed address with the code (the other device need not be
+/// visible on the network). On success the address is kept as that device's typed Address.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_pair_enter_at(
+    state: State<'_, AppState>,
+    address: String,
+    code: String,
+) -> Result<(), AppError> {
+    Ok(state.sync.pairing()?.enter_at(&address, &code)?)
+}
+
 /// Allow or Deny the device that typed the right code.
 #[tauri::command]
 #[specta::specta]
@@ -390,6 +402,13 @@ impl<R: Runtime> PairingHost for AppHost<R> {
         let introduced: Vec<String> = stored.pins.iter().map(|(_, id)| id.clone()).collect();
         mnemora_sync::introduce_members(&conn, &identity, &paired.who.device, &introduced)?;
         Ok(stored)
+    }
+
+    fn remember_address(&self, device: &str, address: &str) {
+        let state = self.app.state::<AppState>();
+        if let Err(e) = mnemora_sync::set_typed_address(&lock(&state.db), device, address) {
+            tracing::warn!(target: "sync", error = %e, "could not remember the typed address");
+        }
     }
 
     fn show(&self, view: &PairingView) {

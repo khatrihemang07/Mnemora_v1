@@ -1,10 +1,11 @@
 import { commands, events, type PairingView } from '../../lib/ipc/bindings';
 import { unwrap } from '../../lib/ipc/unwrap';
 import { notify } from '../../lib/ui/toast';
+import { parseAddress } from './address';
 import { problem } from './pair-view';
 import { refreshSync } from './queries';
 
-export type PairMode = 'show' | 'enter';
+export type PairMode = 'show' | 'enter' | 'address';
 
 /**
  * The pairing sheet's state. Rust owns the phases (`view` is whatever it last said); this adds only
@@ -17,6 +18,10 @@ class Pairing {
   view = $state<PairingView>({ state: 'idle' });
   /** Digits typed in the boxes. */
   code = $state('');
+  /** The other device's address, for "Pair by address…". */
+  address = $state('');
+  /** What is wrong with the address typed, before anything is sent. */
+  addressError = $state<string | null>(null);
   /** A command that failed outright (Sync not ready); pairing failures arrive in `view`. */
   commandError = $state<unknown>(null);
   arrivedAt = $state(Date.now());
@@ -32,7 +37,7 @@ class Pairing {
     this.view = view;
     this.arrivedAt = Date.now();
     // A code that cannot work any more is not worth keeping in the boxes.
-    if (view.state === 'failed' && problem(view.error, this.mode === 'enter').deadCode) {
+    if (view.state === 'failed' && problem(view.error, this.mode !== 'show').deadCode) {
       this.code = '';
     }
     if (view.state === 'paired') void refreshSync();
@@ -43,6 +48,7 @@ class Pairing {
     this.open = true;
     this.mode = mode;
     this.code = '';
+    this.addressError = null;
     this.commandError = null;
     this.view = { state: 'idle' };
     if (mode === 'show') await this.run(() => unwrap(commands.syncPairShow()));
@@ -63,6 +69,19 @@ class Pairing {
     if (this.code.length !== 8) return;
     this.commandError = null;
     await this.run(() => unwrap(commands.syncPairEnter(this.code)));
+  }
+
+  /** Pairs with the device at `address`, which shows `code`. */
+  async submitAddress() {
+    if (this.code.length !== 8) return;
+    const parsed = parseAddress(this.address);
+    if (!parsed.ok) {
+      this.addressError = parsed.message;
+      return;
+    }
+    this.addressError = null;
+    this.commandError = null;
+    await this.run(() => unwrap(commands.syncPairEnterAt(this.address, this.code)));
   }
 
   async decide(allow: boolean) {

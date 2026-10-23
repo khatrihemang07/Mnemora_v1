@@ -32,6 +32,8 @@ pub struct Timing {
     pub code_life: Duration,
     /// How long the typing device looks for a device showing a code.
     pub search: Duration,
+    /// How long a device gets to answer a dial before the next address is tried (Pair by address).
+    pub dial: Duration,
     /// How long one reply may take during the exchange (not counting the person's answer).
     pub step: Duration,
     /// Extra time the typing device waits beyond the code's life before giving up.
@@ -43,6 +45,7 @@ impl Default for Timing {
         Self {
             code_life: code::LIFE,
             search: Duration::from_secs(5),
+            dial: Duration::from_secs(3),
             step: Duration::from_secs(10),
             grace: Duration::from_secs(5),
         }

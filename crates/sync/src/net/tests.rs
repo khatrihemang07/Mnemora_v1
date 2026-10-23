@@ -596,6 +596,41 @@ async fn listening_on_all_interfaces_is_reachable_by_loopback() {
     dialled.unwrap();
 }
 
+const LOCALHOST6: IpAddr = IpAddr::V6(std::net::Ipv6Addr::LOCALHOST);
+
+#[tokio::test]
+async fn an_ipv6_listener_is_reachable_on_the_ipv6_loopback() {
+    let (a, b) = pinned_pair(Environment::Production);
+    let mut listener = Listener::bind(a.config.clone(), LOCALHOST6, 0)
+        .await
+        .unwrap();
+    let addr = listener.local_addr();
+    assert!(addr.is_ipv6());
+    let (dialled, _accepted) = tokio::join!(dial(&b.config, addr), next_peer(&mut listener));
+    dialled.unwrap();
+}
+
+#[tokio::test]
+async fn the_ipv4_and_ipv6_listeners_share_one_port() {
+    let (a, b) = pinned_pair(Environment::Production);
+    let mut v4 = listen(&a).await;
+    let port = v4.local_addr().port();
+    let mut v6 = Listener::bind_exact(a.config.clone(), LOCALHOST6, port)
+        .await
+        .unwrap();
+    assert_eq!(v6.local_addr().port(), port);
+    let (dialled, _accepted) = tokio::join!(
+        dial(&b.config, SocketAddr::new(LOCALHOST6, port)),
+        next_peer(&mut v6)
+    );
+    dialled.unwrap();
+    let (dialled, _accepted) = tokio::join!(
+        dial(&b.config, SocketAddr::new(LOCALHOST, port)),
+        next_peer(&mut v4)
+    );
+    dialled.unwrap();
+}
+
 #[tokio::test]
 async fn a_handshake_frame_far_below_8_mb_is_the_most_a_stranger_may_send() {
     let (a, b) = pinned_pair(Environment::Production);

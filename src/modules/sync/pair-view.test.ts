@@ -97,3 +97,12 @@ describe('isBusy', () => {
     expect(isBusy({ state: 'waiting', name: 'Mac' })).toBe(true);
   });
 });
+
+describe('pairing by address', () => {
+  it('words an unknown name and a silent address', () => {
+    expect(problem({ kind: 'address_not_found' }, true).title).toBe("That name wasn't found.");
+    const silent = problem({ kind: 'address_unreachable' }, true);
+    expect(silent.title).toBe('Nothing answered at that address.');
+    expect(silent.deadCode).toBe(false);
+  });
+});

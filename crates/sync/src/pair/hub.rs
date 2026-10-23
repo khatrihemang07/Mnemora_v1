@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use tokio::runtime::Handle;
 use tokio::sync::oneshot;
 use tokio::task::AbortHandle;
-use tokio::time::{sleep, timeout_at};
+use tokio::time::{sleep, timeout, timeout_at};
 
 use super::Timing;
 use super::code::{self, MAX_TRIES};
@@ -21,6 +21,7 @@ use super::msg::{Reason, Who};
 use super::proto::{self, Attempt, Decision, Failure, ShowerPort, TyperPort};
 use super::view::{PairingError, PairingView};
 use crate::SyncError;
+use crate::address::{Address, ResolveError};
 use crate::discovery::{Advert, Discovery};
 use crate::net::{NetConfig, Secured, secure_dial};
 
@@ -399,8 +400,11 @@ impl Pairing {
     }
 
     /// Records a pairing and pins the keys it brought.
-    fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
+    fn commit(&self, paired: &Paired, typed: Option<&str>) -> Result<Stored, SyncError> {
         let stored = self.host.store(paired)?;
+        if let Some(address) = typed {
+            self.host.remember_address(&paired.who.device, address);
+        }
         for (key, device) in &stored.pins {
             self.config.trust.pin(*key, device);
         }
@@ -426,8 +430,53 @@ impl Pairing {
         Ok(())
     }
 
+    /// Pair by address: dials the typed `address` with the code. The other device need not be
+    /// visible to discovery; on success the address becomes its typed Address.
+    pub fn enter_at(self: &Arc<Self>, address: &str, input: &str) -> Result<(), SyncError> {
+        let address = Address::parse(address).map_err(|e| SyncError::Validation(e.message()))?;
+        let code =
+            code::normalise(input).ok_or(SyncError::Validation("Type all 8 digits of the code"))?;
+        let mut g = self.lock();
+        Self::clear(&mut g, Decision::Cancelled);
+        let generation = g.generation;
+        g.base = PairingView::Searching;
+        let me = Arc::clone(self);
+        g.typing = Some(self.spawn(async move {
+            let outcome = me.pair_at(&address, &code).await;
+            me.finish_typing(outcome, generation);
+            me.refresh_advert();
+        }));
+        self.sync_open(&g);
+        self.publish(&g);
+        Ok(())
+    }
+
+    async fn pair_at(&self, address: &Address, code: &str) -> Result<Stored, PairingError> {
+        let me = self.me().map_err(|_| PairingError::NotReady)?;
+        let addrs = address
+            .resolve(self.timing.dial)
+            .await
+            .map_err(|e| match e {
+                ResolveError::NotFound => PairingError::AddressNotFound,
+                ResolveError::TimedOut => PairingError::AddressUnreachable,
+            })?;
+        let typed = address.normalized();
+        for addr in addrs {
+            match self.attempt(addr, &me, code, Some(&typed)).await {
+                Err(PairingError::ConnectionLost) => {}
+                other => return other,
+            }
+        }
+        Err(PairingError::AddressUnreachable)
+    }
+
     async fn type_and_finish(self: Arc<Self>, code: String, generation: u64) {
         let outcome = self.search_and_pair(&code).await;
+        self.finish_typing(outcome, generation);
+        self.refresh_advert();
+    }
+
+    fn finish_typing(&self, outcome: Result<Stored, PairingError>, generation: u64) {
         {
             let mut g = self.lock();
             if g.generation != generation {
@@ -441,7 +490,6 @@ impl Pairing {
             self.sync_open(&g);
             self.publish(&g);
         }
-        self.refresh_advert();
     }
 
     async fn search_and_pair(&self, code: &str) -> Result<Stored, PairingError> {
@@ -462,7 +510,7 @@ impl Pairing {
             }
             let mut result = Err(PairingError::ConnectionLost);
             for addr in &found.addrs {
-                result = self.attempt(*addr, &me, code).await;
+                result = self.attempt(*addr, &me, code, None).await;
                 if !matches!(result, Err(PairingError::ConnectionLost)) {
                     break;
                 }
@@ -485,17 +533,32 @@ impl Pairing {
         addr: std::net::SocketAddr,
         me: &Who,
         code: &str,
+        typed: Option<&str>,
     ) -> Result<Stored, PairingError> {
-        let secured = secure_dial(&self.config, addr).await.map_err(|e| {
-            tracing::debug!(target: "sync", error = %e, "could not reach a device to pair with");
-            PairingError::ConnectionLost
-        })?;
+        let secured = match timeout(self.timing.dial, secure_dial(&self.config, addr)).await {
+            Ok(Ok(secured)) => secured,
+            Ok(Err(e)) => {
+                tracing::debug!(target: "sync", error = %e, "could not reach a device to pair with");
+                return Err(PairingError::ConnectionLost);
+            }
+            Err(_) => {
+                tracing::debug!(target: "sync", "dialling a device to pair with timed out");
+                return Err(PairingError::ConnectionLost);
+            }
+        };
         let Secured {
             mut channel, key, ..
         } = secured;
-        proto::type_code(&mut channel, &TypeSide(self), me, key, code, &self.timing)
-            .await
-            .map_err(typer_error)
+        proto::type_code(
+            &mut channel,
+            &TypeSide { hub: self, typed },
+            me,
+            key,
+            code,
+            &self.timing,
+        )
+        .await
+        .map_err(typer_error)
     }
 }
 
@@ -555,19 +618,23 @@ fn typer_error(failure: Failure) -> PairingError {
 }
 
 /// The typing side's hooks into [`Pairing`].
-struct TypeSide<'a>(&'a Pairing);
+struct TypeSide<'a> {
+    hub: &'a Pairing,
+    /// The address this pairing dialled, when the person typed it.
+    typed: Option<&'a str>,
+}
 
 impl TyperPort for TypeSide<'_> {
     fn waiting(&self, shower: &Who) {
-        let mut g = self.0.lock();
+        let mut g = self.hub.lock();
         g.base = PairingView::Waiting {
             name: shower.name.clone(),
         };
-        self.0.publish(&g);
+        self.hub.publish(&g);
     }
 
     fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
-        self.0.commit(paired)
+        self.hub.commit(paired, self.typed)
     }
 }
 
@@ -649,7 +716,7 @@ impl ShowerPort for ShowSide<'_> {
     }
 
     fn commit(&self, paired: &Paired) -> Result<Stored, SyncError> {
-        self.0.commit(paired)
+        self.0.commit(paired, None)
     }
 }
 

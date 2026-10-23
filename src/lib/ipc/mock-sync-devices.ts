@@ -119,10 +119,12 @@ export interface DeviceMockOptions {
   forget: (id: string) => void;
   /** Console override for every Check. */
   forced: () => CheckKind | undefined;
+  /** Typed Addresses by device id; shared with pairing by address. */
+  typed?: Map<string, string>;
 }
 
 export function createDeviceMock(o: DeviceMockOptions) {
-  const typed = new Map<string, string>();
+  const typed = o.typed ?? new Map<string, string>();
   const find = (id: unknown): PairedBase => {
     const peer = o.peers.find((p) => p.id === id);
     if (!peer) throw error('not_found', 'That device is not paired');

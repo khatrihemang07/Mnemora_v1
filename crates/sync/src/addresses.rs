@@ -71,6 +71,19 @@ mod tests {
     }
 
     #[test]
+    fn what_this_device_gives_out_always_passes_the_filter() {
+        assert!(local().into_iter().all(shareable));
+    }
+
+    #[test]
+    fn the_route_is_told_by_range() {
+        assert!(is_tailscale(ip("100.100.1.1")));
+        assert!(is_tailscale(ip("fd7a:115c:a1e0::5")));
+        assert!(!is_tailscale(ip("192.168.1.9")));
+        assert!(!is_tailscale(ip("10.0.0.1")));
+    }
+
+    #[test]
     fn loopback_link_local_and_public_addresses_are_not() {
         for bad in [
             "127.0.0.1",
@@ -84,6 +97,12 @@ mod tests {
             "2001:db8::1",
             "fd7a:115c:a1e1::1",
             "fd00::1",
+            "172.15.255.255",
+            "192.169.0.1",
+            "0.0.0.0",
+            "::",
+            "::ffff:192.168.1.1",
+            "::ffff:8.8.8.8",
         ] {
             assert!(!shareable(ip(bad)), "{bad}");
         }

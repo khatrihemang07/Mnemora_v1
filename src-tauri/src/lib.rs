@@ -93,6 +93,7 @@ macro_rules! specta_builder_for {
                 sync::sync_pair_show,
                 sync::sync_pair_new_code,
                 sync::sync_pair_enter,
+                sync::sync_pair_enter_at,
                 sync::sync_pair_decide,
                 sync::sync_pair_cancel,
                 sync::sync_now,

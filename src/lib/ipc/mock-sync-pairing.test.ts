@@ -201,3 +201,51 @@ describe('the Devices tab', () => {
     expect(names()).toEqual([]);
   });
 });
+
+describe('pairing by address', () => {
+  const pairAt = (s: ReturnType<typeof setup>, address: string, code = '12345678') => {
+    s.call('sync_pair_enter_at', { address, code });
+    expect(s.last().state).toBe('searching');
+    vi.advanceTimersByTime(900 + 1500);
+    return s.last();
+  };
+
+  it('refuses an address that breaks the rules and a code that is not 8 digits', () => {
+    const s = setup();
+    expect(() => s.call('sync_pair_enter_at', { address: 'pixel 8', code: '12345678' })).toThrow(
+      expect.objectContaining({ message: "That isn't a host name or an IP address" }),
+    );
+    expect(() => s.call('sync_pair_enter_at', { address: 'mac.ts.net', code: '12' })).toThrow(
+      expect.objectContaining({ message: 'Type all 8 digits of the code' }),
+    );
+  });
+
+  it('pairs and keeps the address as the device’s typed Address', () => {
+    const s = setup();
+    expect(pairAt(s, ' Mac.Tail1234.ts.net ')).toMatchObject({ state: 'paired' });
+    const id = (s.call('sync_devices') as { peers: { id: string }[] }).peers[0]?.id;
+    expect(s.call('sync_device', { id })).toMatchObject({ typed_address: 'mac.tail1234.ts.net' });
+  });
+
+  it('says when the name is not found or nothing answers', () => {
+    const s = setup();
+    s.call('sync_pair_enter_at', { address: 'nowhere.ts.net', code: '12345678' });
+    vi.advanceTimersByTime(900);
+    expect(s.last()).toMatchObject({ state: 'failed', error: { kind: 'address_not_found' } });
+    s.call('sync_pair_enter_at', { address: '100.64.0.9', code: '12345678' });
+    vi.advanceTimersByTime(2400);
+    expect(s.last().state).toBe('paired');
+    const t = setup();
+    t.call('sync_pair_enter_at', { address: 'closed.ts.net', code: '12345678' });
+    vi.advanceTimersByTime(900);
+    expect(t.last()).toMatchObject({ state: 'failed', error: { kind: 'address_unreachable' } });
+  });
+
+  it('the usual pairing errors still apply', () => {
+    const s = setup();
+    expect(pairAt(s, 'mac.ts.net', '11111111')).toMatchObject({
+      state: 'failed',
+      error: { kind: 'wrong_code', tries_left: 2 },
+    });
+  });
+});

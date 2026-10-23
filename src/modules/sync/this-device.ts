@@ -17,9 +17,10 @@ export function listeningSummary(device: ThisDevice): ListeningSummary {
     `port ${device.port}`,
   ];
   // U+2011 is a hyphen that never breaks the line ("Wi-" / "Fi" on a phone).
+  const networks = device.routes.map((r) => (r === 'wifi' ? 'Wi\u2011Fi' : 'Tailscale'));
   return {
     listening: true,
-    text: 'Listening on Wi\u2011Fi and Tailscale',
+    text: networks.length > 0 ? `Listening on ${networks.join(' and ')}` : 'Listening',
     detail: parts.join(' · '),
   };
 }

@@ -13,7 +13,7 @@ use crate::addresses;
 use crate::live::PeerLive;
 use crate::name::default_device_name;
 use crate::pair::Platform;
-use crate::peer_state::{self, Remembered};
+use crate::peer_state::{self, Remembered, Route};
 use crate::peers::{self, PeerRow, PeerState};
 
 /// This device, as the This-device card shows it.
@@ -27,6 +27,9 @@ pub struct ThisDevice {
     pub port: Option<u16>,
     /// Its shareable addresses (Wi-Fi, Tailscale), without the port.
     pub addresses: Vec<String>,
+    /// Which kinds of network those addresses are on, Wi-Fi first (told by range, so the card
+    /// says what is really there).
+    pub routes: Vec<Route>,
 }
 
 /// The Devices tab.
@@ -101,6 +104,18 @@ fn rows_of(conn: &Connection, live: &HashMap<String, PeerLive>) -> AppResult<Vec
     Ok(rows)
 }
 
+/// The kinds of network `ips` are on, Wi-Fi first, each once.
+pub(crate) fn routes_of(ips: &[std::net::IpAddr]) -> Vec<Route> {
+    let mut routes: Vec<Route> = Vec::new();
+    for route in ips.iter().map(|ip| Route::of(*ip)) {
+        if !routes.contains(&route) {
+            routes.push(route);
+        }
+    }
+    routes.sort_by_key(|r| matches!(r, Route::Tailscale));
+    routes
+}
+
 /// The Devices tab's data. `listening` is where the listener is bound, if it is; `live` is what
 /// the session manager says about each paired device.
 #[allow(
@@ -120,6 +135,11 @@ pub fn view(
             port: listening.map(|a| a.port()),
             addresses: if listening.is_some() {
                 addresses::local().iter().map(ToString::to_string).collect()
+            } else {
+                Vec::new()
+            },
+            routes: if listening.is_some() {
+                routes_of(&addresses::local())
             } else {
                 Vec::new()
             },
@@ -162,6 +182,18 @@ mod tests {
         progress: None,
         paused: false,
     };
+
+    #[test]
+    fn the_card_names_the_networks_that_are_really_there() {
+        let ips = |l: &[&str]| l.iter().map(|s| s.parse().unwrap()).collect::<Vec<_>>();
+        assert_eq!(
+            routes_of(&ips(&["100.101.4.7", "192.168.1.20", "fd7a:115c:a1e0::1"])),
+            [Route::Wifi, Route::Tailscale]
+        );
+        assert_eq!(routes_of(&ips(&["100.101.4.7"])), [Route::Tailscale]);
+        assert_eq!(routes_of(&ips(&["10.0.0.4"])), [Route::Wifi]);
+        assert!(routes_of(&[]).is_empty());
+    }
 
     #[test]
     fn the_state_follows_what_the_manager_says() {

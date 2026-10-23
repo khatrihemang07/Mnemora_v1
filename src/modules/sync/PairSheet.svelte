@@ -3,7 +3,8 @@
   phone). One device shows an 8-digit code with a 2-minute ring; the other types it; the first asks
   Allow or Deny inside the same window. Rust says which phase this is (`pairing.view`); the sheet only
   renders it and sends back what the person does. Every failure is a banner with what to do next.
-  Pairing by a typed address (#71) is not here yet.
+  "Pair by address…" (typing mode, below the code boxes) asks for the other device's address too, for a
+  device that is not on this Wi-Fi (Tailscale).
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -14,6 +15,7 @@
   import type { Platform } from '../../lib/ipc/bindings';
   import Button from '../../lib/ui/Button.svelte';
   import CodeInput from '../../lib/ui/CodeInput.svelte';
+  import Input from '../../lib/ui/Input.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import CountdownRing from './CountdownRing.svelte';
   import { clock, fractionLeft, problem, remaining } from './pair-view';
@@ -48,8 +50,14 @@
   });
 
   const view = $derived(pairing.view);
-  const typing = $derived(pairing.mode === 'enter');
+  const byAddress = $derived(pairing.mode === 'address');
+  const typing = $derived(pairing.mode !== 'show');
   const failure = $derived(view.state === 'failed' ? problem(view.error, typing) : null);
+  // Which of the two fields a failure is about.
+  const addressWrong = $derived(
+    view.state === 'failed' &&
+      (view.error.kind === 'address_not_found' || view.error.kind === 'address_unreachable'),
+  );
   const wrongCode = $derived(view.state === 'failed' && view.error.kind === 'wrong_code');
   const notice = $derived(view.state === 'showing' && view.notice ? problem(view.notice, false) : null);
   const stranger = (platform: Platform) => (platform === 'phone' ? Smartphone : Laptop);
@@ -57,9 +65,11 @@
   const title = $derived(
     view.state === 'paired'
       ? 'Paired'
-      : view.state === 'searching' || (typing && view.state !== 'waiting')
-        ? 'Enter a code'
-        : 'Pair a device',
+      : byAddress && view.state !== 'waiting'
+        ? 'Pair by address'
+        : view.state === 'searching' || (typing && view.state !== 'waiting')
+          ? 'Enter a code'
+          : 'Pair a device',
   );
   // "Pixel 8 (2)" was "Pixel 8" before the clash.
   const unnumbered = (name: string) => name.replace(/ \(\d+\)$/, '');
@@ -132,8 +142,45 @@
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if view.state === 'searching'}
       {@render heading(title)}
-      <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Looking for the device showing the code…</div>
+      <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />{byAddress ? `Reaching ${pairing.address.trim()}…` : 'Looking for the device showing the code…'}</div>
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
+    {:else if byAddress}
+      {@render heading(title)}
+      <p class="mb-3 text-sm text-muted">For a device that isn't on this Wi-Fi, e.g. over Tailscale.</p>
+      <form
+        onsubmit={(e) => {
+          e.preventDefault();
+          void pairing.submitAddress();
+        }}
+      >
+        <div class="mb-1 text-xs text-muted">Other device's address</div>
+        <Input
+          label="Other device's address"
+          placeholder="mac.tail1234.ts.net"
+          bind:value={() => pairing.address, (v) => { pairing.address = v; pairing.addressError = null; }}
+          invalid={addressWrong || pairing.addressError !== null}
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck={false}
+          autofocus
+        />
+        {#if pairing.addressError}
+          <p role="alert" class="mt-1 text-sm text-danger">{pairing.addressError}</p>
+        {/if}
+        <div class="mt-3 mb-1 text-xs text-muted">Code</div>
+        <CodeInput bind:value={pairing.code} label="Pairing code" invalid={wrongCode && pairing.code.length > 0} />
+        {#if failure}{@render banner(failure.title, failure.fix)}{/if}
+        <div class="mt-4 flex items-center gap-2">
+          <button type="button" class="text-sm text-hue-sync underline-offset-2 hover:underline" onclick={() => void pairing.switchTo('enter')}>
+            Enter a code instead
+          </button>
+          <span class="flex-1"></span>
+          <Button onclick={() => void pairing.close()}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={pairing.code.length !== 8 || pairing.address.trim() === ''}>
+            {view.state === 'failed' && !wrongCode ? 'Try again' : 'Pair'}
+          </Button>
+        </div>
+      </form>
     {:else if typing}
       {@render heading(title)}
       <p class="mb-3 text-sm text-muted">Type the code shown on your other device.</p>
@@ -145,6 +192,12 @@
       >
         <CodeInput bind:value={pairing.code} label="Pairing code" invalid={wrongCode && pairing.code.length > 0} autofocus />
         {#if failure}{@render banner(failure.title, failure.fix)}{/if}
+        <p class="mt-3 text-sm text-muted">
+          Not on the same Wi-Fi?
+          <button type="button" class="text-hue-sync underline-offset-2 hover:underline" onclick={() => void pairing.switchTo('address')}>
+            Pair by address…
+          </button>
+        </p>
         <div class="mt-4 flex items-center gap-2">
           <button type="button" class="text-sm text-hue-sync underline-offset-2 hover:underline" onclick={() => void pairing.switchTo('show')}>
             Show a code instead

@@ -310,7 +310,7 @@ export const commands = {
 	/**  Renames a paired device for the whole group (unique, 1 to 40 characters). Returns the name saved. */
 	syncDeviceRename: (id: string, name: string) => typedError<string, AppError>(__TAURI_INVOKE("sync_device_rename", { id, name })),
 	/**
-	 *  Saves the Address typed for a device (a MagicDNS name, host, `host:port`, IPv4 or `[IPv6]`);
+	 *  Saves the Address typed for a device (a `MagicDNS` name, host, `host:port`, IPv4 or `[IPv6]`);
 	 *  empty clears it. Returns it as stored.
 	 */
 	syncDeviceAddress: (id: string, address: string) => typedError<string | null, AppError>(__TAURI_INVOKE("sync_device_address", { id, address })),
@@ -332,6 +332,11 @@ export const commands = {
 	syncPairNewCode: () => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_new_code")),
 	/**  "Enter a code": looks for a device showing a code on the network and tries the typed one. */
 	syncPairEnter: (code: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_enter", { code })),
+	/**
+	 *  "Pair by address…": dials the typed address with the code (the other device need not be
+	 *  visible on the network). On success the address is kept as that device's typed Address.
+	 */
+	syncPairEnterAt: (address: string, code: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_enter_at", { address, code })),
 	/**  Allow or Deny the device that typed the right code. */
 	syncPairDecide: (allow: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_decide", { allow })),
 	/**  Closes the pairing sheet's pairing: no code, no search; whoever was asked is told. */
@@ -1171,6 +1176,10 @@ older: Older } |
 { kind: "nothing_nearby" } | 
 /**  The other device went away or could not be reached. */
 { kind: "connection_lost" } | 
+/**  The typed address is a name that does not resolve (Pair by address). */
+{ kind: "address_not_found" } | 
+/**  Nothing answered at the typed address in time, or it is not Mnemora (Pair by address). */
+{ kind: "address_unreachable" } | 
 /**  The other device is already pairing with someone. */
 { kind: "busy" } | 
 /**  Sync is not ready (still starting, or off). */
@@ -1768,6 +1777,11 @@ export type ThisDevice = {
 	port: number | null,
 	/**  Its shareable addresses (Wi-Fi, Tailscale), without the port. */
 	addresses: string[],
+	/**
+	 *  Which kinds of network those addresses are on, Wi-Fi first (told by range, so the card
+	 *  says what is really there).
+	 */
+	routes: Route[],
 };
 
 /**  The Entry written last on the day. */

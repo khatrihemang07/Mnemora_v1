@@ -3,7 +3,7 @@
 //! announcing, ends every connection, dial and timer, which is how "inert when off" holds.
 
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
 
@@ -24,6 +24,9 @@ pub struct NetworkOptions {
     pub ip: IpAddr,
     /// The port to try first; another is used if it is busy.
     pub port: u16,
+    /// A second listener on this IPv6 address and the same port, for Tailscale's `fd7a:` addresses
+    /// (`None`: IPv4 only). Failing to open it (no IPv6 on this machine) is logged, not an error.
+    pub ip6: Option<Ipv6Addr>,
     /// Pairing timings.
     pub timing: Timing,
     /// Announcing and finding devices.
@@ -33,11 +36,12 @@ pub struct NetworkOptions {
 }
 
 impl NetworkOptions {
-    /// The app's: every interface (Wi-Fi and Tailscale), port 47311, the real timings.
+    /// The app's: every interface, IPv4 and IPv6 (Wi-Fi and Tailscale), port 47311, the real timings.
     pub fn app(discovery: Arc<dyn Discovery>) -> Self {
         Self {
             ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: DEFAULT_PORT,
+            ip6: Some(Ipv6Addr::UNSPECIFIED),
             timing: Timing::default(),
             discovery,
             pace: Pace::default(),
@@ -92,6 +96,18 @@ impl Network {
         };
         let mut listener = Listener::bind(config.clone(), options.ip, options.port).await?;
         let addr = listener.local_addr();
+        let mut listener6 = match options.ip6 {
+            Some(ip6) => {
+                match Listener::bind_exact(config.clone(), IpAddr::V6(ip6), addr.port()).await {
+                    Ok(l) => Some(l),
+                    Err(e) => {
+                        tracing::warn!(target: "sync", error = %e, "not listening on IPv6");
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
         port.store(addr.port(), Ordering::SeqCst);
         let fell_back = listener.fell_back();
         let live = Live::start(
@@ -114,10 +130,20 @@ impl Network {
         let hub = Arc::clone(&pairing);
         let sessions = live.acceptor();
         let accept = tokio::spawn(async move {
-            while let Some(incoming) = listener.accept().await {
+            loop {
+                let incoming = tokio::select! {
+                    i = listener.accept() => i,
+                    Some(i) = async {
+                        match listener6.as_mut() {
+                            Some(l) => l.accept().await,
+                            None => std::future::pending().await,
+                        }
+                    } => Some(i),
+                };
                 match incoming {
-                    Incoming::Unpinned(secured) => hub.handle_incoming(secured),
-                    Incoming::Peer(established) => sessions.accept(*established),
+                    Some(Incoming::Unpinned(secured)) => hub.handle_incoming(secured),
+                    Some(Incoming::Peer(established)) => sessions.accept(*established),
+                    None => break,
                 }
             }
         });

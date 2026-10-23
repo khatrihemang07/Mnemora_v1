@@ -250,6 +250,7 @@ async fn a_device_that_comes_back_is_reconnected_by_the_backoff() {
         mnemora_sync::NetworkOptions {
             ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
             port: 0,
+            ip6: None,
             timing: mnemora_sync::Timing::default(),
             discovery: mac.found.clone(),
             pace: quick(),
@@ -320,6 +321,7 @@ async fn turning_sync_off_and_on_again_and_again_leaves_nothing_behind() {
     let options = || mnemora_sync::NetworkOptions {
         ip: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
         port: 0,
+        ip6: None,
         timing: mnemora_sync::Timing::default(),
         discovery: mac.found.clone(),
         pace: quick(),

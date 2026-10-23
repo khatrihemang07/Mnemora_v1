@@ -119,7 +119,9 @@ export function createSyncMock(
     };
   };
 
+  const typedAddresses = new Map<string, string>();
   const pairing = createPairingMock({
+    rememberAddress: (id, stored) => typedAddresses.set(id, stored),
     peers,
     emit,
     flags,
@@ -134,6 +136,7 @@ export function createSyncMock(
     live.setPeer(state, name, daysAway);
 
   const deviceSheet = createDeviceMock({
+    typed: typedAddresses,
     peers,
     rows: () => live.rows(),
     myName: () => state().name,
@@ -149,6 +152,7 @@ export function createSyncMock(
       platform: 'desktop',
       port: 47311,
       addresses: ['192.168.1.20', '100.101.4.7'],
+      routes: ['wifi', 'tailscale'],
     },
     peers: live.rows(),
   });

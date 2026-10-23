@@ -44,6 +44,9 @@ pub trait PairingHost: Send + Sync + 'static {
     fn store(&self, paired: &Paired) -> Result<Stored, SyncError>;
     /// Tells the UI the pairing state changed.
     fn show(&self, view: &PairingView);
+    /// A pairing by typed address worked: `address` (as stored, normalised) becomes the typed
+    /// Address of `device`. Called after [`PairingHost::store`], before [`PairingHost::paired`].
+    fn remember_address(&self, _device: &str, _address: &str) {}
     /// A pairing was recorded and its keys are pinned: the new devices can be connected to now.
     fn paired(&self) {}
 }

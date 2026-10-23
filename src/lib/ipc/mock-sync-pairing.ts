@@ -17,7 +17,13 @@
  *   60000000  connection lost        70000000  different groups      80000000  busy
  *   90000000  right, but the name clashes ("Pixel 8 (simulated) (2)")
  *   91000000  right, and two devices of its group join too           99999999  cancelled from the other device
+ *
+ * "Pair by address…" (`sync_pair_enter_at`) takes the same codes, and the address decides first:
+ *   …nowhere…  the name does not resolve        …closed… or …timeout…  nothing answered
+ * Anything else valid reaches the simulated device; on success the address is kept as its typed
+ * Address.
  */
+import { parseAddress } from '../../modules/sync/address';
 import type { AppError, CheckKind, PairingError, PairingView, PeerState } from './bindings';
 import type { PairedBase } from './mock-sync-live';
 
@@ -80,6 +86,7 @@ export const PAIRING_COMMANDS = [
   'sync_pair_show',
   'sync_pair_new_code',
   'sync_pair_enter',
+  'sync_pair_enter_at',
   'sync_pair_decide',
   'sync_pair_cancel',
 ];
@@ -91,6 +98,8 @@ interface Deps {
   enabled: () => boolean;
   visible: () => boolean;
   flags: PairingFlags;
+  /** Keeps the address typed to pair as that device's typed Address. */
+  rememberAddress: (id: string, stored: string) => void;
 }
 
 interface Shown {
@@ -138,12 +147,14 @@ export function createPairingMock(deps: Deps) {
   const current = (): PairingView =>
     shown && (view.state === 'showing' || view.state === 'failed') ? showing() : view;
 
-  function pair(joined: string[], forceClash = false) {
+  function pair(joined: string[], forceClash = false, address?: string) {
     const taken = [deps.myName(), ...peers.map((p) => p.name)];
     if (forceClash) taken.push(PIXEL);
     const name = uniqueName(PIXEL, taken);
     const added = [name];
-    peers.unshift({ id: `mock-${Date.now()}`, name, platform: 'phone', paired_at: Date.now() });
+    const id = `mock-${Date.now()}`;
+    peers.unshift({ id, name, platform: 'phone', paired_at: Date.now() });
+    if (address) deps.rememberAddress(id, address);
     const also: string[] = [];
     for (const extra of joined) {
       const stored = uniqueName(extra, [...taken, ...added]);
@@ -198,7 +209,7 @@ export function createPairingMock(deps: Deps) {
     });
   }
 
-  function typed(code: string) {
+  function typed(code: string, address?: string) {
     const fail = (error: PairingError) => set({ state: 'failed', error });
     const after = (ms: number, fn: () => void) => later(ms, fn);
     switch (code) {
@@ -207,7 +218,7 @@ export function createPairingMock(deps: Deps) {
       case '91000000':
         set({ state: 'waiting', name: PIXEL });
         after(flags.stepMs * 1.5, () =>
-          pair(code === '91000000' ? GROUP : [], code === '90000000'),
+          pair(code === '91000000' ? GROUP : [], code === '90000000', address),
         );
         return;
       case '00000000':
@@ -270,6 +281,24 @@ export function createPairingMock(deps: Deps) {
           stop();
           set({ state: 'searching' });
           later(flags.stepMs, () => typed(code));
+          return null;
+        }
+        case 'sync_pair_enter_at': {
+          needSync();
+          const parsed = parseAddress(String(a.address));
+          if (!parsed.ok) throw err(parsed.message);
+          const code = normaliseCode(String(a.code));
+          if (!code) throw err('Type all 8 digits of the code');
+          const text = String(a.address).toLowerCase();
+          stop();
+          set({ state: 'searching' });
+          later(flags.stepMs, () => {
+            if (text.includes('nowhere'))
+              set({ state: 'failed', error: { kind: 'address_not_found' } });
+            else if (text.includes('closed') || text.includes('timeout'))
+              set({ state: 'failed', error: { kind: 'address_unreachable' } });
+            else typed(code, parsed.stored);
+          });
           return null;
         }
         case 'sync_pair_decide':
