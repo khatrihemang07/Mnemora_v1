@@ -22,6 +22,21 @@ fn is_tailscale_v6(ip: Ipv6Addr) -> bool {
     s[0] == 0xfd7a && s[1] == 0x115c && s[2] == 0xa1e0
 }
 
+/// Whether `ip` is routable on the internet (a public IPv4, a global IPv6) and so could point at
+/// the person. Loopback, link-local, private and unique-local addresses never do.
+pub fn identifies(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            !(v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || is_tailscale_v4(v4))
+        }
+        IpAddr::V6(v6) => v6.segments()[0] & 0xe000 == 0x2000,
+    }
+}
+
 /// Whether `ip` is a Tailscale address.
 pub fn is_tailscale(ip: IpAddr) -> bool {
     match ip {
@@ -73,6 +88,26 @@ mod tests {
     #[test]
     fn what_this_device_gives_out_always_passes_the_filter() {
         assert!(local().into_iter().all(shareable));
+    }
+
+    #[test]
+    fn only_internet_routable_addresses_identify_the_person() {
+        for yes in ["8.8.8.8", "2001:db8::1", "2a00:1450::5", "203.0.113.9"] {
+            assert!(identifies(ip(yes)), "{yes}");
+        }
+        for no in [
+            "192.168.1.4",
+            "10.1.1.1",
+            "100.101.4.7",
+            "127.0.0.1",
+            "169.254.1.1",
+            "::1",
+            "fe80::1",
+            "fd00::1",
+            "fd7a:115c:a1e0::1",
+        ] {
+            assert!(!identifies(ip(no)), "{no}");
+        }
     }
 
     #[test]

@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use mdns_sd::{IfKind, IfPredicate, ServiceDaemon, ServiceEvent, ServiceInfo};
 use mnemora_core::env::Environment;
 use ring::digest;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -117,6 +117,12 @@ impl Mdns {
         let daemon = ServiceDaemon::new().map_err(mdns_error)?;
         // "_mnemora-sandbox" is longer than RFC 6763's 15 bytes; the library only checks it.
         daemon.set_service_name_len_max(30).map_err(mdns_error)?;
+        // Announce on shareable addresses only: a global IPv6 or public IPv4 address could name
+        // the person to everyone on the network, and receivers drop it anyway.
+        let silent = IfPredicate::new(|interface| addresses::identifies(interface.ip()));
+        daemon
+            .disable_interface(IfKind::Predicate(silent))
+            .map_err(mdns_error)?;
         Ok(Self {
             daemon,
             service_type: service_type(environment),
