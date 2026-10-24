@@ -7,7 +7,9 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 
 use super::ENTITY;
+use crate::changelog::{self, Change, ChangeOp, Unlogged};
 use crate::error::AppResult;
+use crate::settings::SettingsRegistry;
 use crate::syncable::{Applied, RemoteChange, SyncEntity, SyncEvent, SyncField};
 use crate::util::now_ms;
 
@@ -16,6 +18,50 @@ pub(crate) const ENTITIES: &[SyncEntity] = &[SyncEntity {
     name: ENTITY,
     fields: &[SyncField::value("value"), SyncField::derived("updated_at")],
 }];
+
+/// Logs every shared Preference that is saved but not (as saved) in the change log: ones set
+/// before Preferences were logged, or around the log. Stamped with the time the row says it was
+/// written, so a later real write on any device still wins. Device settings stay home.
+pub(crate) fn backfill(conn: &Connection, registry: &SettingsRegistry) -> AppResult<()> {
+    let mut stmt =
+        conn.prepare("SELECT module, key, value, updated_at FROM settings ORDER BY module, key")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+    let mut unlogged = Vec::new();
+    for (module, key, raw, at) in rows {
+        let id = format!("{module}.{key}");
+        if registry.get(&id).is_some_and(|d| d.device) {
+            continue;
+        }
+        // A value that no longer parses reads as the default; there is nothing to send.
+        let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        unlogged.push(Unlogged {
+            change: Change {
+                module: module.clone(),
+                entity: ENTITY.to_owned(),
+                entity_id: id,
+                op: ChangeOp::Update,
+                session_id: None,
+                snapshot: json!({"module": module, "key": key, "value": value, "updated_at": at}),
+            },
+            ms: at,
+            after: Vec::new(),
+        });
+    }
+    changelog::backfill(conn, &ENTITIES[0], unlogged)?;
+    Ok(())
+}
 
 /// Takes another device's value for one Preference, if the key is known here, is not a Device
 /// setting and the value passes the key's validator; anything else is ignored.

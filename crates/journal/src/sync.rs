@@ -13,7 +13,7 @@
 //!   made the change (a typo fix within ten minutes of writing is not an edit; a checklist tick
 //!   never is).
 
-use mnemora_core::changelog::ChangeOp;
+use mnemora_core::changelog::{self, Change, ChangeOp, Unlogged};
 use mnemora_core::db::physical_now;
 use mnemora_core::error::AppResult;
 use mnemora_core::search::plain;
@@ -46,6 +46,28 @@ const ENTRY: SyncEntity = SyncEntity {
         SyncField::derived("updated_at"),
     ],
 };
+
+/// Logs every Entry (deleted ones included) whose state the change log lacks, stamped with the
+/// time the row says it last changed (`Module::backfill_log`).
+pub(crate) fn backfill(conn: &Connection) -> AppResult<()> {
+    let mut unlogged = Vec::new();
+    for (entry, deleted_at) in repo::every(conn)? {
+        unlogged.push(Unlogged {
+            change: Change {
+                module: crate::MODULE_ID.into(),
+                entity: ENTITY.into(),
+                entity_id: entry.id.clone(),
+                op: ChangeOp::Update,
+                session_id: None,
+                snapshot: snapshot_of(&entry, deleted_at)?,
+            },
+            ms: entry.updated_at,
+            after: Vec::new(),
+        });
+    }
+    changelog::backfill(conn, &ENTRY, unlogged)?;
+    Ok(())
+}
 
 /// What a set of received fields would write, every unit already checked. A unit that fails its
 /// checks (a bug or a hostile peer) is left out whole.

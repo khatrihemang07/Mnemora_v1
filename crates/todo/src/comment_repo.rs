@@ -56,6 +56,16 @@ pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(Comment, Option
         .optional()?)
 }
 
+/// Every Comment whether or not it is deleted, with its `deleted_at`, by id.
+pub fn every(conn: &Connection) -> AppResult<Vec<(Comment, Option<i64>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS}, deleted_at FROM todo_comments ORDER BY id"
+    ))?;
+    Ok(stmt
+        .query_map([], |r| Ok((from_row(r)?, r.get(6)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
 /// A Task's live Comments, oldest first.
 pub fn for_task(conn: &Connection, task_id: &str) -> AppResult<Vec<Comment>> {
     let mut stmt = conn.prepare(&format!(

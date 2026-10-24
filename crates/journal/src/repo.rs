@@ -66,6 +66,16 @@ pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(Entry, Option<i
         .optional()?)
 }
 
+/// Every Entry in any state, with when it was deleted, by id.
+pub fn every(conn: &Connection) -> AppResult<Vec<(Entry, Option<i64>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS}, deleted_at FROM journal_entries ORDER BY id"
+    ))?;
+    Ok(stmt
+        .query_map([], |r| Ok((from_row(r)?, r.get(10)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
 /// Writes the named columns of one Entry (names come from code, never from input).
 pub fn update_columns(
     conn: &Connection,

@@ -11,6 +11,7 @@ use serde_json::{Map, Value};
 
 use crate::error::AppResult;
 use crate::hlc;
+use crate::syncable::{FieldClass, SyncEntity};
 use crate::util::new_id;
 
 /// What happened to the entity.
@@ -84,6 +85,11 @@ pub struct Change {
 pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
     // Every write ticks, a session's rewrite included: peers pick records up by sequence.
     let tick = hlc::tick(conn)?;
+    write(conn, change, tick)
+}
+
+/// Writes `change` as a record stamped with `tick`.
+fn write(conn: &Connection, change: &Change, tick: hlc::Tick) -> AppResult<()> {
     let device = hlc::device_id(conn)?;
     let touched = changed_fields(conn, change)?;
     let seen = seen_by_delete(conn, change, &touched, &device)?;
@@ -118,6 +124,121 @@ pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
         ],
     )?;
     Ok(())
+}
+
+/// A row to bring into the log: see [`backfill`].
+#[derive(Debug, Clone)]
+pub struct Unlogged<'a> {
+    /// The row as it stands: `snapshot` is its full state; `op` is chosen by [`backfill`].
+    pub change: Change,
+    /// When the row says it last changed (UTC milliseconds): where its record is stamped, at
+    /// the earliest.
+    pub ms: i64,
+    /// What the row refers to (`(entity, id)`: a Task's List, a Comment's Task): its records
+    /// sort before this one.
+    pub after: Vec<(&'a str, &'a str)>,
+}
+
+/// Brings the log up to date with the rows of one entity that it never (fully) described: state
+/// that predates the log recording every entity and field, comes from an older version or from
+/// an import. Sync sends the log, not the tables (ADR 0017: pairing combines everything both
+/// devices hold), so it calls this before it first reads the log. Returns how many records it
+/// wrote.
+///
+/// Each row's snapshot is compared with the entity's latest snapshot on the non-derived fields of
+/// `schema` that the row carries (a key the log never held counts as null). A row with no record
+/// gets a `create`; one that differs gets an `update` of just the differing fields; one that
+/// matches gets nothing, so running this again, or on any device, writes nothing more.
+///
+/// Rows are written in the order given, each stamped on the clock at its `ms` (counter 0), raised
+/// to just after the newest record of the entity (the engine counts on clock order being
+/// sequence order within a device, so a backfilled record may never sort before one written
+/// earlier), after the record before it in `rows`, and after the newest record of everything it
+/// is `after`. Real changes made later sort after all of them, and the device clock is shown the
+/// newest stamp.
+pub fn backfill(
+    conn: &Connection,
+    schema: &SyncEntity,
+    rows: Vec<Unlogged<'_>>,
+) -> AppResult<usize> {
+    let mut last = newest_clock(conn, schema.name, None)?.unwrap_or_default();
+    let mut written = 0;
+    for row in rows {
+        let Unlogged {
+            mut change,
+            ms,
+            after,
+        } = row;
+        let latest: Option<String> = conn
+            .query_row(
+                "SELECT snapshot FROM change_log WHERE entity = ?1 AND entity_id = ?2
+                 ORDER BY seq DESC LIMIT 1",
+                [&change.entity, &change.entity_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let before: Option<Value> = latest.and_then(|s| serde_json::from_str(&s).ok());
+        match &before {
+            None => change.op = ChangeOp::Create,
+            Some(before) => {
+                let Some(now) = change.snapshot.as_object() else {
+                    continue;
+                };
+                let differs = schema.fields.iter().any(|f| {
+                    f.class != FieldClass::Derived
+                        && now
+                            .get(f.name)
+                            .is_some_and(|v| v != before.get(f.name).unwrap_or(&Value::Null))
+                });
+                if !differs {
+                    continue;
+                }
+                change.op = ChangeOp::Update;
+            }
+        }
+        let mut clock = hlc::Timestamp { ms, counter: 0 };
+        let mut raise = |floor: hlc::Timestamp| {
+            if clock <= floor {
+                clock = hlc::Timestamp {
+                    ms: floor.ms,
+                    counter: floor.counter.saturating_add(1),
+                };
+            }
+        };
+        raise(last);
+        for (entity, id) in after {
+            if let Some(newest) = newest_clock(conn, entity, Some(id))? {
+                raise(newest);
+            }
+        }
+        last = clock;
+        let tick = hlc::tick_at(conn, clock, ms)?;
+        write(conn, &change, tick)?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+/// The newest clock of any record of `entity` (or of one `id` of it).
+fn newest_clock(
+    conn: &Connection,
+    entity: &str,
+    id: Option<&str>,
+) -> AppResult<Option<hlc::Timestamp>> {
+    Ok(conn
+        .query_row(
+            "SELECT hlc_ms, hlc_counter FROM change_log
+             WHERE entity = ?1 AND (?2 IS NULL OR entity_id = ?2)
+             ORDER BY hlc_ms DESC, hlc_counter DESC LIMIT 1",
+            rusqlite::params![entity, id],
+            |r| {
+                Ok(hlc::Timestamp {
+                    ms: r.get(0)?,
+                    counter: r.get(1)?,
+                })
+            },
+        )
+        .optional()?)
 }
 
 /// For a record that deletes, what this device had of the other devices' records of the same

@@ -1101,6 +1101,9 @@ fn random_list_action(
 fn converge(seed: u64) {
     // Paired and named, so that the Address typed for a device has someone to be typed for.
     let c = crate::sync_address_tests::group(3);
+    // Each device also holds rows its change log never heard of (DV1): the first merge must
+    // combine them like any other, and the run must still end identical.
+    crate::sync_backfill_tests::seed_unlogged(&c, 3);
     let mut rng = Rng(seed);
     let mut ids: Vec<Value> = Vec::new();
     let mut list_ids: Vec<Value> = Vec::new();

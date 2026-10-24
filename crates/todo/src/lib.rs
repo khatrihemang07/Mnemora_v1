@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 mod arrange;
+mod backfill;
 mod capture;
 mod comment;
 mod comment_repo;
@@ -140,6 +141,10 @@ impl Module for TodoModule {
             tasks,
             lists,
         })
+    }
+
+    fn backfill_log(&self, conn: &Connection, _settings: &SettingsRegistry) -> AppResult<()> {
+        backfill::run(conn)
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {

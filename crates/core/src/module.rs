@@ -65,6 +65,15 @@ pub trait Module: Send + Sync {
         Ok(Holdings::default())
     }
 
+    /// Adds to the change log whatever this Module holds that the log does not (fully) describe:
+    /// rows from before the log recorded every entity and field, from an older version or from
+    /// an import. Sync sends the log, so it calls this before it first reads it; it must be
+    /// deterministic and idempotent (see `changelog::backfill`, which does that per row), and it
+    /// changes no row. `settings` is every Module's registered Preferences. Never log content.
+    fn backfill_log(&self, _conn: &Connection, _settings: &SettingsRegistry) -> AppResult<()> {
+        Ok(())
+    }
+
     /// Work to do once per app start, after every Module's migrations ran (housekeeping, or upgrade steps keyed on what `report` says this run applied). No
     /// polling: nothing calls this again. Never log user content.
     fn on_startup(
@@ -192,6 +201,10 @@ impl Module for CoreModule {
 
     fn sync_entities(&self) -> &'static [SyncEntity] {
         crate::settings::sync::ENTITIES
+    }
+
+    fn backfill_log(&self, conn: &Connection, settings: &SettingsRegistry) -> AppResult<()> {
+        crate::settings::sync::backfill(conn, settings)
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {

@@ -81,6 +81,10 @@ impl Module for JournalModule {
         })
     }
 
+    fn backfill_log(&self, conn: &Connection, _settings: &SettingsRegistry) -> AppResult<()> {
+        sync::backfill(conn)
+    }
+
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
         match change.entity {
             service::ENTITY => sync::apply(conn, change),

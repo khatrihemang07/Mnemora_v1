@@ -129,6 +129,41 @@ pub fn observe_tick(conn: &Connection, remote: Timestamp) -> AppResult<Tick> {
     step(conn, Some(remote))
 }
 
+/// Takes the next local sequence for a record that carries a clock chosen by the caller instead
+/// of "now" (a backfilled record, see `changelog::backfill`). The device clock is only shown
+/// `clock` (it never goes back), so the next real change still sorts after it.
+pub fn tick_at(conn: &Connection, clock: Timestamp, physical_ms: i64) -> AppResult<Tick> {
+    conn.execute_batch("SAVEPOINT hlc_tick_at")?;
+    let result = (|| -> AppResult<Tick> {
+        conn.execute("UPDATE device_clock SET seq = seq + 1", [])?;
+        let (ms, counter, seq): (i64, i64, i64) =
+            conn.query_row("SELECT ms, counter, seq FROM device_clock", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })?;
+        if clock > (Timestamp { ms, counter }) {
+            conn.execute(
+                "UPDATE device_clock SET ms = ?1, counter = ?2",
+                rusqlite::params![clock.ms, clock.counter],
+            )?;
+        }
+        Ok(Tick {
+            clock,
+            seq,
+            physical_ms,
+        })
+    })();
+    match result {
+        Ok(tick) => {
+            conn.execute_batch("RELEASE hlc_tick_at")?;
+            Ok(tick)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK TO hlc_tick_at; RELEASE hlc_tick_at");
+            Err(e)
+        }
+    }
+}
+
 fn step(conn: &Connection, remote: Option<Timestamp>) -> AppResult<Tick> {
     // The first statement writes, so this takes the database's write lock before the clock is
     // read: a second connection (Sync gets its own) waits its turn instead of reading a stale

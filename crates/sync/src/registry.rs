@@ -59,6 +59,25 @@ impl Registry {
         })
     }
 
+    /// Brings the change log up to date with every Module's rows (`Module::backfill_log`), all or
+    /// nothing. Sync calls it before it first reads the log, and before the first-merge preview
+    /// counts what this device holds, so that what the preview says is what transfers.
+    pub fn backfill(&self, conn: &Connection) -> Result<(), SyncError> {
+        conn.execute_batch("SAVEPOINT sync_backfill")?;
+        let result = self
+            .modules
+            .iter()
+            .try_for_each(|m| m.backfill_log(conn, &self.settings));
+        match result {
+            Ok(()) => conn.execute_batch("RELEASE sync_backfill")?,
+            Err(e) => {
+                let _ = conn.execute_batch("ROLLBACK TO sync_backfill; RELEASE sync_backfill");
+                return Err(e.into());
+            }
+        }
+        Ok(())
+    }
+
     /// What this device holds, every Module's part added up.
     pub fn holdings(&self, conn: &Connection) -> Result<Holdings, SyncError> {
         let mut all = Holdings::default();

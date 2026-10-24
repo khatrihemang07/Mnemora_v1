@@ -213,6 +213,17 @@ pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<Task>> {
     .map_err(corrupt_or_db)
 }
 
+/// Every Task whether or not it is deleted, with its `deleted_at`: Tasks that repeat before
+/// their occurrences, then by id.
+pub fn every(conn: &Connection) -> AppResult<Vec<(Task, Option<i64>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS}, deleted_at FROM todo_tasks ORDER BY repeat_of IS NOT NULL, id"
+    ))?;
+    stmt.query_map([], |r| Ok((from_row(r)?, r.get(19)?)))?
+        .collect::<Result<_, _>>()
+        .map_err(corrupt_or_db)
+}
+
 /// Puts a Task in a List (none is the Inbox), and stamps `updated_at`.
 pub fn update_list(conn: &Connection, t: &Task) -> AppResult<()> {
     conn.execute(

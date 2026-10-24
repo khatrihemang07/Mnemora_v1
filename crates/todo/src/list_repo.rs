@@ -82,6 +82,17 @@ pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(TodoList, Optio
         .optional()?)
 }
 
+/// Every List whether or not it is deleted, with its `deleted_at`, by id. Lists parked while a
+/// received change is settled are left out.
+pub fn every(conn: &Connection) -> AppResult<Vec<(TodoList, Option<i64>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS}, deleted_at FROM todo_lists WHERE deleted_at IS NOT ?1 ORDER BY id"
+    ))?;
+    Ok(stmt
+        .query_map([PARKED], |r| Ok((from_row(r)?, r.get(8)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
 /// Every live List, first to last.
 pub fn all(conn: &Connection) -> AppResult<Vec<TodoList>> {
     let mut stmt = conn.prepare(&format!(

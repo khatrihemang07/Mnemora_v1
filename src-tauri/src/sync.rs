@@ -440,7 +440,12 @@ impl<R: Runtime> PairingHost for AppHost<R> {
 
     fn holdings(&self) -> Result<Holdings, SyncError> {
         let state = self.app.state::<AppState>();
-        Registry::new(Arc::clone(&state.modules)).holdings(&lock(&state.db))
+        let registry = Registry::new(Arc::clone(&state.modules));
+        let conn = lock(&state.db);
+        // The preview counts the rows, the merge sends the log: bring the log up to date first so
+        // that what the preview says is what transfers.
+        registry.backfill(&conn)?;
+        registry.holdings(&conn)
     }
 
     fn backup(&self) -> Result<(), SyncError> {

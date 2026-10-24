@@ -26,6 +26,8 @@ struct Services {
     network: Option<Network>,
     /// Sessions started since Sync was switched on.
     sessions: usize,
+    /// The change log has been brought up to date with the rows since Sync was switched on.
+    backfilled: bool,
 }
 
 /// A read-only view of [`SyncRuntime`], for tests and diagnostics.
@@ -239,6 +241,13 @@ impl SyncRuntime {
     ) -> Result<Session, SyncError> {
         let mut services = self.services.lock().unwrap_or_else(PoisonError::into_inner);
         let services = services.as_mut().ok_or(SyncError::Off)?;
+        // Before the log is first read: rows it never described (older versions, imports) join it,
+        // so a first merge combines everything this device holds. Once per switch-on: from then
+        // on every change is logged as it is made.
+        if !services.backfilled {
+            registry.backfill(conn)?;
+            services.backfilled = true;
+        }
         let me = hlc::device_id(conn)?;
         services.sessions += 1;
         Ok(Session::new(me, registry, bus))
