@@ -3,7 +3,7 @@
   import ShieldAlert from '~icons/lucide/shield-alert';
   import type { ThisDevice } from '../../lib/ipc/bindings';
   import Button from '../../lib/ui/Button.svelte';
-  import { notifyError } from '../../lib/ui/toast';
+  import { MINOR_MS, notifyError } from '../../lib/ui/toast';
   import { localNetworkBanner, openLocalNetworkSettings } from './local-network';
 
   let {
@@ -19,7 +19,7 @@
     try {
       await openLocalNetworkSettings(device.platform);
     } catch (e) {
-      notifyError(e instanceof Error ? e.message : 'Could not open Settings');
+      notifyError(e instanceof Error ? e.message : 'Could not open Settings', MINOR_MS);
     }
   }
 </script>

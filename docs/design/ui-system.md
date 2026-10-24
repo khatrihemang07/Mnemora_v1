@@ -24,7 +24,7 @@ The recorded UI decisions, so the whole app stays consistent. Visual reference: 
 | N2 Hover | A | Neutral tint (`--hover`) |
 | N3 Press | A | `scale(0.96)` |
 | N4 Cards | A | 1px hairline border (`--line`) |
-| N5 Toasts | A | Bottom-right stack, max 3, 4s, pause on hover; above the tab bar on phone |
+| N5 Toasts | A | Bottom-right stack, expanded (fully readable), max 3; 5s with a button or an error (Important), 2s for a plain confirmation (Minor); pause on hover; above the tab bar on phone |
 | N6 Empty states | A | Icon + one sentence + action |
 | N7 Loading | B | Pulse skeleton, shown only after 300ms |
 | N8 Errors | A | Inline banner with Retry and Copy details |
@@ -96,7 +96,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Tooltip` / `TooltipProvider` | Names or explains a control; 600ms delay, shows the shortcut. Provider mounts once |
 | `ResizablePanes` | The desktop sidebar + main split. Wraps paneforge; takes a pixel width and reports dragged pixels |
 | `Kbd` | Shows a keyboard shortcut |
-| `Toaster` / `toast.ts` | Transient feedback: `notify`, `notifyError`, `notifyUndo` |
+| `Toaster` / `toast.ts` | Transient feedback: `notify` (Minor, 2s), `notifyError` and `notifyAction` / `notifyUndo` (Important, 5s). Stack expanded, max 3 |
 | `EmptyState` | Nothing to show yet: icon, sentence, action. Optional `hue` (a Module hue token name, e.g. `--hue-journal`) tints the icon instead of the brand accent |
 | `Skeleton` | Loading placeholder (appears after 300ms) |
 | `ErrorBanner` | An inline failure with Retry and Copy details |

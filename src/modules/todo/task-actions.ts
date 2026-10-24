@@ -5,17 +5,10 @@ import { notifyError, notifyUndo } from '../../lib/ui/toast';
 import type { RepeatRule } from '../../lib/ui/when-repeat';
 import { viewport } from '../../lib/viewport.svelte';
 import { todoClock } from './clock.svelte';
-import {
-  completedRepeatMessage,
-  movedAllMessage,
-  skippedMessage,
-  taskRepeat,
-  whenMessage,
-} from './dates';
+import { completedRepeatMessage, movedAllMessage, skippedMessage, taskRepeat } from './dates';
 import type { Neighbours } from './drag-math';
 import { movedMessage } from './lists';
 import { openSteps, tickAllSteps } from './notes';
-import { todoPrefs } from './prefs.svelte';
 import {
   completeTask,
   deleteTask,
@@ -34,13 +27,7 @@ import {
   wontDo,
 } from './queries';
 import { stepsPrompt } from './steps-prompt.svelte';
-import {
-  completedMessage,
-  deletedMessage,
-  priorityMessage,
-  quotedTitle,
-  wontMessage,
-} from './tasks';
+import { completedMessage, deletedMessage, wontMessage } from './tasks';
 
 /**
  * Ticks a Task. One with unticked Checklist items asks first, every time (the Dialog offers
@@ -185,17 +172,6 @@ export async function setTaskWhen(
   ) {
     return;
   }
-  const message = whenMessage(
-    task.title,
-    after.due_date,
-    after.due_time,
-    todoClock.today,
-    todoPrefs.timeFormat,
-    now,
-    before.repeat !== null,
-  );
-  // Changing the same Task's When again replaces its toast instead of stacking them.
-  notifyUndo(message, () => undoWhen([before], "Couldn't undo the date change"), `when-${task.id}`);
 }
 
 /** The ☀ on a row: due today, keeping its time and its Repeat. */
@@ -255,7 +231,6 @@ export async function moveAllOverdue(date: string): Promise<void> {
  */
 export async function setTaskPriority(task: Task, priority: number): Promise<void> {
   if (task.priority === priority) return;
-  const before = task.priority;
   try {
     await setPriority(task.id, priority);
   } catch (e) {
@@ -264,15 +239,6 @@ export async function setTaskPriority(task: Task, priority: number): Promise<voi
   } finally {
     void invalidateTodo();
   }
-  notifyUndo(
-    priorityMessage(task.title, priority),
-    () => {
-      setPriority(task.id, before)
-        .catch(() => notifyError("Couldn't undo the Priority change"))
-        .finally(() => void invalidateTodo());
-    },
-    `priority-${task.id}`,
-  );
 }
 
 /**
@@ -329,56 +295,13 @@ export interface Placement extends Neighbours {
 
 /**
  * Puts a Task in a place of the shared manual order, and in the group it was dropped into: that
- * group's day, Priority or List becomes the Task's. When a property changed, "“Pay rent” → Sat"
- * (`summary` names it) offers Undo, which puts the properties and the old place back (even a past
- * date). Moving within a group changes only the order and says nothing. `from` is where it was.
+ * group's day, Priority or List becomes the Task's. Says nothing on success.
  */
-export async function placeTask(
-  task: Task,
-  to: Placement,
-  from: Neighbours,
-  summary: string | null,
-): Promise<void> {
-  let after: Task;
+export async function placeTask(task: Task, to: Placement): Promise<void> {
   try {
-    after = await reorderTask(task.id, to.before, to.after, to.adopt);
+    await reorderTask(task.id, to.before, to.after, to.adopt);
   } catch (e) {
     notifyError(e instanceof IpcError ? e.message : "Couldn't move the Task");
-    return;
-  } finally {
-    void invalidateTodo();
-  }
-  const changed =
-    after.due_date !== task.due_date ||
-    after.due_time !== task.due_time ||
-    after.priority !== task.priority ||
-    after.list_id !== task.list_id;
-  if (!changed || summary === null) return;
-  notifyUndo(
-    `${quotedTitle(task.title)} → ${summary}`,
-    () => {
-      void undoPlacement(task, from);
-    },
-    `drop-${task.id}`,
-  );
-}
-
-/** Undo for `placeTask`: the old date, Priority and List, then the old place. */
-async function undoPlacement(before: Task, from: Neighbours): Promise<void> {
-  try {
-    await restoreWhen([
-      {
-        id: before.id,
-        due_date: before.due_date,
-        due_time: before.due_time,
-        repeat: taskRepeat(before),
-      },
-    ]);
-    await setPriority(before.id, before.priority);
-    await moveTask(before.id, before.list_id);
-    await reorderTask(before.id, from.before, from.after, []);
-  } catch {
-    notifyError("Couldn't undo the move");
   } finally {
     void invalidateTodo();
   }

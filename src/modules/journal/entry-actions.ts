@@ -1,6 +1,6 @@
 import type { Entry } from '../../lib/ipc/bindings';
 import { toggleTaskLine } from '../../lib/ui/markdown/tasks';
-import { notify, notifyAction, notifyError, notifyUndo } from '../../lib/ui/toast';
+import { MINOR_MS, notify, notifyAction, notifyError, notifyUndo } from '../../lib/ui/toast';
 import { dayLabel } from './dates';
 import type { Editing } from './editing.svelte';
 import type { JournalNav } from './navigation.svelte';
@@ -33,7 +33,7 @@ export async function copyEntryText(entry: Entry): Promise<void> {
     await navigator.clipboard.writeText(entry.body);
     notify('Copied');
   } catch {
-    notifyError("Couldn't copy");
+    notifyError("Couldn't copy", MINOR_MS);
   }
 }
 

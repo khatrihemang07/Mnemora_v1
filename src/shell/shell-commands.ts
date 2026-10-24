@@ -14,7 +14,6 @@ import type { ShortcutAction } from './shortcuts';
 async function setTheme(theme: string) {
   try {
     await unwrap(commands.settingsSave([{ key: 'core.theme', value: theme }]));
-    notify('Theme updated');
   } catch (e) {
     notifyError(e instanceof Error ? e.message : 'Could not change theme');
   }

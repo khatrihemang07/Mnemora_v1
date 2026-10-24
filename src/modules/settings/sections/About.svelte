@@ -10,7 +10,7 @@
   import Select from '../../../lib/ui/Select.svelte';
   import SettingRow from '../../../lib/ui/SettingRow.svelte';
   import SettingSection from '../../../lib/ui/SettingSection.svelte';
-  import { notify, notifyError } from '../../../lib/ui/toast';
+  import { MINOR_MS, notify, notifyError } from '../../../lib/ui/toast';
   import { buildDiagnostics } from '../diagnostics';
 
   const client = useQueryClient();
@@ -32,7 +32,7 @@
     try {
       await unwrap(commands.openLogDir());
     } catch (e) {
-      notifyError(e instanceof Error ? e.message : 'Could not open the log folder');
+      notifyError(e instanceof Error ? e.message : 'Could not open the log folder', MINOR_MS);
     }
   }
 
@@ -49,7 +49,7 @@
       await navigator.clipboard.writeText(text);
       notify('Diagnostics copied');
     } catch {
-      notifyError('Could not copy diagnostics');
+      notifyError('Could not copy diagnostics', MINOR_MS);
     }
   }
 </script>

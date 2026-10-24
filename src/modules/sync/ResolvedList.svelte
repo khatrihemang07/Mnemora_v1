@@ -20,7 +20,7 @@
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
   import DayHeading from '../../lib/ui/DayHeading.svelte';
-  import { notify, notifyError } from '../../lib/ui/toast';
+  import { notifyError } from '../../lib/ui/toast';
   import { groupByDay, timeText } from './conflicts';
   import type { TimeFormat } from '../../lib/time/format';
 
@@ -64,7 +64,6 @@
           client.invalidateQueries({ queryKey }),
         ),
       );
-      notify('Changed');
     } catch (e) {
       notifyError(e instanceof Error ? e.message : 'Could not change that');
     } finally {
