@@ -31,6 +31,7 @@ pub(crate) fn run(conn: &Connection) -> AppResult<()> {
     let mut tasks = Vec::new();
     for (task, deleted_at) in &tasks_in_order {
         let list = task.list_id.as_deref().map(|l| (list_service::ENTITY, l));
+        let series = task.repeat_of.as_deref().map(|t| (service::ENTITY, t));
         tasks.push(Unlogged {
             change: change(
                 service::ENTITY,
@@ -38,7 +39,7 @@ pub(crate) fn run(conn: &Connection) -> AppResult<()> {
                 service::snapshot_of(task, *deleted_at, false)?,
             ),
             ms: task.updated_at,
-            after: list.into_iter().collect(),
+            after: list.into_iter().chain(series).collect(),
             needs_create: true,
         });
     }
