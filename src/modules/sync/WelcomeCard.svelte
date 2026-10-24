@@ -18,10 +18,13 @@
   import { isMac } from '../../lib/platform';
   import { createQuery } from '@tanstack/svelte-query';
   import LocalNetworkBanner from './LocalNetworkBanner.svelte';
-  import { devicesQuery } from './queries';
+  import { devicesQuery, watchDevices, whileMounted } from './queries';
 
   // D13: a blocked Local Network shows here too, before anything is paired.
   const devices = createQuery(() => devicesQuery);
+
+  // The banner and the "Mnemora will ask" line follow Local Network changes live.
+  $effect(() => whileMounted(watchDevices));
 
   const lines: { icon: Component<{ class?: string }>; text: string }[] = [
     { icon: Wifi, text: 'Your devices talk directly, on the same Wi-Fi or over Tailscale.' },

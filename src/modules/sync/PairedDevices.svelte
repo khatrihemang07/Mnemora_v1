@@ -7,6 +7,7 @@
   import PausedBanner from './PausedBanner.svelte';
   import PeerList from './PeerList.svelte';
   import { devicesQuery, watchDevices } from './queries';
+  import { refreshWhileVisible } from './devices-refresh';
   import ThisDeviceCard from './ThisDeviceCard.svelte';
   import { showWelcome } from './welcome';
   import WelcomeCard from './WelcomeCard.svelte';
@@ -23,6 +24,9 @@
       stop?.();
     };
   });
+
+  // Addresses change with no event (Tailscale connects, Wi-Fi changes): read them again while visible.
+  $effect(() => refreshWhileVisible(() => void devices.refetch()));
 </script>
 
 {#if devices.isError}
