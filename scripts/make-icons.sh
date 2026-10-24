@@ -27,6 +27,13 @@ rm -rf "$ICONS/ios" && cp -R "$TMP/main/ios" "$ICONS/ios"
 # Android comes from the vector drawables below, not tauri's PNGs (they'd sit on white).
 rm -rf "$ICONS/android"
 
+echo "==> Sandbox (Mac) from app-icon-sandbox.svg"
+cargo tauri icon "$SRC/app-icon-sandbox.svg" -o "$TMP/sandbox" >/dev/null
+mkdir -p "$ICONS/sandbox"
+for f in icon.icns icon.png 32x32.png 128x128.png 128x128@2x.png; do
+  cp "$TMP/sandbox/$f" "$ICONS/sandbox/$f"
+done
+
 echo "==> Windows + favicon from app-icon-fullbleed.svg"
 cargo tauri icon "$SRC/app-icon-fullbleed.svg" -o "$TMP/full" >/dev/null
 cp "$TMP/full/icon.ico" "$TMP/full/StoreLogo.png" "$ICONS/"
@@ -47,6 +54,9 @@ if [ -d "$RES" ]; then
   cp "$SRC/android/ic_launcher_foreground.xml" "$RES/drawable/"
   cp "$SRC/android/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher.xml"
   cp "$SRC/android/ic_launcher.xml" "$RES/mipmap-anydpi-v26/ic_launcher_round.xml"
+  # The Sandbox app's own icon (build.gradle.kts picks it through the appIcon placeholder).
+  cp "$SRC/android/ic_launcher_sandbox_background.xml" "$RES/drawable/"
+  cp "$SRC/android/ic_launcher_sandbox.xml" "$RES/mipmap-anydpi-v26/ic_launcher_sandbox.xml"
 else
   echo "    $RES not found; run the Android setup first, then re-run make icons"
 fi

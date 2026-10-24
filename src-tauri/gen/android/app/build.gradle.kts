@@ -25,6 +25,7 @@ android {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         // The label is a placeholder because strings.xml's app_name is shared by both apps.
         manifestPlaceholders["appLabel"] = if (isSandbox) "Mnemora Sandbox" else "@string/app_name"
+        manifestPlaceholders["appIcon"] = if (isSandbox) "@mipmap/ic_launcher_sandbox" else "@mipmap/ic_launcher"
         applicationId = "com.hemang.mnemora"
         // The Todo widget's picker label and its SANDBOX tag (Sandbox is a separate app).
         resValue("string", "todo_widget_label", if (isSandbox) "Todo (Sandbox)" else "Todo")

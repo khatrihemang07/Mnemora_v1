@@ -3,5 +3,13 @@
   "identifier": "com.hemang.mnemora.sandbox",
   "build": {
     "features": ["sandbox"]
+  },
+  "bundle": {
+    "icon": [
+      "icons/sandbox/32x32.png",
+      "icons/sandbox/128x128.png",
+      "icons/sandbox/128x128@2x.png",
+      "icons/sandbox/icon.icns"
+    ]
   }
 }

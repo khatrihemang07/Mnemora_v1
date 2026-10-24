@@ -568,13 +568,16 @@ fn create_main_window(
     values: &std::collections::BTreeMap<String, serde_json::Value>,
     device: &DeviceSettings,
 ) -> Result<(), Box<dyn Error>> {
-    let config = app
+    let mut config = app
         .config()
         .app
         .windows
         .first()
         .ok_or("no window configured in tauri.conf.json")?
         .clone();
+    if cfg!(feature = "sandbox") {
+        config.title = "Mnemora Sandbox".into();
+    }
     let builder = WebviewWindowBuilder::from_config(app.handle(), &config)?
         .initialization_script(theme_inject::script(ENVIRONMENT, values));
     #[cfg(desktop)]
