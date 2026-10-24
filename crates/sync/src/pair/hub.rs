@@ -711,6 +711,8 @@ fn typer_error(failure: Failure) -> PairingError {
         },
         Failure::Environment { theirs } => PairingError::DifferentEnvironment { theirs },
         Failure::Lost => PairingError::ConnectionLost,
+        // No code is open there any more: it ran out, was used up or its sheet was closed.
+        Failure::Denied => PairingError::CodeExpired { name: None },
         Failure::Refused { reason, name } => match reason {
             Reason::Declined => PairingError::Declined {
                 name: name.unwrap_or_default(),

@@ -135,6 +135,23 @@ describe('pairing by address', () => {
     expect(silent.title).toBe('Nothing answered at that address.');
     expect(silent.deadCode).toBe(false);
   });
+
+  it('blames Tailscale only for an address Tailscale gives', () => {
+    const fix = (address: string) => problem({ kind: 'address_unreachable' }, true, address).fix;
+    expect(fix('192.168.18.132')).toBe(
+      'Check the address, and that Mnemora is open on the other device with a code showing.',
+    );
+    expect(fix('hemangs-mac.local')).not.toMatch(/Tailscale/);
+    for (const tailscale of [
+      '100.106.24.91',
+      'pixel',
+      'pixel.tail1234.ts.net:47311',
+      '[fd7a:115c:a1e0::1]',
+    ]) {
+      expect(fix(tailscale)).toMatch(/both devices are on Tailscale\.$/);
+    }
+    expect(fix('100.63.0.1')).not.toMatch(/Tailscale/);
+  });
 });
 
 describe('merge preview', () => {

@@ -143,3 +143,22 @@ export function routeOfAddress(stored: string): 'wifi' | 'tailscale' {
   if (v4) return Number(v4[1]) >= 64 && Number(v4[1]) <= 127 ? 'tailscale' : 'wifi';
   return host.endsWith('.ts.net') ? 'tailscale' : 'wifi';
 }
+
+/**
+ * Whether a typed address is one only Tailscale gives: a 100.64.0.0/10 address, one in
+ * Tailscale's fd7a:115c:a1e0::/48, a `.ts.net` name, or a bare MagicDNS name (no dots). Wi-Fi
+ * addresses and `.local` names are not, so a failure about them never blames Tailscale.
+ */
+export function usesTailscale(raw: string): boolean {
+  const parsed = parseAddress(raw);
+  if (!parsed.ok) return false;
+  const host = parsed.stored.startsWith('[')
+    ? parsed.stored.slice(1, parsed.stored.indexOf(']'))
+    : (parsed.stored.split(':')[0] ?? '');
+  if (parsed.stored.startsWith('[')) return host.startsWith('fd7a:115c:a1e0:');
+  if (isIpv4(host)) {
+    const [a = 0, b = 0] = host.split('.').map(Number);
+    return a === 100 && b >= 64 && b <= 127;
+  }
+  return host.endsWith('.ts.net') || !host.includes('.');
+}

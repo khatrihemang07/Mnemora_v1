@@ -63,6 +63,9 @@ pub(crate) enum Failure {
         older_here: Vec<String>,
         older_there: Vec<String>,
     },
+    /// The other device answered but takes no pairing right now: no code is open there (the
+    /// sheet closed, or the code ran out or was used up), so TLS turned this device away.
+    Denied,
     /// The connection failed, went quiet or spoke nonsense.
     Lost,
 }
@@ -154,6 +157,10 @@ where
 {
     match timeout(wait, ch.recv_max::<Msg>(HANDSHAKE_MAX_FRAME)).await {
         Ok(Ok(msg)) => Ok(msg),
+        Ok(Err(e)) if crate::net::link::is_denied(&e) => {
+            tracing::debug!(target: "sync", "the other device takes no pairing right now");
+            Err(Failure::Denied)
+        }
         Ok(Err(e)) => Err(lost("receive", e)),
         Err(_) => Err(lost("receive", "timed out")),
     }

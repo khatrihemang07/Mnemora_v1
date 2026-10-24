@@ -340,7 +340,8 @@ async fn three_wrong_tries_kill_the_code() {
     let seen = b
         .until("a failure", |v| matches!(v, PairingView::Failed { .. }))
         .await;
-    assert_eq!(failed(&seen), &PairingError::ConnectionLost);
+    // Nothing is open there any more.
+    assert_eq!(failed(&seen), &PairingError::CodeExpired { name: None });
     assert!(a.peer_names().is_empty() && b.peer_names().is_empty());
 }
 
@@ -717,4 +718,93 @@ async fn a_proof_is_not_checked_once_the_tries_are_spent() {
         Attempt::Dead
     );
     assert!(!checked.get());
+}
+
+// ---- DV6 again: what the real devices did (qa/e2e-device FINAL.md, 2026-10-24) ---------------
+//
+// The Mac had forgotten the phone, the phone had not been told and still pinned the Mac. The
+// phone showed a code, the Mac typed it by address. The phone saw a key it pins and expected a
+// normal peer's handshake, got a pairing message and refused it; the Mac got the phone's
+// handshake where it expected pairing: "Nothing answered at that address".
+
+/// Pairs `shower` and `typer`, then makes `typer` forget `shower` without telling it.
+async fn one_sided_forget(shower: &Dev, typer: &Dev) {
+    pair(shower, typer).await;
+    let keys = peers::pinned(&typer.host.conn()).unwrap();
+    for (key, _) in &keys {
+        typer.network.unpin(key);
+    }
+    typer
+        .host
+        .conn()
+        .execute_batch("DELETE FROM sync_peers")
+        .unwrap();
+    assert!(typer.peer_names().is_empty());
+}
+
+#[tokio::test]
+async fn a_device_that_still_pins_the_typer_can_be_paired_with_by_address() {
+    let (phone, mac) = (
+        Dev::new("Phone", Environment::Production).await,
+        Dev::new("Mac", Environment::Production).await,
+    );
+    one_sided_forget(&phone, &mac).await;
+    phone.network.pairing().show().unwrap();
+    mac.network
+        .pairing()
+        .enter_at(&phone.addr().to_string(), &phone.code())
+        .unwrap();
+    phone
+        .until("the question", |v| matches!(v, PairingView::Asking { .. }))
+        .await;
+    phone.network.pairing().decide(true);
+    mac.until("paired", |v| matches!(v, PairingView::Paired { .. }))
+        .await;
+}
+
+#[tokio::test]
+async fn pairing_by_address_with_an_expired_code_says_so_even_if_the_other_still_pins_us() {
+    let short = Timing {
+        code_life: Duration::from_millis(400),
+        ..Timing::default()
+    };
+    let phone = Dev::with("Phone", Environment::Production, short, None).await;
+    let mac = Dev::new("Mac", Environment::Production).await;
+    one_sided_forget(&phone, &mac).await;
+    phone.network.pairing().show().unwrap();
+    let real = phone.code();
+    phone
+        .until("expiry", |v| matches!(v, PairingView::Failed { .. }))
+        .await;
+    mac.network
+        .pairing()
+        .enter_at(&phone.addr().to_string(), &real)
+        .unwrap();
+    let seen = mac
+        .until("a failure", |v| matches!(v, PairingView::Failed { .. }))
+        .await;
+    assert_eq!(failed(&seen), &PairingError::CodeExpired { name: None });
+}
+
+#[tokio::test]
+async fn pairing_by_address_after_the_sheet_closed_says_the_code_expired() {
+    let short = Timing {
+        code_life: Duration::from_millis(300),
+        ..Timing::default()
+    };
+    let a = Dev::with("Mac", Environment::Production, short, None).await;
+    let b = Dev::new("Phone", Environment::Production).await;
+    a.network.pairing().show().unwrap();
+    let real = a.code();
+    a.until("expiry", |v| matches!(v, PairingView::Failed { .. }))
+        .await;
+    a.network.pairing().cancel();
+    b.network
+        .pairing()
+        .enter_at(&a.addr().to_string(), &real)
+        .unwrap();
+    let seen = b
+        .until("a failure", |v| matches!(v, PairingView::Failed { .. }))
+        .await;
+    assert_eq!(failed(&seen), &PairingError::CodeExpired { name: None });
 }

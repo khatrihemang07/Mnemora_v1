@@ -131,6 +131,25 @@ fn tls_error(e: std::io::Error) -> NetError {
     }
 }
 
+/// Whether the other end turned this device away at the TLS handshake because it takes no
+/// unpinned key (no code is open there). Under TLS 1.3 that only surfaces on the first read.
+pub(crate) fn is_denied(e: &NetError) -> bool {
+    let denied = |inner: &rustls::Error| {
+        matches!(
+            inner,
+            rustls::Error::AlertReceived(rustls::AlertDescription::AccessDenied)
+        )
+    };
+    match e {
+        NetError::Io(io) => io
+            .get_ref()
+            .and_then(|i| i.downcast_ref::<rustls::Error>())
+            .is_some_and(denied),
+        NetError::Tls(text) => text.contains("AccessDenied"),
+        _ => false,
+    }
+}
+
 fn peer_key<S>(conn: &tokio_rustls::TlsStream<S>) -> Result<PublicKey, NetError> {
     let certs = match conn {
         TlsStream::Client(c) => c.get_ref().1.peer_certificates(),
@@ -422,12 +441,15 @@ async fn serve(
         .map_err(|_| NetError::Timeout)?
         .map_err(tls_error)?;
     let mut secured = secured(TlsStream::Server(stream), &config.trust, remote)?;
-    if secured.pinned {
-        return Ok(Incoming::Peer(Box::new(establish(config, secured).await?)));
-    }
     // Admitted only because pairing was open, and it may have closed since.
-    if !config.trust.pairing_open() {
+    if !secured.pinned && !config.trust.pairing_open() {
         return Err(NetError::Refused(super::Refusal::Unpinned));
+    }
+    // A device whose key is pinned here may still be pairing: it forgot this device while this
+    // one did not forget it, and now types the code shown. A peer sends its handshake first, a
+    // pairing device its own first message, so while pairing is open the first frame says which.
+    if secured.pinned && !config.trust.pairing_open() {
+        return Ok(Incoming::Peer(Box::new(establish(config, secured).await?)));
     }
     // A device that pinned us but that we no longer know (forgotten here) dials as a normal
     // peer and sends its handshake first. Turn it away now instead of leaving it waiting on the
@@ -436,6 +458,9 @@ async fn serve(
         .await
         .map_err(|_| NetError::Timeout)??;
     if serde_json::from_value::<Handshake>(first.clone()).is_ok() {
+        if secured.pinned {
+            return Ok(Incoming::Peer(Box::new(establish(config, secured).await?)));
+        }
         return Err(NetError::Refused(super::Refusal::Unpinned));
     }
     Ok(Incoming::Unpinned(Box::new(secured)))

@@ -1,4 +1,5 @@
 import type { Counts, PairingError, PairingView } from '../../lib/ipc/bindings';
+import { usesTailscale } from './address';
 import { nameList } from './pause';
 
 /** A failure as the sheet words it: what happened, then what to do about it. */
@@ -19,8 +20,11 @@ const OTHER_DEVICE = 'the other device';
 
 const triesLeft = (n: number) => `${n} ${n === 1 ? 'try' : 'tries'} left`;
 
-/** Words for a pairing failure. `typing` is true on the device that types the code. */
-export function problem(error: PairingError, typing: boolean): PairProblem {
+/**
+ * Words for a pairing failure. `typing` is true on the device that types the code; `address` is
+ * what was typed in Pair by address, so that only an address Tailscale gives is blamed on it.
+ */
+export function problem(error: PairingError, typing: boolean, address = ''): PairProblem {
   switch (error.kind) {
     case 'wrong_code':
       return {
@@ -112,7 +116,9 @@ export function problem(error: PairingError, typing: boolean): PairProblem {
     case 'address_unreachable':
       return {
         title: 'Nothing answered at that address.',
-        fix: 'Check the address, that Mnemora is open on the other device with a code showing, and that both devices are on Tailscale.',
+        fix: `Check the address, and that Mnemora is open on the other device with a code showing${
+          usesTailscale(address) ? ', and that both devices are on Tailscale' : ''
+        }.`,
         deadCode: false,
       };
     case 'backup_failed':

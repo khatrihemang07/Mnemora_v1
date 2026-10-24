@@ -77,7 +77,7 @@
   const view = $derived(pairing.open ? pairing.view : held);
   const byAddress = $derived(pairing.mode === 'address');
   const typing = $derived(pairing.mode !== 'show');
-  const failure = $derived(view.state === 'failed' ? problem(view.error, typing) : null);
+  const failure = $derived(view.state === 'failed' ? problem(view.error, typing, pairing.address) : null);
   // Which of the two fields a failure is about.
   const addressWrong = $derived(
     view.state === 'failed' &&
