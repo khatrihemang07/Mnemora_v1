@@ -160,6 +160,31 @@ describe('Activity lines Forget, Rename and Leave write (M6)', () => {
     ]);
   });
 
+  it('Renaming this device logs "‹old› renamed to ‹new›" when a group exists (R1)', () => {
+    const { mock, words } = lines();
+    mock.handle('sync_rename', { name: 'Alex’s Mac' });
+    expect(words()).toEqual([]);
+    mock.handle('sync_rename', { name: 'Studio Mac' });
+    expect(words()).toEqual([
+      { kind: 'renamed', text: 'Alex’s Mac renamed to Studio Mac', on: null },
+    ]);
+  });
+
+  it('Renaming this device with nobody paired logs nothing', () => {
+    const log: Event[] = [];
+    const mock = createSyncMock(
+      { sync: { enabled: true, name: 'Alex’s Mac' } },
+      0,
+      () => {},
+      defaultPairingFlags(),
+      () => {},
+      () => 0,
+      (e) => log.push(e),
+    );
+    mock.handle('sync_rename', { name: 'Studio Mac' });
+    expect(log).toEqual([]);
+  });
+
   it('Forget logs "Forgot ‹name›", by the name it had', () => {
     const { mock, words } = lines();
     mock.handle('sync_device_forget', { id: AIR });

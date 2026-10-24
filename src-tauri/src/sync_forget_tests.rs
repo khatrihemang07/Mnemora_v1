@@ -455,6 +455,19 @@ async fn renaming_this_device_is_unique_in_the_group_too() {
     a.call::<()>("sync_rename", json!({ "name": "ALICE" }));
     a.call::<()>("sync_rename", json!({ "name": "Alicia" }));
     assert_eq!(a.call::<Value>("sync_get", json!({}))["name"], "Alicia");
+    // Each change of this device's own name is in Activity (story 85); a repeat is not.
+    a.call::<()>("sync_rename", json!({ "name": "Alicia" }));
+    let page: Value = a.call(
+        "sync_activity",
+        json!({ "filter": { "kind": "all" }, "cursor": null, "limit": 100 }),
+    );
+    let renamed = page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["kind"] == "renamed")
+        .count();
+    assert_eq!(renamed, 2, "{page}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

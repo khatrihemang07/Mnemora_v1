@@ -255,7 +255,11 @@ export function createSyncMock(
           ) {
             throw err('Another of your devices already has that name');
           }
+          const old = s.name ?? COMPUTER_NAME;
           s.name = name;
+          // Like rename.rs: a rename is logged when there is a group to tell (R1, story 85).
+          if (old !== name && peers.length > 0)
+            log(lineNow('renamed', Date.now(), { extra: { old, new: name } }));
           return null;
         }
         case 'sync_set_option': {
