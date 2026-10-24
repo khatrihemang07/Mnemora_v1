@@ -76,7 +76,7 @@ pub use detail::{
     DeviceDetail, KnownAddress, ModuleVersion, detail as device_detail, set_typed_address,
     typed_for_dial,
 };
-pub use devices::{DevicesView, ThisDevice, view as devices_view};
+pub use devices::{DevicesView, ThisDevice, view as devices_view, with_mobile_pause};
 pub use error::SyncError;
 pub use held::{Released, release_ready as release_held};
 pub use introduce::introduce as introduce_members;
@@ -90,8 +90,8 @@ pub use pair::{
 pub use pause::{MAX_AHEAD_MS, Pause};
 pub use peer_state::{Route, worked as remember_worked};
 pub use peers::{
-    PeerRow, forget_all, group, list as list_peers, members, name_of as peer_name, paired_count,
-    pinned, store_paired,
+    PeerRow, PeerState, forget_all, group, list as list_peers, members, name_of as peer_name,
+    paired_count, pinned, store_paired,
 };
 pub use registry::{Modules, Registry};
 pub use rename::{

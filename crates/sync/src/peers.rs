@@ -57,6 +57,8 @@ pub enum PeerState {
     Syncing,
     /// Not reachable right now.
     NotNearby,
+    /// Not reachable on purpose: this phone is on mobile data and "Allow over mobile data" is off.
+    PausedOnMobileData,
     /// Sync with it is paused (its data version or clock differs).
     Paused,
     /// It was forgotten group-wide (#69).

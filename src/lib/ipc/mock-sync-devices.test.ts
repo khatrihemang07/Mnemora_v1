@@ -173,3 +173,40 @@ describe('Activity lines Forget, Rename and Leave write (M6)', () => {
     expect(words()).toEqual([{ kind: 'left', text: 'Left the group', on: null }]);
   });
 });
+
+describe('on mobile data with "Allow over mobile data" off', () => {
+  type Rows = {
+    this_device: { paused_on_mobile_data: boolean };
+    peers: { id: string; state: string }[];
+  };
+
+  it('a device that cannot be reached reads Paused on mobile data, in the list and the sheet (P1)', () => {
+    const { call, flags } = setup();
+    flags.onMobile = true;
+    const view = call<Rows>('sync_devices', {});
+    expect(view.this_device.paused_on_mobile_data).toBe(true);
+    expect(view.peers.find((p) => p.id === AIR)?.state).toBe('paused_on_mobile_data');
+    expect(call<DeviceDetail>('sync_device', { id: AIR }).state).toBe('paused_on_mobile_data');
+    // Allowing mobile data brings the plain state back.
+    call('sync_set_option', { option: 'mobile_data', enabled: true });
+    expect(call<Rows>('sync_devices', {}).peers.find((p) => p.id === AIR)?.state).toBe(
+      'not_nearby',
+    );
+  });
+
+  it('refuses every way of pairing up front and says why (P4)', () => {
+    const { call, flags } = setup();
+    flags.onMobile = true;
+    const why = expect.objectContaining({
+      code: 'validation',
+      message: expect.stringContaining('Pairing is paused on mobile data'),
+    });
+    expect(() => call('sync_pair_show', {})).toThrow(why);
+    expect(() => call('sync_pair_enter', { code: '12345678' })).toThrow(why);
+    expect(() => call('sync_pair_enter_at', { address: 'mac.ts.net', code: '12345678' })).toThrow(
+      why,
+    );
+    call('sync_set_option', { option: 'mobile_data', enabled: true });
+    expect(() => call('sync_pair_show', {})).not.toThrow();
+  });
+});

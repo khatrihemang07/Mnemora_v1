@@ -24,6 +24,8 @@ class Pairing {
   addressError = $state<string | null>(null);
   /** A command that failed outright (Sync not ready); pairing failures arrive in `view`. */
   commandError = $state<unknown>(null);
+  /** The phone is on mobile data with "Allow over mobile data" off: the sheet says so instead of showing a code. */
+  pausedOnMobile = $state(false);
   arrivedAt = $state(Date.now());
 
   /** Called once the sheet is mounted; returns what stops listening. */
@@ -51,7 +53,19 @@ class Pairing {
     this.addressError = null;
     this.commandError = null;
     this.view = { state: 'idle' };
+    this.pausedOnMobile = await this.onMobileData();
+    if (this.pausedOnMobile) return;
     if (mode === 'show') await this.run(() => unwrap(commands.syncPairShow()));
+  }
+
+  /** Asked before anything is started, so the sheet can say why it will not pair. */
+  private async onMobileData(): Promise<boolean> {
+    try {
+      return (await unwrap(commands.syncDevices())).this_device.paused_on_mobile_data;
+    } catch {
+      // The command itself will report what is wrong.
+      return false;
+    }
   }
 
   /** Switches the open sheet between showing a code and typing one. */

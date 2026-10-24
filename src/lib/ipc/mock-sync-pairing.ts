@@ -92,6 +92,10 @@ const display = (code: string) => `${code.slice(0, 4)} ${code.slice(4)}`;
 const randomCode = () => String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
 const err = (message: string): AppError => ({ code: 'validation', message, details: null });
 
+/** Mirrors `SyncError::PausedOnMobileData` in crates/sync/src/error.rs. */
+const PAUSED_ON_MOBILE =
+  'Pairing is paused on mobile data. Connect to Wi-Fi, or turn on Allow over mobile data in Settings › Sync, then try again.';
+
 export const PAIRING_COMMANDS = [
   'sync_pair_state',
   'sync_pair_show',
@@ -108,6 +112,8 @@ interface Deps {
   emit: (view: PairingView) => void;
   myName: () => string;
   enabled: () => boolean;
+  /** The phone is on mobile data with "Allow over mobile data" off (Rust refuses to pair then). */
+  pausedOnMobile: () => boolean;
   visible: () => boolean;
   flags: PairingFlags;
   /** Keeps the address typed to pair as that device's typed Address. */
@@ -310,6 +316,7 @@ export function createPairingMock(deps: Deps) {
 
   const needSync = () => {
     if (!deps.enabled()) throw err('Sync is off on this device');
+    if (deps.pausedOnMobile()) throw err(PAUSED_ON_MOBILE);
   };
 
   return {

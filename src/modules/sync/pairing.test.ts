@@ -8,11 +8,18 @@ const decide = vi.fn(
     data: null,
   }),
 );
+const show = vi.fn(async () => ({ status: 'ok', data: null }));
+const onMobile = { paused: false };
 vi.mock('../../lib/ui/toast', () => ({ notify: vi.fn() }));
 vi.mock('../../lib/ipc/bindings', () => ({
   commands: {
     syncPairEnterAt: (...a: unknown[]) => enterAt(...(a as [])),
     syncPairDecide: (allow: boolean) => decide(allow),
+    syncPairShow: () => show(),
+    syncDevices: async () => ({
+      status: 'ok',
+      data: { this_device: { paused_on_mobile_data: onMobile.paused }, peers: [] },
+    }),
   },
   events: {},
 }));
@@ -87,5 +94,27 @@ describe('denying', () => {
     await pairing.decide(false);
     expect(openWhenAnswered).toBe(false);
     expect(pairing.open).toBe(false);
+  });
+});
+
+describe('on mobile data with "Allow over mobile data" off', () => {
+  beforeEach(() => {
+    show.mockClear();
+    onMobile.paused = true;
+  });
+
+  it('explains up front and shows no code', async () => {
+    await pairing.start('show');
+    expect(pairing.open).toBe(true);
+    expect(pairing.pausedOnMobile).toBe(true);
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it('shows the code once mobile data is no longer the reason', async () => {
+    await pairing.start('show');
+    onMobile.paused = false;
+    await pairing.start('show');
+    expect(pairing.pausedOnMobile).toBe(false);
+    expect(show).toHaveBeenCalledOnce();
   });
 });

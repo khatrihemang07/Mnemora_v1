@@ -365,7 +365,7 @@ async fn turning_sync_off_and_on_again_and_again_leaves_nothing_behind() {
 }
 
 /// The Activity lines of a device, as `kind -> lines`.
-fn activity_lines(device: &Device, kind: &str) -> Vec<String> {
+pub(crate) fn activity_lines(device: &Device, kind: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
@@ -454,4 +454,37 @@ async fn renaming_a_device_reaches_it_within_the_quiet_period() {
         "the rename waited for a later session: {:?}",
         made.elapsed()
     );
+}
+
+/// The Activity line about a rename never shows before the new name is applied (DV8): whenever the
+/// line is there, the device already has its new name.
+#[tokio::test]
+async fn the_rename_line_never_shows_before_the_new_name_is_applied() {
+    for _ in 0..5 {
+        let (mac, phone) = paired_pair(quick()).await;
+        meet(&mac, &phone);
+        until("connected", || peer_of(&mac)["state"] == "up_to_date").await;
+        tokio::time::sleep(Duration::from_millis(1_500)).await;
+        mac.app
+            .invoke::<String>(
+                "sync_device_rename",
+                json!({ "id": phone.app.device_id(), "name": "Pixel QA" }),
+            )
+            .unwrap();
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(8) {
+            let line = activity_lines(&phone, "renamed");
+            let named =
+                phone.app.invoke::<Value>("sync_get", json!({})).unwrap()["name"] == "Pixel QA";
+            assert!(
+                line.is_empty() || named,
+                "the line {line:?} showed before the name was applied"
+            );
+            if named {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        until("the line", || !activity_lines(&phone, "renamed").is_empty()).await;
+    }
 }

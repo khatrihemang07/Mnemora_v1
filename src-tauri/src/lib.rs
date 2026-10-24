@@ -333,8 +333,10 @@ fn follow_remote<R: tauri::Runtime>(
         let sent = match event.module.as_str() {
             mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
             mnemora_journal::MODULE_ID => JournalChangedEvent.emit(&handle),
+            // The names in the Devices list can have changed with the Activity lines (a rename).
             mnemora_sync::MODULE_ID => SyncConflictsEvent
                 .emit(&handle)
+                .and_then(|()| SyncPeersEvent.emit(&handle))
                 .and_then(|()| SyncActivityEvent.emit(&handle)),
             _ => Ok(()),
         };
@@ -343,18 +345,24 @@ fn follow_remote<R: tauri::Runtime>(
         }
     });
     // Another device renamed this one: the name is saved in the device file like a rename here.
-    // Off the session's thread: it holds the database, which advertising the new name needs too.
+    // The file is written before the session goes on, so the name is there whenever the rename's
+    // Activity line is; advertising it is off the session's thread: that holds the database,
+    // which advertising the new name needs too.
     bus.subscribe(move |event: &DeviceRenamed| {
-        let (handle, name) = (rename_handle.clone(), event.name.clone());
+        use tauri::Manager;
+        let Some(state) = rename_handle.try_state::<state::AppState>() else {
+            return;
+        };
+        if let Err(e) = mnemora_sync::rename(&state.device, &event.name) {
+            tracing::warn!(target: "sync", error = %e, "could not save the new device name");
+            return;
+        }
+        let handle = rename_handle.clone();
         tauri::async_runtime::spawn_blocking(move || {
             use tauri::Manager;
             let Some(state) = handle.try_state::<state::AppState>() else {
                 return;
             };
-            if let Err(e) = mnemora_sync::rename(&state.device, &name) {
-                tracing::warn!(target: "sync", error = %e, "could not save the new device name");
-                return;
-            }
             // Tell the window first: advertising the new name can take a while (it waits for the
             // network), and the Devices tab must not show the old name meanwhile.
             let emit = || {

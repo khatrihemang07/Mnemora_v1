@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { clock, fractionLeft, isBusy, previewStats, problem, remaining } from './pair-view';
+import {
+  clock,
+  fractionLeft,
+  isBusy,
+  PAIRING_PAUSED,
+  previewStats,
+  problem,
+  remaining,
+} from './pair-view';
 
 describe('problem', () => {
   it('words a wrong code with the tries left and where to look', () => {
@@ -151,5 +159,14 @@ describe('merge preview', () => {
     expect(here.fix).toContain('Nothing was merged');
     const there = problem({ kind: 'backup_failed', name: 'Pixel 8' }, false);
     expect(there.title).toBe('Pixel 8 couldn’t back up its data first.');
+  });
+});
+
+describe('pairing on mobile data', () => {
+  it('says why, in the words of the Paused on mobile data status', () => {
+    expect(PAIRING_PAUSED.title).toBe('Pairing is paused on mobile data.');
+    expect(PAIRING_PAUSED.fix).toBe(
+      'Connect to Wi-Fi, or turn on Allow over mobile data in Settings › Sync, then try again.',
+    );
   });
 });

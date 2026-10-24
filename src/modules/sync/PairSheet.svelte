@@ -9,6 +9,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import CircleAlert from '~icons/lucide/circle-alert';
+  import Pause from '~icons/lucide/pause';
   import Archive from '~icons/lucide/archive';
   import CircleCheck from '~icons/lucide/circle-check';
   import Laptop from '~icons/lucide/laptop';
@@ -20,7 +21,7 @@
   import { clock as appClock } from '../../lib/time/clock.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import CountdownRing from './CountdownRing.svelte';
-  import { clock, fractionLeft, previewStats, problem, remaining } from './pair-view';
+  import { PAIRING_PAUSED, clock, fractionLeft, previewStats, problem, remaining } from './pair-view';
   import { pairing } from './pairing.svelte';
 
   // Rust sends the time left when a view arrives; the sheet counts down from there.
@@ -30,8 +31,8 @@
     return appClock.subscribe();
   });
   const now = $derived(appClock.now.getTime());
-  const left = $derived(remaining(pairing.view, Math.max(0, now - pairing.arrivedAt)));
-  const life = $derived(
+  const liveLeft = $derived(remaining(pairing.view, Math.max(0, now - pairing.arrivedAt)));
+  const liveLife = $derived(
     pairing.view.state === 'showing' || pairing.view.state === 'asking' ? pairing.view.life_ms : 0,
   );
 
@@ -53,9 +54,17 @@
   // While the sheet fades out, Rust's next view (idle, after Deny or Cancel) must not replace what it
   // shows: it keeps the last view it had when open until the close transition ends.
   let held = $state.raw(pairing.view);
+  // The countdown freezes with it, so it never reads "0:00 left" for a frame while the sheet closes.
+  let heldLeft = $state(0);
+  let heldLife = $state(0);
   $effect.pre(() => {
-    if (pairing.open) held = pairing.view;
+    if (!pairing.open) return;
+    held = pairing.view;
+    heldLeft = liveLeft;
+    heldLife = liveLife;
   });
+  const left = $derived(pairing.open ? liveLeft : heldLeft);
+  const life = $derived(pairing.open ? liveLife : heldLife);
   const view = $derived(pairing.open ? pairing.view : held);
   const byAddress = $derived(pairing.mode === 'address');
   const typing = $derived(pairing.mode !== 'show');
@@ -98,7 +107,17 @@
 
 <Sheet open={pairing.open} {title} onclose={() => void pairing.close()} centered bare returnFocus>
   <div class="px-5 pt-6 pb-5" data-pairing={view.state}>
-    {#if pairing.commandError}
+    {#if pairing.pausedOnMobile}
+      {@render heading(title)}
+      <div role="alert" class="mt-3 flex items-start gap-2.5 rounded-md border border-[color-mix(in_oklch,var(--warning)_50%,transparent)] bg-[color-mix(in_oklch,var(--warning)_16%,transparent)] px-3.5 py-2.5 text-left text-sm text-ink">
+        <Pause class="mt-0.5 size-4 shrink-0 text-warning" />
+        <div><b class="font-semibold">{PAIRING_PAUSED.title}</b><br /><span class="text-muted">{PAIRING_PAUSED.fix}</span></div>
+      </div>
+      <div class="mt-4 flex justify-end gap-2">
+        <Button onclick={() => void pairing.close()}>Close</Button>
+        <Button variant="primary" onclick={() => void pairing.start(pairing.mode)}>Try again</Button>
+      </div>
+    {:else if pairing.commandError}
       {@render heading(title)}
       {@render banner(
         pairing.commandError instanceof Error ? pairing.commandError.message : 'Pairing did not start.',

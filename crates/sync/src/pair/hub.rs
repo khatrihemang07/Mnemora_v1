@@ -69,6 +69,15 @@ impl Inner {
     fn show_alive(&self) -> bool {
         self.show.as_ref().is_some_and(|s| s.dead.is_none())
     }
+
+    /// Whether a typing device is answered: a live code, or one that ran out (and says so).
+    fn show_answers(&self) -> bool {
+        self.show.as_ref().is_some_and(|s| {
+            s.dead
+                .as_ref()
+                .is_none_or(|e| matches!(e, PairingError::CodeExpired { .. }))
+        })
+    }
 }
 
 /// Pairing for one running Sync: see the module docs.
@@ -211,11 +220,13 @@ impl Pairing {
         self.host.show(&self.view_of(g));
     }
 
-    /// TLS admits unpinned keys exactly while a code is shown or being typed.
+    /// TLS admits unpinned keys while a code is shown or being typed, and while a code that ran
+    /// out is still on the sheet: such a connection is only told the code is dead, so the typing
+    /// device can say so instead of "nothing answered".
     fn sync_open(&self, g: &Inner) {
         self.config
             .trust
-            .set_pairing_open(g.show_alive() || g.typing.is_some());
+            .set_pairing_open(g.show_answers() || g.typing.is_some());
     }
 
     /// Announces this device again (the "pairing open" flag, the group, Visible on this network).
@@ -378,7 +389,7 @@ impl Pairing {
 
     /// The listener handed over a connection from an unpinned key.
     pub(crate) fn handle_incoming(self: &Arc<Self>, secured: Box<Secured>) {
-        if !self.lock().show_alive() {
+        if !self.lock().show_answers() {
             tracing::debug!(target: "sync", "no code is shown, dropping a pairing attempt");
             return;
         }

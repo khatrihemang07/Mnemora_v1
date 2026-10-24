@@ -26,6 +26,20 @@ describe('renaming a device', () => {
     expect(r.error).toBe('Another of your devices already has that name');
   });
 
+  it('Esc after a refusal drops the text and the message, so the saved name shows again (A4)', async () => {
+    const r = new DeviceRename(refuse('Names are 1 to 40 characters'));
+    r.start('Alex’s Mac');
+    r.type('');
+    await r.commit('Alex’s Mac');
+    expect(r.error).not.toBeNull();
+    r.cancel();
+    expect(r.editing).toBe(false);
+    expect(r.error).toBeNull();
+    // Typing again starts a fresh draft from the saved name.
+    r.start('Alex’s Mac');
+    expect(r.text).toBe('Alex’s Mac');
+  });
+
   it('replaces the old message with the new one, and typing clears it', async () => {
     let message = 'Another of your devices already has that name';
     const r = new DeviceRename(async () => {

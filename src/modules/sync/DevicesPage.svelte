@@ -9,6 +9,7 @@
   import PairSheet from './PairSheet.svelte';
   import { syncQuery } from './queries';
   import SyncFrame from './SyncFrame.svelte';
+  import { showWelcome } from './welcome';
   import WelcomeCard from './WelcomeCard.svelte';
 
   const sync = createQuery(() => syncQuery);
@@ -19,7 +20,7 @@
     <Skeleton class="h-40 w-full" />
   {:else if sync.isError}
     <ErrorBanner error={sync.error} onretry={() => sync.refetch()} />
-  {:else if sync.data?.paired_devices === 0}
+  {:else if showWelcome(sync.data?.paired_devices, undefined)}
     <WelcomeCard />
   {:else}
     <PairedDevices />

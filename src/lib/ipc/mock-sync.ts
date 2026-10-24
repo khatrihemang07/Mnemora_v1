@@ -129,6 +129,16 @@ export function createSyncMock(
     };
   };
 
+  /** Mirrors `paused_on_mobile_data` in src-tauri/src/sync_power.rs. */
+  const pausedOnMobile = () => flags.onMobile === true && sync().enabled && !sync().mobile_data;
+  /** Mirrors `with_mobile_pause`: what cannot be reached says why instead of "Not nearby". */
+  const rows = (): PeerRow[] =>
+    live
+      .rows()
+      .map((r) =>
+        pausedOnMobile() && r.state === 'not_nearby' ? { ...r, state: 'paused_on_mobile_data' } : r,
+      );
+
   const typedAddresses = new Map<string, string>();
   const pairing = createPairingMock({
     rememberAddress: (id, stored) => {
@@ -141,6 +151,7 @@ export function createSyncMock(
     flags,
     myName: () => state().name,
     enabled: () => sync().enabled,
+    pausedOnMobile: () => pausedOnMobile(),
     visible: () => sync().visible,
   });
 
@@ -163,7 +174,7 @@ export function createSyncMock(
   const deviceSheet = createDeviceMock({
     typed: typedAddresses,
     peers,
-    rows: () => live.rows(),
+    rows,
     myName: () => state().name,
     emitPeers,
     syncOne: (id) => live.syncOne(id),
@@ -179,9 +190,9 @@ export function createSyncMock(
       port: 47311,
       addresses: ['192.168.1.20', '100.101.4.7'],
       routes: ['wifi', 'tailscale'],
-      paused_on_mobile_data: flags.onMobile === true && sync().enabled && !sync().mobile_data,
+      paused_on_mobile_data: pausedOnMobile(),
     },
-    peers: live.rows(),
+    peers: rows(),
   });
 
   return {

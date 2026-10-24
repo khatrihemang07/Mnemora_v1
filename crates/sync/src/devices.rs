@@ -150,8 +150,21 @@ pub fn view(
             },
             paused_on_mobile_data,
         },
-        peers: rows_of(conn, live)?,
+        peers: with_mobile_pause(rows_of(conn, live)?, paused_on_mobile_data),
     })
+}
+
+/// While the phone waits on mobile data, the devices that cannot be reached say why instead of
+/// "Not nearby".
+pub fn with_mobile_pause(mut rows: Vec<PeerRow>, paused: bool) -> Vec<PeerRow> {
+    if paused {
+        for row in &mut rows {
+            if row.state == PeerState::NotNearby {
+                row.state = PeerState::PausedOnMobileData;
+            }
+        }
+    }
+    rows
 }
 
 #[cfg(test)]
@@ -200,6 +213,22 @@ mod tests {
         assert_eq!(routes_of(&ips(&["100.101.4.7"])), [Route::Tailscale]);
         assert_eq!(routes_of(&ips(&["10.0.0.4"])), [Route::Wifi]);
         assert!(routes_of(&[]).is_empty());
+    }
+
+    #[test]
+    fn unreachable_devices_read_paused_on_mobile_data_while_it_is_the_reason() {
+        let mut here = row("here", 1);
+        here.state = PeerState::UpToDate;
+        let rows = vec![row("away", 2), here];
+        let states = |r: Vec<PeerRow>| r.into_iter().map(|p| p.state).collect::<Vec<_>>();
+        assert_eq!(
+            states(with_mobile_pause(rows.clone(), true)),
+            [PeerState::PausedOnMobileData, PeerState::UpToDate]
+        );
+        assert_eq!(
+            states(with_mobile_pause(rows, false)),
+            [PeerState::NotNearby, PeerState::UpToDate]
+        );
     }
 
     #[test]

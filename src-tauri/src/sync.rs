@@ -10,7 +10,8 @@ use mnemora_sync::discovery::{Discovery, Fixed, Mdns};
 use mnemora_sync::net::{DeviceIdentity, Handshake, NetError, PublicKey};
 use mnemora_sync::{
     CheckExpect, CheckResult, DeviceDetail, DevicesView, Host, Network, NetworkOptions, Paired,
-    PairingHost, PairingView, Platform, Registry, Stored, SyncError, SyncOption, SyncState, Who,
+    Pairing, PairingHost, PairingView, PeerState, Platform, Registry, Stored, SyncError,
+    SyncOption, SyncState, Who,
 };
 use tauri::{AppHandle, Manager, Runtime, State};
 use tauri_specta::Event;
@@ -128,7 +129,7 @@ pub fn sync_devices(state: State<'_, AppState>) -> Result<DevicesView, AppError>
         &state.device.get(),
         &lock(&state.db),
         state.sync.listening(),
-        crate::sync_power::paused_on_mobile_data(state.power.conditions(&state.device.get().sync)),
+        paused_on_mobile_data(&state),
         &state.sync.peers_live(),
     )
 }
@@ -158,14 +159,31 @@ fn my_name(state: &AppState) -> String {
 #[specta::specta]
 pub fn sync_device(state: State<'_, AppState>, id: String) -> Result<DeviceDetail, AppError> {
     let conn = lock(&state.db);
-    mnemora_sync::device_detail(
+    let mut detail = mnemora_sync::device_detail(
         &conn,
         &id,
         &state.device.device_id(),
         &my_name(&state),
         &state.sync.peers_live(),
     )?
-    .ok_or_else(|| AppError::new(ErrorCode::NotFound, "That device is not paired"))
+    .ok_or_else(|| AppError::new(ErrorCode::NotFound, "That device is not paired"))?;
+    if paused_on_mobile_data(&state) && detail.state == PeerState::NotNearby {
+        detail.state = PeerState::PausedOnMobileData;
+    }
+    Ok(detail)
+}
+
+/// Whether Sync waits only because this phone is on mobile data with the setting off.
+fn paused_on_mobile_data(state: &AppState) -> bool {
+    crate::sync_power::paused_on_mobile_data(state.power.conditions(&state.device.get().sync))
+}
+
+/// Pairing, unless mobile data is the reason nothing is running (the sheet says so up front).
+fn pairing(state: &AppState) -> Result<Arc<Pairing>, AppError> {
+    if paused_on_mobile_data(state) {
+        return Err(SyncError::PausedOnMobileData.into());
+    }
+    Ok(state.sync.pairing()?)
 }
 
 /// Renames a paired device for the whole group (unique, 1 to 40 characters). Returns the name saved.
@@ -292,21 +310,21 @@ pub fn sync_pair_state(state: State<'_, AppState>) -> PairingView {
 #[tauri::command]
 #[specta::specta]
 pub fn sync_pair_show(state: State<'_, AppState>) -> Result<(), AppError> {
-    Ok(state.sync.pairing()?.show()?)
+    Ok(pairing(&state)?.show()?)
 }
 
 /// "New code": a fresh code with 3 tries and 2 minutes.
 #[tauri::command]
 #[specta::specta]
 pub fn sync_pair_new_code(state: State<'_, AppState>) -> Result<(), AppError> {
-    Ok(state.sync.pairing()?.new_code()?)
+    Ok(pairing(&state)?.new_code()?)
 }
 
 /// "Enter a code": looks for a device showing a code on the network and tries the typed one.
 #[tauri::command]
 #[specta::specta]
 pub fn sync_pair_enter(state: State<'_, AppState>, code: String) -> Result<(), AppError> {
-    Ok(state.sync.pairing()?.enter(&code)?)
+    Ok(pairing(&state)?.enter(&code)?)
 }
 
 /// "Pair by address…": dials the typed address with the code (the other device need not be
@@ -318,14 +336,14 @@ pub fn sync_pair_enter_at(
     address: String,
     code: String,
 ) -> Result<(), AppError> {
-    Ok(state.sync.pairing()?.enter_at(&address, &code)?)
+    Ok(pairing(&state)?.enter_at(&address, &code)?)
 }
 
 /// Allow or Deny the device that typed the right code.
 #[tauri::command]
 #[specta::specta]
 pub fn sync_pair_decide(state: State<'_, AppState>, allow: bool) -> Result<(), AppError> {
-    state.sync.pairing()?.decide(allow);
+    pairing(&state)?.decide(allow);
     Ok(())
 }
 

@@ -7,6 +7,8 @@
   import PeerList from './PeerList.svelte';
   import { devicesQuery, watchDevices } from './queries';
   import ThisDeviceCard from './ThisDeviceCard.svelte';
+  import { showWelcome } from './welcome';
+  import WelcomeCard from './WelcomeCard.svelte';
 
   const devices = createQuery(() => devicesQuery);
 
@@ -24,6 +26,8 @@
 
 {#if devices.isError}
   <ErrorBanner error={devices.error} onretry={() => devices.refetch()} />
+{:else if devices.data && showWelcome(undefined, devices.data.peers.length)}
+  <WelcomeCard />
 {:else if devices.data}
   <PausedBanner peers={devices.data.peers} />
   <ThisDeviceCard device={devices.data.this_device} />

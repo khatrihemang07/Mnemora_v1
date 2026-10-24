@@ -9,6 +9,12 @@ export interface PairProblem {
   deadCode: boolean;
 }
 
+/** Shown in place of the code while the phone is on mobile data and "Allow over mobile data" is off. */
+export const PAIRING_PAUSED = {
+  title: 'Pairing is paused on mobile data.',
+  fix: 'Connect to Wi-Fi, or turn on Allow over mobile data in Settings › Sync, then try again.',
+};
+
 const OTHER_DEVICE = 'the other device';
 
 const triesLeft = (n: number) => `${n} ${n === 1 ? 'try' : 'tries'} left`;

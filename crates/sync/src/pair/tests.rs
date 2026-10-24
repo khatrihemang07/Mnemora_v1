@@ -370,6 +370,29 @@ async fn an_expired_code_is_refused_and_says_so() {
 }
 
 #[tokio::test]
+async fn pairing_by_address_with_an_expired_code_says_it_expired() {
+    let short = Timing {
+        code_life: Duration::from_millis(300),
+        ..Timing::default()
+    };
+    let a = Dev::with("Mac", Environment::Production, short, None).await;
+    let b = Dev::new("Phone", Environment::Production).await;
+    a.network.pairing().show().unwrap();
+    let real = a.code();
+    a.until("expiry", |v| matches!(v, PairingView::Failed { .. }))
+        .await;
+    b.network
+        .pairing()
+        .enter_at(&a.addr().to_string(), &real)
+        .unwrap();
+    let seen = b
+        .until("a failure", |v| matches!(v, PairingView::Failed { .. }))
+        .await;
+    assert_eq!(failed(&seen), &PairingError::CodeExpired { name: None });
+    assert!(a.peer_names().is_empty() && b.peer_names().is_empty());
+}
+
+#[tokio::test]
 async fn running_out_of_time_while_asking_tells_the_other_device() {
     let short = Timing {
         code_life: Duration::from_millis(600),

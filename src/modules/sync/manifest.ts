@@ -3,13 +3,16 @@ import Plus from '~icons/lucide/plus';
 import RadioTower from '~icons/lucide/radio-tower';
 import RefreshCw from '~icons/lucide/refresh-cw';
 import { commands } from '../../lib/ipc/bindings';
+import { queryClient } from '../../lib/ipc/query-client';
 import type { ModuleManifest } from '../../lib/router';
 import { notify } from '../../lib/ui/toast';
 import { paletteHint } from './attention';
 import { useSyncBadge } from './badge.svelte';
 import { syncAttention } from './hint.svelte';
 import { pairing } from './pairing.svelte';
+import { syncQuery } from './queries';
 import { useSyncSwitch } from './switch.svelte';
+import { runSyncNow } from './sync-now';
 
 export const syncManifest: ModuleManifest = {
   id: 'sync',
@@ -44,10 +47,12 @@ export const syncManifest: ModuleManifest = {
       id: 'now',
       label: 'Sync now',
       icon: RefreshCw,
-      run: () => {
-        void commands.syncNow();
-        notify('Syncing with your devices');
-      },
+      run: () =>
+        void runSyncNow(
+          async () => (await queryClient.fetchQuery(syncQuery)).paired_devices,
+          () => commands.syncNow(),
+          notify,
+        ),
     },
     {
       id: 'pair',

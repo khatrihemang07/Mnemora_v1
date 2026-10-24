@@ -30,8 +30,15 @@
 >
   <PageHeader title="Sync" icon={RadioTower} hue="--hue-sync">
     {#snippet actions()}
-      <Button variant="ghost" size="sm" disabled={alone} aria-label="Sync now" onclick={() => void commands.syncNow()}>
-        <RefreshCw class="size-3.5" />
+      <Button
+        variant="ghost"
+        size="sm"
+        class="phone:h-11 phone:min-w-11 phone:px-0"
+        disabled={alone}
+        aria-label="Sync now"
+        onclick={() => void commands.syncNow()}
+      >
+        <RefreshCw class="size-3.5 phone:size-5" />
         <span class="phone:sr-only">Sync now</span>
       </Button>
     {/snippet}

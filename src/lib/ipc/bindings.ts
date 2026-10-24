@@ -1431,6 +1431,8 @@ export type PeerState =
 "syncing" | 
 /**  Not reachable right now. */
 "not_nearby" | 
+/**  Not reachable on purpose: this phone is on mobile data and "Allow over mobile data" is off. */
+"paused_on_mobile_data" | 
 /**  Sync with it is paused (its data version or clock differs). */
 "paused" | 
 /**  It was forgotten group-wide (#69). */

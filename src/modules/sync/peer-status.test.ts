@@ -36,6 +36,7 @@ describe('status words', () => {
       'Up to date',
       'Syncing…',
       'Not nearby',
+      'Paused on mobile data',
       'Paused',
       'Removed',
     ]);
@@ -45,6 +46,15 @@ describe('status words', () => {
   it('name the route', () => {
     expect(routeWord('wifi')).toBe('Wi‑Fi');
     expect(routeWord('tailscale')).toBe('Tailscale');
+  });
+});
+
+describe('on mobile data', () => {
+  it('a device that cannot be reached says why instead of Not nearby', () => {
+    expect(rowParts(peer({ state: 'paused_on_mobile_data', route: null }), now)).toEqual([
+      'Paused on mobile data',
+      'last synced 2 min ago',
+    ]);
   });
 });
 

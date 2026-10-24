@@ -14,6 +14,11 @@ pub enum SyncError {
     /// Sync is on but its network side has not started yet.
     #[error("Sync is still starting. Try again in a moment")]
     NotReady,
+    /// This phone is on mobile data and "Allow over mobile data" is off, so nothing connects.
+    #[error(
+        "Pairing is paused on mobile data. Connect to Wi-Fi, or turn on Allow over mobile data in Settings › Sync, then try again"
+    )]
+    PausedOnMobileData,
     /// The other device went away; what was applied so far stays, and the next session resumes.
     #[error("The connection to the other device was lost")]
     Disconnected,
@@ -45,9 +50,10 @@ impl From<rusqlite::Error> for SyncError {
 impl From<SyncError> for AppError {
     fn from(e: SyncError) -> Self {
         match e {
-            SyncError::Validation(_) | SyncError::Off | SyncError::NotReady => {
-                Self::new(ErrorCode::Validation, e.to_string())
-            }
+            SyncError::Validation(_)
+            | SyncError::Off
+            | SyncError::NotReady
+            | SyncError::PausedOnMobileData => Self::new(ErrorCode::Validation, e.to_string()),
             SyncError::Disconnected | SyncError::ClockAhead { .. } => {
                 Self::new(ErrorCode::Io, e.to_string())
             }

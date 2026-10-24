@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 use mnemora_sync::Pace;
 use serde_json::json;
 
-use crate::sync_live_tests::{create, has, meet, paired_pair, peer_of, quick, until};
+use crate::sync_live_tests::{
+    activity_lines, create, has, meet, paired_pair, peer_of, quick, until,
+};
 use crate::sync_power::{self, Link, Screen};
 
 fn slow_push() -> Pace {
@@ -139,4 +141,70 @@ async fn rapid_leaving_and_returning_never_duplicates_the_network() {
     assert_eq!(after.advertisements, before.advertisements);
     assert_eq!(after.tasks, before.tasks);
     assert_eq!(sync_power::test_screen(&handle), Screen::Front);
+}
+
+#[tokio::test]
+async fn on_mobile_data_devices_read_paused_and_pairing_says_why() {
+    let (mac, _phone) = paired_pair(quick()).await;
+    let id = peer_of(&mac)["id"].as_str().unwrap().to_owned();
+    sync_power::link(&mac.app.handle(), Link::Mobile);
+    until("everything to stop", || stopped(&mac)).await;
+
+    // The row and the device sheet give the reason instead of "Not nearby".
+    assert_eq!(peer_of(&mac)["state"], "paused_on_mobile_data");
+    let sheet: serde_json::Value = mac.call("sync_device", json!({ "id": id }));
+    assert_eq!(sheet["state"], "paused_on_mobile_data");
+
+    // Pairing is refused up front with the reason, not "Sync is still starting".
+    let args = [
+        ("sync_pair_show", json!({})),
+        ("sync_pair_new_code", json!({})),
+        ("sync_pair_enter", json!({ "code": "12345678" })),
+        (
+            "sync_pair_enter_at",
+            json!({ "address": "192.168.1.9", "code": "12345678" }),
+        ),
+    ];
+    for (command, args) in args {
+        let refused = mac
+            .app
+            .invoke::<serde_json::Value>(command, args)
+            .unwrap_err();
+        let message = refused["message"].as_str().unwrap();
+        assert!(message.contains("mobile data"), "{command}: {message}");
+    }
+
+    // Allowing mobile data lifts both (tests do not restart the network, so pairing then waits
+    // for it instead).
+    mac.call::<()>(
+        "sync_set_option",
+        json!({ "option": "mobile_data", "enabled": true }),
+    );
+    assert_eq!(peer_of(&mac)["state"], "not_nearby");
+    let waiting = mac
+        .app
+        .invoke::<serde_json::Value>("sync_pair_show", json!({}))
+        .unwrap_err();
+    assert!(!waiting["message"].as_str().unwrap().contains("mobile data"));
+}
+
+/// D17: a live connection that drops while nothing is being exchanged (Wi-Fi off, the phone put
+/// away) is not news: Activity logs nothing and the row just reads Not nearby.
+#[tokio::test]
+async fn an_idle_connection_that_drops_is_not_logged() {
+    let (mac, phone) = paired_pair(quick()).await;
+    meet(&mac, &phone);
+    until("connected", || peer_of(&mac)["state"] == "up_to_date").await;
+    until("the first session", || {
+        peer_of(&mac)["last_synced_at"].is_u64()
+    })
+    .await;
+    sync_power::foreground(&mac.app.handle(), false);
+    until("the phone to see it gone", || {
+        peer_of(&phone)["state"] == "not_nearby"
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(activity_lines(&mac, "failed").is_empty());
+    assert!(activity_lines(&phone, "failed").is_empty());
 }
