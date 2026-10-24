@@ -105,6 +105,24 @@ async fn paired_devices_that_find_each_other_connect_and_say_up_to_date() {
     assert_eq!(peer_of(&mac)["route"], "wifi");
 }
 
+/// Both devices dial at once and one of the two connections is torn down as the duplicate: both
+/// rows must settle on "Up to date" and stay there (DV2), never "Not nearby" on either.
+#[tokio::test]
+async fn a_simultaneous_dial_and_its_duplicate_teardown_leave_both_rows_up_to_date() {
+    let (mac, phone) = paired_pair(quick()).await;
+    meet(&mac, &phone);
+    until("both up to date", || {
+        peer_of(&mac)["state"] == "up_to_date" && peer_of(&phone)["state"] == "up_to_date"
+    })
+    .await;
+    // Long enough for every racing dial to finish or give up.
+    for _ in 0..40 {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(peer_of(&mac)["state"], "up_to_date", "Mac's row");
+        assert_eq!(peer_of(&phone)["state"], "up_to_date", "Pixel's row");
+    }
+}
+
 #[tokio::test]
 async fn a_change_reaches_the_other_device_only_after_the_quiet_period() {
     // A longer quiet period than the others, so a slow machine cannot make the second change

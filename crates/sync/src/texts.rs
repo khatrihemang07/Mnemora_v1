@@ -112,6 +112,10 @@ pub(crate) struct Folded {
 struct Hint {
     base: String,
     text: String,
+    /// What was held when that record arrived. The hint is only used by a record built on exactly
+    /// this: otherwise other devices' text sits between, and standing in for it would drop it.
+    #[serde(default)]
+    before: Option<String>,
 }
 
 /// Where a replay got to, as kept in `sync_text_replay`.
@@ -334,7 +338,11 @@ fn replay(
                     .hint
                     .clone()
                     .filter(|_| ours.stamp.device != rec.stamp.device)
-                    .filter(|_| rec.prev.as_ref().is_some_and(|p| *p != ours_text));
+                    .filter(|h| {
+                        rec.prev
+                            .as_ref()
+                            .is_some_and(|p| *p != ours_text && h.before.as_ref() == Some(p))
+                    });
                 let dangling = rec
                     .prev
                     .clone()
@@ -342,6 +350,7 @@ fn replay(
                     .map(|base| Hint {
                         base,
                         text: rec.text.clone(),
+                        before: Some(ours_text.clone()),
                     });
                 let (base, ours_text) = match hinted {
                     Some(h) => (Some(h.base), h.text),
@@ -762,6 +771,30 @@ mod tests {
         // With the base known (an ordinary concurrent edit) nothing is guessed.
         let f = replay(&recs, &body(), None, &|_| true).unwrap();
         assert_eq!(f.values["body"], "typing-more");
+    }
+
+    #[test]
+    fn the_rewritten_session_workaround_never_drops_a_third_devices_text() {
+        // "z" typed a line between; "b" then sent a record on the lost version "typing", and "a"
+        // rewrote the session. Nothing may vanish: every line is still in the result.
+        let recs = [
+            rec(1, "c", None, "", false),
+            rec(2, "z", Some(""), "zed-line", false),
+            rec(3, "b", Some("typing"), "typing\nmac-line", false),
+            rec(4, "a", Some(""), "typing-more", false),
+        ];
+        let f = replay(&recs, &body(), None, &|t| t != "typing").unwrap();
+        let body_text = f.values["body"].as_str().unwrap();
+        for part in ["zed-line", "mac-line", "typing-more"] {
+            let clashed = f
+                .clashes
+                .iter()
+                .any(|c| c.ours.contains(part) || c.theirs.contains(part) || c.base.contains(part));
+            assert!(
+                body_text.contains(part) || clashed,
+                "{part} lost: {body_text:?}"
+            );
+        }
     }
 
     #[test]

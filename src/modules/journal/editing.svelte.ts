@@ -31,8 +31,8 @@ export class Editing {
   spellcheck = $state(true);
   /** Set by the open editor: saves and closes it, false when text is still unsaved. */
   finisher: (() => Promise<boolean>) | null = null;
-  /** Set by the open editor: drops its session without saving (the Entry is gone) and returns the text it held. */
-  abandon: (() => string) | null = null;
+  /** Set by the open editor: drops its session without saving (the Entry is gone) and returns the text it held and the text last saved. */
+  abandon: (() => { text: string; saved: string }) | null = null;
 
   /** Opens `id`, first finishing any other open Entry; stays put if that one can't be saved. */
   async open(id: string): Promise<void> {

@@ -60,13 +60,13 @@ export class EntryEditing<E> {
 
   /**
    * The Entry was deleted elsewhere: nothing more is saved by this session. Returns the text it
-   * holds, which the person may Restore with.
+   * holds, and the text last saved, which the person may Restore with.
    */
-  abandon(): string {
+  abandon(): { text: string; saved: string } {
     this.#abandoned = true;
     this.#cancelTimer?.();
     this.#cancelTimer = null;
-    return this.text;
+    return { text: this.text, saved: this.#saved };
   }
 
   #save() {

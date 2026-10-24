@@ -125,7 +125,7 @@ describe('EntryEditing', () => {
     const { e, calls, hasTimer } = setup();
     e.input('typed after the delete');
     expect(hasTimer()).toBe(true);
-    expect(e.abandon()).toBe('typed after the delete');
+    expect(e.abandon()).toEqual({ text: 'typed after the delete', saved: expect.any(String) });
     expect(hasTimer()).toBe(false);
     expect(await e.flush()).toBe(true);
     expect(calls).toEqual([]);

@@ -26,10 +26,13 @@
       if (!told) return;
       const id = event.payload.entry_id;
       // Drop the session first: it must not try to save into an Entry that is gone.
-      const draft = editing.abandon?.() ?? '';
+      const draft = editing.abandon?.() ?? { text: '', saved: '' };
       editing.close();
       void invalidateJournal();
+      let restoring = false;
       notifyAction(told.message, 'Restore', () => {
+        if (restoring) return;
+        restoring = true;
         restoreWithDraft(
           { restore: restoreEntry, update: updateEntry, session: () => crypto.randomUUID() },
           id,

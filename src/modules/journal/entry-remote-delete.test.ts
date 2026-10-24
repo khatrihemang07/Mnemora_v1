@@ -26,21 +26,39 @@ describe('an Entry deleted on another device', () => {
 });
 
 describe('Restore after a remote delete', () => {
-  const run = async (stored: string, draft: string) => {
+  const run = async (stored: string, saved: string, text: string) => {
     const update = vi.fn(async () => undefined);
     const restore = vi.fn(async () => ({ body: stored }));
-    await restoreWithDraft({ restore, update, session: () => 's' }, 'e1', draft);
+    await restoreWithDraft({ restore, update, session: () => 's' }, 'e1', { text, saved });
     return { restore, update };
   };
 
-  it('brings the Entry back with the text that was being typed', async () => {
-    const { restore, update } = await run('first draft', 'first draft, typed on');
+  it('brings the Entry back with the text that was being typed, once', async () => {
+    const { restore, update } = await run('first draft', 'first draft', 'first draft, typed on');
     expect(restore).toHaveBeenCalledWith('e1');
+    expect(update).toHaveBeenCalledTimes(1);
     expect(update).toHaveBeenCalledWith('e1', 'first draft, typed on', 's');
   });
 
   it('writes nothing more when the typed text was already saved or is blank', async () => {
-    expect((await run('same', 'same')).update).not.toHaveBeenCalled();
-    expect((await run('same', '  \n')).update).not.toHaveBeenCalled();
+    expect((await run('same', 'same', 'same')).update).not.toHaveBeenCalled();
+    expect((await run('same', 'same', '  \n')).update).not.toHaveBeenCalled();
+  });
+
+  it('keeps both when the Entry was also edited elsewhere', async () => {
+    const added = await run(
+      'first draft\nline from the phone',
+      'first draft',
+      'first draft, typed on',
+    );
+    expect(added.update).toHaveBeenCalledWith(
+      'e1',
+      'first draft\nline from the phone, typed on',
+      's',
+    );
+    const rewritten = await run('phone text', 'first draft', 'rewritten here');
+    expect(rewritten.update).toHaveBeenCalledWith('e1', 'phone text\n\nrewritten here', 's');
+    // Nothing typed since the last save: the restored text stands.
+    expect((await run('phone text', 'first draft', 'first draft')).update).not.toHaveBeenCalled();
   });
 });
