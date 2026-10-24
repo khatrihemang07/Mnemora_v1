@@ -5,6 +5,7 @@
 //!
 //! [`Discovery`] is the seam: [`Mdns`] is the real thing, [`Fixed`] a stand-in for tests.
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -103,12 +104,51 @@ fn mdns_error(e: impl std::fmt::Display) -> SyncError {
     SyncError::Protocol(format!("local network discovery: {e}"))
 }
 
+/// The browses of one service type. The daemon keeps one listener per service type, so every
+/// [`Browsing`] shares one daemon browse and gets its own copy of each device found.
+#[derive(Default)]
+struct Fanout {
+    /// One sender per open browse. A dropped browse's sender is closed.
+    subscribers: Vec<UnboundedSender<Candidate>>,
+    /// The last candidate per device. A browse that starts later is told these, as the daemon
+    /// would replay its cache to a new browse.
+    known: HashMap<String, Candidate>,
+    /// Reads the daemon's events while there is a subscriber.
+    reader: Option<JoinHandle<()>>,
+}
+
+impl Fanout {
+    /// A new browse: told every device already known, then everything found from now on.
+    fn subscribe(&mut self) -> UnboundedReceiver<Candidate> {
+        let (tx, found) = unbounded_channel();
+        for candidate in self.known.values() {
+            let _ = tx.send(candidate.clone());
+        }
+        self.subscribers.push(tx);
+        found
+    }
+
+    fn publish(&mut self, candidate: Candidate) {
+        self.known
+            .insert(candidate.device.clone(), candidate.clone());
+        self.subscribers
+            .retain(|tx| tx.send(candidate.clone()).is_ok());
+    }
+
+    /// The daemon stopped sending: every open browse ends.
+    fn close(&mut self) {
+        self.subscribers.clear();
+        self.known.clear();
+        self.reader = None;
+    }
+}
+
 /// mDNS through `mdns-sd`. Its daemon thread runs from [`Mdns::new`] until the value is dropped.
 pub struct Mdns {
     daemon: ServiceDaemon,
     service_type: &'static str,
     registered: Mutex<Option<String>>,
-    browses: Arc<AtomicUsize>,
+    fanout: Arc<Mutex<Fanout>>,
 }
 
 impl Mdns {
@@ -127,7 +167,7 @@ impl Mdns {
             daemon,
             service_type: service_type(environment),
             registered: Mutex::new(None),
-            browses: Arc::new(AtomicUsize::new(0)),
+            fanout: Arc::default(),
         })
     }
 }
@@ -174,47 +214,27 @@ impl Discovery for Mdns {
     }
 
     fn browse(&self) -> Result<Browsing, SyncError> {
-        let events = self.daemon.browse(self.service_type).map_err(mdns_error)?;
-        let (tx, found) = unbounded_channel();
-        let task = tokio::spawn(async move {
-            while let Ok(event) = events.recv_async().await {
-                let ServiceEvent::ServiceResolved(info) = event else {
-                    continue;
-                };
-                let Some((device, _group, pairing_open)) =
-                    parse_txt(|k| info.get_property_val_str(k))
-                else {
-                    continue;
-                };
-                let port = info.get_port();
-                let addrs: Vec<SocketAddr> = info
-                    .get_addresses()
-                    .iter()
-                    .map(mdns_sd::ScopedIp::to_ip_addr)
-                    .filter(|ip| addresses::shareable(*ip))
-                    .map(|ip| SocketAddr::new(ip, port))
-                    .collect();
-                if tx
-                    .send(Candidate {
-                        device,
-                        addrs,
-                        port,
-                        pairing_open,
-                    })
-                    .is_err()
-                {
-                    break;
+        let mut fanout = self.fanout.lock().unwrap_or_else(PoisonError::into_inner);
+        let found = fanout.subscribe();
+        if fanout.reader.is_none() {
+            // A second daemon browse for the same type would replace the first one's listener,
+            // and the first browse would stop getting events.
+            match self.daemon.browse(self.service_type) {
+                Ok(events) => {
+                    fanout.reader = Some(tokio::spawn(relay(events, Arc::clone(&self.fanout))));
+                }
+                Err(e) => {
+                    fanout.subscribers.pop();
+                    return Err(mdns_error(e));
                 }
             }
-        });
-        self.browses.fetch_add(1, Ordering::SeqCst);
+        }
         Ok(Browsing {
             found,
             _stop: Box::new(StopBrowse {
                 daemon: self.daemon.clone(),
                 service_type: self.service_type,
-                task,
-                browses: Arc::clone(&self.browses),
+                fanout: Arc::clone(&self.fanout),
             }),
         })
     }
@@ -225,22 +245,70 @@ impl Discovery for Mdns {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .is_some(),
-        ) + self.browses.load(Ordering::SeqCst)
+        ) + self
+            .fanout
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .subscribers
+            .len()
     }
+}
+
+/// Turns the daemon's events into candidates for every open browse. When the daemon stops
+/// sending, every open browse ends.
+async fn relay(events: mdns_sd::Receiver<ServiceEvent>, fanout: Arc<Mutex<Fanout>>) {
+    while let Ok(event) = events.recv_async().await {
+        let ServiceEvent::ServiceResolved(info) = event else {
+            continue;
+        };
+        let Some((device, _group, pairing_open)) = parse_txt(|k| info.get_property_val_str(k))
+        else {
+            continue;
+        };
+        let port = info.get_port();
+        let addrs: Vec<SocketAddr> = info
+            .get_addresses()
+            .iter()
+            .map(mdns_sd::ScopedIp::to_ip_addr)
+            .filter(|ip| addresses::shareable(*ip))
+            .map(|ip| SocketAddr::new(ip, port))
+            .collect();
+        let candidate = Candidate {
+            device,
+            addrs,
+            port,
+            pairing_open,
+        };
+        fanout
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .publish(candidate);
+    }
+    fanout
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .close();
 }
 
 struct StopBrowse {
     daemon: ServiceDaemon,
     service_type: &'static str,
-    task: JoinHandle<()>,
-    browses: Arc<AtomicUsize>,
+    fanout: Arc<Mutex<Fanout>>,
 }
 
 impl Drop for StopBrowse {
+    /// Runs after the dropped [`Browsing`]'s receiver is gone, so its sender is closed. The daemon
+    /// browse stops only with the last browse of its type.
     fn drop(&mut self) {
-        self.task.abort();
-        let _ = self.daemon.stop_browse(self.service_type);
-        self.browses.fetch_sub(1, Ordering::SeqCst);
+        let mut fanout = self.fanout.lock().unwrap_or_else(PoisonError::into_inner);
+        fanout.subscribers.retain(|tx| !tx.is_closed());
+        if fanout.subscribers.is_empty() {
+            if let Some(reader) = fanout.reader.take() {
+                reader.abort();
+            }
+            fanout.known.clear();
+            let _ = self.daemon.stop_browse(self.service_type);
+        }
     }
 }
 
@@ -404,6 +472,25 @@ mod tests {
     }
 
     #[test]
+    fn a_browse_that_starts_later_is_told_what_is_already_known() {
+        let candidate = |device: &str| Candidate {
+            device: device.into(),
+            addrs: Vec::new(),
+            port: 47311,
+            pairing_open: true,
+        };
+        let mut fanout = Fanout::default();
+        let mut first = fanout.subscribe();
+        fanout.publish(candidate("a"));
+        assert_eq!(first.try_recv().unwrap().device, "a");
+        let mut later = fanout.subscribe();
+        assert_eq!(later.try_recv().unwrap().device, "a");
+        fanout.publish(candidate("b"));
+        assert_eq!(first.try_recv().unwrap().device, "b");
+        assert_eq!(later.try_recv().unwrap().device, "b");
+    }
+
+    #[test]
     fn the_group_hash_is_stable_short_and_distinct() {
         assert_eq!(group_hash("a"), group_hash("a"));
         assert_ne!(group_hash("a"), group_hash("b"));
@@ -416,6 +503,21 @@ mod network_tests {
     use std::time::Duration;
 
     use super::*;
+
+    /// A pairing search started and dropped while the live browse runs must not end the live
+    /// browse. Needs no multicast: the browse is only checked for not having ended.
+    #[tokio::test]
+    async fn a_pairing_browse_leaves_a_live_browse_running() {
+        let mdns = Mdns::new(Environment::Sandbox).unwrap();
+        let mut live = mdns.browse().unwrap();
+        let pairing = mdns.browse().unwrap();
+        drop(pairing);
+        let outcome = tokio::time::timeout(Duration::from_secs(2), live.found.recv()).await;
+        assert!(
+            !matches!(outcome, Ok(None)),
+            "the live browse ended when a pairing browse came and went"
+        );
+    }
 
     /// Needs working multicast on the machine, so it is not part of the normal run:
     /// `cargo test -p mnemora-sync mdns -- --ignored`.
