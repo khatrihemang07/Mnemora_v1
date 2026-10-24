@@ -57,6 +57,7 @@ pub(crate) fn backfill(conn: &Connection, registry: &SettingsRegistry) -> AppRes
             },
             ms: at,
             after: Vec::new(),
+            needs_create: false,
         });
     }
     changelog::backfill(conn, &ENTITIES[0], unlogged)?;

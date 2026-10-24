@@ -63,6 +63,7 @@ pub(crate) fn backfill(conn: &Connection) -> AppResult<()> {
             },
             ms: entry.updated_at,
             after: Vec::new(),
+            needs_create: true,
         });
     }
     changelog::backfill(conn, &ENTRY, unlogged)?;

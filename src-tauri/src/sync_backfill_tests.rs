@@ -473,3 +473,151 @@ pub(crate) fn seed_unlogged(c: &Cluster, devices: usize) {
         });
     }
 }
+
+// ---- DV1 again: rows whose log holds records but no creation (qa/e2e-device, 2026-10-24) -------
+//
+// The phone's QA Tasks had been written by SQL with only `tick` records in the change log (no
+// `fields`, so a record means "the whole snapshot"). Some also had a later state the ticks did
+// not show (q01: ticked done, row now open). The first merge's backfill wrote nothing for the
+// first kind and only an `update` of the differing fields for the second, and a receiver can
+// only build a Task from a `create` (Text is never taken from any other record), so neither
+// ever appeared on the other device.
+
+/// A Task row as the QA phone had it, with `ticks` change-log records of it as they stood then,
+/// written by hand as the QA seed was.
+fn ticked_task(db: &Db, id: &str, title: &str, ticks: &[(&str, Option<i64>)], now_state: &str) {
+    let at = T0 + 100;
+    let now_closed = (now_state == "done").then_some(at);
+    db.execute_batch(&format!(
+        "INSERT INTO todo_tasks(id, title, notes, due_date, priority, state, closed_at, sort_key,
+                                created_at, updated_at)
+         VALUES ('{id}', {title}, '', '2026-10-22', 4, '{now_state}', {closed}, 'b-{id}', {at}, {at})",
+        title = q(Some(title)),
+        closed = n(now_closed),
+    ))
+    .unwrap();
+    for (state, closed) in ticks {
+        let snapshot = json!({
+            "closed_at": closed, "created_at": at, "deleted_at": null, "due_date": "2026-10-22",
+            "due_time": null, "id": id, "list_id": null, "notes": "", "priority": 4,
+            "repeat_days": null, "repeat_every": null, "repeat_freq": null, "repeat_mode": null,
+            "repeat_of": null, "sort_key": format!("b-{id}"), "state": state, "title": title,
+            "understood": null, "updated_at": at,
+        });
+        db.execute(
+            "UPDATE device_clock SET seq = seq + 1, ms = ?1, counter = 0",
+            [at + 50],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
+                                    origin_device, hlc_ms, hlc_counter, seq, origin_seq)
+             SELECT lower(hex(randomblob(8))), 'todo', 'todo_task', ?1, 'tick', NULL, ?2, ?3,
+                    device_id, ?3, 0, seq, seq FROM device_clock",
+            (id, snapshot.to_string(), at + 50),
+        )
+        .unwrap();
+    }
+}
+
+fn qa_phone(db: &Db) {
+    // t01: ticked done, still done. q01: ticked done, then re-opened around the log.
+    ticked_task(
+        db,
+        "t01",
+        "Renew passport photos",
+        &[("done", Some(T0 + 100))],
+        "done",
+    );
+    ticked_task(
+        db,
+        "q01",
+        "Prepare the slides",
+        &[("done", Some(T0 + 100))],
+        "open",
+    );
+    // No record at all, as before.
+    task(db, "q-plain", "Plain", None, None, None, T0 + 100);
+}
+
+fn titles(app: &TestApp) -> Vec<String> {
+    app.with_db(|db| {
+        let mut stmt = db
+            .prepare("SELECT id || ':' || title || ':' || state FROM todo_tasks ORDER BY id")
+            .unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    })
+}
+
+#[test]
+fn rows_with_only_tick_records_reach_the_other_device() {
+    let c = Cluster::from_devices(vec![device(|_| {}), device(qa_phone)]);
+    c.sync(0, 1);
+    let written = own_records(&c[1]);
+    c.sync(0, 1);
+    c.sync(1, 0);
+    assert_eq!(own_records(&c[1]), written, "a repeat writes nothing more");
+    assert_eq!(
+        titles(&c[0]),
+        [
+            "q-plain:Plain:open",
+            "q01:Prepare the slides:open",
+            "t01:Renew passport photos:done"
+        ]
+    );
+    assert_eq!(every_row(&c[0]), every_row(&c[1]));
+}
+
+#[test]
+fn a_receiver_that_already_holds_the_tick_records_without_the_row_still_gets_it() {
+    // The Mac met the phone's ticks in an earlier pairing: stored for relay, never applied (no
+    // creation), and its version vector says it has them. The row must still arrive.
+    let c = Cluster::from_devices(vec![device(|_| {}), device(qa_phone)]);
+    let phone_id = c[1].with_db(|db| {
+        db.query_row("SELECT device_id FROM device_clock", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .unwrap()
+    });
+    let ticks: Vec<(String, String, i64, i64)> = c[1].with_db(|db| {
+        let mut stmt = db
+            .prepare(
+                "SELECT entity_id, snapshot, hlc_ms, origin_seq FROM change_log
+                 WHERE module = 'todo' AND op = 'tick' ORDER BY seq",
+            )
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    });
+    assert_eq!(ticks.len(), 2);
+    c[0].with_db(|db| {
+        for (id, snapshot, ms, origin_seq) in &ticks {
+            db.execute("UPDATE device_clock SET seq = seq + 1", [])
+                .unwrap();
+            db.execute(
+                "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot,
+                                        at, origin_device, hlc_ms, hlc_counter, seq, origin_seq,
+                                        fields)
+                 SELECT lower(hex(randomblob(8))), 'todo', 'todo_task', ?1, 'tick', NULL, ?2, ?3,
+                        ?4, ?3, 0, seq, ?5, ?2 FROM device_clock",
+                (id, snapshot, ms, &phone_id, origin_seq),
+            )
+            .unwrap();
+        }
+        db.execute(
+            "INSERT INTO sync_seen(entity, device, seq) VALUES ('todo_task', ?1, ?2)
+             ON CONFLICT(entity, device) DO UPDATE SET seq = excluded.seq",
+            (&phone_id, ticks.iter().map(|t| t.3).max().unwrap()),
+        )
+        .unwrap();
+    });
+    c.sync(0, 1);
+    c.sync(0, 1);
+    assert_eq!(titles(&c[0]), titles(&c[1]));
+    assert_eq!(titles(&c[0]).len(), 3);
+}

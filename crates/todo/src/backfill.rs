@@ -22,6 +22,7 @@ pub(crate) fn run(conn: &Connection) -> AppResult<()> {
             ),
             ms: list.updated_at,
             after: Vec::new(),
+            needs_create: true,
         });
     }
     let mut written = changelog::backfill(conn, &list_sync::LIST, lists)?;
@@ -38,6 +39,7 @@ pub(crate) fn run(conn: &Connection) -> AppResult<()> {
             ),
             ms: task.updated_at,
             after: list.into_iter().collect(),
+            needs_create: true,
         });
     }
     written += changelog::backfill(conn, &sync::TASK, tasks)?;
@@ -53,6 +55,7 @@ pub(crate) fn run(conn: &Connection) -> AppResult<()> {
             ),
             ms: comment.updated_at,
             after: vec![(service::ENTITY, comment.task_id.as_str())],
+            needs_create: true,
         });
     }
     written += changelog::backfill(conn, &comment_sync::COMMENT, rows)?;

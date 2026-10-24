@@ -85,13 +85,23 @@ pub struct Change {
 pub fn record(conn: &Connection, change: &Change) -> AppResult<()> {
     // Every write ticks, a session's rewrite included: peers pick records up by sequence.
     let tick = hlc::tick(conn)?;
-    write(conn, change, tick)
+    write(conn, change, tick, false)
 }
 
 /// Writes `change` as a record stamped with `tick`.
-fn write(conn: &Connection, change: &Change, tick: hlc::Tick) -> AppResult<()> {
+///
+/// `whole` stores every key of the snapshot as touched, whatever the log said before (the first
+/// record of an entity does the same).
+fn write(conn: &Connection, change: &Change, tick: hlc::Tick, whole: bool) -> AppResult<()> {
     let device = hlc::device_id(conn)?;
-    let touched = changed_fields(conn, change)?;
+    let touched = if whole {
+        Touched {
+            fields: Some(change.snapshot.as_object().cloned().unwrap_or_default()),
+            prev: Map::new(),
+        }
+    } else {
+        changed_fields(conn, change)?
+    };
     let seen = seen_by_delete(conn, change, &touched, &device)?;
     conn.execute(
         "INSERT INTO change_log(id, module, entity, entity_id, op, session_id, snapshot, at,
@@ -137,6 +147,9 @@ pub struct Unlogged<'a> {
     /// What the row refers to (`(entity, id)`: a Task's List, a Comment's Task): the first record of
     /// each sorts before this one.
     pub after: Vec<(&'a str, &'a str)>,
+    /// Whether the entity is made by a `create` (a Task is, a Preference never is): its log must
+    /// then hold one, whatever else it holds.
+    pub needs_create: bool,
 }
 
 /// Brings the log up to date with the rows of one entity that it never (fully) described: state
@@ -170,6 +183,7 @@ pub fn backfill(
             mut change,
             ms,
             after,
+            needs_create,
         } = row;
         let latest: Option<String> = conn
             .query_row(
@@ -180,7 +194,19 @@ pub fn backfill(
             )
             .optional()?;
         let before: Option<Value> = latest.and_then(|s| serde_json::from_str(&s).ok());
+        // A receiver builds an entity from a `create` alone (its text comes from no other op), so
+        // an entity whose records include none, only ticks or updates, gets one carrying every
+        // field, whatever else the log holds. Once written the entity has its create: a repeat
+        // writes nothing.
+        let whole = needs_create
+            && !conn.query_row::<bool, _, _>(
+                "SELECT EXISTS(SELECT 1 FROM change_log WHERE entity = ?1 AND entity_id = ?2
+                                                       AND op = 'create')",
+                [&change.entity, &change.entity_id],
+                |r| r.get(0),
+            )?;
         match &before {
+            _ if whole => change.op = ChangeOp::Create,
             None => change.op = ChangeOp::Create,
             Some(before) => {
                 let Some(now) = change.snapshot.as_object() else {
@@ -217,7 +243,7 @@ pub fn backfill(
             }
         }
         let tick = hlc::tick_at(conn, clock, ms)?;
-        write(conn, &change, tick)?;
+        write(conn, &change, tick, whole)?;
         written += 1;
     }
     Ok(written)
