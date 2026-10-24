@@ -821,3 +821,74 @@ fn a_replay_is_redone_when_a_session_record_it_covered_was_rewritten_elsewhere()
     assert_eq!(a, b, "both devices hold the same text");
     assert_eq!(a, "ONE\nTWO\nTHREE\n", "both edits are in it");
 }
+
+// ---------------------------------------------------------------- N1: one clash, one Conflict
+
+fn hold(app: &TestApp, id: &Value) {
+    app.invoke::<bool>(
+        "editing_hold",
+        json!({ "entity": ENTRY, "entityId": id, "scope": "*" }),
+    )
+    .unwrap();
+}
+
+fn release(app: &TestApp, id: &Value) {
+    app.invoke::<()>(
+        "editing_release",
+        json!({ "entity": ENTRY, "entityId": id, "scope": "*" }),
+    )
+    .unwrap();
+}
+
+/// The device pass (qa/e2e-device FINAL.md, case 5): the phone types "-PH" in an open editor, the
+/// Mac (editor closed) receives it live, the Mac opens its editor and types "-MAC" after it, then
+/// the phone types "-X" in the same editor and leaves. Both appended at the same point: one
+/// clash, one Conflict, the same on both devices. The device showed two, the second against the
+/// stale text from before either typed.
+#[test]
+fn one_clash_over_a_session_that_saved_twice_raises_one_conflict() {
+    for mac_holds in [false, true] {
+        let c = Cluster::new(2);
+        let (mac, phone) = (&c[0], &c[1]);
+        let id = create_entry(mac, "ENTRY2 line-TYPED2")["id"].clone();
+        c.sync(0, 1);
+        hold(phone, &id);
+        phone.clock().advance(1_000);
+        edit(phone, &id, "ENTRY2 line-TYPED2-PH", "phone");
+        c.sync(0, 1);
+        assert_eq!(body(mac, &id), "ENTRY2 line-TYPED2-PH");
+        if mac_holds {
+            hold(mac, &id);
+        }
+        mac.clock().advance(1_000);
+        edit(mac, &id, "ENTRY2 line-TYPED2-PH-MAC", "mac");
+        c.sync(0, 1);
+        assert_eq!(
+            body(phone, &id),
+            "ENTRY2 line-TYPED2-PH",
+            "held on the phone"
+        );
+        phone.clock().advance(1_000);
+        edit(phone, &id, "ENTRY2 line-TYPED2-PH-X", "phone");
+        release(phone, &id);
+        c.sync(0, 1);
+        if mac_holds {
+            release(mac, &id);
+        }
+        c.sync(0, 1);
+        c.sync(0, 1);
+        assert_eq!(body(mac, &id), body(phone, &id), "mac_holds={mac_holds}");
+        assert_eq!(ids(mac), ids(phone), "mac_holds={mac_holds}");
+        assert_eq!(
+            ids(mac).len(),
+            1,
+            "one clash, one Conflict (mac_holds={mac_holds})"
+        );
+        // It is about the text both started from, not the one the Mac built on.
+        let open = compare(mac, &ids(mac)[0]);
+        assert_eq!(
+            open["original"], "ENTRY2 line-TYPED2",
+            "mac_holds={mac_holds}"
+        );
+    }
+}

@@ -279,8 +279,21 @@ fn save_memo(
 
 /// Replays `recs` (in clock order) onto `start`, what an earlier replay came to.
 fn replay(recs: &[Rec], unit: &TextUnit, start: Option<Folded>) -> Option<Folded> {
+    replay_noting(recs, unit, start, None)
+}
+
+/// [`replay`], also noting into `seen` every text the replay held or met on the way.
+fn replay_noting(
+    recs: &[Rec],
+    unit: &TextUnit,
+    start: Option<Folded>,
+    mut seen: Option<&mut BTreeSet<String>>,
+) -> Option<Folded> {
     let mut held = start;
     for rec in recs {
+        if let Some(seen) = seen.as_deref_mut() {
+            seen.insert(rec.text.clone());
+        }
         held = Some(match held.take() {
             None => Folded {
                 values: rec.values.clone(),
@@ -313,6 +326,9 @@ fn replay(recs: &[Rec], unit: &TextUnit, start: Option<Folded>) -> Option<Folded
                             });
                         }
                         let text = merged.text();
+                        if let Some(seen) = seen.as_deref_mut() {
+                            seen.insert(text.clone());
+                        }
                         Folded {
                             values: merged_values(unit, &text, &ours.values, rec),
                             op: rec.op,
@@ -505,6 +521,13 @@ pub(crate) fn settle_unit(
     }
     let mut live = Vec::new();
     for clash in &folded.clashes {
+        // A record made from a text no stored record holds (the session record that carried it
+        // was saved again since, and the save replaced it) is merged like any other, but what
+        // it "clashes" with is a deletion the replay only seems to have made: the author's real
+        // clash is raised by the record that replaced it.
+        if !text_was_held(conn, schema, me, entity, entity_id, &unit, &clash.base)? {
+            continue;
+        }
         live.push(conflicts::conflict_id(
             entity,
             entity_id,
@@ -520,6 +543,25 @@ pub(crate) fn settle_unit(
     }
     conflicts::supersede(conn, entity, entity_id, unit.text, &live)?;
     Ok(out)
+}
+
+/// Whether the unit's text was ever `text` in the replay of every stored record, from the first:
+/// a record's own text, or what the merges of the records came to. Worked out afresh, not from
+/// the memo, so that it depends on the records alone and every device answers the same.
+fn text_was_held(
+    conn: &Connection,
+    schema: &SyncEntity,
+    me: &str,
+    entity: &str,
+    entity_id: &str,
+    unit: &TextUnit,
+    text: &str,
+) -> Result<bool, SyncError> {
+    let mut recs = history(conn, schema, me, entity, entity_id, unit, None)?;
+    recs.sort_by(|a, b| (&a.stamp, a.origin_seq).cmp(&(&b.stamp, b.origin_seq)));
+    let mut seen = BTreeSet::new();
+    replay_noting(&recs, unit, None, Some(&mut seen));
+    Ok(seen.contains(text))
 }
 
 /// Brings the text of this device's own records to the replay too. A device's own save is a
