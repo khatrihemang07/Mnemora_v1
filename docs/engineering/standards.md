@@ -89,7 +89,7 @@ Short, and about **why**, not what. Document every public Rust item (`missing_do
 ### Journal
 
 1. J opens the Journal; it also appears in the sidebar (and can be switched off and on in Settings ▸ Modules). An empty Journal shows "A blank page".
-2. Desktop: the composer ("Write…") is focused on open; on a phone it is not. It is as wide as the text column.
+2. Opening the Journal (J) does not focus the composer on desktop or phone: the bare keys (t, h, i) work straight away. N, the palette's "New journal entry" and the Home card's Write focus it. It is as wide as the text column.
 3. Type one character: exactly one Entry is created (check again after typing more; no second Entry). Pause 600ms and keep typing: the same Entry updates. A blank or whitespace-only composer never creates anything. Type one character, clear it and finish (⌘↵, Esc, ✓, click away or leave the Journal): the Entry is discarded with "Entry discarded" and Undo, which brings it back; while focus stays in the box, empty text just waits.
 4. Finish with ⌘↵ / Ctrl+↵, Esc and the ✓ button (one each): the composer clears and the Entry appears on Today's Page with its time and line breaks kept.
 5. Quit and reopen the app: the Entries are still there, newest Page first, oldest Entry first within a Page.
