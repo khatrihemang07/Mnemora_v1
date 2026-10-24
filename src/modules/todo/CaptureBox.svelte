@@ -108,6 +108,12 @@
     onsaved?: () => void;
     /** Set while Esc belongs to something inside (suggestions, notes), for a Sheet around. */
     guard?: { escape: boolean };
+    /**
+     * Only the title, as the Task sheet edits it: no checkbox, no property chips. The word chips,
+     * #List suggestions and the quick edit save stay. `class` then styles the title field.
+     */
+    titleOnly?: boolean;
+    /** The box's frame, or with `titleOnly`, the title field's type. */
     class?: string;
   }
   let {
@@ -120,10 +126,13 @@
     onadded,
     onsaved,
     guard = $bindable({ escape: false }),
+    titleOnly = false,
     class: cls = '',
   }: Props = $props();
 
   const editing = $derived(mode === 'edit' && task !== null);
+  // The mirror and the field share one type setting, so the highlights line up with the text.
+  const fieldType = $derived(titleOnly ? cls : 'py-[3px] leading-[1.45]');
   const PRIORITY_HUE = ['--danger', '--warning', '--accent'];
   const KIND_ICON = { date: Calendar, time: Clock, repeat: Repeat, list: List, prio: Flag } as const;
   const warmChip =
@@ -444,6 +453,11 @@
   const submitByTap = () => (suggestions.length > 0 ? accept(suggestions[suggestIndex]) : submit());
 
   function cancel() {
+    // The Task sheet's title saves what was typed when the box closes, so nothing is dropped.
+    if (titleOnly && editing) {
+      void save().finally(() => onclose('escape'));
+      return;
+    }
     cancelled = true;
     onclose('escape');
   }
@@ -547,7 +561,9 @@
       if (cancelled || busy || pickerOpen || !root?.isConnected) return;
       const now = document.activeElement;
       if (now && root.contains(now)) return;
-      if (now?.closest('[role="menu"], [role="dialog"], [role="listbox"], [data-editor-popup]')) return;
+      // The Task sheet is itself the dialog and editor popup, so with `titleOnly` it is not a picker.
+      const popups = titleOnly ? '[role="menu"], [role="listbox"]' : '[role="menu"], [role="dialog"], [role="listbox"], [data-editor-popup]';
+      if (now?.closest(popups)) return;
       if (editing) void save();
       else onclose('away');
     }, 0);
@@ -574,17 +590,23 @@
   aria-label={editing ? 'Quick edit' : 'New task'}
   data-capture-box
   {onfocusout}
-  class="rounded-md bg-surface px-2.5 py-2 shadow-pop {cls}"
+  class={titleOnly ? 'min-w-0 flex-1' : 'rounded-md bg-surface px-2.5 py-2 shadow-pop ' + cls}
 >
-  <div class="grid grid-cols-[26px_1fr] items-center gap-x-2 phone:grid-cols-[30px_1fr]">
-    <span aria-hidden="true" class="pointer-events-none grid place-items-center">
-      <TaskCheckbox checked={false} label="New task" disabled />
-    </span>
+  <div
+    class="grid items-center gap-x-2 {titleOnly
+      ? 'grid-cols-[1fr]'
+      : 'grid-cols-[26px_1fr] phone:grid-cols-[30px_1fr]'}"
+  >
+    {#if !titleOnly}
+      <span aria-hidden="true" class="pointer-events-none grid place-items-center">
+        <TaskCheckbox checked={false} label="New task" disabled />
+      </span>
+    {/if}
     <div class="relative min-w-0">
       <div
         bind:this={mirror}
         aria-hidden="true"
-        class="pointer-events-none absolute inset-0 overflow-hidden py-[3px] leading-[1.45] whitespace-pre text-transparent"
+        class="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre text-transparent {fieldType}"
       >
         {#each segments as seg, i (i)}{#if seg.mark}<mark
               class="rounded-[4px] bg-[color-mix(in_oklch,var(--hue-todo)_20%,transparent)] text-transparent shadow-[0_0_0_2px_color-mix(in_oklch,var(--hue-todo)_20%,transparent)]"
@@ -604,7 +626,7 @@
         aria-expanded={suggestions.length > 0}
         aria-controls="capture-lists"
         aria-activedescendant={suggestions.length > 0 ? `capture-list-${suggestIndex}` : undefined}
-        class="relative py-[3px] leading-[1.45]"
+        class="relative {fieldType}"
         {onkeydown}
         {onpaste}
         oninput={syncCaret}
@@ -616,7 +638,7 @@
     </div>
   </div>
 
-  <div class="ml-[34px] phone:ml-[38px]">
+  <div class={titleOnly ? '' : 'ml-[34px] phone:ml-[38px]'}>
     {#if suggestions.length > 0}
       <div
         id="capture-lists"
@@ -712,6 +734,7 @@
       </div>
     {/if}
 
+    {#if !titleOnly}
     <div class="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-dashed border-line pt-1.5">
       <Chip
         bind:ref={listChip}
@@ -784,6 +807,7 @@
         />
       </div>
     </div>
+    {/if}
   </div>
 </div>
 

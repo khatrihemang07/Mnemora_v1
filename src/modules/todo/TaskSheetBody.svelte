@@ -1,6 +1,6 @@
 <!--
   TaskSheetBody: one Task, open for reading and editing. From the top: the diamond and the title
-  (Enter moves into the notes; clearing it and leaving brings the old one back), the chips List ·
+  (a CaptureBox quick edit: words are read as you type; Enter or leaving saves), the chips List ·
   When · Priority, the notes in the live Markdown editor (in the Journal's Writing font), Comments
   with a composer, a History fold (latest line and "Show all"), and a footer with "Created … · Done …"
   and the ⋯ menu. Everything autosaves: title and notes 600 ms after the last keystroke, as one
@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { onDestroy, onMount, tick, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import CircleX from '~icons/lucide/circle-x';
   import Ellipsis from '~icons/lucide/ellipsis';
   import Flag from '~icons/lucide/flag';
@@ -21,7 +21,6 @@
   import { queryClient } from '../../lib/ipc/query-client';
   import { IpcError } from '../../lib/ipc/unwrap';
   import { setTimer } from '../../lib/timing';
-  import AutoTextarea from '../../lib/ui/AutoTextarea.svelte';
   import Chip from '../../lib/ui/Chip.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
@@ -33,6 +32,7 @@
   import { notifyError } from '../../lib/ui/toast';
   import { todoClock } from './clock.svelte';
   import { plainTitle } from './notes';
+  import CaptureBox from './CaptureBox.svelte';
   import CommentsSection from './CommentsSection.svelte';
   import { isOverdue, stampLabel, taskRepeat, whenChipLabel } from './dates';
   import HistorySection from './HistorySection.svelte';
@@ -104,16 +104,21 @@
   let saveError = $state<unknown>(null);
   /** The newest `updated_at` this sheet has seen: later ones came from elsewhere (a completion). */
   let knownAt = 0;
-  let titleField = $state<HTMLTextAreaElement | null>(null);
-  /** The title is shown with its inline Markdown until it is clicked; then it is the raw text. */
+  /** The title is shown with its inline Markdown until it is clicked; then CaptureBox edits it. */
   let titleEditing = $state(false);
   const titleLook = 'min-w-0 flex-1 pt-0.5 text-[1.12rem] leading-[1.35] font-semibold';
 
   async function editTitle() {
+    // Notes typed just before are saved first, so the title box starts with nothing pending.
+    await editing?.flush();
+    void hold.take('title');
     titleEditing = true;
-    await tick();
-    titleField?.focus();
-    titleField?.setSelectionRange(title.length, title.length);
+  }
+
+  /** The title box is done (saved or closed): the sheet shows the stored title from now on. */
+  function endTitleEdit() {
+    titleEditing = false;
+    void letGo('title');
   }
   let editor = $state<ReturnType<typeof MarkdownEditor> | null>(null);
 
@@ -277,6 +282,8 @@
   /** The sheet owns ⌘↑ ⌘↓ ⌘↵ even from inside its editor, so it listens before the editor does. */
   function onkeydown(e: KeyboardEvent) {
     if (!inSheetScope(e.target)) return;
+    // The title box keeps its own ⌘↵ (it saves first); closing or switching now would drop the title.
+    if (e.target instanceof Element && e.target.closest('[data-capture-box]')) return;
     const { action } = reduceKey(
       IDLE_KEYS,
       e,
@@ -322,25 +329,14 @@
         class="mt-0.5"
       />
       {#if titleEditing}
-        <AutoTextarea
-          bind:ref={titleField}
-          bind:value={title}
-          label="Title"
-          maxlength={500}
-          placeholder="Title"
+        <!-- The title saves through CaptureBox's quick edit, so its word chips and reading apply here too. -->
+        <CaptureBox
+          mode="edit"
+          titleOnly
+          task={stored}
           class="{titleLook} {isOpen ? '' : 'text-muted'}"
-          oninput={() => {
-            hold.take('title');
-            title = editing?.setTitle(title) ?? title;
-          }}
-          onblur={() => {
-            title = editing?.leaveTitle() ?? title;
-            titleEditing = false;
-            void letGo('title');
-          }}
-          onkeydown={(e) => {
-            if (e.key === 'Enter' && !e.isComposing && !e.metaKey && !e.ctrlKey) editor?.focus();
-          }}
+          onsaved={endTitleEdit}
+          onclose={endTitleEdit}
         />
       {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events -- Enter and Space are handled below -->
