@@ -143,3 +143,26 @@ describe('on mobile data with "Allow over mobile data" off', () => {
     expect(pairing.pausedOnMobile).toBe(false);
   });
 });
+
+describe('Pair a device on a device that was forgotten (N2)', () => {
+  beforeEach(() => {
+    show.mockClear();
+    pairing.open = false;
+    pairing.commandError = null;
+    onMobile.paused = false;
+  });
+
+  it('opens the sheet and asks for a code on every tap, also when the last one was never closed', async () => {
+    for (let tap = 0; tap < 5; tap++) {
+      await pairing.start('show');
+      expect(pairing.open).toBe(true);
+      expect(pairing.commandError).toBeNull();
+    }
+    expect(show).toHaveBeenCalledTimes(5);
+    // A sheet that is closed again opens again.
+    await pairing.close().catch(() => undefined);
+    expect(pairing.open).toBe(false);
+    await pairing.start('show');
+    expect(pairing.open).toBe(true);
+  });
+});

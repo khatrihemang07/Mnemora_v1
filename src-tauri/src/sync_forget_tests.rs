@@ -507,3 +507,29 @@ async fn a_rename_is_unique_and_reaches_every_device() {
     })
     .await;
 }
+
+/// N2 (device pass): after the Mac forgot the phone, the phone's "Pair a device" did nothing on
+/// five taps. Whatever the UI does, the commands under it must open a code on a device that
+/// still lists the one that forgot it, every time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_forgotten_device_can_show_a_code_again_and_again() {
+    let (a, b, c) = trio().await;
+    meet_all(&a, &b, &c);
+    until("everyone connected", || {
+        all_up_to_date(&a) && all_up_to_date(&b) && all_up_to_date(&c)
+    })
+    .await;
+    a.call::<()>("sync_device_forget", json!({ "id": id(&c) }));
+    until("Carol to lose both", || {
+        cut_off(&c, "Alice") && cut_off(&c, "Bob")
+    })
+    .await;
+    for _ in 0..5 {
+        c.call::<()>("sync_pair_show", json!({}));
+        let view: Value = c.call("sync_pair_state", json!({}));
+        assert_eq!(view["state"], "showing", "{view}");
+        c.call::<()>("sync_pair_cancel", json!({}));
+        let devices = c.devices();
+        assert_eq!(devices["this_device"]["paused_on_mobile_data"], false);
+    }
+}
