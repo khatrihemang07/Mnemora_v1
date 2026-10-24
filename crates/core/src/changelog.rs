@@ -134,8 +134,8 @@ pub struct Unlogged<'a> {
     /// When the row says it last changed (UTC milliseconds): where its record is stamped, at
     /// the earliest.
     pub ms: i64,
-    /// What the row refers to (`(entity, id)`: a Task's List, a Comment's Task): its records
-    /// sort before this one.
+    /// What the row refers to (`(entity, id)`: a Task's List, a Comment's Task): the first record of
+    /// each sorts before this one.
     pub after: Vec<(&'a str, &'a str)>,
 }
 
@@ -150,18 +150,20 @@ pub struct Unlogged<'a> {
 /// gets a `create`; one that differs gets an `update` of just the differing fields; one that
 /// matches gets nothing, so running this again, or on any device, writes nothing more.
 ///
-/// Rows are written in the order given, each stamped on the clock at its `ms` (counter 0), raised
-/// to just after the newest record of the entity (the engine counts on clock order being
-/// sequence order within a device, so a backfilled record may never sort before one written
-/// earlier), after the record before it in `rows`, and after the newest record of everything it
-/// is `after`. Real changes made later sort after all of them, and the device clock is shown the
-/// newest stamp.
+/// Each record is stamped on the clock at the row's own `ms` (counter 0, never later than now),
+/// so unlogged history never outranks a real edit made after it, on any device. Only what keeps
+/// this device's own story straight raises it: the entity's newest record of the same id (the
+/// row is what this device holds now, so its record sorts after what the log said of it) and the
+/// first record of everything it is `after` (a Task's List must sort before the Task). The
+/// device clock is shown the stamp, so changes made later sort after. A stamp may sort before
+/// records written earlier; the receiving side applies a batch by clock but skips by sequence
+/// per origin, so that cannot drop a record.
 pub fn backfill(
     conn: &Connection,
     schema: &SyncEntity,
     rows: Vec<Unlogged<'_>>,
 ) -> AppResult<usize> {
-    let mut last = newest_clock(conn, schema.name, None)?.unwrap_or_default();
+    let now = crate::db::physical_now(conn);
     let mut written = 0;
     for row in rows {
         let Unlogged {
@@ -196,6 +198,7 @@ pub fn backfill(
                 change.op = ChangeOp::Update;
             }
         }
+        let ms = ms.min(now);
         let mut clock = hlc::Timestamp { ms, counter: 0 };
         let mut raise = |floor: hlc::Timestamp| {
             if clock <= floor {
@@ -205,13 +208,14 @@ pub fn backfill(
                 };
             }
         };
-        raise(last);
+        if let Some(newest) = clock_of(conn, &change.entity, &change.entity_id, true)? {
+            raise(newest);
+        }
         for (entity, id) in after {
-            if let Some(newest) = newest_clock(conn, entity, Some(id))? {
-                raise(newest);
+            if let Some(first) = clock_of(conn, entity, id, false)? {
+                raise(first);
             }
         }
-        last = clock;
         let tick = hlc::tick_at(conn, clock, ms)?;
         write(conn, &change, tick)?;
         written += 1;
@@ -219,18 +223,21 @@ pub fn backfill(
     Ok(written)
 }
 
-/// The newest clock of any record of `entity` (or of one `id` of it).
-fn newest_clock(
+/// The newest (or first) clock of any record of one entity row.
+fn clock_of(
     conn: &Connection,
     entity: &str,
-    id: Option<&str>,
+    id: &str,
+    newest: bool,
 ) -> AppResult<Option<hlc::Timestamp>> {
+    let order = if newest { "DESC" } else { "ASC" };
     Ok(conn
         .query_row(
-            "SELECT hlc_ms, hlc_counter FROM change_log
-             WHERE entity = ?1 AND (?2 IS NULL OR entity_id = ?2)
-             ORDER BY hlc_ms DESC, hlc_counter DESC LIMIT 1",
-            rusqlite::params![entity, id],
+            &format!(
+                "SELECT hlc_ms, hlc_counter FROM change_log WHERE entity = ?1 AND entity_id = ?2
+                 ORDER BY hlc_ms {order}, hlc_counter {order} LIMIT 1"
+            ),
+            [entity, id],
             |r| {
                 Ok(hlc::Timestamp {
                     ms: r.get(0)?,

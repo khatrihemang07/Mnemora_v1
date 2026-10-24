@@ -351,6 +351,73 @@ fn an_older_unlogged_preference_loses_to_a_newer_logged_one() {
     }
 }
 
+#[test]
+fn an_old_unlogged_preference_loses_to_a_newer_edit_on_another_device_whatever_this_one_logged_since()
+ {
+    // The Mac holds an old unlogged value and has logged other Preferences much later; the phone
+    // edited the same key in between. The phone's edit is the newest of that key and must win:
+    // the old row may not be stamped up to the Mac's newest record.
+    let c = Cluster::from_devices(vec![
+        device(|db| pref(db, "core", "time_format", "\"12h\"", T0)),
+        device(|_| {}),
+    ]);
+    c[1].set_pref("core.time_format", json!("24h"));
+    c[0].clock().advance(60_000);
+    c[0].set_pref("core.week_start", json!("mon"));
+    c.sync(0, 1);
+    for d in 0..2 {
+        let all: Value = c[d].invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(all["values"]["core.time_format"], "24h", "device {d}");
+        assert_eq!(all["values"]["core.week_start"], "mon", "device {d}");
+    }
+}
+
+#[test]
+fn of_two_unlogged_values_the_one_written_last_wins_whatever_else_each_device_logged() {
+    let c = Cluster::from_devices(vec![
+        device(|db| pref(db, "core", "time_format", "\"12h\"", T0 + 100)),
+        device(|db| pref(db, "core", "time_format", "\"24h\"", T0 + 200)),
+    ]);
+    // The older row's device has logged much more recently than the other.
+    c[0].clock().advance(60_000);
+    c[0].set_pref("core.week_start", json!("mon"));
+    c.sync(0, 1);
+    for d in 0..2 {
+        let all: Value = c[d].invoke("settings_get_all", json!({})).unwrap();
+        assert_eq!(all["values"]["core.time_format"], "24h", "device {d}");
+    }
+}
+
+#[test]
+fn a_large_database_joins_the_log_once_and_quickly_and_a_repeat_writes_nothing() {
+    let app = device(|db| {
+        db.execute_batch("BEGIN").unwrap();
+        for i in 0..3000_i64 {
+            task(
+                db,
+                &format!("bulk-{i:05}"),
+                "A task",
+                None,
+                None,
+                None,
+                T0 + i,
+            );
+        }
+        db.execute_batch("COMMIT").unwrap();
+    });
+    let host = AppHost::new(app.handle(), false).unwrap();
+    let start = std::time::Instant::now();
+    host.holdings().unwrap();
+    let first = start.elapsed();
+    assert_eq!(own_records(&app), 3000);
+    let start = std::time::Instant::now();
+    host.holdings().unwrap();
+    let again = start.elapsed();
+    assert_eq!(own_records(&app), 3000, "a repeat writes nothing");
+    eprintln!("backfill of 3000 tasks: first {first:?}, repeat {again:?}");
+    assert!(first.as_secs() < 60 && again.as_secs() < 30);
+}
+
 /// Gives every device of `c` rows the log never heard of (for the convergence run): a List, Tasks
 /// in it and in the Inbox (one deleted, one an occurrence), a Comment, an Entry, and a Preference
 /// every device has an opinion on. Call before the devices first sync.

@@ -5,7 +5,7 @@
 //! the change log as sent (origin device, origin sequence, clock) with a fresh local sequence.
 //! Never log field values.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use mnemora_core::changelog::{self, ChangeOp, Remote};
 use mnemora_core::db::physical_now;
@@ -54,8 +54,10 @@ pub fn apply_batch(
     me: &str,
     mut records: Vec<WireRecord>,
 ) -> Result<Applied, SyncError> {
-    // Stream order, whatever order they arrived in: a record must not be skipped as "already
-    // seen" because a later one of its origin was applied first.
+    // Clock order, whatever order they arrived in. A device's own clocks may run backwards along
+    // its sequence (a backfilled row is stamped with its own time), so "already seen" is read
+    // once per origin before the batch, not after each record: a record is not skipped because a
+    // later one of its origin was applied first.
     records.sort_by(|a, b| {
         (a.hlc_ms, a.hlc_counter, &a.origin_device, a.origin_seq).cmp(&(
             b.hlc_ms,
@@ -75,6 +77,8 @@ pub fn apply_batch(
     let released = held::release_ready(&tx, registry, me, now_ms())?;
     applied.changed.extend(released.changed);
     applied.events.extend(released.events);
+    let mut seen_before: BTreeMap<(String, String), i64> = BTreeMap::new();
+    let mut taken: BTreeSet<(String, String, i64)> = BTreeSet::new();
     for record in &records {
         let (module, schema) = registry
             .find(&record.entity)
@@ -87,9 +91,21 @@ pub fn apply_batch(
         let op = ChangeOp::parse(&record.op)
             .ok_or_else(|| SyncError::Protocol("record has an unknown operation".into()))?;
         // Ours are never sent back, and what the vector covers is already held.
-        if record.origin_device == me
-            || record.origin_seq <= vector::seen(&tx, &record.entity, &record.origin_device)?
-        {
+        if record.origin_device == me {
+            continue;
+        }
+        let key = (record.entity.clone(), record.origin_device.clone());
+        if !seen_before.contains_key(&key) {
+            let held = vector::seen(&tx, &record.entity, &record.origin_device)?;
+            seen_before.insert(key.clone(), held);
+        }
+        let held_before = seen_before.get(&key).copied().unwrap_or(0);
+        let again = !taken.insert((
+            record.entity.clone(),
+            record.origin_device.clone(),
+            record.origin_seq,
+        ));
+        if record.origin_seq <= held_before || again {
             continue;
         }
         if record.hlc_ms > latest {
