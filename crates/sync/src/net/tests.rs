@@ -448,6 +448,25 @@ async fn a_pinned_peer_gets_a_normal_session_while_pairing_is_open() {
     assert_eq!(b.titles(), ["buy milk"]);
 }
 
+/// "Check" (a probe) only listens: a pinned device must still be reachable by it while the other
+/// one has its pair sheet open (DV6 review).
+#[tokio::test]
+async fn a_pinned_probe_is_answered_while_pairing_is_open() {
+    let (a, b) = pinned_pair(Environment::Production);
+    a.config.trust.set_pairing_open(true);
+    let mut listener = listen(&a).await;
+    let addr = listener.local_addr();
+    let serve = tokio::spawn(async move {
+        let _ = tokio::time::timeout(Duration::from_secs(5), listener.accept()).await;
+    });
+    let probed = tokio::time::timeout(Duration::from_secs(4), probe(&b.config, addr))
+        .await
+        .expect("answered well before the handshake timeout")
+        .unwrap();
+    assert_eq!(probed.handshake.device, "alpha");
+    serve.abort();
+}
+
 /// A dialler that pinned the listener but is not pinned back, while pairing is open, must be told
 /// no straight away instead of waiting for the pairing code to drop it.
 #[tokio::test]

@@ -34,6 +34,8 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(3);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the whole TLS + Mnemora handshake may take.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a pinned device is given to speak first while pairing is open (see `serve`).
+const PINNED_FIRST_FRAME: Duration = Duration::from_millis(750);
 
 /// The most inbound connections that may be between accept and "ready" at once. More are
 /// closed on arrival, so a flood of idle sockets cannot hold unbounded memory and tasks.
@@ -454,9 +456,21 @@ async fn serve(
     // A device that pinned us but that we no longer know (forgotten here) dials as a normal
     // peer and sends its handshake first. Turn it away now instead of leaving it waiting on the
     // pairing code; a pairing dialler's first frame is anything else and is kept for the hook.
-    let first = tokio::time::timeout(HANDSHAKE_TIMEOUT, secured.channel.peek(HANDSHAKE_MAX_FRAME))
-        .await
-        .map_err(|_| NetError::Timeout)??;
+    // A pinned device that says nothing first is a probe ("Check" only listens), or a peer
+    // waiting for ours: it gets the normal handshake after a short wait. A frame is sent whole
+    // and at once, so the wait does not cut one in half.
+    let wait = if secured.pinned {
+        PINNED_FIRST_FRAME
+    } else {
+        HANDSHAKE_TIMEOUT
+    };
+    let first = match tokio::time::timeout(wait, secured.channel.peek(HANDSHAKE_MAX_FRAME)).await {
+        Ok(first) => first?,
+        Err(_) if secured.pinned => {
+            return Ok(Incoming::Peer(Box::new(establish(config, secured).await?)));
+        }
+        Err(_) => return Err(NetError::Timeout),
+    };
     if serde_json::from_value::<Handshake>(first.clone()).is_ok() {
         if secured.pinned {
             return Ok(Incoming::Peer(Box::new(establish(config, secured).await?)));

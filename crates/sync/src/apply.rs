@@ -827,6 +827,102 @@ mod tests {
         }
     }
 
+    fn permutations(n: usize) -> Vec<Vec<usize>> {
+        if n == 0 {
+            return vec![vec![]];
+        }
+        let mut out = Vec::new();
+        for p in permutations(n - 1) {
+            for at in 0..=p.len() {
+                let mut q = p.clone();
+                q.insert(at, n - 1);
+                out.push(q);
+            }
+        }
+        out
+    }
+
+    /// N1 review: what a device ends with (text and Conflict ids) is a function of the stored
+    /// records alone, whatever order and batches they arrived in, and no side of a clash is lost:
+    /// each marker typed is in the text or in a Conflict.
+    #[test]
+    fn a_clash_on_a_base_nobody_holds_converges_and_loses_no_text() {
+        let create = text_record("d0", 1, 1000, None, None, "line");
+        // A session record rewritten once: its first save "line-PH" no longer exists.
+        let ph_rewritten = text_record("d1", 2, 1002, Some("s"), Some("line"), "line-PH-X");
+        let on_ph = text_record("d2", 1, 1003, None, Some("line-PH"), "line-PH-MAC");
+        let on_ph_early = text_record("d2", 1, 1001, None, Some("line-PH"), "line-PH-MAC");
+        let third = text_record("d3", 1, 1004, None, Some("line"), "line-THIRD");
+        let sets: Vec<(&str, Vec<WireRecord>)> = vec![
+            (
+                "n1",
+                vec![create.clone(), on_ph_early.clone(), ph_rewritten.clone()],
+            ),
+            (
+                "rewritten-first",
+                vec![create.clone(), ph_rewritten.clone(), on_ph.clone()],
+            ),
+            (
+                "three",
+                vec![
+                    create.clone(),
+                    ph_rewritten.clone(),
+                    on_ph.clone(),
+                    third.clone(),
+                ],
+            ),
+        ];
+        for (name, recs) in sets {
+            let mut seen_result: Option<(String, Vec<String>)> = None;
+            for perm in permutations(recs.len()) {
+                for split in 0..=recs.len() {
+                    let (conn, reg) = device("z");
+                    let ordered: Vec<WireRecord> = perm.iter().map(|&i| recs[i].clone()).collect();
+                    for batch in [&ordered[..split], &ordered[split..]] {
+                        if !batch.is_empty() {
+                            apply_batch(&conn, &reg, "z", batch.to_vec()).unwrap();
+                        }
+                    }
+                    // Open Conflicts only: one raised on fewer records is closed (Superseded)
+                    // once the rest arrive, and stays as a closed row.
+                    let mut got = name_and_conflicts(&conn);
+                    got.1 = conn
+                        .prepare("SELECT id FROM sync_conflicts WHERE status = 'open' ORDER BY id")
+                        .unwrap()
+                        .query_map([], |r| r.get(0))
+                        .unwrap()
+                        .map(Result::unwrap)
+                        .collect();
+                    match &seen_result {
+                        None => seen_result = Some(got.clone()),
+                        Some(first) => assert_eq!(first, &got, "{name} {perm:?} split {split}"),
+                    }
+                    let mut stmt = conn
+                        .prepare("SELECT a_text || '|' || b_text FROM sync_conflicts WHERE status = 'open'")
+                        .unwrap();
+                    let kept: String = stmt
+                        .query_map([], |r| r.get::<_, String>(0))
+                        .unwrap()
+                        .map(Result::unwrap)
+                        .collect::<Vec<_>>()
+                        .join("|");
+                    for marker in ["-X", "-MAC", "-THIRD"] {
+                        if recs
+                            .iter()
+                            .any(|r| r.fields["name"].as_str().unwrap().contains(marker))
+                        {
+                            assert!(
+                                got.0.contains(marker) || kept.contains(marker),
+                                "{name} {perm:?} split {split}: {marker} lost; text {:?} conflicts {kept:?}",
+                                got.0
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// A change of the Value field `n` of thing `a`, clocked at `ms`, made from `prev`.
     fn n_record(device: &str, seq: i64, ms: i64, n: i64, prev: Option<i64>) -> WireRecord {
         let mut r = record(device, seq, "a", json!({ "n": n }));

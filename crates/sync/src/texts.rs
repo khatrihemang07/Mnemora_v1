@@ -525,7 +525,7 @@ pub(crate) fn settle_unit(
         // was saved again since, and the save replaced it) is merged like any other, but what
         // it "clashes" with is a deletion the replay only seems to have made: the author's real
         // clash is raised by the record that replaced it.
-        if !text_was_held(conn, schema, me, entity, entity_id, &unit, &clash.base)? {
+        if is_phantom(conn, schema, me, entity, entity_id, &unit, clash)? {
             continue;
         }
         live.push(conflicts::conflict_id(
@@ -545,23 +545,29 @@ pub(crate) fn settle_unit(
     Ok(out)
 }
 
-/// Whether the unit's text was ever `text` in the replay of every stored record, from the first:
-/// a record's own text, or what the merges of the records came to. Worked out afresh, not from
-/// the memo, so that it depends on the records alone and every device answers the same.
-fn text_was_held(
+/// Whether a clash only seems one: the text it was made from was never held by the replay of
+/// every stored record (a record's own text, or what the merges came to), and the text it
+/// replaced is itself the base of some stored record, so whatever it held went on into that
+/// record. A clash whose older side nobody built on is still raised: dropping it would drop
+/// that text. Worked out afresh, not from the memo, from the records alone, so that every
+/// device answers the same.
+fn is_phantom(
     conn: &Connection,
     schema: &SyncEntity,
     me: &str,
     entity: &str,
     entity_id: &str,
     unit: &TextUnit,
-    text: &str,
+    clash: &Clashed,
 ) -> Result<bool, SyncError> {
     let mut recs = history(conn, schema, me, entity, entity_id, unit, None)?;
     recs.sort_by(|a, b| (&a.stamp, a.origin_seq).cmp(&(&b.stamp, b.origin_seq)));
     let mut seen = BTreeSet::new();
     replay_noting(&recs, unit, None, Some(&mut seen));
-    Ok(seen.contains(text))
+    Ok(!seen.contains(&clash.base)
+        && recs
+            .iter()
+            .any(|r| r.prev.as_deref() == Some(clash.ours.as_str())))
 }
 
 /// Brings the text of this device's own records to the replay too. A device's own save is a
