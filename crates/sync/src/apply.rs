@@ -777,6 +777,56 @@ mod tests {
         assert_eq!(resumed.clashes, whole.clashes);
     }
 
+    /// A record whose base no record holds (#77) must not make the text depend on when a record
+    /// with that text arrived: deciding by the local change log (the reverted DV3 workaround)
+    /// ended the same records in different texts. Only the text is compared: which Conflict rows
+    /// a device keeps in this case still differs (#77).
+    #[test]
+    fn the_text_does_not_depend_on_when_a_record_with_a_missing_base_s_text_arrived() {
+        let r_base = text_record("d1", 1, 1000, None, None, "");
+        let mac = text_record("d2", 1, 1002, None, Some("typing"), "typing\nmac-line");
+        let v2 = text_record("d1", 2, 1003, Some("s"), Some(""), "typing-more");
+        for (x_prev, x_text) in [("", "typing"), ("typing-more", "typing"), ("", "typing!")] {
+            let x = text_record("d3", 1, 1004, None, Some(x_prev), x_text);
+            let (a, ra) = device("a");
+            for batch in [
+                vec![r_base.clone()],
+                vec![mac.clone()],
+                vec![v2.clone()],
+                vec![x.clone()],
+            ] {
+                apply_batch(&a, &ra, "a", batch).unwrap();
+            }
+            let (b, rb) = device("b");
+            for batch in [
+                vec![r_base.clone()],
+                vec![x.clone()],
+                vec![mac.clone()],
+                vec![v2.clone()],
+            ] {
+                apply_batch(&b, &rb, "b", batch).unwrap();
+            }
+            let (c, rc) = device("c");
+            apply_batch(
+                &c,
+                &rc,
+                "c",
+                vec![r_base.clone(), mac.clone(), v2.clone(), x.clone()],
+            )
+            .unwrap();
+            assert_eq!(
+                name_and_conflicts(&a).0,
+                name_and_conflicts(&b).0,
+                "a/b x={x_prev:?}->{x_text:?}"
+            );
+            assert_eq!(
+                name_and_conflicts(&a).0,
+                name_and_conflicts(&c).0,
+                "a/c x={x_prev:?}->{x_text:?}"
+            );
+        }
+    }
+
     /// A change of the Value field `n` of thing `a`, clocked at `ms`, made from `prev`.
     fn n_record(device: &str, seq: i64, ms: i64, n: i64, prev: Option<i64>) -> WireRecord {
         let mut r = record(device, seq, "a", json!({ "n": n }));

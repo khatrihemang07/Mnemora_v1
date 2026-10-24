@@ -100,22 +100,6 @@ pub(crate) struct Folded {
     /// The newest record replayed: its clock, and its sequence on the device that made it.
     stamp: Stamp,
     seq: i64,
-    /// The text the newest record said it replaced, when that was not what the replay held then:
-    /// a record built on a version of an editing session that has since been rewritten (#77). The
-    /// next record, from another device, merges against it (see [`replay`]).
-    hint: Option<Hint>,
-}
-
-/// What a record built on a rewritten session version said: the text it replaced (which no
-/// device holds as a record any more) and the text it made.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct Hint {
-    base: String,
-    text: String,
-    /// What was held when that record arrived. The hint is only used by a record built on exactly
-    /// this: otherwise other devices' text sits between, and standing in for it would drop it.
-    #[serde(default)]
-    before: Option<String>,
 }
 
 /// Where a replay got to, as kept in `sync_text_replay`.
@@ -144,8 +128,7 @@ pub(crate) fn fold(
     let after = memo.as_ref().map(|m| &m.folded);
     let mut recs = history(conn, schema, me, entity, entity_id, unit, after)?;
     recs.sort_by(|a, b| (&a.stamp, a.origin_seq).cmp(&(&b.stamp, b.origin_seq)));
-    let known = |text: &str| text_exists(conn, entity, entity_id, unit.text, text);
-    let folded = replay(&recs, unit, memo.map(|m| m.folded), &known);
+    let folded = replay(&recs, unit, memo.map(|m| m.folded));
     if !recs.is_empty()
         && let Some(f) = &folded
     {
@@ -223,7 +206,6 @@ fn load_memo(
         op,
         at,
         clashes,
-        hint,
     }) = serde_json::from_str::<State>(&state)
     else {
         return Ok(None);
@@ -244,7 +226,6 @@ fn load_memo(
                 device,
             },
             seq,
-            hint,
         },
     }))
 }
@@ -256,8 +237,6 @@ struct State {
     op: String,
     at: i64,
     clashes: Vec<Clashed>,
-    #[serde(default)]
-    hint: Option<Hint>,
 }
 
 fn save_memo(
@@ -272,7 +251,6 @@ fn save_memo(
         op: f.op.as_str().to_owned(),
         at: f.at,
         clashes: f.clashes.clone(),
-        hint: f.hint.clone(),
     })
     // Cannot fail for these types; an empty state is simply not used when read back.
     .unwrap_or_default();
@@ -300,15 +278,7 @@ fn save_memo(
 }
 
 /// Replays `recs` (in clock order) onto `start`, what an earlier replay came to.
-///
-/// `known` says whether some stored record has the given text: a record whose base no record has
-/// was built on a version of an editing session that has been rewritten since (#77).
-fn replay(
-    recs: &[Rec],
-    unit: &TextUnit,
-    start: Option<Folded>,
-    known: &dyn Fn(&str) -> bool,
-) -> Option<Folded> {
+fn replay(recs: &[Rec], unit: &TextUnit, start: Option<Folded>) -> Option<Folded> {
     let mut held = start;
     for rec in recs {
         held = Some(match held.take() {
@@ -319,7 +289,6 @@ fn replay(
                 clashes: Vec::new(),
                 stamp: rec.stamp.clone(),
                 seq: rec.origin_seq,
-                hint: None,
             },
             Some(mut ours) => {
                 let ours_text = ours
@@ -328,36 +297,7 @@ fn replay(
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_owned();
-                // A record that does not follow what is held, from another device than the one
-                // that made what is held, is merged against the version that one was built on
-                // when that is known: its own session was rewritten since it sent that version,
-                // so the base it names is the session's start, not what the other device saw. What
-                // is held then stands in for that one's text alone (what came before it was
-                // merged against a base that never was).
-                let hinted = ours
-                    .hint
-                    .clone()
-                    .filter(|_| ours.stamp.device != rec.stamp.device)
-                    .filter(|h| {
-                        rec.prev
-                            .as_ref()
-                            .is_some_and(|p| *p != ours_text && h.before.as_ref() == Some(p))
-                    });
-                let dangling = rec
-                    .prev
-                    .clone()
-                    .filter(|p| *p != ours_text && !known(p))
-                    .map(|base| Hint {
-                        base,
-                        text: rec.text.clone(),
-                        before: Some(ours_text.clone()),
-                    });
-                let (base, ours_text) = match hinted {
-                    Some(h) => (Some(h.base), h.text),
-                    None => (rec.prev.clone(), ours_text),
-                };
-                let next_hint = if rec.prev == base { dangling } else { None };
-                match &base {
+                match &rec.prev {
                     // It replaced what is held (or says the same): it takes over.
                     Some(base) if *base != ours_text && rec.text != ours_text => {
                         let merged = textmerge::merge(base, &ours_text, &rec.text);
@@ -380,7 +320,6 @@ fn replay(
                             clashes: ours.clashes,
                             stamp: rec.stamp.clone(),
                             seq: rec.origin_seq,
-                            hint: next_hint,
                         }
                     }
                     _ => Folded {
@@ -390,7 +329,6 @@ fn replay(
                         clashes: ours.clashes,
                         stamp: rec.stamp.clone(),
                         seq: rec.origin_seq,
-                        hint: None,
                     },
                 }
             }
@@ -421,20 +359,6 @@ fn merged_values(
         out.insert((*name).to_owned(), value);
     }
     out
-}
-
-/// Whether a stored record of the entity has exactly `text` as the unit's text.
-fn text_exists(conn: &Connection, entity: &str, entity_id: &str, unit: &str, text: &str) -> bool {
-    conn.query_row(
-        &format!(
-            "SELECT EXISTS(SELECT 1 FROM change_log WHERE entity = ?1 AND entity_id = ?2
-               AND COALESCE(fields ->> '$.{unit}', CASE WHEN fields IS NULL THEN snapshot ->> '$.{unit}' END) = ?3)"
-        ),
-        params![entity, entity_id, text],
-        |r| r.get::<_, bool>(0),
-    )
-    // A question that cannot be asked is answered "yes": the ordinary merge applies.
-    .unwrap_or(true)
 }
 
 /// The stored records that touched the unit's text, after the clock `after` if given.
@@ -747,54 +671,10 @@ mod tests {
             rec(2, "b", Some("one"), "two", false),
             rec(3, "a", Some("two"), "three", true),
         ];
-        let f = replay(&recs, &body(), None, &|_| true).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(f.values["body"], "three");
         assert_eq!(f.values["edited"], true);
         assert!(f.clashes.is_empty());
-    }
-
-    #[test]
-    fn a_record_built_on_a_rewritten_session_version_merges_against_that_version() {
-        // "b" built its line on what "a" had typed so far; "a" has since rewritten that record,
-        // so nothing holds the text "b" started from (#77).
-        let seen = ["", "typing"];
-        let recs = [
-            rec(1, "c", None, "", false),
-            rec(2, "b", Some("typing"), "typing\nmac-line", false),
-            rec(3, "a", Some(""), "typing-more", false),
-        ];
-        let f = replay(&recs, &body(), None, &|t| {
-            seen.contains(&t) && t != "typing"
-        })
-        .unwrap();
-        assert_eq!(f.values["body"], "typing-more\nmac-line");
-        // With the base known (an ordinary concurrent edit) nothing is guessed.
-        let f = replay(&recs, &body(), None, &|_| true).unwrap();
-        assert_eq!(f.values["body"], "typing-more");
-    }
-
-    #[test]
-    fn the_rewritten_session_workaround_never_drops_a_third_devices_text() {
-        // "z" typed a line between; "b" then sent a record on the lost version "typing", and "a"
-        // rewrote the session. Nothing may vanish: every line is still in the result.
-        let recs = [
-            rec(1, "c", None, "", false),
-            rec(2, "z", Some(""), "zed-line", false),
-            rec(3, "b", Some("typing"), "typing\nmac-line", false),
-            rec(4, "a", Some(""), "typing-more", false),
-        ];
-        let f = replay(&recs, &body(), None, &|t| t != "typing").unwrap();
-        let body_text = f.values["body"].as_str().unwrap();
-        for part in ["zed-line", "mac-line", "typing-more"] {
-            let clashed = f
-                .clashes
-                .iter()
-                .any(|c| c.ours.contains(part) || c.theirs.contains(part) || c.base.contains(part));
-            assert!(
-                body_text.contains(part) || clashed,
-                "{part} lost: {body_text:?}"
-            );
-        }
     }
 
     #[test]
@@ -804,7 +684,7 @@ mod tests {
             rec(1, "a", Some(base), "ALPHA beta gamma", false),
             rec(2, "b", Some(base), "alpha beta GAMMA", false),
         ];
-        let f = replay(&recs, &body(), None, &|_| true).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(f.values["body"], "ALPHA beta GAMMA");
         assert!(f.clashes.is_empty());
 
@@ -812,7 +692,7 @@ mod tests {
             rec(1, "a", Some(base), "alpha BETA gamma", false),
             rec(2, "b", Some(base), "alpha Beta gamma", false),
         ];
-        let f = replay(&recs, &body(), None, &|_| true).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(f.values["body"], "alpha Beta gamma", "the newer side shows");
         assert_eq!(
             f.clashes,
@@ -839,14 +719,14 @@ mod tests {
         ];
         let mut sorted = all.to_vec();
         sorted.sort_by(|a, b| a.stamp.cmp(&b.stamp));
-        let want = replay(&sorted, &body(), None, &|_| true).unwrap().values["body"].clone();
+        let want = replay(&sorted, &body(), None).unwrap().values["body"].clone();
         assert_eq!(want, "X Y Z!");
         // `fold` sorts, so any arrival order replays the same.
         let mut shuffled = all.to_vec();
         shuffled.reverse();
         shuffled.sort_by(|a, b| a.stamp.cmp(&b.stamp));
         assert_eq!(
-            replay(&shuffled, &body(), None, &|_| true).unwrap().values["body"],
+            replay(&shuffled, &body(), None).unwrap().values["body"],
             want
         );
     }
@@ -857,10 +737,7 @@ mod tests {
             rec(1, "a", None, "old", false),
             rec(2, "b", None, "new", false),
         ];
-        assert_eq!(
-            replay(&recs, &body(), None, &|_| true).unwrap().values["body"],
-            "new"
-        );
+        assert_eq!(replay(&recs, &body(), None).unwrap().values["body"], "new");
     }
 
     #[test]
@@ -869,7 +746,7 @@ mod tests {
             rec(1, "a", Some("a b"), "A b", true),
             rec(2, "b", Some("a b"), "a B", false),
         ];
-        let f = replay(&recs, &body(), None, &|_| true).unwrap();
+        let f = replay(&recs, &body(), None).unwrap();
         assert_eq!(
             (f.values["body"].as_str(), f.values["edited"].as_bool()),
             (Some("A B"), Some(true))
