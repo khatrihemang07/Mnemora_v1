@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 use crate::SyncError;
 use crate::discovery::Discovery;
 use crate::live::{Host, Live, Pace, PeerLive};
+use crate::local_network::LocalNetwork;
 use crate::net::{
     DEFAULT_PORT, DeviceIdentity, Incoming, Listener, LocalHandshake, NetConfig, Trust,
 };
@@ -33,11 +34,14 @@ pub struct NetworkOptions {
     pub discovery: Arc<dyn Discovery>,
     /// How eagerly paired devices are synced and dialled.
     pub pace: Pace,
+    /// What is known about the system keeping this device off the local network; it outlives
+    /// the network side, so the runtime hands the same one to every start.
+    pub local_network: Arc<LocalNetwork>,
 }
 
 impl NetworkOptions {
     /// The app's: every interface, IPv4 and IPv6 (Wi-Fi and Tailscale), port 47311, the real timings.
-    pub fn app(discovery: Arc<dyn Discovery>) -> Self {
+    pub fn app(discovery: Arc<dyn Discovery>, local_network: Arc<LocalNetwork>) -> Self {
         Self {
             ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             port: DEFAULT_PORT,
@@ -45,6 +49,7 @@ impl NetworkOptions {
             timing: Timing::default(),
             discovery,
             pace: Pace::default(),
+            local_network,
         }
     }
 }
@@ -116,6 +121,7 @@ impl Network {
             Arc::clone(&options.discovery),
             options.pace,
             me,
+            options.local_network,
             &Handle::current(),
         );
         let pairing_host: Arc<dyn PairingHost> = host;

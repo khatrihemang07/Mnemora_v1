@@ -37,6 +37,7 @@ describe('status words', () => {
       'Syncing…',
       'Not nearby',
       'Paused on mobile data',
+      'Blocked by Local Network setting',
       'Paused',
       'Removed',
     ]);
@@ -53,6 +54,15 @@ describe('on mobile data', () => {
   it('a device that cannot be reached says why instead of Not nearby', () => {
     expect(rowParts(peer({ state: 'paused_on_mobile_data', route: null }), now)).toEqual([
       'Paused on mobile data',
+      'last synced 2 min ago',
+    ]);
+  });
+});
+
+describe('blocked by the Local Network setting', () => {
+  it('a device that cannot be reached says so instead of Not nearby (D13)', () => {
+    expect(rowParts(peer({ state: 'blocked_by_local_network', route: null }), now)).toEqual([
+      'Blocked by Local Network setting',
       'last synced 2 min ago',
     ]);
   });

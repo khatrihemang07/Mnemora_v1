@@ -13,6 +13,7 @@ use tokio::sync::Notify;
 
 use crate::error::SyncError;
 use crate::live::PeerLive;
+use crate::local_network::LocalNetwork;
 use crate::network::Network;
 use crate::pair::Pairing;
 use crate::registry::Registry;
@@ -46,12 +47,23 @@ pub struct RuntimeProbe {
 }
 
 /// Starts and stops Sync's services to match the Device setting.
-#[derive(Default)]
 pub struct SyncRuntime {
     services: Mutex<Option<Services>>,
     /// Signalled when this device records a change of its own. It outlives the services: a change
     /// made while Sync is off is pushed as soon as it turns on.
     local_changes: Arc<Notify>,
+    /// Whether the system keeps this device off the local network. Outlives the services too.
+    local_network: Arc<LocalNetwork>,
+}
+
+impl Default for SyncRuntime {
+    fn default() -> Self {
+        Self {
+            services: Mutex::default(),
+            local_changes: Arc::default(),
+            local_network: LocalNetwork::system(),
+        }
+    }
 }
 
 impl SyncRuntime {
@@ -76,6 +88,16 @@ impl SyncRuntime {
             }
             _ => {}
         }
+    }
+
+    /// What is known about the system keeping this device off the local network.
+    pub fn local_network(&self) -> Arc<LocalNetwork> {
+        Arc::clone(&self.local_network)
+    }
+
+    /// Whether the system keeps this device off the local network, as far as is known.
+    pub fn local_network_blocked(&self) -> bool {
+        self.local_network.blocked()
     }
 
     /// The signal a write to the change log raises; the session manager waits on it.

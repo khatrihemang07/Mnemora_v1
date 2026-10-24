@@ -7,6 +7,7 @@
   device that is not on this Wi-Fi (Tailscale).
 -->
 <script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
   import { onMount } from 'svelte';
   import CircleAlert from '~icons/lucide/circle-alert';
   import Pause from '~icons/lucide/pause';
@@ -21,8 +22,16 @@
   import { clock as appClock } from '../../lib/time/clock.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import CountdownRing from './CountdownRing.svelte';
+  import LocalNetworkBanner from './LocalNetworkBanner.svelte';
+  import { pairByAddressHint } from './local-network';
   import { PAIRING_PAUSED, clock, fractionLeft, previewStats, problem, remaining } from './pair-view';
   import { pairing } from './pairing.svelte';
+  import { devicesQuery } from './queries';
+
+  // This device's addresses and whether the system keeps it off the local network.
+  const devices = createQuery(() => devicesQuery);
+  const thisDevice = $derived(devices.data?.this_device);
+  const addressHint = $derived(pairByAddressHint(thisDevice));
 
   // Rust sends the time left when a view arrives; the sheet counts down from there.
   const counting = $derived(pairing.view.state === 'showing' || pairing.view.state === 'asking');
@@ -198,6 +207,7 @@
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if byAddress}
       {@render heading(title)}
+      <LocalNetworkBanner device={thisDevice} class="mb-3" />
       <p class="mb-3 text-sm text-muted">For a device that isn’t on this Wi-Fi, e.g. over Tailscale.</p>
       <form
         onsubmit={(e) => {
@@ -236,6 +246,7 @@
       </form>
     {:else if typing}
       {@render heading(title)}
+      <LocalNetworkBanner device={thisDevice} class="mb-3" />
       <p class="mb-3 text-sm text-muted">Type the code shown on your other device.</p>
       <form
         onsubmit={(e) => {
@@ -264,6 +275,7 @@
       </form>
     {:else}
       {@render heading(title)}
+      <LocalNetworkBanner device={thisDevice} class="mb-3" />
       <p class="text-sm text-muted">On your other device, open Sync › Pair a device › <b>Enter a code</b>, and type:</p>
       {#if view.state === 'showing'}
         <div class="py-2 text-center font-mono text-[2.4rem] leading-tight font-semibold tracking-[0.08em] text-ink" aria-label="Code {view.code}">{view.code}</div>
@@ -272,6 +284,11 @@
           <span>{clock(left)} left</span>
           {#if view.tries_left < 3}<span>· {phrase(view.tries_left)} left on this code</span>{/if}
         </div>
+        {#if addressHint}
+          <p class="mt-3 text-center text-sm text-muted" data-pair-by-address-hint>
+            {addressHint.before} <b class="font-semibold text-ink">{addressHint.address}</b>
+          </p>
+        {/if}
         {#if !view.discoverable}
           <p class="mt-3 text-center text-sm text-muted">
             "Visible on this network" is off, so the other device cannot find this one. Turn it on in Settings › Sync.

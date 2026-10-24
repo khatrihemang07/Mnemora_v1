@@ -59,6 +59,9 @@ pub enum PeerState {
     NotNearby,
     /// Not reachable on purpose: this phone is on mobile data and "Allow over mobile data" is off.
     PausedOnMobileData,
+    /// Not reachable because the system keeps this device off the local network (macOS Local
+    /// Network privacy, Android's local network permission).
+    BlockedByLocalNetwork,
     /// Sync with it is paused (its data version or clock differs).
     Paused,
     /// It was forgotten group-wide (#69).

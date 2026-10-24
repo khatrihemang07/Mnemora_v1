@@ -361,6 +361,17 @@ export const commands = {
 	 *  are tried again from the start of the retry schedule.
 	 */
 	syncResume: () => __TAURI_INVOKE<void>("sync_resume"),
+	/**
+	 *  "Open Settings" in the Local Network banner: System Settings at the Local Network switch, or
+	 *  at Privacy & Security where that pane's link is not understood. Nothing to open elsewhere (the
+	 *  phone's button goes to the app's settings from Kotlin).
+	 */
+	syncOpenLocalNetworkSettings: () => typedError<null, AppError>(__TAURI_INVOKE("sync_open_local_network_settings")),
+	/**
+	 *  The system says whether the app may use the local network (Android 17's permission; the phone
+	 *  asks when Sync is turned on). While Sync is off nothing is blocked, so a denial is ignored.
+	 */
+	syncLocalNetworkOs: (denied: boolean) => __TAURI_INVOKE<void>("sync_local_network_os", { denied }),
 	/**  "Needs you": the Conflicts that wait, newest first. */
 	syncConflicts: () => typedError<ConflictList, AppError>(__TAURI_INVOKE("sync_conflicts")),
 	/**  One Conflict for Compare, or nothing when there is none with that id. */
@@ -503,6 +514,11 @@ export type Attention = {
 	conflicts: number,
 	/**  Devices syncing is paused with (a version mismatch). */
 	paused: string[],
+	/**
+	 *  The system keeps this device off the local network (nothing on the Wi-Fi can be reached
+	 *  or found): shown like a pause.
+	 */
+	local_network_blocked: boolean,
 	/**  Paired devices not seen for 14 days. */
 	unseen: UnseenDevice[],
 	/**  The most recent finished sync, for the Home card's second half. */
@@ -1433,6 +1449,11 @@ export type PeerState =
 "not_nearby" | 
 /**  Not reachable on purpose: this phone is on mobile data and "Allow over mobile data" is off. */
 "paused_on_mobile_data" | 
+/**
+ *  Not reachable because the system keeps this device off the local network (macOS Local
+ *  Network privacy, Android's local network permission).
+ */
+"blocked_by_local_network" | 
 /**  Sync with it is paused (its data version or clock differs). */
 "paused" | 
 /**  It was forgotten group-wide (#69). */
@@ -1878,6 +1899,11 @@ export type ThisDevice = {
 	routes: Route[],
 	/**  Sync is waiting because this phone is on mobile data and "Allow over mobile data" is off. */
 	paused_on_mobile_data: boolean,
+	/**
+	 *  The system keeps this device off the local network (macOS Local Network privacy, Android's
+	 *  local network permission): nothing on the Wi-Fi can be dialled or found.
+	 */
+	local_network_blocked: boolean,
 };
 
 /**  The Entry written last on the day. */

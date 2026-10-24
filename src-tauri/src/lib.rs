@@ -99,6 +99,8 @@ macro_rules! specta_builder_for {
                 sync::sync_pair_cancel,
                 sync::sync_now,
                 sync::sync_resume,
+                sync::sync_open_local_network_settings::<$runtime>,
+                sync::sync_local_network_os::<$runtime>,
                 sync_conflicts::sync_conflicts,
                 sync_conflicts::sync_conflict,
                 sync_conflicts::sync_conflict_draft,

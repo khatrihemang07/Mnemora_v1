@@ -12,6 +12,7 @@ import type {
   PairingView,
   PeerRow,
   PeerState,
+  Platform,
   SyncOption,
   SyncState,
 } from './bindings';
@@ -49,12 +50,19 @@ const COMMANDS = [
   'sync_now',
   'sync_resume',
   'sync_attention',
+  'sync_open_local_network_settings',
+  'sync_local_network_os',
 ];
 
 const DAY_MS = 86_400_000;
 
 /** Mirrors `attention_of` in crates/sync/src/attention.rs: what the Home card, badge and hint read. */
-export function attentionOf(conflicts: number, peers: PeerRow[], now: number): Attention {
+export function attentionOf(
+  conflicts: number,
+  peers: PeerRow[],
+  now: number,
+  localNetworkBlocked = false,
+): Attention {
   const paused = peers.filter((p) => p.state === 'paused').map((p) => p.name);
   const unseen = peers
     .filter((p) => p.state === 'not_nearby')
@@ -71,7 +79,8 @@ export function attentionOf(conflicts: number, peers: PeerRow[], now: number): A
     paused,
     unseen,
     last_synced: last ? { device: last.name, at: last.last_synced_at ?? 0 } : null,
-    needed: conflicts > 0 || paused.length > 0 || unseen.length > 0,
+    local_network_blocked: localNetworkBlocked,
+    needed: conflicts > 0 || paused.length > 0 || localNetworkBlocked || unseen.length > 0,
   };
 }
 
@@ -131,13 +140,30 @@ export function createSyncMock(
 
   /** Mirrors `paused_on_mobile_data` in src-tauri/src/sync_power.rs. */
   const pausedOnMobile = () => flags.onMobile === true && sync().enabled && !sync().mobile_data;
-  /** Mirrors `with_mobile_pause`: what cannot be reached says why instead of "Not nearby". */
+  // The system keeping this device off the local network (D13; `flags.localNetwork`, `?localnet=`).
+  const net = { blocked: false, platform: 'desktop' as Platform, loggedAt: 0 };
+  const blockedNow = () => net.blocked && sync().enabled;
+  flags.localNetwork = (state, platform = 'desktop') => {
+    const was = blockedNow();
+    net.blocked = state === 'blocked';
+    net.platform = platform;
+    // One Activity line when it starts, not again within ten minutes (Rust: log_local_network_blocked).
+    if (!was && blockedNow() && Date.now() - net.loggedAt > 600_000) {
+      net.loggedAt = Date.now();
+      log(lineNow('blocked', Date.now()));
+    }
+    emitPeers();
+  };
+  /**
+   * Mirrors `with_mobile_pause` then `with_local_network_block`: what cannot be reached says why
+   * instead of "Not nearby".
+   */
   const rows = (): PeerRow[] =>
-    live
-      .rows()
-      .map((r) =>
-        pausedOnMobile() && r.state === 'not_nearby' ? { ...r, state: 'paused_on_mobile_data' } : r,
-      );
+    live.rows().map((r) => {
+      if (r.state !== 'not_nearby') return r;
+      if (pausedOnMobile()) return { ...r, state: 'paused_on_mobile_data' };
+      return blockedNow() ? { ...r, state: 'blocked_by_local_network' } : r;
+    });
 
   const typedAddresses = new Map<string, string>();
   const pairing = createPairingMock({
@@ -186,11 +212,12 @@ export function createSyncMock(
   const devices = (): DevicesView => ({
     this_device: {
       name: state().name,
-      platform: 'desktop',
+      platform: net.platform,
       port: 47311,
       addresses: ['192.168.1.20', '100.101.4.7'],
       routes: ['wifi', 'tailscale'],
       paused_on_mobile_data: pausedOnMobile(),
+      local_network_blocked: blockedNow(),
     },
     peers: rows(),
   });
@@ -249,7 +276,14 @@ export function createSyncMock(
         case 'sync_devices':
           return devices();
         case 'sync_attention':
-          return attentionOf(openConflicts(), live.rows(), Date.now());
+          return attentionOf(openConflicts(), live.rows(), Date.now(), blockedNow());
+        case 'sync_open_local_network_settings':
+          // The real command opens System Settings; nothing to open in a browser.
+          console.info('[mock] Open Settings › Privacy & Security › Local Network');
+          return null;
+        case 'sync_local_network_os':
+          // Android only: the page tells Rust what the system said. Steer the mock with `flags.localNetwork`.
+          return null;
         default:
           return undefined;
       }

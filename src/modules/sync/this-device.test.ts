@@ -9,6 +9,7 @@ const base: ThisDevice = {
   addresses: [],
   routes: [],
   paused_on_mobile_data: false,
+  local_network_blocked: false,
 };
 
 describe('listeningSummary', () => {

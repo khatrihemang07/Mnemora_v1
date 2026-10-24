@@ -155,6 +155,7 @@ impl Dev {
             },
             discovery: found.clone(),
             pace: crate::Pace::default(),
+            local_network: crate::local_network::LocalNetwork::off(),
         };
         let identity = Arc::new(DeviceIdentity::generate().unwrap());
         let network = Network::start(host.clone(), identity, options)

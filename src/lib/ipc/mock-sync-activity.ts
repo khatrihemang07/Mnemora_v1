@@ -212,6 +212,9 @@ export function describe(
     case 'resumed':
       text = [piece('Resumed with '), piece(other, true)];
       break;
+    case 'blocked':
+      text = [piece('Can’t reach devices on the network: blocked by the Local Network setting')];
+      break;
     case 'failed':
       text = [piece('Connection to '), piece(other, true), piece(' lost; retrying')];
       break;

@@ -7,12 +7,15 @@
   import type { Component } from 'svelte';
   import GitMerge from '~icons/lucide/git-merge';
   import Plus from '~icons/lucide/plus';
+  import Radar from '~icons/lucide/radar';
   import ShieldCheck from '~icons/lucide/shield-check';
   import Wifi from '~icons/lucide/wifi';
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
   import DeviceNameField from './DeviceNameField.svelte';
+  import { WELCOME_LINE } from './local-network';
   import { pairing } from './pairing.svelte';
+  import { isMac } from '../../lib/platform';
 
   const lines: { icon: Component<{ class?: string }>; text: string }[] = [
     { icon: Wifi, text: 'Your devices talk directly, on the same Wi-Fi or over Tailscale.' },
@@ -24,6 +27,8 @@
       icon: GitMerge,
       text: 'Changes merge on their own. If the same text was rewritten on two devices, Sync keeps both and asks you.',
     },
+    // macOS 15+ asks before Mnemora may find devices on the network; tell them first (D12).
+    ...(isMac ? [{ icon: Radar, text: WELCOME_LINE }] : []),
   ];
 </script>
 

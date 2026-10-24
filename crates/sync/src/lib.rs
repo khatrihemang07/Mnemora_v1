@@ -21,6 +21,7 @@ mod error;
 mod held;
 mod introduce;
 mod live;
+pub mod local_network;
 mod merge;
 mod migrations;
 mod name;
@@ -55,8 +56,8 @@ use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 
 pub use activity::{
-    Kind as ActivityKind, Local, Why, log_failed, log_forgot, log_left, log_paused, log_renamed,
-    log_resumed,
+    Kind as ActivityKind, Local, Why, log_failed, log_forgot, log_left, log_local_network_blocked,
+    log_paused, log_renamed, log_resumed,
 };
 pub use activity_view::{
     ActivityFilter, ActivityLink, ActivityPage, ActivityRow, Piece, Viewer as ActivityViewer,
@@ -76,7 +77,9 @@ pub use detail::{
     DeviceDetail, KnownAddress, ModuleVersion, detail as device_detail, set_typed_address,
     typed_for_dial,
 };
-pub use devices::{DevicesView, ThisDevice, view as devices_view, with_mobile_pause};
+pub use devices::{
+    DevicesView, ThisDevice, view as devices_view, with_local_network_block, with_mobile_pause,
+};
 pub use error::SyncError;
 pub use held::{Released, release_ready as release_held};
 pub use introduce::introduce as introduce_members;

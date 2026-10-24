@@ -272,6 +272,7 @@ async fn a_device_that_comes_back_is_reconnected_by_the_backoff() {
             timing: mnemora_sync::Timing::default(),
             discovery: mac.found.clone(),
             pace: quick(),
+            local_network: mnemora_sync::local_network::LocalNetwork::off(),
         },
     )
     .await
@@ -343,6 +344,7 @@ async fn turning_sync_off_and_on_again_and_again_leaves_nothing_behind() {
         timing: mnemora_sync::Timing::default(),
         discovery: mac.found.clone(),
         pace: quick(),
+        local_network: mnemora_sync::local_network::LocalNetwork::off(),
     };
     for _ in 0..4 {
         mac.call::<()>("sync_set_enabled", json!({ "enabled": false }));
@@ -487,4 +489,87 @@ async fn the_rename_line_never_shows_before_the_new_name_is_applied() {
         }
         until("the line", || !activity_lines(&phone, "renamed").is_empty()).await;
     }
+}
+
+/// The Mac that macOS keeps off the local network finds nobody (mDNS is blocked) yet is still
+/// synced: the other device dials the address it was given, and the Mac only accepts (D14).
+#[tokio::test]
+async fn a_device_that_finds_nobody_still_syncs_when_the_other_dials_its_typed_address() {
+    let (mac, phone) = paired_pair(quick()).await;
+    // No `meet`: neither discovery announces the other. Nothing connects by itself.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(peer_of(&phone)["state"], "not_nearby");
+    let mac_id = mac.app.device_id();
+    phone
+        .app
+        .invoke::<Value>(
+            "sync_device_address",
+            json!({ "id": mac_id, "address": mac.address().to_string() }),
+        )
+        .unwrap();
+    until("both connected through the phone's dial", || {
+        peer_of(&mac)["state"] == "up_to_date" && peer_of(&phone)["state"] == "up_to_date"
+    })
+    .await;
+}
+
+/// What the Devices tab, the sheet and the Home card say while the system keeps the device off the
+/// local network (D13): reachable devices stay as they are, the others say why.
+#[tokio::test]
+async fn the_local_network_being_blocked_is_told_in_the_rows_the_card_and_attention() {
+    let (mac, phone) = paired_pair(quick()).await;
+    let view = || phone.devices();
+    assert_eq!(view()["this_device"]["local_network_blocked"], false);
+    assert_eq!(peer_of(&phone)["state"], "not_nearby");
+    let attention = || {
+        phone
+            .app
+            .invoke::<Value>("sync_attention", json!({}))
+            .unwrap()
+    };
+    assert_eq!(attention()["local_network_blocked"], false);
+
+    // The system says no (Android's permission): it shows at once, nothing waits for a dial.
+    phone
+        .app
+        .invoke::<()>("sync_local_network_os", json!({ "denied": true }))
+        .unwrap();
+    assert_eq!(view()["this_device"]["local_network_blocked"], true);
+    assert_eq!(peer_of(&phone)["state"], "blocked_by_local_network");
+    let a = attention();
+    assert_eq!(a["local_network_blocked"], true);
+    assert_eq!(a["needed"], true);
+    let id = mac.app.device_id();
+    let sheet = phone
+        .app
+        .invoke::<Value>("sync_device", json!({ "id": id }))
+        .unwrap();
+    assert_eq!(sheet["state"], "blocked_by_local_network");
+
+    // A device that is connected anyway (it dialled us) is reachable, not blocked.
+    meet(&mac, &phone);
+    until("connected", || peer_of(&phone)["state"] == "up_to_date").await;
+
+    phone
+        .app
+        .invoke::<()>("sync_local_network_os", json!({ "denied": false }))
+        .unwrap();
+    assert_eq!(view()["this_device"]["local_network_blocked"], false);
+    assert_eq!(attention()["local_network_blocked"], false);
+}
+
+/// Nothing is asked of, or blamed on, the system while Sync is off.
+#[tokio::test]
+async fn a_denial_reported_while_sync_is_off_is_ignored() {
+    let (_mac, phone) = paired_pair(quick()).await;
+    phone.call::<()>("sync_set_enabled", json!({ "enabled": false }));
+    phone
+        .app
+        .invoke::<()>("sync_local_network_os", json!({ "denied": true }))
+        .unwrap();
+    phone.call::<()>("sync_set_enabled", json!({ "enabled": true }));
+    assert_eq!(
+        phone.devices()["this_device"]["local_network_blocked"],
+        false
+    );
 }

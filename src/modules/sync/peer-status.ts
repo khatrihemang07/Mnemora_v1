@@ -8,6 +8,7 @@ export const STATUS_WORDS: Record<PeerState, string> = {
   syncing: 'Syncing…',
   not_nearby: 'Not nearby',
   paused_on_mobile_data: 'Paused on mobile data',
+  blocked_by_local_network: 'Blocked by Local Network setting',
   paused: 'Paused',
   removed: 'Removed',
 };
@@ -43,7 +44,13 @@ export function syncedText(
 ): string {
   if (peer.last_synced_at === null) return 'not synced yet';
   const when = relativeTime(new Date(peer.last_synced_at), now);
-  return `${peer.state === 'paused' || peer.state === 'paused_on_mobile_data' ? 'last synced' : 'synced'} ${when}`;
+  return `${
+    peer.state === 'paused' ||
+    peer.state === 'paused_on_mobile_data' ||
+    peer.state === 'blocked_by_local_network'
+      ? 'last synced'
+      : 'synced'
+  } ${when}`;
 }
 
 /** The full date and time, for the hover on a relative time: "Wed 14 Oct, 15:05". */

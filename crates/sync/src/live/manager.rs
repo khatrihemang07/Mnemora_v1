@@ -26,6 +26,7 @@ use rusqlite::Connection;
 use crate::activity::{self, Local, Why};
 use crate::discovery::{Browsing, Candidate, Discovery};
 use crate::error::SyncError;
+use crate::local_network::LocalNetwork;
 use crate::net::{Established, NetConfig};
 use crate::pause::Pause;
 use crate::peer_state::{self, Route};
@@ -149,6 +150,7 @@ impl Live {
         discovery: Arc<dyn Discovery>,
         pace: Pace,
         me: String,
+        local: Arc<LocalNetwork>,
         runtime: &Handle,
     ) -> Self {
         let shared = Arc::new(Shared::new(host, me));
@@ -171,6 +173,9 @@ impl Live {
             peers: HashMap::new(),
             set: JoinSet::new(),
             tasks: HashMap::new(),
+            // Right away: on a Mac this is what raises the system's prompt, as Sync is turned on.
+            probe_at: local.has_probe().then(Instant::now),
+            local,
             push_at: None,
             done_tx,
             next_id: 0,
@@ -316,6 +321,9 @@ struct Supervisor {
     peers: HashMap<String, Peer>,
     set: JoinSet<Done>,
     tasks: HashMap<task::Id, Doing>,
+    /// Whether the system keeps this device off the local network, and the probe that checks.
+    local: Arc<LocalNetwork>,
+    probe_at: Option<Instant>,
     /// When the next session round starts for the open connections (the quiet period after a
     /// change, local or just received).
     push_at: Option<Instant>,
@@ -383,7 +391,25 @@ impl Supervisor {
                     self.push();
                 }
                 () = wait_until(retry_at) => self.retry().await,
+                () = wait_until(self.probe_at) => self.probe().await,
+                () = self.local.changed() => self.local_network_changed().await,
             }
+        }
+    }
+
+    /// Runs the local network probe and schedules the next one.
+    async fn probe(&mut self) {
+        let worked = self.local.run_probe().await;
+        let wait = self.local.next_probe_in(worked);
+        self.probe_at = Some(Instant::now() + wait);
+    }
+
+    /// Whether the system keeps this device off the local network just changed: the Devices tab
+    /// says so, and Activity gets one line when it starts.
+    async fn local_network_changed(&mut self) {
+        self.shared.host.status_changed();
+        if self.local.blocked() {
+            self.note(activity::log_local_network_blocked).await;
         }
     }
 
@@ -394,7 +420,12 @@ impl Supervisor {
             Cmd::Adopt(established) => self.adopt(*established, true).await,
             Cmd::SyncNow => self.sync_now().await,
             Cmd::SyncNowOne(id) => self.sync_now_one(&id).await,
-            Cmd::Resume => self.resume().await,
+            Cmd::Resume => {
+                if self.local.has_probe() {
+                    self.probe_at = Some(Instant::now());
+                }
+                self.resume().await;
+            }
             Cmd::Flush => {
                 self.push_at = None;
                 self.push();
@@ -510,6 +541,7 @@ impl Supervisor {
         .await
         .unwrap_or_default();
         let (config, each) = (self.config.clone(), self.pace.dial_each);
+        let local = Arc::clone(&self.local);
         let handle = self.set.spawn(async move {
             // The Address a person typed is the third source, looked up here so a slow name never
             // holds the others up.
@@ -521,7 +553,7 @@ impl Supervisor {
             let established = if addrs.is_empty() {
                 None
             } else {
-                race(&config, addrs, each).await.map(Box::new)
+                race(&config, addrs, each, &local).await.map(Box::new)
             };
             Done::Dial {
                 peer: device,

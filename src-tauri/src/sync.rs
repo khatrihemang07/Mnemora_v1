@@ -130,6 +130,7 @@ pub fn sync_devices(state: State<'_, AppState>) -> Result<DevicesView, AppError>
         &lock(&state.db),
         state.sync.listening(),
         paused_on_mobile_data(&state),
+        state.sync.local_network_blocked(),
         &state.sync.peers_live(),
     )
 }
@@ -167,8 +168,12 @@ pub fn sync_device(state: State<'_, AppState>, id: String) -> Result<DeviceDetai
         &state.sync.peers_live(),
     )?
     .ok_or_else(|| AppError::new(ErrorCode::NotFound, "That device is not paired"))?;
-    if paused_on_mobile_data(&state) && detail.state == PeerState::NotNearby {
-        detail.state = PeerState::PausedOnMobileData;
+    if detail.state == PeerState::NotNearby {
+        if paused_on_mobile_data(&state) {
+            detail.state = PeerState::PausedOnMobileData;
+        } else if state.sync.local_network_blocked() {
+            detail.state = PeerState::BlockedByLocalNetwork;
+        }
     }
     Ok(detail)
 }
@@ -294,6 +299,54 @@ pub fn sync_resume(state: State<'_, AppState>) {
     // An editor that went away with the app in the background no longer holds changes back.
     crate::editing::release_lapsed(&state);
     state.sync.resume();
+}
+
+/// The System Settings panes that hold the Local Network switch, best first: the pane itself
+/// (macOS 15 and later), then Privacy & Security, which has the Local Network row.
+const LOCAL_NETWORK_PANES: [&str; 2] = [
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_LocalNetwork",
+    "x-apple.systempreferences:com.apple.preference.security",
+];
+
+/// Opens the first of `urls` that `open` accepts; the last error if none does.
+fn open_first<E>(urls: &[&str], mut open: impl FnMut(&str) -> Result<(), E>) -> Result<(), E> {
+    let mut last = None;
+    for url in urls {
+        match open(url) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+    }
+    last.map_or(Ok(()), Err)
+}
+
+/// "Open Settings" in the Local Network banner: System Settings at the Local Network switch, or
+/// at Privacy & Security where that pane's link is not understood. Nothing to open elsewhere (the
+/// phone's button goes to the app's settings from Kotlin).
+#[tauri::command]
+#[specta::specta]
+pub fn sync_open_local_network_settings<R: Runtime>(app: AppHandle<R>) -> Result<(), AppError> {
+    if !cfg!(target_os = "macos") {
+        return Ok(());
+    }
+    open_first(&LOCAL_NETWORK_PANES, |url| {
+        tauri_plugin_opener::OpenerExt::opener(&app).open_url(url, None::<&str>)
+    })
+    .map_err(|e| AppError::new(ErrorCode::Io, "Could not open System Settings").with_details(e))
+}
+
+/// The system says whether the app may use the local network (Android 17's permission; the phone
+/// asks when Sync is turned on). While Sync is off nothing is blocked, so a denial is ignored.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_local_network_os<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    denied: bool,
+) {
+    let denied = denied && state.device.get().sync.enabled;
+    state.sync.local_network().set_os_denied(denied);
+    announce_peers(&app);
 }
 
 /// Where pairing stands. Idle while Sync is off or still starting.
@@ -562,7 +615,11 @@ pub fn launch_network<R: Runtime>(app: &AppHandle<R>) {
                 Fixed::new()
             }
         };
-        let started = start_network(&app, NetworkOptions::app(discovery)).await;
+        let started = start_network(
+            &app,
+            NetworkOptions::app(discovery, state.sync.local_network()),
+        )
+        .await;
         state.power.end_start();
         match started {
             // The app may have left the front or the phone changed network while the port was
@@ -620,6 +677,45 @@ mod tests {
     use serde_json::{Value, json};
 
     use crate::test_support::TestApp;
+
+    #[test]
+    fn the_bundle_tells_macos_why_sync_wants_the_local_network() {
+        // Merged into the bundle's Info.plist and embedded in the dev binary by Tauri.
+        let plist = include_str!("../Info.plist");
+        assert!(plist.contains("<key>NSLocalNetworkUsageDescription</key>"));
+        assert!(plist.contains(
+            "<string>Mnemora finds and syncs with your other devices on this network.</string>"
+        ));
+    }
+
+    #[test]
+    fn the_settings_link_falls_back_to_privacy_and_security() {
+        let mut tried = Vec::new();
+        let opened = super::open_first(&super::LOCAL_NETWORK_PANES, |url| {
+            tried.push(url.to_owned());
+            if url.contains("Privacy_LocalNetwork") {
+                Err("not understood")
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(opened, Ok(()));
+        assert_eq!(tried.len(), 2);
+        assert!(tried[1].ends_with("com.apple.preference.security"));
+        let mut once = 0;
+        assert_eq!(
+            super::open_first(&super::LOCAL_NETWORK_PANES, |_| {
+                once += 1;
+                Ok::<(), ()>(())
+            }),
+            Ok(())
+        );
+        assert_eq!(once, 1, "the first that works is the only one opened");
+        assert_eq!(
+            super::open_first(&super::LOCAL_NETWORK_PANES, |_| Err("no")),
+            Err("no")
+        );
+    }
 
     const NOTHING: RuntimeProbe = RuntimeProbe {
         running: false,

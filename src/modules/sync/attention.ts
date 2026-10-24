@@ -4,13 +4,23 @@ import { relativeTime } from '../../lib/time/relative';
 
 /**
  * Sync's badge in the desktop sidebar (B7): the count of conflicts that need you, nothing at zero,
- * and an amber "!" while sync is paused (a paused sync outranks the count: nothing will arrive
- * until it is dealt with). The phone tab bar never shows it (B8).
+ * and an amber "!" while sync is paused or blocked by the Local Network setting (either outranks the
+ * count: nothing will arrive until it is dealt with). The phone tab bar never shows it (B8).
  */
 export function badgeOf(a: Attention | undefined): ModuleBadge | null {
   if (!a) return null;
   if (a.paused.length > 0) {
     return { count: 0, alert: false, tone: 'warn', text: '!', label: 'Sync is paused' };
+  }
+  // Nothing on the Wi-Fi can be reached or found until the person allows it: like a pause.
+  if (a.local_network_blocked) {
+    return {
+      count: 0,
+      alert: false,
+      tone: 'warn',
+      text: '!',
+      label: 'Sync is blocked by the Local Network setting',
+    };
   }
   if (a.conflicts === 0) return null;
   return {
@@ -37,6 +47,7 @@ export function homeCardLine(a: Attention, now: Date = new Date()): string {
   const parts: string[] = [];
   if (a.conflicts > 0) parts.push(`${plural(a.conflicts, 'conflict', 'conflicts')} to review`);
   if (a.paused.length > 0) parts.push(`Paused with ${names(a.paused)}`);
+  if (a.local_network_blocked) parts.push('Blocked by the Local Network setting');
   for (const u of a.unseen) parts.push(`${u.name} not seen for ${plural(u.days, 'day', 'days')}`);
   // Not for a device already named above: "Pixel 8 not seen for 16 days · Pixel 8 synced 3 min ago".
   const named = [...a.paused, ...a.unseen.map((u) => u.name)];

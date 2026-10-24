@@ -448,6 +448,34 @@ fn a_pause_and_a_resume_are_logged_once_however_often_they_are_noticed() {
     assert_eq!(of_kind(&c[a], "resumed").len(), 1);
 }
 
+#[test]
+fn the_system_keeping_a_device_off_the_local_network_is_one_line_that_every_device_reads() {
+    let c = group(2);
+    let (a_id, a_name) = local(&c, 0);
+    c[0].with_db(|db| {
+        let me = Local {
+            device: &a_id,
+            name: a_name,
+        };
+        assert!(mnemora_sync::log_local_network_blocked(db, me).unwrap());
+        assert!(
+            !mnemora_sync::log_local_network_blocked(db, me).unwrap(),
+            "a permission that flickers is one line"
+        );
+    });
+    c.sync_all();
+    assert_eq!(
+        line(&of_kind(&c[0], "blocked")[0]),
+        "Can’t reach devices on the network: blocked by the Local Network setting"
+    );
+    assert_eq!(
+        line(&of_kind(&c[1], "blocked")[0]),
+        format!(
+            "Can’t reach devices on the network: blocked by the Local Network setting · on {a_name}"
+        )
+    );
+}
+
 // ---------------------------------------------------------------- paging and filters
 
 #[test]

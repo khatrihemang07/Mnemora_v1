@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged by Tauri into the app's Info.plist, and embedded in the dev binary (tauri-codegen).
+	     macOS 15+ asks before an app dials or finds devices on the local network (Sync, ADR 0017);
+	     this is the sentence the system's prompt shows. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Mnemora finds and syncs with your other devices on this network.</string>
+</dict>
+</plist>

@@ -1,4 +1,4 @@
-<!-- SyncOverlay: what Sync mounts while it is on: the "Turn off Sync?" Dialog, the toast for new conflicts (when this device is set to one), what keeps the badge and the Home card fresh, on Android the Wi-Fi multicast lock mDNS needs, and the nudge that makes unreachable devices be tried again when the app or the network comes back. -->
+<!-- SyncOverlay: what Sync mounts while it is on: the "Turn off Sync?" Dialog, the toast for new conflicts (when this device is set to one), what keeps the badge and the Home card fresh, on Android the Wi-Fi multicast lock mDNS needs and the local network permission's state, and the nudge that makes unreachable devices be tried again when the app or the network comes back. -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { commands, events } from '../../lib/ipc/bindings';
@@ -6,6 +6,7 @@
   import { moduleContext } from '../../shell/module-context';
   import { newConflictsText } from './attention';
   import { syncAttention } from './hint.svelte';
+  import { reportLocalNetworkPermission } from './local-network';
   import { attentionQuery, watchAttention, whileMounted } from './queries';
   import { holdMulticastWhileVisible } from './multicast';
   import { resumeWhenBack } from './resume';
@@ -13,6 +14,10 @@
 
   $effect(() => holdMulticastWhileVisible(window.MnemoraAndroid));
   $effect(() => resumeWhenBack(() => void commands.syncResume()));
+  // Android 17: whether the phone may reach devices on the network; only while Sync is on.
+  $effect(() =>
+    reportLocalNetworkPermission(window.MnemoraAndroid, (denied) => void commands.syncLocalNetworkOs(denied)),
+  );
   $effect(() => whileMounted(watchAttention));
   const attention = createQuery(() => attentionQuery);
   $effect(() => {

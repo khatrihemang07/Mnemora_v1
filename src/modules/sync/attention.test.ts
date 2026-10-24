@@ -6,6 +6,7 @@ const calm: Attention = {
   conflicts: 0,
   paused: [],
   unseen: [],
+  local_network_blocked: false,
   last_synced: null,
   needed: false,
 };
@@ -13,6 +14,26 @@ const NOW = new Date(2026, 9, 21, 10, 0);
 const synced = (minutesAgo: number) => ({
   device: 'Pixel 8',
   at: NOW.getTime() - minutesAgo * 60_000,
+});
+
+describe('the Local Network setting blocking Sync (D13)', () => {
+  const blocked: Attention = { ...calm, local_network_blocked: true, needed: true };
+
+  it('is an amber exclamation mark in the badge, like a pause, and outranks the count', () => {
+    expect(badgeOf(blocked)).toMatchObject({ text: '!', tone: 'warn' });
+    expect(badgeOf({ ...blocked, conflicts: 3 })).toMatchObject({ text: '!', tone: 'warn' });
+  });
+
+  it('is a clause on the Home card', () => {
+    expect(homeCardLine(blocked, NOW)).toBe('Blocked by the Local Network setting');
+    expect(homeCardLine({ ...blocked, conflicts: 2 }, NOW)).toBe(
+      '2 conflicts to review · Blocked by the Local Network setting',
+    );
+  });
+
+  it('leads to the Devices page, where the banner is', () => {
+    expect(reviewPath(blocked)).toBe('/sync');
+  });
 });
 
 describe('the sidebar badge', () => {
@@ -53,6 +74,7 @@ describe('the Home card line', () => {
           conflicts: 0,
           paused: ['Pixel 8', 'Air'],
           unseen: [{ name: 'iPad', days: 16 }],
+          local_network_blocked: false,
           last_synced: null,
           needed: true,
         },

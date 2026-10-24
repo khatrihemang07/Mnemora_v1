@@ -80,6 +80,8 @@ pub enum Kind {
     ConflictResolved,
     /// Two Lists with one name became one.
     ListsMerged,
+    /// The system started keeping this device off the local network.
+    Blocked,
 }
 
 impl Kind {
@@ -98,6 +100,7 @@ impl Kind {
             Self::ConflictRaised => "conflict_raised",
             Self::ConflictResolved => "conflict_resolved",
             Self::ListsMerged => "lists_merged",
+            Self::Blocked => "blocked",
         }
     }
 
@@ -116,6 +119,7 @@ impl Kind {
             "conflict_raised" => Self::ConflictRaised,
             "conflict_resolved" => Self::ConflictResolved,
             "lists_merged" => Self::ListsMerged,
+            "blocked" => Self::Blocked,
             _ => return None,
         })
     }
@@ -496,6 +500,24 @@ pub fn log_failed(
     log(conn, &row)
 }
 
+/// The system started keeping this device off the local network (macOS Local Network privacy,
+/// Android's local network permission). One line when it starts: not again within ten minutes
+/// of the last, so a permission that flickers is one line.
+pub fn log_local_network_blocked(conn: &Connection, local: Local<'_>) -> Result<bool, SyncError> {
+    const QUIET_MS: i64 = 600_000;
+    let now = physical_now(conn);
+    let recent: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_activity WHERE kind = 'blocked' AND device = ?1
+                        AND at > ?2)",
+        params![local.device, now - QUIET_MS],
+        |r| r.get(0),
+    )?;
+    if recent {
+        return Ok(false);
+    }
+    log(conn, &blank(conn, new_id(), Kind::Blocked, local))
+}
+
 /// A Conflict was raised here about `field` of an `entity` record. One row per Conflict, whichever
 /// device notices it first.
 pub(crate) fn log_conflict_raised(
@@ -663,6 +685,7 @@ mod tests {
             Kind::ConflictRaised,
             Kind::ConflictResolved,
             Kind::ListsMerged,
+            Kind::Blocked,
         ] {
             assert_eq!(Kind::parse(k.as_str()), Some(k));
         }

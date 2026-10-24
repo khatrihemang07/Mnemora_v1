@@ -47,6 +47,7 @@ impl Device {
             },
             discovery: found.clone(),
             pace,
+            local_network: mnemora_sync::local_network::LocalNetwork::off(),
         };
         start_network(&app.handle(), options).await.unwrap();
         Self { app, found }

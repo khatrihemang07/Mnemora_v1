@@ -140,7 +140,12 @@ pub fn sync_activity(
 #[tauri::command]
 #[specta::specta]
 pub fn sync_attention(state: State<'_, AppState>) -> Result<Attention, AppError> {
-    mnemora_sync::attention(&lock(&state.db), &state.sync.peers_live(), now_ms())
+    mnemora_sync::attention(
+        &lock(&state.db),
+        &state.sync.peers_live(),
+        state.sync.local_network_blocked(),
+        now_ms(),
+    )
 }
 
 /// "Use ‹other› instead": writes the value that gave way as an ordinary new edit through the

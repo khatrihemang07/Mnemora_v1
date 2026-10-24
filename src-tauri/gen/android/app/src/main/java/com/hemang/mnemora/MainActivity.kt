@@ -1,9 +1,14 @@
 package com.hemang.mnemora
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
@@ -18,6 +23,8 @@ class MainActivity : TauriActivity() {
   // this is true AND the activity is in front: the activity lifecycle is the authority, so the lock
   // cannot outlive the screen even if the WebView never reports the page as hidden.
   private var wantMulticast = false
+  // The page, to tell it when the local network permission dialog is answered.
+  private var page: WebView? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -50,6 +57,44 @@ class MainActivity : TauriActivity() {
     super.onDestroy()
   }
 
+  private fun localNetworkGranted() =
+    checkSelfPermission(LocalNetworkPolicy.PERMISSION) == PackageManager.PERMISSION_GRANTED
+
+  private fun currentLocalNetworkState() =
+    LocalNetworkPolicy.state(Build.VERSION.SDK_INT, localNetworkGranted())
+
+  // UI thread. Shows the system's dialog when it still can; otherwise, if asked to, the app's settings
+  // page (after "Don't ask again" only that can grant it). Does nothing where the permission does not
+  // exist or is already granted.
+  private fun askLocalNetwork(settingsIfBlocked: Boolean) {
+    if (currentLocalNetworkState() != LocalNetworkPolicy.DENIED) return
+    val prefs = getSharedPreferences("sync", Context.MODE_PRIVATE)
+    val asked = prefs.getBoolean("asked_local_network", false)
+    if (LocalNetworkPolicy.canAsk(asked, shouldShowRequestPermissionRationale(LocalNetworkPolicy.PERMISSION))) {
+      prefs.edit().putBoolean("asked_local_network", true).apply()
+      requestPermissions(arrayOf(LocalNetworkPolicy.PERMISSION), REQUEST_LOCAL_NETWORK)
+    } else if (settingsIfBlocked) {
+      openAppSettings()
+    }
+  }
+
+  private fun openAppSettings() {
+    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+    try {
+      startActivity(intent)
+    } catch (e: android.content.ActivityNotFoundException) {
+    }
+  }
+
+  @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+  override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    if (requestCode == REQUEST_LOCAL_NETWORK) {
+      // The page asks again what the state is (the dialog may not have paused the page).
+      page?.evaluateJavascript("window.dispatchEvent(new Event('mnemora-local-network'))", null)
+    }
+  }
+
   // Must run on the UI thread. `inFront` is false from onPause on.
   private fun applyMulticastLock(inFront: Boolean) {
     if (wantMulticast && inFront) {
@@ -67,6 +112,7 @@ class MainActivity : TauriActivity() {
 
   // Exposes window.MnemoraAndroid so the web side can restyle the system bars and leave the app.
   override fun onWebViewCreate(webView: WebView) {
+    page = webView
     webView.addJavascriptInterface(MnemoraBridge(), "MnemoraAndroid")
   }
 
@@ -85,6 +131,22 @@ class MainActivity : TauriActivity() {
         wantMulticast = hold
         applyMulticastLock(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
       }
+    }
+
+    // "unneeded" before Android 17, otherwise "granted" or "denied" (Sync's local network permission).
+    @JavascriptInterface
+    fun localNetworkState(): String = this@MainActivity.currentLocalNetworkState()
+
+    // Asks for the permission; with `settingsIfBlocked`, opens the app's settings page when the system
+    // will not show the dialog any more. Sync calls it when it is turned on, and from its banner.
+    @JavascriptInterface
+    fun requestLocalNetwork(settingsIfBlocked: Boolean) {
+      runOnUiThread { this@MainActivity.askLocalNetwork(settingsIfBlocked) }
+    }
+
+    @JavascriptInterface
+    fun openAppSettings() {
+      runOnUiThread { this@MainActivity.openAppSettings() }
     }
 
     // JavascriptInterface methods run on a WebView thread; window changes need the UI thread.
@@ -107,5 +169,9 @@ class MainActivity : TauriActivity() {
         window.navigationBarColor = color
       }
     }
+  }
+
+  private companion object {
+    const val REQUEST_LOCAL_NETWORK = 4317
   }
 }

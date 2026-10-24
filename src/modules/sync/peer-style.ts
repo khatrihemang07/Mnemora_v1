@@ -6,6 +6,7 @@ export const DOT: Record<PeerState, string> = {
   syncing: 'bg-hue-sync',
   not_nearby: 'bg-faint',
   paused_on_mobile_data: 'bg-warning',
+  blocked_by_local_network: 'bg-warning',
   paused: 'bg-warning',
   removed: 'bg-danger',
 };
@@ -16,6 +17,7 @@ export const CHIP: Record<PeerState, string> = {
   syncing: 'bg-hue-sync-soft text-hue-sync',
   not_nearby: 'bg-surface-2 text-muted',
   paused_on_mobile_data: 'bg-[color-mix(in_oklch,var(--warning)_16%,transparent)] text-ink',
+  blocked_by_local_network: 'bg-[color-mix(in_oklch,var(--warning)_16%,transparent)] text-ink',
   paused: 'bg-[color-mix(in_oklch,var(--warning)_16%,transparent)] text-ink',
   removed: 'bg-danger-soft text-danger',
 };

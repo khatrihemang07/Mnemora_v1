@@ -28,7 +28,14 @@
  * Address.
  */
 import { parseAddress } from '../../modules/sync/address';
-import type { AppError, CheckKind, PairingError, PairingView, PeerState } from './bindings';
+import type {
+  AppError,
+  CheckKind,
+  PairingError,
+  PairingView,
+  PeerState,
+  Platform,
+} from './bindings';
 import type { PairedBase } from './mock-sync-live';
 
 export interface PairingFlags {
@@ -50,6 +57,13 @@ export interface PairingFlags {
    * and it synced here, so the device sheet shows it. Defaults to the first paired device.
    */
   memberTypedAddress?: (address: string, id?: string) => void;
+  /**
+   * Console: the system keeps this device off the local network (D13/D16): `'blocked'` shows the
+   * banner, "Blocked by Local Network setting" rows, the amber "!" and one Activity line; `'ok'`
+   * clears it. `'phone'` words it for a phone (Android 17). Set from `?localnet=blocked` or
+   * `?localnet=blocked-phone` too.
+   */
+  localNetwork?: (state: 'blocked' | 'ok', platform?: Platform) => void;
   /** Console: a new conflict arrived from the simulated device (toast, if this device wants one). */
   newConflict?: () => void;
 }

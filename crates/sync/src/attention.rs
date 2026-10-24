@@ -46,6 +46,9 @@ pub struct Attention {
     pub conflicts: u32,
     /// Devices syncing is paused with (a version mismatch).
     pub paused: Vec<String>,
+    /// The system keeps this device off the local network (nothing on the Wi-Fi can be reached
+    /// or found): shown like a pause.
+    pub local_network_blocked: bool,
     /// Paired devices not seen for 14 days.
     pub unseen: Vec<UnseenDevice>,
     /// The most recent finished sync, for the Home card's second half.
@@ -55,7 +58,12 @@ pub struct Attention {
 }
 
 /// Works out what needs attention from the open Conflicts and the paired devices' state.
-pub fn attention_of(conflicts: u32, peers: &[PeerRow], now: i64) -> Attention {
+pub fn attention_of(
+    conflicts: u32,
+    peers: &[PeerRow],
+    local_network_blocked: bool,
+    now: i64,
+) -> Attention {
     let paused: Vec<String> = peers
         .iter()
         .filter(|p| p.state == PeerState::Paused)
@@ -84,7 +92,8 @@ pub fn attention_of(conflicts: u32, peers: &[PeerRow], now: i64) -> Attention {
         .max_by_key(|l| l.at);
     Attention {
         conflicts,
-        needed: conflicts > 0 || !paused.is_empty() || !unseen.is_empty(),
+        needed: conflicts > 0 || !paused.is_empty() || local_network_blocked || !unseen.is_empty(),
+        local_network_blocked,
         paused,
         unseen,
         last_synced,
@@ -99,11 +108,13 @@ pub fn attention_of(conflicts: u32, peers: &[PeerRow], now: i64) -> Attention {
 pub fn attention(
     conn: &Connection,
     live: &HashMap<String, PeerLive>,
+    local_network_blocked: bool,
     now: i64,
 ) -> AppResult<Attention> {
     Ok(attention_of(
         conflicts::open_count(conn)?,
         &peer_rows(conn, live)?,
+        local_network_blocked,
         now,
     ))
 }
@@ -138,7 +149,7 @@ mod tests {
             peer("Pixel 8", PeerState::UpToDate, Some(NOW), Some(NOW)),
             peer("Air", PeerState::NotNearby, Some(NOW - 3 * DAY_MS), None),
         ];
-        let a = attention_of(0, &peers, NOW);
+        let a = attention_of(0, &peers, false, NOW);
         assert!(!a.needed);
         assert_eq!(a.last_synced.map(|l| l.device), Some("Pixel 8".into()));
     }
@@ -146,9 +157,9 @@ mod tests {
     #[test]
     fn each_of_the_three_conditions_alone_shows_the_card() {
         let calm = [peer("Pixel 8", PeerState::UpToDate, Some(NOW), Some(NOW))];
-        assert!(attention_of(2, &calm, NOW).needed, "conflicts wait");
+        assert!(attention_of(2, &calm, false, NOW).needed, "conflicts wait");
         let paused = [peer("Pixel 8", PeerState::Paused, Some(NOW), None)];
-        let a = attention_of(0, &paused, NOW);
+        let a = attention_of(0, &paused, false, NOW);
         assert!(a.needed);
         assert_eq!(a.paused, ["Pixel 8"]);
         let away = [peer(
@@ -157,7 +168,7 @@ mod tests {
             Some(NOW - 14 * DAY_MS),
             None,
         )];
-        let a = attention_of(0, &away, NOW);
+        let a = attention_of(0, &away, false, NOW);
         assert!(a.needed, "exactly 14 days");
         assert_eq!(a.unseen[0].days, 14);
         let nearly = [peer(
@@ -166,20 +177,32 @@ mod tests {
             Some(NOW - 14 * DAY_MS + 1),
             None,
         )];
-        assert!(!attention_of(0, &nearly, NOW).needed, "13 days and a bit");
+        assert!(
+            !attention_of(0, &nearly, false, NOW).needed,
+            "13 days and a bit"
+        );
     }
 
     #[test]
     fn a_device_here_now_is_not_unseen_whatever_its_history() {
         let here = [peer("Pixel 8", PeerState::UpToDate, Some(0), None)];
-        assert!(!attention_of(0, &here, NOW).needed);
+        assert!(!attention_of(0, &here, false, NOW).needed);
+    }
+
+    #[test]
+    fn the_local_network_being_blocked_alone_shows_the_card() {
+        let calm = [peer("Pixel 8", PeerState::UpToDate, Some(NOW), Some(NOW))];
+        assert!(!attention_of(0, &calm, false, NOW).needed);
+        let a = attention_of(0, &calm, true, NOW);
+        assert!(a.needed);
+        assert!(a.local_network_blocked);
     }
 
     #[test]
     fn a_device_never_seen_counts_from_pairing() {
         let mut p = peer("Pixel 8", PeerState::NotNearby, None, None);
         p.paired_at = NOW - 20 * DAY_MS;
-        let a = attention_of(0, &[p], NOW);
+        let a = attention_of(0, &[p], false, NOW);
         assert_eq!(a.unseen[0].days, 20);
     }
 }

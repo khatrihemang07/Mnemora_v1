@@ -11,9 +11,14 @@
  * devices and mock-sync-merge.test.ts runs on the copy: change a rule in Rust and the Vitest case
  * fails until the copy follows. Dev only (this file is never in a production build).
  *   URL: `?sync=on` Sync on, nobody paired; `?paired=2` on with two paired devices (implies on);
- *        `&paused=update|me|both|clock|clock_me`; `&activity=N` lines; `&paircode=SECONDS`.
+ *        `&paused=update|me|both|clock|clock_me`; `&activity=N` lines; `&paircode=SECONDS`;
+ *        `&localnet=blocked` (or `blocked-phone`) the system keeps this device off the local
+ *        network (macOS Local Network privacy / Android 17): see "localnet" below.
  *   Console: `__pixel.edit(op, args)`, `__pixel.sync()`, `__pixel.scenario(name)`, `__pixel.scenarios()`,
  *        `__pixel.world()`; `__syncMock.*` (pairing flags, setPeer, check, newConflict, memberTypedAddress);
+ *        `__syncMock.localNetwork('blocked'|'ok', 'desktop'|'phone')` simulates the Local Network
+ *        permission being refused (Devices + Pair banner, "Blocked by Local Network setting" rows, amber
+ *        "!" badge, Home card, one Activity line; clears on 'ok'; 'phone' words it for Android).
  *        `__listMergeMock(name?)`; `__journalRemoteMock(text, id?)`.
  *
  * Every Sync scenario of docs/design/sync-prototype.html (its SCENARIOS list) and how to reach it
@@ -28,6 +33,9 @@
  *   devices      /sync?P                           add `__syncMock.setPeer('syncing')` for a row mid-sync
  *   detail       /sync?P&device=mock-pixel         the device sheet
  *   paused       /sync?P&paused=update             (other reasons: me, both, clock, clock_me)
+ *   localnet     /sync?P&localnet=blocked          the Local Network banner (P14), rows, badge and Home card
+ *                (add -phone for the phone wording, P16); pair sheet: Pair a device; the Mac Pair sheet
+ *                also shows "Or on your phone: Pair by address… 192.168.1.20" (P15)
  *   forget       /sync?P&device=mock-pixel         Forget in the sheet
  *   pairShow     /sync?sync=on, Pair a device      the phone types the code after a few seconds
  *   pairPhone    /sync?sync=on, Pair a device › Enter a code instead
@@ -258,6 +266,10 @@ export async function installMock() {
   // `?paired=2&paused=update|me|both|clock|clock_me` starts with Pixel 8 paused for that reason.
   const paused = query.get('paused');
   if (paused) pairFlags.setPeer?.('paused', undefined, 0, paused);
+  // `?localnet=blocked` (or `blocked-phone`): the system keeps this device off the local network.
+  const localnet = query.get('localnet');
+  if (localnet?.startsWith('blocked'))
+    pairFlags.localNetwork?.('blocked', localnet === 'blocked-phone' ? 'phone' : 'desktop');
   // Console: `__syncMock.newConflict()` acts out a conflict arriving (a Needs-you row, badge and Home count follow); a toast shows if Settings ›
   // Sync is on "Show a toast" (Rust only sends the event to a device set to one).
   pairFlags.newConflict = () => {

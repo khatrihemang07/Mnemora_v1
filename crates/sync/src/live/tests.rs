@@ -2,7 +2,7 @@
 //! sync: what is tested here is which connection survives and that a session runs over it.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -16,6 +16,7 @@ use tokio::sync::Notify;
 
 use super::{Host, Live, Pace, Schedule};
 use crate::discovery::Fixed;
+use crate::local_network::{LocalNetwork, Rhythm};
 use crate::net::{
     DeviceIdentity, Handshake, Incoming, Listener, LocalHandshake, NetConfig, PublicKey, Trust,
     dial,
@@ -30,6 +31,8 @@ struct TestHost {
     conn: Mutex<Connection>,
     /// The next session this device starts panics (a bug in a connection task).
     fault: Arc<AtomicBool>,
+    /// How often the Devices tab was told to read again.
+    announced: Arc<AtomicUsize>,
 }
 
 impl PairingHost for TestHost {
@@ -82,7 +85,9 @@ impl Host for TestHost {
         Arc::default()
     }
 
-    fn status_changed(&self) {}
+    fn status_changed(&self) {
+        self.announced.fetch_add(1, Ordering::SeqCst);
+    }
 }
 
 struct Device {
@@ -91,6 +96,7 @@ struct Device {
     listener: Listener,
     live: Live,
     fault: Arc<AtomicBool>,
+    announced: Arc<AtomicUsize>,
 }
 
 impl Device {
@@ -99,15 +105,25 @@ impl Device {
     }
 
     async fn paced(id: &'static str, dial_each: Duration) -> Self {
+        Self::build(id, dial_each, LocalNetwork::off()).await
+    }
+
+    async fn build(
+        id: &'static str,
+        dial_each: Duration,
+        local_network: Arc<LocalNetwork>,
+    ) -> Self {
         let mut conn = db::open_in_memory().unwrap();
         let dir = tempfile::tempdir().unwrap();
         migrate::run(&mut conn, &[&CoreModule, &SyncModule], dir.path()).unwrap();
         hlc::set_device_id(&conn, id).unwrap();
         let fault = Arc::new(AtomicBool::new(false));
+        let announced = Arc::new(AtomicUsize::new(0));
         let host = Arc::new(TestHost {
             device: id.to_owned(),
             conn: Mutex::new(conn),
             fault: Arc::clone(&fault),
+            announced: Arc::clone(&announced),
         });
         let local = LocalHandshake::new({
             let host = Arc::clone(&host);
@@ -134,6 +150,7 @@ impl Device {
             Fixed::new(),
             pace,
             id.to_owned(),
+            local_network,
             &tokio::runtime::Handle::current(),
         );
         Self {
@@ -142,6 +159,7 @@ impl Device {
             listener,
             live,
             fault,
+            announced,
         }
     }
 
@@ -310,4 +328,127 @@ async fn a_dial_that_fails_after_a_connection_was_adopted_leaves_the_device_reac
         "a failed dial must not clear the presence of an open connection"
     );
     held.abort();
+}
+
+/// Discovery finds nothing (the Mac that macOS keeps off the local network cannot browse), yet a
+/// device is dialled at the address remembered for it, so it still syncs through the other
+/// device's incoming connection (D14).
+#[tokio::test]
+async fn a_remembered_address_is_dialled_when_discovery_finds_nothing() {
+    let (a, mut b) = (Device::new("dev-a").await, Device::new("dev-b").await);
+    b.pair_with(&a);
+    a.config.trust.pin(b.config.identity.public_key(), b.id);
+    a.live
+        .host()
+        .with_db(&mut |conn| {
+            conn.execute(
+                "INSERT INTO sync_peers(id, name, paired_at, public_key) VALUES ('dev-b', 'dev-b', 1, ?1)",
+                [b.config.identity.public_key().to_hex()],
+            )?;
+            conn.execute(
+                "INSERT INTO sync_peer_addresses(device, address, last_ok_at) VALUES ('dev-b', ?1, NULL)",
+                [b.addr().to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    a.live.refresh_peers();
+
+    let Some(Incoming::Peer(at_b)) = b.listener.accept().await else {
+        panic!("b was not dialled");
+    };
+    b.live.accept(*at_b);
+    until("a connection a dialled", || {
+        a.live.dialled_by_me("dev-b") == Some(true)
+            && a.live.snapshot().get("dev-b").is_some_and(|l| l.reachable)
+    })
+    .await;
+}
+
+fn denied() -> std::io::Result<()> {
+    Err(std::io::Error::from(std::io::ErrorKind::HostUnreachable))
+}
+
+fn quickly() -> Rhythm {
+    Rhythm {
+        grace: Duration::from_millis(150),
+        fast: Duration::from_millis(20),
+        slow: Duration::from_millis(20),
+        steady: Duration::from_millis(20),
+    }
+}
+
+fn blocked_lines(device: &Device) -> i64 {
+    let mut n = 0;
+    device
+        .live
+        .host()
+        .with_db(&mut |conn| {
+            n = conn.query_row(
+                "SELECT COUNT(*) FROM sync_activity WHERE kind = 'blocked'",
+                [],
+                |r| r.get(0),
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    n
+}
+
+/// A probe that keeps being refused marks the local network blocked once, tells the window, writes
+/// one line in Activity, and clears (and tells the window again) when it works (D13).
+#[tokio::test]
+async fn a_probe_that_keeps_failing_blocks_once_and_a_working_one_clears_it() {
+    let works = Arc::new(AtomicBool::new(false));
+    let local = LocalNetwork::with_rhythm(
+        {
+            let works = Arc::clone(&works);
+            move || {
+                if works.load(Ordering::SeqCst) {
+                    Ok(())
+                } else {
+                    denied()
+                }
+            }
+        },
+        quickly(),
+    );
+    let a = Device::build("dev-a", Duration::from_secs(3), Arc::clone(&local)).await;
+    assert!(
+        !local.blocked(),
+        "the first refusals are the prompt being answered"
+    );
+    until("blocked", || local.blocked()).await;
+    until("the window told", || {
+        a.announced.load(Ordering::SeqCst) >= 1
+    })
+    .await;
+    until("one line in Activity", || blocked_lines(&a) == 1).await;
+    // Many more refusals later it is still one line and one announcement.
+    let told = a.announced.load(Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(blocked_lines(&a), 1);
+    assert_eq!(a.announced.load(Ordering::SeqCst), told);
+
+    works.store(true, Ordering::SeqCst);
+    until("cleared", || !local.blocked()).await;
+    until("the window told again", || {
+        a.announced.load(Ordering::SeqCst) > told
+    })
+    .await;
+    assert_eq!(blocked_lines(&a), 1);
+}
+
+/// With no probe a working network is never reported blocked, and dials to loopback (not a LAN
+/// address) say nothing about the permission either way.
+#[tokio::test]
+async fn loopback_dials_do_not_touch_the_local_network_state() {
+    let local = LocalNetwork::off();
+    let a = Device::build("dev-a", Duration::from_millis(300), Arc::clone(&local)).await;
+    let refused = std::net::TcpListener::bind((LOCALHOST, 0)).unwrap();
+    let addr = refused.local_addr().unwrap();
+    drop(refused);
+    let race = super::dial::race(&a.config, vec![addr; 5], Duration::from_millis(300), &local);
+    assert!(race.await.is_none());
+    assert!(!local.blocked());
 }

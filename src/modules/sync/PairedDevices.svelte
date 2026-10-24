@@ -3,6 +3,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import Skeleton from '../../lib/ui/Skeleton.svelte';
+  import LocalNetworkBanner from './LocalNetworkBanner.svelte';
   import PausedBanner from './PausedBanner.svelte';
   import PeerList from './PeerList.svelte';
   import { devicesQuery, watchDevices } from './queries';
@@ -29,6 +30,7 @@
 {:else if devices.data && showWelcome(undefined, devices.data.peers.length)}
   <WelcomeCard />
 {:else if devices.data}
+  <LocalNetworkBanner device={devices.data.this_device} class="mb-3" />
   <PausedBanner peers={devices.data.peers} />
   <ThisDeviceCard device={devices.data.this_device} />
   <PeerList peers={devices.data.peers} />

@@ -18,6 +18,7 @@
   import Pause from '~icons/lucide/pause';
   import Pencil from '~icons/lucide/pencil';
   import Play from '~icons/lucide/play';
+  import ShieldAlert from '~icons/lucide/shield-alert';
   import Unlink from '~icons/lucide/unlink';
   import UserPlus from '~icons/lucide/user-plus';
   import WifiOff from '~icons/lucide/wifi-off';
@@ -75,6 +76,7 @@
     renamed: Pencil,
     paused: Pause,
     resumed: Play,
+    blocked: ShieldAlert,
     failed: WifiOff,
     conflict_raised: GitMerge,
     conflict_resolved: Check,

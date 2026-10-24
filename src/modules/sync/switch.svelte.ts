@@ -4,6 +4,7 @@ import { unwrap } from '../../lib/ipc/unwrap';
 import type { DeviceSwitch, ModuleContext } from '../../lib/router';
 import { deviceQuery } from '../../lib/settings/queries';
 import { notifyError } from '../../lib/ui/toast';
+import { askLocalNetworkOnEnable } from './local-network';
 import { refreshSync } from './queries';
 
 /** Whether the "Turn off Sync?" Dialog is open. It is mounted by the Module's overlay while Sync is on. */
@@ -49,7 +50,12 @@ export function useSyncSwitch(ctx: ModuleContext): DeviceSwitch {
         turnOffDialog.open = true;
         return;
       }
-      void setEnabled(true).then((ok) => ok && ctx.navigate('/sync'));
+      void setEnabled(true).then((ok) => {
+        if (!ok) return;
+        // Android 17: the system asks to reach devices on the network, now and not before.
+        askLocalNetworkOnEnable();
+        ctx.navigate('/sync');
+      });
     },
   };
 }

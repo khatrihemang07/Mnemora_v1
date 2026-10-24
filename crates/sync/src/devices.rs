@@ -32,6 +32,9 @@ pub struct ThisDevice {
     pub routes: Vec<Route>,
     /// Sync is waiting because this phone is on mobile data and "Allow over mobile data" is off.
     pub paused_on_mobile_data: bool,
+    /// The system keeps this device off the local network (macOS Local Network privacy, Android's
+    /// local network permission): nothing on the Wi-Fi can be dialled or found.
+    pub local_network_blocked: bool,
 }
 
 /// The Devices tab.
@@ -120,8 +123,8 @@ pub(crate) fn routes_of(ips: &[std::net::IpAddr]) -> Vec<Route> {
 }
 
 /// The Devices tab's data. `listening` is where the listener is bound, if it is; `paused_on_mobile_data`
-/// says Sync is held by the mobile-data setting; `live` is what the session manager says about each
-/// paired device.
+/// says Sync is held by the mobile-data setting; `local_network_blocked` says the system keeps this
+/// device off the local network; `live` is what the session manager says about each paired device.
 #[allow(
     clippy::implicit_hasher,
     reason = "the one caller passes the manager's plain map"
@@ -131,6 +134,7 @@ pub fn view(
     conn: &Connection,
     listening: Option<SocketAddr>,
     paused_on_mobile_data: bool,
+    local_network_blocked: bool,
     live: &HashMap<String, PeerLive>,
 ) -> AppResult<DevicesView> {
     Ok(DevicesView {
@@ -149,8 +153,12 @@ pub fn view(
                 Vec::new()
             },
             paused_on_mobile_data,
+            local_network_blocked,
         },
-        peers: with_mobile_pause(rows_of(conn, live)?, paused_on_mobile_data),
+        peers: with_local_network_block(
+            with_mobile_pause(rows_of(conn, live)?, paused_on_mobile_data),
+            local_network_blocked,
+        ),
     })
 }
 
@@ -161,6 +169,20 @@ pub fn with_mobile_pause(mut rows: Vec<PeerRow>, paused: bool) -> Vec<PeerRow> {
         for row in &mut rows {
             if row.state == PeerState::NotNearby {
                 row.state = PeerState::PausedOnMobileData;
+            }
+        }
+    }
+    rows
+}
+
+/// While the system keeps this device off the local network, the devices that cannot be reached say
+/// so instead of "Not nearby". A device connected over an incoming connection or Tailscale is
+/// reachable, and says so.
+pub fn with_local_network_block(mut rows: Vec<PeerRow>, blocked: bool) -> Vec<PeerRow> {
+    if blocked {
+        for row in &mut rows {
+            if row.state == PeerState::NotNearby {
+                row.state = PeerState::BlockedByLocalNetwork;
             }
         }
     }
@@ -228,6 +250,31 @@ mod tests {
         assert_eq!(
             states(with_mobile_pause(rows, false)),
             [PeerState::NotNearby, PeerState::UpToDate]
+        );
+    }
+
+    #[test]
+    fn unreachable_devices_read_blocked_while_the_local_network_is_the_reason() {
+        let mut here = row("here", 1);
+        here.state = PeerState::UpToDate;
+        let rows = vec![row("away", 2), here];
+        let states = |r: Vec<PeerRow>| r.into_iter().map(|p| p.state).collect::<Vec<_>>();
+        assert_eq!(
+            states(with_local_network_block(rows.clone(), true)),
+            [PeerState::BlockedByLocalNetwork, PeerState::UpToDate],
+            "a device already connected is not blocked"
+        );
+        assert_eq!(
+            states(with_local_network_block(rows.clone(), false)),
+            [PeerState::NotNearby, PeerState::UpToDate]
+        );
+        // Mobile data is the stronger reason: nothing at all can connect.
+        assert_eq!(
+            states(with_local_network_block(
+                with_mobile_pause(rows, true),
+                true
+            )),
+            [PeerState::PausedOnMobileData, PeerState::UpToDate]
         );
     }
 

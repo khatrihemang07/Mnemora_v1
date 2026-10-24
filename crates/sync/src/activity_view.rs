@@ -302,6 +302,10 @@ fn describe(conn: &Connection, v: Viewer<'_>, row: &Row) -> ActivityRow {
             ),
             false,
         )],
+        Some(Kind::Blocked) => vec![piece(
+            "Can’t reach devices on the network: blocked by the Local Network setting",
+            false,
+        )],
         Some(Kind::ListsMerged) => {
             let mut t = vec![piece(str_of("from"), true)];
             if !row.peer.is_empty() {

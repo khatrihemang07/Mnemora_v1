@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 17 (API 37) asks before an app reaches devices on the local network. Declared now, so it
+         is there when the target SDK moves; Sync asks only when it is turned on (and from the banner),
+         never while it is off, and only on Android versions that have it. Unknown on older ones. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
