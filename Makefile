@@ -5,41 +5,26 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 RUN := ./scripts/with-env.sh
-SANDBOX_ARGS := --config src-tauri/tauri.sandbox.conf.json --features sandbox
-DEV_PORT := 47821
-# Tauri merges build.features from the sandbox config too; passing it explicitly as well
-# means a CLI that ignored the config could still never start Sandbox on Production data
-# (the app also refuses to start when identifier and build Environment disagree).
+# dev, sandbox and android-dev run scripts/dev.mjs: Vite plus a key menu. ARGS passes flags to
+# it, e.g. make dev ARGS="--mac --android". The dev port, its check and the command lines live
+# in scripts/dev/ (port 47821 is also in vite.config.ts and src-tauri/tauri.conf.json).
 
 .PHONY: help dev sandbox build android-dev android android-sandbox android-test test lint fmt icons bindings trim clean-heavy setup
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-define require_free_port
-	@if lsof -iTCP:$(DEV_PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
-	  echo "Port $(DEV_PORT) is already in use: a dev server is probably running (see 'pgrep -fl vite'). Stop it first."; \
-	  exit 1; \
-	fi
-endef
+dev: ## Vite + key menu (w web, q Mac, a Android, r relaunch, x stop); Production data
+	$(RUN) node scripts/dev.mjs $(ARGS)
 
-dev: ## Hot reload on Production data (DB is backed up before migrations)
-	$(require_free_port)
-	$(RUN) cargo tauri dev
-
-sandbox: ## Hot reload on separate Sandbox data with the SANDBOX badge
-	$(require_free_port)
-	$(RUN) cargo tauri dev $(SANDBOX_ARGS)
+sandbox: ## Vite + key menu, Mac app on separate Sandbox data with the SANDBOX badge
+	$(RUN) node scripts/dev.mjs --sandbox $(ARGS)
 
 build: ## Release build for this machine (.app/.dmg), signed if setup-signing was run
 	@eval "$$(./scripts/signing-env.sh mac)"; $(RUN) cargo tauri build
 
-android-dev: ## Hot reload on a USB-connected phone (Sandbox data)
-	$(require_free_port)
-	@export MNEMORA_ANDROID_SANDBOX=1; \
-	  trap 'adb reverse --remove tcp:$(DEV_PORT) >/dev/null 2>&1 || true' EXIT; \
-	  $(RUN) adb reverse tcp:$(DEV_PORT) tcp:$(DEV_PORT) && \
-	  $(RUN) cargo tauri android dev --features sandbox
+android-dev: ## Vite + key menu, Android app on a USB-connected phone (Sandbox data)
+	$(RUN) node scripts/dev.mjs --android
 
 android: ## Signed arm64 release APK, installed on the connected phone
 	@set -e; unset MNEMORA_ANDROID_SANDBOX; eval "$$(./scripts/signing-env.sh android)"; \

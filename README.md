@@ -23,10 +23,10 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 
 | Command | What it does |
 |---|---|
-| `make dev` | Hot-reload app on **Production** data (DB is backed up before migrations) |
-| `make sandbox` | Hot-reload app on separate **Sandbox** data, with an orange SANDBOX badge |
+| `make dev` | Vite plus a key menu; build the app on **Production** data (DB is backed up before migrations) |
+| `make sandbox` | Vite plus a key menu; build the app on separate **Sandbox** data, with an orange SANDBOX badge |
 | `make build` | Release build for this machine (`.app` / `.dmg`) |
-| `make android-dev` | Hot reload on a USB-connected phone (Sandbox data) |
+| `make android-dev` | Vite plus the key menu, with the Android app on a USB-connected phone (Sandbox data) |
 | `make android-sandbox` | Debug Sandbox APK (no hot reload) installed on the phone |
 | `make android-test` | Kotlin unit tests for the Todo widget |
 | `make android` | Signed arm64 release APK, installed on the connected phone |
@@ -38,6 +38,22 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make icons` | Regenerate every app icon and the favicon from `src-tauri/icons/source/*.svg` |
 
 Every target runs with `CARGO_BUILD_JOBS=2` and cleans up the processes it started.
+
+### Dev menu (`make dev`, `make sandbox`)
+
+Both start only Vite on port 47821 and show a key menu. The native app is built only when you ask for it, and native builds run one at a time.
+
+| Key | Action |
+|---|---|
+| `w` | Open the web mock in your browser |
+| `q` | Launch the Mac app (Production for `make dev`, Sandbox for `make sandbox`) |
+| `a` | Launch the Android app on a USB phone (always Sandbox data) |
+| `r` | Relaunch the running or queued app(s) |
+| `x` | Stop the native app(s), keep Vite; queued builds stay queued and say so |
+| `?` | Show the menu again |
+| Ctrl-C | Quit everything |
+
+Flags launch apps as soon as Vite is up, and combine: `make dev ARGS="--mac --android"`. Without `make` you can run `pnpm dev:menu --mac`; the script refuses a taken port itself, but skips `.env.local`. Only one native build runs at a time. A build holds its slot until its build phase ends: the Mac build until cargo prints `Finished` or `Running`, and the Android build until Gradle prints `Installing APK`. If no such line appears within 30 minutes, the slot is freed anyway. A running app holds no slot. Without a terminal (`make dev </dev/null`) it runs Vite only and logs that keys are unavailable. Android needs exactly one phone connected, authorised for USB debugging; the menu says so when it is not.
 
 ## Trying the Todo widget
 
@@ -54,7 +70,7 @@ The Todo widget (Android 12+) is a native home-screen widget for the Todo Module
 
 | | Production | Sandbox |
 |---|---|---|
-| Started by | `make dev`, `make build` | `make sandbox`, `make android-dev` |
+| Started by | `make dev` (press `q` or `ARGS="--mac"`), `make build` | `make sandbox` (press `q`), `make android-dev` |
 | Identifier | `com.hemang.mnemora` | `com.hemang.mnemora.sandbox` |
 | Data | `<platform data root>/com.hemang.mnemora/data/mnemora.db` | `<platform data root>/com.hemang.mnemora.sandbox/data/mnemora.db` |
 | Config, logs | `.../config/device.toml`, `.../logs/` | same layout under the Sandbox folder |
@@ -71,7 +87,7 @@ src/lib/         theme, router wrapper, ipc (generated bindings), time, settings
 src/shell/       AppShell, Sidebar, TabBar, registry of Modules
 src/modules/     One folder per Module (home, settings)
 docs/            adr/ (decisions), engineering/ (standards), design/ (UI system + pitch)
-scripts/         setup and signing helpers
+scripts/         setup and signing helpers; dev.mjs and dev/ run the dev menu (rules in dev/, tests beside them)
 ```
 
 ## Docs

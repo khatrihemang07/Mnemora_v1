@@ -23,7 +23,7 @@
   import MarkdownEditor from '../../lib/ui/MarkdownEditor.svelte';
   import { viewport } from '../../lib/viewport.svelte';
   import { Composer } from './composer';
-  import { chipLabel, localDateString } from './dates';
+  import { chipLabel, dayHue, localDateString } from './dates';
   import { journalLeaveGuard, useEditing } from './editing.svelte';
   import { useFocus } from './focus.svelte';
   import { useNav } from './navigation.svelte';
@@ -191,15 +191,15 @@
       <Chip
         bind:ref={dateChip}
         icon={CalendarDays}
-        tone={nav.composerDate === null || nav.composerDate === nav.today ? 'plain' : 'warm'}
-        hue="--hue-journal"
+        tone="warm"
+        hue={dayHue(pageDate, nav.today)}
         class="mt-0.5 self-start"
         aria-label="Entry date: {chipLabel(pageDate, nav.today)}. Choose another date"
         aria-haspopup="dialog"
         aria-expanded={dateOpen}
         onclick={() => (dateOpen = !dateOpen)}
       >
-        {chipLabel(pageDate, nav.today)}
+        {#if dayHue(pageDate, nav.today) === '--hue-journal'}{chipLabel(pageDate, nav.today)}{/if}
       </Chip>
       <MarkdownEditor
         bind:this={editor}

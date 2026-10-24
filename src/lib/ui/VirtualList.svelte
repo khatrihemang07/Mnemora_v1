@@ -59,9 +59,15 @@
   let scrollTop = $state(0);
   let pinnedHeight = $state(0);
   let outerWidth = $state(0);
-  let innerWidth = $state(0);
-  // The scrollbar's width, so the overlay lines up with the rows under it.
-  const gutter = $derived(outerWidth - innerWidth);
+  // The scrollbar's width, so the overlay lines up with the rows under it. Size bindings only fire
+  // when the border box changes, which a scrollbar appearing (the list growing past the view) does
+  // not, so it is re-read whenever the list's height changes.
+  let gutter = $state(0);
+  $effect(() => {
+    void total;
+    void outerWidth;
+    if (scroller) gutter = scroller.offsetWidth - scroller.clientWidth;
+  });
   let instance: SvelteVirtualizer<HTMLDivElement, HTMLElement> | undefined;
   /** The first row in view and how far into it the view starts, to hold the view across inserts. */
   let anchor: ScrollAnchor | null = null;
@@ -133,6 +139,7 @@
   function reported() {
     if (!scroller) return;
     scrollTop = scroller.scrollTop;
+    gutter = scroller.offsetWidth - scroller.clientWidth;
     const first = rows.find((r) => r.start + r.size > scrollTop);
     anchor = first ? { key: first.key, index: first.index, delta: scrollTop - first.start } : null;
     onviewport?.(scroller.scrollTop, scroller.clientHeight);
@@ -193,7 +200,6 @@
   <div
     bind:this={scroller}
     bind:offsetWidth={outerWidth}
-    bind:clientWidth={innerWidth}
     class="overflow-y-auto {cls}"
     onscroll={reported}
   >

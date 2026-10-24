@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   chipLabel,
+  dayHue,
   dayLabel,
   editedLabel,
   fullWritten,
@@ -164,5 +165,14 @@ describe('pills while the window is away from Today', () => {
     expect(showTodayPill(0, 800, 0, true)).toBe(true);
     expect(showUpcomingPill(0, 800, 0, 3, true)).toBe(false);
     expect(showUpcomingPill(0, 800, 0, 3)).toBe(true);
+  });
+});
+
+describe('dayHue', () => {
+  it('gives Today and Yesterday their own colour and every other day the Journal hue', () => {
+    expect(dayHue('2026-10-24', '2026-10-24')).toBe('--accent');
+    expect(dayHue('2026-10-23', '2026-10-24')).toBe('--muted');
+    expect(dayHue('2026-10-22', '2026-10-24')).toBe('--hue-journal');
+    expect(dayHue('2026-10-25', '2026-10-24')).toBe('--hue-journal');
   });
 });

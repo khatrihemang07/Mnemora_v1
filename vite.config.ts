@@ -12,6 +12,7 @@ export default defineConfig({
   clearScreen: false,
   envPrefix: ['VITE_', 'TAURI_'],
   server: {
+    // Also DEV_PORT in scripts/dev/config.mjs and devUrl in src-tauri/tauri.conf.json; keep them equal.
     port: 47821,
     strictPort: true,
     host: host || false,
