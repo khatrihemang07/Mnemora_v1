@@ -1,4 +1,10 @@
-import type { BareKey, HomeCardLoader, ModuleManifest, RoutePath } from '../lib/router';
+import type {
+  BareKey,
+  HomeCardLoader,
+  ModuleContext,
+  ModuleManifest,
+  RoutePath,
+} from '../lib/router';
 import { activeModuleId } from './phone-tabs';
 
 const byOrder = (a: ModuleManifest, b: ModuleManifest) => a.nav.order - b.nav.order;
@@ -32,15 +38,18 @@ export function setModuleEnabled(disabled: string[], id: string, on: boolean): s
   return on ? rest : [...rest, id];
 }
 
-/** What ⌘N runs: the first enabled Module (by nav order) with a create action. */
-export const createTarget = (enabled: ModuleManifest[]) =>
-  [...enabled].sort(byOrder).find((m) => m.create);
-
-/** The bare key `key` (a letter, either case) is owned by the first enabled Module that claims it. */
-export function bareKeyFor(enabled: ModuleManifest[], key: string): BareKey | null {
+/**
+ * The bare key `key` is owned by the first enabled Module that claims it and whose `when` holds
+ * (a key can be claimed by several Modules, one per page).
+ */
+export function bareKeyFor(
+  enabled: ModuleManifest[],
+  key: string,
+  ctx: ModuleContext,
+): BareKey | null {
   const wanted = key.toLowerCase();
   for (const m of [...enabled].sort(byOrder)) {
-    const hit = m.bareKeys?.find((k) => k.key.toLowerCase() === wanted);
+    const hit = m.bareKeys?.find((k) => k.key.toLowerCase() === wanted && (k.when?.(ctx) ?? true));
     if (hit) return hit;
   }
   return null;

@@ -55,11 +55,11 @@
     const action = resolveShortcut(e, isMac);
     if (action) {
       e.preventDefault();
-      runShortcut(action, enabled.list);
+      runShortcut(action);
       return;
     }
     // A bare letter (Q) is a shortcut only when nothing is being typed into and nothing is open.
-    const bare = bareKeyFor(enabled.list, e.key);
+    const bare = bareKeyFor(enabled.list, e.key, moduleContext);
     if (bare && bareKeyFires(e, bare.key, { target: e.target, overlayOpen: overlayOpenIn(document) })) {
       e.preventDefault();
       bare.run(moduleContext);

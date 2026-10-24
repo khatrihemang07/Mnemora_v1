@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Todo widget's themes, hand-converted from src/lib/theme/tokens.css. The card surface is the
      surface token (True black: pure black, the oled bg). The Priority ring colours (danger, warning,
-     accent) keep their meaning in every theme, Material You included. Material You colours come
-     from the system palette on Android 12+ (values-v31/); the values here are only the fallback. -->
+     accent) keep their meaning in every theme. -->
 <resources>
     <color name="widget_light_bg">#FFFFFFFF</color>
     <color name="widget_light_surface2">#FFF5EFE9</color>
@@ -34,26 +33,6 @@
     <color name="widget_oled_accent">#FF9499FA</color>
     <color name="widget_oled_todo">#FF00A08F</color>
     <color name="widget_oled_on_todo">#FF0F101F</color>
-    <color name="widget_you_bg">#FFFFFFFF</color>
-    <color name="widget_you_surface2">#FFF5EFE9</color>
-    <color name="widget_you_ink">#FF1D1712</color>
-    <color name="widget_you_muted">#FF6A615A</color>
-    <color name="widget_you_faint">#FF8C857E</color>
-    <color name="widget_you_danger">#FFC2181D</color>
-    <color name="widget_you_warning">#FFE48E26</color>
-    <color name="widget_you_accent">#FF615CDC</color>
-    <color name="widget_you_todo">#FF00A08F</color>
-    <color name="widget_you_on_todo">#FFFCFCFC</color>
-    <color name="widget_you_dark_bg">#FF191511</color>
-    <color name="widget_you_dark_surface2">#FF221D19</color>
-    <color name="widget_you_dark_ink">#FFEEEBE5</color>
-    <color name="widget_you_dark_muted">#FF9E9790</color>
-    <color name="widget_you_dark_faint">#FF7F7973</color>
-    <color name="widget_you_dark_danger">#FFF66D62</color>
-    <color name="widget_you_dark_warning">#FFE48E26</color>
-    <color name="widget_you_dark_accent">#FF9499FA</color>
-    <color name="widget_you_dark_todo">#FF00A08F</color>
-    <color name="widget_you_dark_on_todo">#FF0F101F</color>
     <!-- The open-steps dialog's window: see-through over home, no title bar; the dialog card is drawn in code in the widget's theme. -->
     <style name="Theme.TodoWidgetDialog" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>

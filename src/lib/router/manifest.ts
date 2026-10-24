@@ -35,8 +35,10 @@ export interface ModuleContext {
  * modifier held. The first enabled Module (by nav order) that claims a key gets it.
  */
 export interface BareKey {
-  /** A single letter, either case. */
+  /** A single letter, either case, or `/` or `?`. */
   key: string;
+  /** Only when this holds: a key a Module also uses for something else in its own view yields. */
+  when?: (ctx: ModuleContext) => boolean;
   run: (ctx: ModuleContext) => void;
 }
 
@@ -114,8 +116,7 @@ export interface ModuleManifest {
   /** CSS custom property holding this Module's hue, e.g. `--hue-home`. */
   accentVar: string;
   routes: { path: RoutePath; component: RouteLoader }[];
-  /** `shortcut` is the digit used with the modifier key (Cmd/Ctrl+1..9), or null. */
-  nav: { order: number; shortcut: number | null; placement?: 'main' | 'bottom' };
+  nav: { order: number; placement?: 'main' | 'bottom' };
   /** Nested navigation under the Module's sidebar row. */
   navTree?: NavTree;
   /** Home and Settings: always on, no switch in Settings ▸ Modules. */
@@ -138,8 +139,6 @@ export interface ModuleManifest {
   homeCard?: HomeCardLoader;
   /** The Module's own Settings section, appended after the core sections. */
   settingsSection?: { label: string; icon: Component<{ class?: string }>; component: RouteLoader };
-  /** What ⌘N does while this Module is enabled (the first enabled Module with one wins). */
-  create?: (ctx: ModuleContext) => void;
   paletteActions?: ModuleAction[];
   /** What its phone tab does when tapped again or long-pressed (Todo: back to Today, Quick add). */
   phoneTab?: PhoneTabActions;

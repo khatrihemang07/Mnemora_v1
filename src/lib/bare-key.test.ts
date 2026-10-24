@@ -48,6 +48,12 @@ describe('a bare key', () => {
     expect(bareKeyFires(press(), 'q', { target: inside(), overlayOpen: true })).toBe(false);
   });
 
+  it('takes Shift only for "?", which is typed with it', () => {
+    expect(bareKeyFires(press({ key: '?', shiftKey: true }), '?', free)).toBe(true);
+    expect(bareKeyFires(press({ key: '?' }), '?', free)).toBe(true);
+    expect(bareKeyFires(press({ key: 'Q', shiftKey: true }), 'q', free)).toBe(false);
+  });
+
   it('ignores held-down repeats, composition and keys already handled', () => {
     expect(bareKeyFires(press({ repeat: true }), 'q', free)).toBe(false);
     expect(bareKeyFires(press({ isComposing: true }), 'q', free)).toBe(false);

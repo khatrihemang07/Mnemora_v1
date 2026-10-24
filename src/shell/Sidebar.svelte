@@ -20,8 +20,6 @@
   const main = $derived(entries.filter((e) => e.manifest.nav.placement !== 'bottom'));
   const bottom = $derived(entries.filter((e) => e.manifest.nav.placement === 'bottom'));
   const rail = $derived(shell.layout.rail);
-
-  const hint = (digit: number | null) => (digit ? shortcutLabel(String(digit)) : undefined);
 </script>
 
 <nav aria-label="Main" class="flex h-full flex-col bg-side">
@@ -47,7 +45,7 @@
     {/if}
     {#each main as e (e.id)}
       {#if e.manifest.navTree}
-        <TreeNavItem entry={e} {rail} shortcut={hint(e.manifest.nav.shortcut)} />
+        <TreeNavItem entry={e} {rail} />
       {:else}
         <NavItem
           label={e.manifest.name}
@@ -56,7 +54,6 @@
           active={router.isActive(e.path)}
           accentVar={e.manifest.accentVar}
           badgeOf={e.manifest}
-          shortcut={hint(e.manifest.nav.shortcut)}
           {rail}
         />
       {/if}
@@ -70,7 +67,6 @@
         active={router.isWithin(e.path)}
         accentVar={e.manifest.accentVar}
         badgeOf={e.manifest}
-        shortcut={e.id === 'settings' ? shortcutLabel(',') : hint(e.manifest.nav.shortcut)}
         {rail}
       />
     {/each}

@@ -62,8 +62,6 @@
   .tk.dark { --bg: oklch(19.8% .01 60); --surface-2: oklch(23.5% .011 60); --ink: oklch(94% .009 80); --muted: oklch(68% .013 70); --faint: oklch(58% .012 65);
         --line: oklch(26% .01 60); --accent: oklch(72% .14 280); --accent-soft: oklch(72% .14 280 / .16); --danger: oklch(70% .17 27); --danger-soft: oklch(70% .17 27 / .14); --on-todo: oklch(18% .03 280); --mark: oklch(63% .12 182 / .25); }
   .tk.oled { --bg: oklch(0% 0 0); --surface-2: oklch(18% .005 270); --line: oklch(22% .005 270); }
-  .tk.dynamic { --bg: oklch(95% .03 300); --surface-2: oklch(90% .045 300); --ink: oklch(25% .04 300); --muted: oklch(45% .04 300); --faint: oklch(58% .035 300); --line: oklch(86% .04 300); --todo: oklch(48% .12 300); --mark: oklch(48% .12 300 / .15); }
-  .tk.dynamic.dark { --bg: oklch(24% .035 300); --surface-2: oklch(30% .045 300); --ink: oklch(93% .02 300); --muted: oklch(75% .03 300); --faint: oklch(62% .03 300); --line: oklch(33% .04 300); --todo: oklch(80% .1 300); --on-todo: oklch(25% .05 300); --mark: oklch(80% .1 300 / .2); }
 
   .w { position: relative; width: 100%; height: 100%; border-radius: var(--wr); background: var(--bg); color: var(--ink); overflow: hidden;
        font: 14px/1.35 Inter, system-ui, sans-serif; display: flex; flex-direction: column; box-shadow: 0 2px 10px #0002; }
@@ -288,8 +286,8 @@ const SECTIONS = [
    v => `Look ${v}. At 1×1 the labels drop off where they would not fit.`],
   ['themeQ', 'L4', 'Which themes a widget can have',
    'Change <em>App theme (Settings)</em> and <em>Phone dark mode</em> in Stage, then open the <em>Configuration screen</em>. Note: changing the app theme only reaches the widget at its next redraw (round 4). Press “Make a change” to redraw.',
-   [['override', 'A · Follows the app; each widget can override (incl. Material You)'], ['app', 'B · Always the app’s theme'], ['you', 'C · Always Material You'], ['system', 'D · Phone light/dark only']],
-   v => ({ override: 'A: default is the app theme; the setup screen lets one widget be Light, Dark, True black, Material You or Material You dark.', app: 'B: no theme choice in setup.', you: 'C: wallpaper colours always; dark follows the phone.', system: 'D: app colours, but light/dark follows the phone, ignoring Settings ▸ Theme (and True black).' })[v]],
+   [['override', 'A · Follows the app; each widget can override '], ['app', 'B · Always the app’s theme'], ['system', 'D · Phone light/dark only']],
+   v => ({ override: 'A: default is the app theme; the setup screen lets one widget be Light, Dark or True black.', app: 'B: no theme choice in setup.', system: 'D: app colours, but light/dark follows the phone, ignoring Settings ▸ Theme (and True black).' })[v]],
   ['bg', 'L5', 'Background', 'Change the <em>Wallpaper</em> to judge each.',
    [['solid', 'A · Solid'], ['translucent', 'B · See-through tint'], ['none', 'C · None (text on wallpaper)']],
    v => ({ solid: 'A: opaque theme surface. Always readable.', translucent: 'B: surface at ~70%. Android cannot blur behind widgets, so no frosted glass.', none: 'C: text on the wallpaper with a shadow; breaks on busy wallpapers.' })[v]],
@@ -358,7 +356,7 @@ const SECTIONS = [
   ['dismiss', 'A3', 'Closing with text typed', 'Type something, then tap the dark area above the sheet.',
    [['discard', 'A · Throw it away'], ['draft', 'B · Keep it for next time'], ['ask', 'C · Ask “Discard?”']],
    v => ({ discard: 'A: matches the app’s Quick add (Esc drops what was typed).', draft: 'B: next + reopens with the text.', ask: 'C: one more tap every time.' })[v]],
-  ['sheetTheme', 'A4', 'Theme of the sheet, pill and dialogs', 'Set the widget to Material You in setup, then tap +.',
+  ['sheetTheme', 'A4', 'Theme of the sheet, pill and dialogs', 'Set the widget to Dark in setup, then tap +.',
    [['widget', 'A · The widget’s theme'], ['app', 'B · The app’s theme']],
    v => ({ widget: 'A: looks like it grew out of the widget.', app: 'B: always Settings ▸ Theme.' })[v]],
   ['hint', 'A5', 'Empty-box hint (only A1 D)', 'Choose A1 D, tap +.',
@@ -396,7 +394,6 @@ const DECIDED = [
   ['3', 'App open in background: updates instantly + on return'],
   ['3', 'Before first app launch: “Open Mnemora once to set up”'],
   ['4', 'Redraws only after Todo changes and at midnight'],
-  ['4', 'Material You app theme stays separate (#43)'],
 ];
 
 // ---------- helpers ----------
@@ -415,12 +412,11 @@ const title = () => ({ today: 'Today', upcoming: 'Upcoming', inbox: 'Inbox', all
 // Widget theme after L4: the app's theme only changes on the widget at a redraw (round 4).
 function resolveApp(t) { return t === 'system' ? (S.phoneDark ? 'dark' : 'light') : t; }
 function widgetTheme() {
-  if (S.themeQ === 'you') return S.phoneDark ? 'dynamicdark' : 'dynamic';
   if (S.themeQ === 'system') return S.phoneDark ? 'dark' : 'light';
   if (S.themeQ === 'override' && S.wtheme !== 'app') return S.wtheme;
   return resolveApp(S.drawnAppTheme);
 }
-const CLS = { light: '', dark: 'dark', oled: 'dark oled', dynamic: 'dynamic', dynamicdark: 'dynamic dark' };
+const CLS = { light: '', dark: 'dark', oled: 'dark oled' };
 const themeCls = () => CLS[widgetTheme()];
 const sheetCls = () => S.sheetTheme === 'widget' ? themeCls() : CLS[resolveApp(S.appTheme)];
 
@@ -643,7 +639,7 @@ function cfgHTML() {
   const head = t => `<div class="gh" style="padding:14px 0 0">${t}</div>`;
   let body = head('Show') + opt('view', 'today', 'Today', 'Overdue and due today') + opt('view', 'upcoming', 'Upcoming', 'Overdue, then each day') +
     opt('view', 'inbox', 'Inbox', 'Tasks with no List') + opt('view', 'all', 'All', 'Every open Task') + opt('view', 'list', '🏠 Home', 'List') + `<div class="opt" style="color:var(--faint)">🛒 Groceries · 💼 Work</div>`;
-  if (S.cfgLook !== 'view' && S.themeQ === 'override') body += head('Theme') + opt('wtheme', 'app', 'Same as the app', 'Settings ▸ Theme') + opt('wtheme', 'light', 'Light') + opt('wtheme', 'dark', 'Dark') + opt('wtheme', 'oled', 'True black') + opt('wtheme', 'dynamic', 'Material You') + opt('wtheme', 'dynamicdark', 'Material You dark');
+  if (S.cfgLook !== 'view' && S.themeQ === 'override') body += head('Theme') + opt('wtheme', 'app', 'Same as the app', 'Settings ▸ Theme') + opt('wtheme', 'light', 'Light') + opt('wtheme', 'dark', 'Dark') + opt('wtheme', 'oled', 'True black');
   if (S.cfgLook === 'full') body += head('Background') + opt('bg', 'solid', 'Solid') + opt('bg', 'translucent', 'See-through') + opt('bg', 'none', 'None');
   return `<div class="cfg tk ${themeCls()}"><header>Todo widget</header><div class="prev wall-${S.wall}">${widgetHTML(true)}</div>
     <div class="body">${body}</div><footer><button data-screen="home">Cancel</button><button class="pri" data-screen="home">Done</button></footer></div>`;
@@ -749,7 +745,7 @@ const STAGE = [
   ['scenario', 'State', [['normal', 'Normal'], ['empty', 'Nothing due'], ['fresh', 'Never opened app'], ['migrate', 'Update pending']]],
   ['appTheme', 'App theme (Settings)', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'True black']]],
   ['phoneDark', 'Phone dark mode', [[false, 'Off'], [true, 'On']]],
-  ['wtheme', 'This widget’s theme (setup, L4 A only)', [['app', 'Same as app'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'True black'], ['dynamic', 'Material You'], ['dynamicdark', 'Material You dark']]],
+  ['wtheme', 'This widget’s theme (setup, L4 A only)', [['app', 'Same as app'], ['light', 'Light'], ['dark', 'Dark'], ['oled', 'True black']]],
   ['wall', 'Wallpaper', [['a', 'Gradient'], ['b', 'Light'], ['c', 'Black']]],
   ['cols', 'Launcher grid', [[4, '4 columns'], [5, '5 columns']]],
 ];

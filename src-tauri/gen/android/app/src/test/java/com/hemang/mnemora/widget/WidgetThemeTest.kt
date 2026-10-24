@@ -33,8 +33,6 @@ class WidgetThemeTest {
                 assertEquals(Look.LIGHT, WidgetTheme.resolve(ThemeChoice.LIGHT, appTheme, night))
                 assertEquals(Look.DARK, WidgetTheme.resolve(ThemeChoice.DARK, appTheme, night))
                 assertEquals(Look.TRUE_BLACK, WidgetTheme.resolve(ThemeChoice.TRUE_BLACK, appTheme, night))
-                assertEquals(Look.MATERIAL_YOU, WidgetTheme.resolve(ThemeChoice.MATERIAL_YOU, appTheme, night))
-                assertEquals(Look.MATERIAL_YOU_DARK, WidgetTheme.resolve(ThemeChoice.MATERIAL_YOU_DARK, appTheme, night))
             }
         }
     }
@@ -42,10 +40,8 @@ class WidgetThemeTest {
     @Test
     fun darkLooksAreTheDarkOnes() {
         assertFalse(WidgetTheme.isDark(Look.LIGHT))
-        assertFalse(WidgetTheme.isDark(Look.MATERIAL_YOU))
         assertTrue(WidgetTheme.isDark(Look.DARK))
         assertTrue(WidgetTheme.isDark(Look.TRUE_BLACK))
-        assertTrue(WidgetTheme.isDark(Look.MATERIAL_YOU_DARK))
     }
 
     @Test
@@ -60,6 +56,9 @@ class WidgetThemeTest {
         for (choice in ThemeChoice.values()) assertEquals(choice, ThemeChoice.fromKey(choice.key))
         for (background in Background.values()) assertEquals(background, Background.fromKey(background.key))
         assertEquals(ThemeChoice.APP, ThemeChoice.fromKey("neon"))
+        // Material You was removed: widgets saved with its keys follow the app's theme.
+        assertEquals(ThemeChoice.APP, ThemeChoice.fromKey("you"))
+        assertEquals(ThemeChoice.APP, ThemeChoice.fromKey("you_dark"))
         assertEquals(Background.SOLID, Background.fromKey(null))
     }
 }
@@ -76,10 +75,8 @@ class TextEdgeTest {
     @Test
     fun withNoBackgroundDarkThemesGetAShadowAndLightOnesAGlow() {
         assertEquals(TextEdge.GLOW, TextEdge.of(Background.NONE, Look.LIGHT))
-        assertEquals(TextEdge.GLOW, TextEdge.of(Background.NONE, Look.MATERIAL_YOU))
         assertEquals(TextEdge.SHADOW, TextEdge.of(Background.NONE, Look.DARK))
         assertEquals(TextEdge.SHADOW, TextEdge.of(Background.NONE, Look.TRUE_BLACK))
-        assertEquals(TextEdge.SHADOW, TextEdge.of(Background.NONE, Look.MATERIAL_YOU_DARK))
     }
 
     @Test
@@ -90,6 +87,5 @@ class TextEdgeTest {
         assertFalse(WidgetTheme.followsPhone(ThemeChoice.APP, "light"))
         assertFalse(WidgetTheme.followsPhone(ThemeChoice.APP, "oled"))
         assertFalse(WidgetTheme.followsPhone(ThemeChoice.DARK, "system"))
-        assertFalse(WidgetTheme.followsPhone(ThemeChoice.MATERIAL_YOU, null))
     }
 }

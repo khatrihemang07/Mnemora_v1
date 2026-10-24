@@ -18,22 +18,20 @@ describe('resolveShortcut', () => {
     expect(resolveShortcut(key('k', { ctrlKey: true }), true)).toBeNull();
   });
   it('uses Ctrl elsewhere', () => {
-    expect(resolveShortcut(key(',', { ctrlKey: true }), false)).toEqual({ type: 'settings' });
-    expect(resolveShortcut(key(',', { metaKey: true }), false)).toBeNull();
+    expect(resolveShortcut(key('k', { ctrlKey: true }), false)).toEqual({ type: 'palette' });
+    expect(resolveShortcut(key('k', { metaKey: true }), false)).toBeNull();
   });
-  it('maps sidebar, create and digits', () => {
+  it('maps the palette and the sidebar', () => {
     expect(resolveShortcut(key('\\', { metaKey: true }), true)).toEqual({ type: 'sidebar' });
-    expect(resolveShortcut(key('n', { metaKey: true }), true)).toEqual({ type: 'create' });
-    expect(resolveShortcut(key('3', { metaKey: true }), true)).toEqual({
-      type: 'module',
-      digit: 3,
-    });
-    expect(resolveShortcut(key('0', { metaKey: true }), true)).toBeNull();
   });
-  it('ignores plain keys and Alt/Shift combos on letters and digits', () => {
+  it('no longer maps the old navigation and create keys (they are bare keys now)', () => {
+    expect(resolveShortcut(key('n', { metaKey: true }), true)).toBeNull();
+    expect(resolveShortcut(key('3', { metaKey: true }), true)).toBeNull();
+    expect(resolveShortcut(key(',', { metaKey: true }), true)).toBeNull();
+  });
+  it('ignores plain keys and Alt/Shift combos on letters', () => {
     expect(resolveShortcut(key('k'), true)).toBeNull();
     expect(resolveShortcut(key('k', { metaKey: true, shiftKey: true }, 'KeyK'), true)).toBeNull();
-    expect(resolveShortcut(key('1', { metaKey: true, altKey: true }, 'Digit1'), true)).toBeNull();
   });
 });
 
@@ -42,20 +40,14 @@ describe('resolveShortcut by physical key', () => {
     const meta = { metaKey: true };
     expect(resolveShortcut(key('«', meta, 'Backslash'), true)).toEqual({ type: 'sidebar' });
     expect(resolveShortcut(key('ç', meta, 'KeyK'), true)).toEqual({ type: 'palette' });
-    expect(resolveShortcut(key('ñ', meta, 'KeyN'), true)).toEqual({ type: 'create' });
-    expect(resolveShortcut(key('&', meta, 'Digit1'), true)).toEqual({ type: 'module', digit: 1 });
-    expect(resolveShortcut(key('(', meta, 'Digit9'), true)).toEqual({ type: 'module', digit: 9 });
+    expect(resolveShortcut(key('ñ', meta, 'KeyN'), true)).toBeNull();
   });
-  it('lets Backslash and Comma through with Shift or Alt (layouts that need them)', () => {
+  it('lets Backslash through with Shift or Alt (layouts that need them)', () => {
     expect(resolveShortcut(key('|', { metaKey: true, altKey: true }, 'Backslash'), true)).toEqual({
       type: 'sidebar',
     });
-    expect(resolveShortcut(key(';', { ctrlKey: true, shiftKey: true }, 'Comma'), false)).toEqual({
-      type: 'settings',
-    });
   });
-  it('rejects Digit0 and unrelated codes', () => {
-    expect(resolveShortcut(key('0', { metaKey: true }, 'Digit0'), true)).toBeNull();
+  it('rejects unrelated codes', () => {
     expect(resolveShortcut(key('x', { metaKey: true }, 'KeyX'), true)).toBeNull();
   });
 });

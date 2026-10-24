@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ModuleManifest } from '../lib/router';
+import type { ModuleContext, ModuleManifest } from '../lib/router';
 import {
   bareKeyFor,
-  createTarget,
   enabledModules,
   homeCards,
   moduleSettingsSections,
@@ -19,7 +18,7 @@ const mod = (id: string, order: number, extra: Partial<ModuleManifest> = {}): Mo
   icon: {} as never,
   accentVar: `--hue-${id}`,
   routes: [{ path: `/${id}`, component: comp }],
-  nav: { order, shortcut: null },
+  nav: { order },
   ...extra,
 });
 
@@ -27,10 +26,9 @@ const home = mod('home', 10, { required: true, routes: [{ path: '/', component: 
 const settings = mod('settings', 100, { required: true });
 const journal = mod('journal', 20, {
   homeCard: comp,
-  create: () => {},
   settingsSection: { label: 'Journal', icon: {} as never, component: comp },
 });
-const todo = mod('todo', 30, { homeCard: comp, create: () => {} });
+const todo = mod('todo', 30, { homeCard: comp });
 const all = [settings, todo, home, journal];
 const ids = (ms: { id: string }[]) => ms.map((m) => m.id);
 
@@ -63,18 +61,6 @@ describe('setModuleEnabled', () => {
   });
   it('does not duplicate', () => {
     expect(setModuleEnabled(['journal'], 'journal', false)).toEqual(['journal']);
-  });
-});
-
-describe('createTarget', () => {
-  it('picks the first Module with a create action by nav order', () => {
-    expect(createTarget(all)?.id).toBe('journal');
-  });
-  it('skips Modules that are off', () => {
-    expect(createTarget(enabledModules(all, ['journal']))?.id).toBe('todo');
-  });
-  it('is undefined when no enabled Module can create', () => {
-    expect(createTarget(enabledModules(all, ['journal', 'todo']))).toBeUndefined();
   });
 });
 
@@ -112,6 +98,7 @@ describe('redirectForDisabled', () => {
 });
 
 describe('bareKeyFor', () => {
+  const ctx = {} as ModuleContext;
   const run = () => {};
   const keyed = mod('todo', 30, { bareKeys: [{ key: 'q', run }] });
   const other = mod('journal', 20, {
@@ -122,18 +109,28 @@ describe('bareKeyFor', () => {
   });
 
   it('finds the Module that owns a key, in either case', () => {
-    expect(bareKeyFor([keyed], 'q')?.run).toBe(run);
-    expect(bareKeyFor([keyed], 'Q')?.run).toBe(run);
-    expect(bareKeyFor([keyed], 'n')).toBeNull();
+    expect(bareKeyFor([keyed], 'q', ctx)?.run).toBe(run);
+    expect(bareKeyFor([keyed], 'Q', ctx)?.run).toBe(run);
+    expect(bareKeyFor([keyed], 'n', ctx)).toBeNull();
   });
 
   it('gives a contested key to the first Module by nav order', () => {
-    expect(bareKeyFor([keyed, other], 'q')?.run).not.toBe(run);
-    expect(bareKeyFor([keyed, other], 'n')).not.toBeNull();
+    expect(bareKeyFor([keyed, other], 'q', ctx)?.run).not.toBe(run);
+    expect(bareKeyFor([keyed, other], 'n', ctx)).not.toBeNull();
   });
 
   it('forgets a Module that is switched off', () => {
-    expect(bareKeyFor(enabledModules([keyed, other], ['journal']), 'q')?.run).toBe(run);
+    expect(bareKeyFor(enabledModules([keyed, other], ['journal']), 'q', ctx)?.run).toBe(run);
+  });
+
+  it('skips a claim whose when does not hold, and asks it with the context', () => {
+    const onlyOnTodo = mod('todo', 20, {
+      bareKeys: [{ key: '/', when: (c) => c === ctx, run }],
+    });
+    const fallback = mod('journal', 30, { bareKeys: [{ key: '/', run: () => {} }] });
+    expect(bareKeyFor([onlyOnTodo, fallback], '/', ctx)?.run).toBe(run);
+    expect(bareKeyFor([onlyOnTodo, fallback], '/', {} as ModuleContext)?.run).not.toBe(run);
+    expect(bareKeyFor([onlyOnTodo], '/', {} as ModuleContext)).toBeNull();
   });
 });
 
