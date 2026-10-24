@@ -117,4 +117,29 @@ describe('on mobile data with "Allow over mobile data" off', () => {
     expect(pairing.pausedOnMobile).toBe(false);
     expect(show).toHaveBeenCalledOnce();
   });
+
+  it('follows the phone switching networks while the sheet is open', async () => {
+    onMobile.paused = false;
+    await pairing.start('show');
+    expect(pairing.pausedOnMobile).toBe(false);
+    show.mockClear();
+
+    onMobile.paused = true;
+    await pairing.refreshPause();
+    expect(pairing.pausedOnMobile).toBe(true);
+    expect(pairing.view.state).toBe('idle');
+
+    onMobile.paused = false;
+    await pairing.refreshPause();
+    expect(pairing.pausedOnMobile).toBe(false);
+    expect(show).toHaveBeenCalledOnce();
+  });
+
+  it('does nothing while the sheet is closed', async () => {
+    pairing.open = false;
+    pairing.pausedOnMobile = false;
+    onMobile.paused = true;
+    await pairing.refreshPause();
+    expect(pairing.pausedOnMobile).toBe(false);
+  });
 });

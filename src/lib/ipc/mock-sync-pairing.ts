@@ -94,7 +94,7 @@ const err = (message: string): AppError => ({ code: 'validation', message, detai
 
 /** Mirrors `SyncError::PausedOnMobileData` in crates/sync/src/error.rs. */
 const PAUSED_ON_MOBILE =
-  'Pairing is paused on mobile data. Connect to Wi-Fi, or turn on Allow over mobile data in Settings › Sync, then try again.';
+  'Pairing is paused on mobile data. Connect to Wi-Fi, or turn on Allow over mobile data in Settings › Sync, then try again';
 
 export const PAIRING_COMMANDS = [
   'sync_pair_state',

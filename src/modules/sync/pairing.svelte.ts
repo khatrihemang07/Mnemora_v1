@@ -30,9 +30,14 @@ class Pairing {
 
   /** Called once the sheet is mounted; returns what stops listening. */
   async listen(): Promise<() => void> {
-    const stop = await events.syncPairingEvent.listen((e) => this.receive(e.payload));
+    const stopView = await events.syncPairingEvent.listen((e) => this.receive(e.payload));
+    // Rust announces the device status when the phone changes network (Wi-Fi, mobile data).
+    const stopPeers = await events.syncPeersEvent.listen(() => void this.refreshPause());
     this.receive(await commands.syncPairState());
-    return stop;
+    return () => {
+      stopView();
+      stopPeers();
+    };
   }
 
   private receive(view: PairingView) {
@@ -56,6 +61,27 @@ class Pairing {
     this.pausedOnMobile = await this.onMobileData();
     if (this.pausedOnMobile) return;
     if (mode === 'show') await this.run(() => unwrap(commands.syncPairShow()));
+  }
+
+  /** The phone switched network with the sheet open: the sheet explains, or starts again, to match. */
+  async refreshPause() {
+    if (!this.open) return;
+    const paused = await this.onMobileData();
+    if (!this.open) return;
+    const retry =
+      !paused &&
+      this.mode === 'show' &&
+      this.view.state === 'idle' &&
+      (this.pausedOnMobile || this.commandError !== null);
+    if (paused === this.pausedOnMobile && !retry) return;
+    this.pausedOnMobile = paused;
+    if (paused) {
+      // The network is gone with whatever it was showing.
+      this.view = { state: 'idle' };
+      return;
+    }
+    this.commandError = null;
+    if (this.mode === 'show') await this.run(() => unwrap(commands.syncPairShow()));
   }
 
   /** Asked before anything is started, so the sheet can say why it will not pair. */

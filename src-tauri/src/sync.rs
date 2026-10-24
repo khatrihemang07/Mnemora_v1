@@ -608,6 +608,8 @@ pub async fn start_network<R: Runtime>(
     let network = Network::start(host, identity, options).await?;
     // Turned off meanwhile: the network has no owner and is dropped here, closing its port.
     let _ = state.sync.attach(network);
+    // An open pairing sheet waiting for the network (back on Wi-Fi) can start now.
+    announce_peers(app);
     Ok(())
 }
 
