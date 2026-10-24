@@ -8,7 +8,7 @@ const MAC_FINISHED = '    Finished `dev` profile [unoptimized] target(s) in 2.0s
 const ANDROID_INSTALL = "Installing APK 'app-arm64-debug.apk' on 'PHONE'";
 const PHONE_READY = 'List of devices attached\nPHONE\tdevice\n';
 
-function build({ sandbox = false, autoAdb = true } = {}) {
+function build({ sandbox = true, autoAdb = true } = {}) {
   const fake = fakeDeps({ autoAdb });
   const timers = fakeTimers();
   const logs = [];
@@ -33,12 +33,19 @@ const buildsOf = (spawns, id) =>
 
 describe('launching', () => {
   it('builds the Mac app with the Production command when Sandbox is off', () => {
-    const { launch, spawns, logs } = build();
+    const { launch, spawns, logs } = build({ sandbox: false });
     launch('mac');
     expect(spawns).toHaveLength(1);
     expect(spawns[0].command).toBe('cargo');
     expect(spawns[0].args).not.toContain('sandbox');
     expect(logs).toContain('Mac: building (Production)');
+  });
+
+  it('refuses Android in Production, builds nothing and points at make sandbox', () => {
+    const { launch, spawns, logs } = build({ sandbox: false });
+    launch('android');
+    expect(spawns).toHaveLength(0);
+    expect(logs).toContain('Android runs on Sandbox data only. Use make sandbox.');
   });
 
   it('passes the sandbox config and feature to the Mac build in Sandbox', () => {
@@ -310,7 +317,7 @@ describe('status line', () => {
     const { launch, logs } = build();
     launch('mac');
     expect(lastStatus(logs)).toBe(
-      'Mnemora dev · Production · Mac: building · Android: stopped · Queue: none',
+      'Mnemora dev · Sandbox · Mac: building · Android: stopped · Queue: none',
     );
   });
 });

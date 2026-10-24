@@ -9,9 +9,14 @@ function line(key, text) {
   return `  ${key.padEnd(KEY_WIDTH)}${text}`;
 }
 
+/** The targets the session offers: the controller gives states only for those. */
+function shown(states) {
+  return TARGET_LIST.filter((target) => target.id in states);
+}
+
 /** One line, printed after every change: Environment, each target's state, the queue. */
 export function formatStatus({ environment, states, queue }) {
-  const targets = TARGET_LIST.map((target) => `${target.label}: ${states[target.id]}`);
+  const targets = shown(states).map((target) => `${target.label}: ${states[target.id]}`);
   const waiting = queue.length > 0 ? queue.map((id) => TARGETS[id].label).join(', ') : 'none';
   return `Mnemora dev · ${environment} · ${targets.join(' · ')} · Queue: ${waiting}`;
 }
@@ -24,7 +29,7 @@ export function formatMenu({ environment, states, environments, queue, keysAvail
   if (!keysAvailable) {
     return `Keys unavailable (not a terminal): no key menu. Stop with Ctrl-C.\n${DEV_URL}`;
   }
-  const launchLines = TARGET_LIST.map((target) =>
+  const launchLines = shown(states).map((target) =>
     line(target.key, `launch the ${target.label} app (${environments[target.id]})`),
   );
   return [

@@ -14,17 +14,17 @@ RUN := ./scripts/with-env.sh
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-dev: ## Vite + key menu (w web, z Mac, a Android, r relaunch, x stop, q quit); Production data
+dev: ## Vite + key menu (w web, z Mac, r relaunch, x stop, q quit); Production data
 	$(RUN) node scripts/dev.mjs $(ARGS)
 
-sandbox: ## Vite + key menu, Mac app on separate Sandbox data with the SANDBOX badge
+sandbox: ## Vite + key menu (z Mac, a Android), apps on separate Sandbox data with the SANDBOX badge
 	$(RUN) node scripts/dev.mjs --sandbox $(ARGS)
 
 build: ## Release build for this machine (.app/.dmg), signed if setup-signing was run
 	@eval "$$(./scripts/signing-env.sh mac)"; $(RUN) cargo tauri build
 
 android-dev: ## Vite + key menu, Android app on a USB-connected phone (Sandbox data)
-	$(RUN) node scripts/dev.mjs --android
+	$(RUN) node scripts/dev.mjs --sandbox --android
 
 android: ## Signed arm64 release APK, installed on the connected phone
 	@set -e; unset MNEMORA_ANDROID_SANDBOX; eval "$$(./scripts/signing-env.sh android)"; \

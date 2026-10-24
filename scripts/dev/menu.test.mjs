@@ -28,6 +28,12 @@ describe('formatMenu', () => {
     }
   });
 
+  it('leaves out a target the session does not offer', () => {
+    const text = formatMenu({ ...idle, states: { mac: 'stopped' } });
+    expect(text).toContain('launch the Mac app (Production)');
+    expect(text).not.toContain('Android');
+  });
+
   it('shows each target state and the queue, read from the states', () => {
     const text = formatMenu({
       ...idle,

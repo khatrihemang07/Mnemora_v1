@@ -26,7 +26,7 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make dev` | Vite plus a key menu; build the app on **Production** data (DB is backed up before migrations) |
 | `make sandbox` | Vite plus a key menu; build the app on separate **Sandbox** data, with an orange SANDBOX badge |
 | `make build` | Release build for this machine (`.app` / `.dmg`) |
-| `make android-dev` | Vite plus the key menu, with the Android app on a USB-connected phone (Sandbox data) |
+| `make android-dev` | `make sandbox` that also launches the Android app on a USB-connected phone (Sandbox data) |
 | `make android-sandbox` | Debug Sandbox APK (no hot reload) installed on the phone |
 | `make android-test` | Kotlin unit tests for the Todo widget |
 | `make android` | Signed arm64 release APK, installed on the connected phone |
@@ -47,7 +47,7 @@ Both start only Vite on port 47821 and show a key menu. The native app is built 
 |---|---|
 | `w` | Open the web mock in your browser |
 | `z` | Launch the Mac app (Production for `make dev`, Sandbox for `make sandbox`) |
-| `a` | Launch the Android app on a USB phone (always Sandbox data) |
+| `a` | Launch the Android app on a USB phone (`make sandbox` only; it always uses Sandbox data) |
 | `r` | Relaunch the running or queued app(s) |
 | `x` | Stop the native app(s), keep Vite; queued builds stay queued and say so |
 | `?` | Show the menu again |

@@ -19,10 +19,11 @@ export function createController({ sandbox, keysAvailable, deps, log, timers = g
   let shuttingDown = false;
   const queue = createBuildQueue(startSession);
 
-  const ids = Object.keys(TARGETS);
   const labelOf = (id) => TARGETS[id].label;
   const labels = (list) => list.map(labelOf).join(', ');
   const environmentOf = (id) => environmentName(TARGETS[id].usesSandbox(sandbox));
+  // Only the targets that run on this session's Environment: `make dev` never offers Android.
+  const ids = Object.keys(TARGETS).filter((id) => environmentOf(id) === environment);
   const isCancelled = (session) => shuttingDown || session.cancelled;
 
   function states() {
@@ -192,6 +193,12 @@ export function createController({ sandbox, keysAvailable, deps, log, timers = g
   function launch(target) {
     if (shuttingDown) return;
     const label = labelOf(target);
+    if (!ids.includes(target)) {
+      log(
+        `${label} runs on ${environmentOf(target)} data only. Use make ${sandbox ? 'dev' : 'sandbox'}.`,
+      );
+      return;
+    }
     const session = sessions.get(target);
     if (session) {
       log(`${label} is ${session.phase}. r relaunches it.`);
