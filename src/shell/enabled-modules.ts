@@ -3,9 +3,27 @@ import { activeModuleId } from './phone-tabs';
 
 const byOrder = (a: ModuleManifest, b: ModuleManifest) => a.nav.order - b.nav.order;
 
-/** A Module is on unless it is listed as disabled; required Modules ignore the list. */
-export function enabledModules(manifests: ModuleManifest[], disabled: string[]): ModuleManifest[] {
-  return manifests.filter((m) => m.required || !disabled.includes(m.id));
+/**
+ * A Module is on when it is on by default and not listed as disabled, or off by default and listed
+ * as opted in (`optedIn` holds the Preference's list plus any Module whose switch is a Device
+ * setting and on); required Modules ignore both lists.
+ */
+export function enabledModules(
+  manifests: ModuleManifest[],
+  disabled: string[],
+  optedIn: string[] = [],
+): ModuleManifest[] {
+  return manifests.filter(
+    (m) =>
+      m.required ||
+      (m.defaultEnabled === false ? optedIn.includes(m.id) : !disabled.includes(m.id)),
+  );
+}
+
+/** The new opted-in list after switching a default-off Module on or off. */
+export function setOptedIn(optedIn: string[], id: string, on: boolean): string[] {
+  const rest = optedIn.filter((d) => d !== id);
+  return on ? [...rest, id] : rest;
 }
 
 /** The new disabled list after switching one Module on or off. */

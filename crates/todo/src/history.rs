@@ -1,14 +1,15 @@
-//! A Task's History: readable lines built from consecutive change-log snapshots (ADR 0008). Each
-//! record is compared with the one before it; what changed becomes a line such as
+//! A Task's History: readable lines built from the change log (ADR 0008). Each record's own
+//! change (its `fields`) is compared with the state the records before it left; what changed becomes a line such as
 //! "Due date Thu 22 Oct → Fri 23 Oct". Title and notes edits arrive as one record per opening of
 //! the sheet (the editing session), so they make one line. Read-only. Lines hold dates, list
 //! names and Priorities, never the Task's own text.
 
 use mnemora_core::changelog::{self, Record};
 use mnemora_core::error::AppResult;
+use mnemora_core::syncable::wire_fields;
 use rusqlite::Connection;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use specta::Type;
 
 use crate::error::TodoError;
@@ -288,10 +289,11 @@ fn edit_lines(old: &Snap, cur: &Snap, record: &Record, base: &Baseline, out: &mu
 fn record_lines(
     conn: &Connection,
     prev: Option<&Value>,
+    cur: &Value,
     base: &Baseline,
     record: &Record,
 ) -> AppResult<Lines> {
-    let cur = Snap(&record.snapshot);
+    let cur = Snap(cur);
     let Some(prev) = prev else {
         return Ok(if record.op == "create" {
             vec![first_line(&cur)]
@@ -314,19 +316,73 @@ fn record_lines(
     Ok(out)
 }
 
-/// A Task's History, newest line first. Records of a Task that has been purged are gone with it.
+/// The Task as History saw it after `record`, and the same with the record's own `skipped`
+/// marker. History is a function of the records alone, which every device holds identically: a
+/// record changes the running state by its own `fields` (the author's values), never by the
+/// snapshot, which on a received record is this device's merged state and differs between
+/// devices after concurrent edits. A record without `fields` (from before Sync) is its snapshot.
+/// An own record is completed the way it is sent (a change to the Due date carries the whole When),
+/// so that its author reads the same History as the devices that received it.
+fn advance(state: &Value, record: &Record) -> (Value, Value) {
+    let mut next = match &record.fields {
+        Some(fields) => {
+            let fields = if record.local {
+                let mut whole = wire_fields(
+                    &crate::sync::TASK,
+                    Some(fields.clone()),
+                    &record.snapshot,
+                    true,
+                );
+                // `skipped` is a marker of the record, not a field Sync knows.
+                if let Some(skipped) = fields.get("skipped") {
+                    whole.insert("skipped".to_owned(), skipped.clone());
+                }
+                whole
+            } else {
+                fields.clone()
+            };
+            let mut next = if state.is_object() {
+                state.clone()
+            } else {
+                Value::Object(Map::new())
+            };
+            if let Some(map) = next.as_object_mut() {
+                for (key, value) in fields.iter().filter(|(k, _)| *k != "skipped") {
+                    map.insert(key.clone(), value.clone());
+                }
+            }
+            next
+        }
+        None => record.snapshot.clone(),
+    };
+    let marker = match &record.fields {
+        Some(fields) => fields.get("skipped").cloned(),
+        None => next.get("skipped").cloned(),
+    };
+    if let Some(map) = next.as_object_mut() {
+        map.remove("skipped");
+    }
+    let mut seen = next.clone();
+    if let (Some(map), Some(marker)) = (seen.as_object_mut(), marker) {
+        map.insert("skipped".to_owned(), marker);
+    }
+    (next, seen)
+}
+
+/// A Task's History, newest line first.
 pub fn task_history(conn: &Connection, id: &str) -> AppResult<Vec<HistoryLine>> {
     repo::get(conn, id)?.ok_or(TodoError::TaskNotFound)?;
     let records = changelog::read(conn, ENTITY, id)?;
     let mut batches: Vec<Vec<HistoryLine>> = Vec::with_capacity(records.len());
-    let mut prev: Option<&Value> = None;
+    let mut prev: Option<Value> = None;
     let mut base: Option<Baseline> = None;
     for record in &records {
+        let (state, seen) = advance(prev.as_ref().unwrap_or(&Value::Null), record);
         let lines = record_lines(
             conn,
-            prev,
-            base.as_ref()
-                .unwrap_or(&Baseline::of(&Snap(&record.snapshot))),
+            prev.as_ref(),
+            &seen,
+            base.as_ref().unwrap_or(&Baseline::of(&Snap(&state))),
             record,
         )?
         .into_iter()
@@ -343,9 +399,9 @@ pub fn task_history(conn: &Connection, id: &str) -> AppResult<Vec<HistoryLine>> 
             || record.session_id.is_some()
             || matches!(record.op.as_str(), "create" | "tick")
         {
-            base = Some(Baseline::of(&Snap(&record.snapshot)));
+            base = Some(Baseline::of(&Snap(&state)));
         }
-        prev = Some(&record.snapshot);
+        prev = Some(state);
     }
     Ok(batches.into_iter().rev().flatten().collect())
 }

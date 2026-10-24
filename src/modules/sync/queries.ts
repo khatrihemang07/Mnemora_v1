@@ -1,0 +1,123 @@
+import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
+import { type ActivityFilter, type ActivityPage, commands, events } from '../../lib/ipc/bindings';
+import { queryClient } from '../../lib/ipc/query-client';
+import { unwrap } from '../../lib/ipc/unwrap';
+import { deviceQuery } from '../../lib/settings/queries';
+
+/** Sync's state for this device: on or off, name, options, and how many devices are paired. */
+export const syncQuery = queryOptions({
+  queryKey: ['sync'],
+  queryFn: () => unwrap(commands.syncGet()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/** Asks for fresh values after a change; the device file also holds Sync's on/off. */
+export async function refreshSync() {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: syncQuery.queryKey }),
+    queryClient.invalidateQueries({ queryKey: deviceQuery.queryKey }),
+  ]);
+}
+
+/** This device (addresses, port) and the paired devices. */
+export const devicesQuery = queryOptions({
+  queryKey: ['sync', 'devices'],
+  queryFn: () => unwrap(commands.syncDevices()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/** One paired device for its sheet. */
+export const deviceDetailQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['sync', 'device', id],
+    queryFn: () => unwrap(commands.syncDevice(id)),
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+
+/** Reads the Devices tab (and any open device sheet) again whenever a paired device's status or progress changes. Returns what stops listening. */
+export async function watchDevices(): Promise<() => void> {
+  return events.syncPeersEvent.listen(() => {
+    void queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey });
+    void queryClient.invalidateQueries({ queryKey: ['sync', 'device'] });
+    // Another device may have renamed this one.
+    void queryClient.invalidateQueries({ queryKey: syncQuery.queryKey });
+  });
+}
+
+/** "Needs you": the Conflicts that wait. */
+export const conflictsQuery = queryOptions({
+  queryKey: ['sync', 'conflicts'],
+  queryFn: () => unwrap(commands.syncConflicts()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/** One Conflict for Compare. */
+export const conflictQuery = (id: string) =>
+  queryOptions({
+    queryKey: ['sync', 'conflict', id],
+    queryFn: () => unwrap(commands.syncConflict(id)),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+/** Reads Conflicts again when one is raised or settled (here or on another device). Returns what stops listening. */
+export async function watchConflicts(): Promise<() => void> {
+  return events.syncConflictsEvent.listen(() => {
+    void queryClient.invalidateQueries({ queryKey: ['sync', 'conflicts'] });
+    void queryClient.invalidateQueries({ queryKey: ['sync', 'conflict'] });
+  });
+}
+
+/** What needs attention: the Home card, the sidebar badge and the palette hint all read this. */
+export const attentionQuery = queryOptions({
+  queryKey: ['sync', 'attention'],
+  queryFn: () => unwrap(commands.syncAttention()),
+  staleTime: Number.POSITIVE_INFINITY,
+});
+
+/**
+ * Reads attention again whenever a Conflict is raised or settled or a device's status changes.
+ * Returns what stops listening.
+ */
+export async function watchAttention(): Promise<() => void> {
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: attentionQuery.queryKey });
+  const stops = await Promise.all([
+    events.syncConflictsEvent.listen(refresh),
+    events.syncPeersEvent.listen(refresh),
+  ]);
+  return () => {
+    for (const stop of stops) stop();
+  };
+}
+
+/** Starts `listen` and returns a cleanup that stops it, even if it is called before it finished. */
+export function whileMounted(listen: () => Promise<() => void>): () => void {
+  let stop: (() => void) | undefined;
+  let gone = false;
+  void listen().then((off) => {
+    if (gone) off();
+    else stop = off;
+  });
+  return () => {
+    gone = true;
+    stop?.();
+  };
+}
+
+/** Activity lines per page: pages of 100, loaded as the list is scrolled (G7). */
+export const ACTIVITY_PAGE = 100;
+
+/** The Activity log for one filter, newest first, a page at a time. */
+export const activityQuery = (filter: ActivityFilter) =>
+  infiniteQueryOptions({
+    queryKey: ['sync', 'activity', filter],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam }) => unwrap(commands.syncActivity(filter, pageParam, ACTIVITY_PAGE)),
+    getNextPageParam: (last: ActivityPage) => last.next,
+    staleTime: 0,
+  });
+
+/** Calls `onchange` when Activity gained lines (a session, or lines from another device). Returns what stops listening. */
+export async function watchActivity(onchange: () => void): Promise<() => void> {
+  return events.syncActivityEvent.listen(onchange);
+}

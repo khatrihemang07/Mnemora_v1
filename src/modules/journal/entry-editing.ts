@@ -20,6 +20,7 @@ export class EntryEditing<E> {
   #saved: string;
   #cancelTimer: (() => void) | null = null;
   #queue: Promise<void> = Promise.resolve();
+  #abandoned = false;
 
   constructor(
     private readonly deps: EntryEditingDeps<E>,
@@ -54,13 +55,24 @@ export class EntryEditing<E> {
     this.#cancelTimer = null;
     this.#save();
     await this.#queue;
-    return !this.unsaved;
+    return this.#abandoned || !this.unsaved;
+  }
+
+  /**
+   * The Entry was deleted elsewhere: nothing more is saved by this session. Returns the text it
+   * holds, and the text last saved, which the person may Restore with.
+   */
+  abandon(): { text: string; saved: string } {
+    this.#abandoned = true;
+    this.#cancelTimer?.();
+    this.#cancelTimer = null;
+    return { text: this.text, saved: this.#saved };
   }
 
   #save() {
     this.#queue = this.#queue.then(async () => {
       const text = this.text;
-      if (!this.unsaved) return;
+      if (this.#abandoned || !this.unsaved) return;
       try {
         const entry = await this.deps.update(this.id, text, this.sessionId);
         this.#saved = text;

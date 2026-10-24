@@ -799,3 +799,143 @@ describe('capture in the browser mock', () => {
     ]);
   });
 });
+
+describe('simulated List merge', () => {
+  it('moves the List away into a survivor with its Tasks and reports it', () => {
+    const mock = createTodoMock();
+    const list = mock.handle('todo_list_create', { name: 'Groceries' }) as TodoList;
+    const task = mock.handle('todo_task_create', { title: 'Milk', listId: list.id }) as Task;
+    const merged = mock.simulateMerge('groceries', 'Pixel 8');
+    expect(merged).toMatchObject({ from_id: list.id, from_name: 'Groceries', device: 'Pixel 8' });
+    const sidebar = mock.handle('todo_lists', { local: LOCAL }) as SidebarView;
+    expect(sidebar.lists.map((e) => e.list.id)).toEqual([merged?.into_id]);
+    expect((mock.handle('todo_task', { id: task.id }) as Task).list_id).toBe(merged?.into_id);
+    expect(() => mock.handle('todo_list', { id: list.id, local: LOCAL })).toThrow();
+    expect(createTodoMock().simulateMerge(undefined, 'Pixel 8')).toBeNull();
+  });
+});
+
+describe('Sync docs of the Todo mock', () => {
+  it('carry the repeat rule and the understood words, so a sync keeps Repeat (M1)', () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', {
+      title: 'Water plants',
+      listId: null,
+      when: { date: '2026-10-22', time: null, local: LOCAL },
+      details: {
+        repeat: { freq: 'week', every: 2, days: null, mode: 'fixed' },
+        understood: '["every 2 weeks"]',
+      },
+    }) as Task;
+    const doc = mock.exportDocs().find((d) => d.id === task.id);
+    expect(doc?.values).toMatchObject({
+      repeat_freq: 'week',
+      repeat_every: 2,
+      repeat_days: null,
+      repeat_mode: 'fixed',
+      understood: '["every 2 weeks"]',
+    });
+    // Taking the docs back (what a sync does) leaves the rule alone.
+    mock.importDocs(mock.exportDocs());
+    expect(mock.exportDocs().find((d) => d.id === task.id)?.values).toMatchObject({
+      repeat_freq: 'week',
+      repeat_every: 2,
+    });
+  });
+});
+
+describe('the Task sheet’s editing hold (R10, Rust held.rs, story 94)', () => {
+  const setup = () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', { title: 'Plan the hike' }) as Task;
+    const remote = (title: string, notes: string) =>
+      mock.importDocs(
+        mock
+          .exportDocs()
+          .filter((d) => d.id === task.id)
+          .map((d) => ({ ...d, values: { ...d.values, title, notes } })),
+      );
+    const now = () => mock.handle('todo_task', { id: task.id }) as Task;
+    const hold = (scope: string) => ({ entity: 'todo_task', entityId: task.id, scope });
+    return { mock, task, remote, now, hold };
+  };
+
+  it('routes the Task sheet’s own entity name (T2: the sheet says todo_task)', () => {
+    const { mock, hold } = setup();
+    expect(mock.handlesEditing('editing_hold', hold('notes'))).toBe(true);
+    expect(mock.handlesEditing('editing_hold', { ...hold('notes'), entity: 'journal_entry' })).toBe(
+      false,
+    );
+  });
+
+  it('holds the field being edited and refreshes the other', () => {
+    const { mock, remote, now, hold } = setup();
+    mock.handle('editing_hold', hold('title'));
+    expect(remote('Plan the long hike', 'Boots')).toBe(true);
+    expect(now().title).toBe('Plan the hike');
+    expect(now().notes).toBe('Boots');
+    const changed = vi.fn();
+    mock.onRemoteChange = changed;
+    mock.handle('editing_release', hold('title'));
+    expect(now().title).toBe('Plan the long hike');
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('merges what waited with what was typed since', () => {
+    const { mock, task, remote, now, hold } = setup();
+    mock.handle('todo_task_update', { id: task.id, title: 'x', notes: 'a\nb\nc', sessionId: 's' });
+    mock.handle('editing_hold', hold('notes'));
+    remote('x', 'a\nb\nc, remote');
+    mock.handle('todo_task_update', {
+      id: task.id,
+      title: 'x',
+      notes: 'a, typed\nb\nc',
+      sessionId: 's',
+    });
+    mock.handle('editing_release', hold('notes'));
+    expect(now().notes).toBe('a, typed\nb\nc, remote');
+  });
+
+  it('on a clash the typing shows and the other text goes to a Conflict (T2)', () => {
+    const { mock, task, remote, now, hold } = setup();
+    mock.handle('todo_task_update', { id: task.id, title: 'x', notes: 'a\nb\nc', sessionId: 's' });
+    mock.handle('editing_hold', hold('notes'));
+    remote('x', 'a\nb, remote\nc');
+    mock.handle('todo_task_update', {
+      id: task.id,
+      title: 'x',
+      notes: 'a\nb, typed\nc',
+      sessionId: 's',
+    });
+    const clash = vi.fn();
+    mock.onHeldClash = clash;
+    mock.handle('editing_release', hold('notes'));
+    expect(now().notes).toBe('a\nb, typed\nc');
+    expect(clash).toHaveBeenCalledOnce();
+    expect(clash).toHaveBeenCalledWith(
+      expect.objectContaining({
+        field: 'notes',
+        base: 'a\nb\nc',
+        showing: 'a\nb, typed\nc',
+        other: 'a\nb, remote\nc',
+      }),
+    );
+  });
+
+  it('raises no Conflict when the lines differ', () => {
+    const { mock, task, remote, hold } = setup();
+    mock.handle('todo_task_update', { id: task.id, title: 'x', notes: 'a\nb\nc', sessionId: 's' });
+    mock.handle('editing_hold', hold('notes'));
+    remote('x', 'a\nb\nc, remote');
+    mock.handle('todo_task_update', {
+      id: task.id,
+      title: 'x',
+      notes: 'a, typed\nb\nc',
+      sessionId: 's',
+    });
+    const clash = vi.fn();
+    mock.onHeldClash = clash;
+    mock.handle('editing_release', hold('notes'));
+    expect(clash).not.toHaveBeenCalled();
+  });
+});

@@ -79,7 +79,10 @@
     >
       <span class="relative" style:color={active ? `var(${e.manifest.accentVar})` : 'inherit'}>
         <e.manifest.icon class="size-5" />
-        {#if e.manifest.useBadge}<ModuleBadge manifest={e.manifest} placement="corner" />{/if}
+        {#if e.manifest.useBadge && e.manifest.phoneBadge !== false}<ModuleBadge
+            manifest={e.manifest}
+            placement="corner"
+          />{/if}
       </span>
       {e.manifest.name}
     </a>

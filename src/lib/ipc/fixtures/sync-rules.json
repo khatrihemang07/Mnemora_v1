@@ -1,0 +1,369 @@
+{
+  "about": "Rules shared by the Rust commands (src-tauri/src/sync.rs) and the browser mock (src/lib/ipc/mock-sync.test.ts). See ADR 0009. Each case renames this device with `input`: it is refused (`error` is the code and message) or saved as `saved`. `unique_name_cases` give a device's wanted name and the names already taken in the group, and the name it is stored under; `code_cases` say what a typed pairing code reads as (null: not a code). `address_cases` give a typed Address and what is stored (`stored`, `port`) or why it is refused (`error`).",
+  "name_cases": [
+    {
+      "name": "a plain name",
+      "input": "Pixel 8",
+      "saved": "Pixel 8"
+    },
+    {
+      "name": "surrounding spaces are trimmed",
+      "input": "  Pixel 8 ",
+      "saved": "Pixel 8"
+    },
+    {
+      "name": "an accented name",
+      "input": "Hemang’s Mac",
+      "saved": "Hemang’s Mac"
+    },
+    {
+      "name": "forty characters are fine",
+      "input": "abcdefghijabcdefghijabcdefghijabcdefghij",
+      "saved": "abcdefghijabcdefghijabcdefghijabcdefghij"
+    },
+    {
+      "name": "forty accented characters are fine (characters, not bytes)",
+      "input": "éééééééééééééééééééééééééééééééééééééééé",
+      "saved": "éééééééééééééééééééééééééééééééééééééééé"
+    },
+    {
+      "name": "forty-one characters are refused",
+      "input": "abcdefghijabcdefghijabcdefghijabcdefghijk",
+      "error": {
+        "code": "validation",
+        "message": "A device name is at most 40 characters"
+      }
+    },
+    {
+      "name": "an empty name is refused",
+      "input": "",
+      "error": {
+        "code": "validation",
+        "message": "Give this device a name"
+      }
+    },
+    {
+      "name": "a blank name is refused",
+      "input": "   ",
+      "error": {
+        "code": "validation",
+        "message": "Give this device a name"
+      }
+    }
+  ],
+  "unique_name_cases": [
+    {
+      "name": "a free name is kept",
+      "wanted": "Pixel 8",
+      "taken": ["MacBook"],
+      "stored": "Pixel 8"
+    },
+    {
+      "name": "a clash gets (2)",
+      "wanted": "Pixel 8",
+      "taken": ["Pixel 8"],
+      "stored": "Pixel 8 (2)"
+    },
+    {
+      "name": "case is ignored",
+      "wanted": "PIXEL 8",
+      "taken": ["pixel 8"],
+      "stored": "PIXEL 8 (2)"
+    },
+    {
+      "name": "accents are ignored",
+      "wanted": "Café",
+      "taken": ["cafe"],
+      "stored": "Café (2)"
+    },
+    {
+      "name": "extra spaces are ignored",
+      "wanted": "Pixel  8",
+      "taken": ["Pixel 8"],
+      "stored": "Pixel  8 (2)"
+    },
+    {
+      "name": "the next free number is used",
+      "wanted": "Pixel 8",
+      "taken": ["Pixel 8", "Pixel 8 (2)"],
+      "stored": "Pixel 8 (3)"
+    },
+    {
+      "name": "this device's own name counts",
+      "wanted": "Mac",
+      "taken": ["Mac"],
+      "stored": "Mac (2)"
+    }
+  ],
+  "code_cases": [
+    {
+      "name": "eight digits",
+      "input": "48210937",
+      "code": "48210937"
+    },
+    {
+      "name": "two groups",
+      "input": "4821 0937",
+      "code": "48210937"
+    },
+    {
+      "name": "a dash and spaces around",
+      "input": " 4821-0937 ",
+      "code": "48210937"
+    },
+    {
+      "name": "seven digits",
+      "input": "4821093",
+      "code": null
+    },
+    {
+      "name": "nine digits",
+      "input": "482109377",
+      "code": null
+    },
+    {
+      "name": "a letter",
+      "input": "4821 093a",
+      "code": null
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "code": null
+    }
+  ],
+  "address_cases": [
+    {
+      "name": "a MagicDNS name",
+      "input": "pixel.tail1234.ts.net",
+      "stored": "pixel.tail1234.ts.net",
+      "port": 47311
+    },
+    {
+      "name": "a name is lower-cased and trimmed",
+      "input": "  Pixel.Tail1234.TS.net ",
+      "stored": "pixel.tail1234.ts.net",
+      "port": 47311
+    },
+    {
+      "name": "a plain host",
+      "input": "pixel",
+      "stored": "pixel",
+      "port": 47311
+    },
+    {
+      "name": "a trailing dot is dropped",
+      "input": "pixel.local.",
+      "stored": "pixel.local",
+      "port": 47311
+    },
+    {
+      "name": "host and port",
+      "input": "pixel.local:5000",
+      "stored": "pixel.local:5000",
+      "port": 5000
+    },
+    {
+      "name": "an IPv4 address",
+      "input": "100.88.12.4",
+      "stored": "100.88.12.4",
+      "port": 47311
+    },
+    {
+      "name": "an IPv4 address and port",
+      "input": "192.168.1.31:47312",
+      "stored": "192.168.1.31:47312",
+      "port": 47312
+    },
+    {
+      "name": "an IPv6 address in brackets",
+      "input": "[fd7a:115c:a1e0::1]",
+      "stored": "[fd7a:115c:a1e0::1]",
+      "port": 47311
+    },
+    {
+      "name": "an IPv6 address and port",
+      "input": "[FD7A::1]:9000",
+      "stored": "[fd7a::1]:9000",
+      "port": 9000
+    },
+    {
+      "name": "IPv6 zeros are compressed the way Rust prints them",
+      "input": "[FD7A:115C:A1E0:0:0:0:0:1]",
+      "stored": "[fd7a:115c:a1e0::1]",
+      "port": 47311
+    },
+    {
+      "name": "IPv6 leading zeros are dropped",
+      "input": "[fd7a:0115:00a1:0000:0000:0000:0000:0001]:9",
+      "stored": "[fd7a:115:a1::1]:9",
+      "port": 9
+    },
+    {
+      "name": "the IPv6 loopback",
+      "input": "[0:0:0:0:0:0:0:1]",
+      "stored": "[::1]",
+      "port": 47311
+    },
+    {
+      "name": "the IPv6 unspecified address",
+      "input": "[::]:80",
+      "stored": "[::]:80",
+      "port": 80
+    },
+    {
+      "name": "a single zero group is not compressed",
+      "input": "[1:0:2:3:4:5:6:7]",
+      "stored": "[1:0:2:3:4:5:6:7]",
+      "port": 47311
+    },
+    {
+      "name": "the longest run of zeros is compressed, the first of equal runs",
+      "input": "[1:0:0:2:0:0:3:4]",
+      "stored": "[1::2:0:0:3:4]",
+      "port": 47311
+    },
+    {
+      "name": "a trailing run of zeros",
+      "input": "[fe80:0:0:0:0:0:0:0]",
+      "stored": "[fe80::]",
+      "port": 47311
+    },
+    {
+      "name": "an IPv6 address with an embedded IPv4 is refused",
+      "input": "[::ffff:1.2.3.4]",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a space and punctuation make no host name",
+      "input": "bad address!!",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "an IPv6 zone is refused",
+      "input": "[fe80::1%en0]",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "seven groups with no compression are refused",
+      "input": "[1:2:3:4:5:6:7]",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a host that is only digits and dots is refused",
+      "input": "1.2.3",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "an IPv4 with a leading zero is refused",
+      "input": "192.168.01.1",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a Kelvin sign is not an ASCII k",
+      "input": "\u212Aitchen.local",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a name with an underscore",
+      "input": "my_pixel.local:80",
+      "stored": "my_pixel.local:80",
+      "port": 80
+    },
+    {
+      "name": "an empty host with a port",
+      "input": ":5000",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a bare colon-less bracket pair",
+      "input": "[]",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "nothing",
+      "input": "   ",
+      "error": "Type an address"
+    },
+    {
+      "name": "a bare IPv6 address",
+      "input": "fd7a:115c:a1e0::1",
+      "error": "Put an IPv6 address in square brackets, like [fd7a::1]"
+    },
+    {
+      "name": "a space inside",
+      "input": "pixel 8",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a scheme",
+      "input": "http://pixel",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "an impossible IPv4",
+      "input": "999.1.1.1",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "a label starting with a dash",
+      "input": "-pixel.local",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "an empty label",
+      "input": "pixel..local",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "an unclosed bracket",
+      "input": "[fd7a::1",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "not an IPv6 in brackets",
+      "input": "[pixel]",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "text after the brackets",
+      "input": "[fd7a::1]x",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "two ports",
+      "input": "pixel:1:2",
+      "error": "That isn’t a host name or an IP address"
+    },
+    {
+      "name": "port zero",
+      "input": "pixel:0",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "port too big",
+      "input": "pixel:65536",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "port not a number",
+      "input": "pixel:abc",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "an empty port",
+      "input": "pixel:",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "a signed port",
+      "input": "pixel:+80",
+      "error": "The port is a number from 1 to 65535"
+    },
+    {
+      "name": "a name over 253 characters",
+      "input": "a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a",
+      "error": "That isn’t a host name or an IP address"
+    }
+  ]
+}

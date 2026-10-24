@@ -23,6 +23,8 @@ macro_rules! specta_builder_for {
                 commands::log_ui_error,
                 commands::backup_now,
                 commands::open_log_dir::<$runtime>,
+                editing::editing_hold,
+                editing::editing_release,
                 journal::journal_entry_create,
                 journal::journal_entry_update,
                 journal::journal_entry_toggle_task,
@@ -75,20 +77,99 @@ macro_rules! specta_builder_for {
                 todo::todo_list_reorder,
                 todo::todo_list_set_sort,
                 todo::todo_list_set_group,
+                sync::sync_get,
+                sync::sync_set_enabled::<$runtime>,
+                sync::sync_rename,
+                sync::sync_set_option::<$runtime>,
+                sync::sync_leave,
+                sync::sync_devices,
+                sync::sync_device,
+                sync::sync_device_rename,
+                sync::sync_device_address,
+                sync::sync_device_check,
+                sync::sync_device_sync_now,
+                sync::sync_device_forget,
+                sync::sync_pair_state,
+                sync::sync_pair_show,
+                sync::sync_pair_new_code,
+                sync::sync_pair_enter,
+                sync::sync_pair_enter_at,
+                sync::sync_pair_decide,
+                sync::sync_pair_merge,
+                sync::sync_pair_cancel,
+                sync::sync_now,
+                sync::sync_resume,
+                sync::sync_open_local_network_settings::<$runtime>,
+                sync::sync_local_network_os::<$runtime>,
+                sync_conflicts::sync_conflicts,
+                sync_conflicts::sync_conflict,
+                sync_conflicts::sync_conflict_draft,
+                sync_conflicts::sync_conflict_resolve,
+                sync_conflicts::sync_attention,
+                sync_conflicts::sync_activity,
+                sync_conflicts::sync_resolution_use_other,
+                sync_conflicts::sync_resolutions_visited,
             ])
             .events(tauri_specta::collect_events![
                 SettingsChangedEvent,
                 TodoChangedEvent,
-                LinkOpenedEvent
+                JournalChangedEvent,
+                LinkOpenedEvent,
+                SyncPairingEvent,
+                SyncPeersEvent,
+                SyncConflictsEvent,
+                SyncActivityEvent,
+                SyncNewConflictsEvent,
+                TodoListsMergedEvent,
+                TodoTaskDeletedEvent,
+                JournalEntryDeletedEvent
             ])
     };
 }
 
 mod commands;
+mod editing;
 mod env_guard;
 mod journal;
+#[cfg(test)]
+mod legacy_db_tests;
 mod links;
 mod state;
+mod sync;
+#[cfg(test)]
+mod sync_activity_tests;
+#[cfg(test)]
+mod sync_address_tests;
+#[cfg(test)]
+mod sync_backfill_tests;
+#[cfg(test)]
+mod sync_cluster_tests;
+mod sync_conflicts;
+#[cfg(test)]
+mod sync_conflicts_tests;
+#[cfg(test)]
+mod sync_forget_tests;
+#[cfg(test)]
+mod sync_groups_tests;
+#[cfg(test)]
+mod sync_journal_tests;
+#[cfg(test)]
+mod sync_lists_tests;
+#[cfg(test)]
+mod sync_live_tests;
+#[cfg(test)]
+mod sync_merge_fixture_tests;
+#[cfg(test)]
+mod sync_merge_preview_tests;
+#[cfg(test)]
+mod sync_pairing_tests;
+#[cfg(test)]
+mod sync_pause_tests;
+mod sync_power;
+#[cfg(test)]
+mod sync_power_tests;
+#[cfg(test)]
+mod sync_resolutions_tests;
 #[cfg(test)]
 mod test_support;
 mod theme_inject;
@@ -111,21 +192,25 @@ use std::error::Error;
 use std::sync::{Arc, Mutex};
 
 use mnemora_core::db;
-use mnemora_core::device::DeviceSettings;
+use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
-use mnemora_core::events::{EventBus, SettingsChanged};
+use mnemora_core::events::{
+    ConflictsRaised, DeviceRenamed, EntryDeletedRemotely, EventBus, ListsMerged, RemoteChanged,
+    RemoteSessionEnded, SettingsChanged, TaskDeletedRemotely,
+};
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::{SettingsRegistry, SettingsStore};
 use mnemora_journal::JournalModule;
+use mnemora_sync::{Modules, SyncModule, SyncRuntime};
 use mnemora_todo::TodoModule;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{Manager, WebviewWindowBuilder};
 use tauri_specta::{Builder, Event};
 
-use crate::state::{AppState, DeviceStore};
+use crate::state::AppState;
 
 /// Decided at build time; there is deliberately no runtime switch that could mix data sets.
 const ENVIRONMENT: Environment = if cfg!(feature = "sandbox") {
@@ -147,6 +232,79 @@ pub struct SettingsChangedEvent(pub SettingsChanged);
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct TodoChangedEvent;
 
+/// Sync changed Journal data from another device, so whatever the Journal shows is stale. The
+/// UI refreshes in place, silently.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct JournalChangedEvent;
+
+/// Sync merged two Todo Lists with the same name: whoever is looking at `from_id` moves to
+/// `into_id` (the List that was kept) and is told. `device` names the other device the List came
+/// from, when it is a paired one.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct TodoListsMergedEvent {
+    /// The List that went away.
+    pub from_id: String,
+    /// Its name.
+    pub from_name: String,
+    /// The List that was kept.
+    pub into_id: String,
+    /// Its name.
+    pub into_name: String,
+    /// The other device whose List it was.
+    pub device: Option<String>,
+}
+
+/// A Task was deleted on another device: if it is open in the sheet, the sheet closes with a toast
+/// naming `device`, and Restore brings it back (as an ordinary change).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct TodoTaskDeletedEvent {
+    /// The Task.
+    pub task_id: String,
+    /// Its title.
+    pub title: String,
+    /// The device that deleted it, when it is a paired one.
+    pub device: Option<String>,
+}
+
+/// A Journal Entry was deleted on another device: if it is open in the editor, the editor closes
+/// with a toast naming `device`, and Restore brings it back (as an ordinary change).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct JournalEntryDeletedEvent {
+    /// The Entry.
+    pub entry_id: String,
+    /// The Page it was on (an Entry has no title).
+    pub page_date: String,
+    /// The device that deleted it, when it is a paired one.
+    pub device: Option<String>,
+}
+
+/// The pairing sheet's state changed (a code is shown, someone asks, it worked or failed).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncPairingEvent(pub mnemora_sync::PairingView);
+
+/// A paired device's status or sync progress changed: the Devices tab reads `sync_devices` again.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncPeersEvent;
+
+/// Sync raised, received or settled a Conflict: the Conflicts tab and Compare are stale.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncConflictsEvent;
+
+/// Activity gained lines (a session was logged, or a line arrived from another device): the
+/// Activity tab reads its first page again.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncActivityEvent;
+
+/// New Conflicts arrived from another device and this device is set to say so with a toast
+/// ("New conflicts: Show a toast"). Never sent while it is set to Quietly.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct SyncNewConflictsEvent {
+    /// How many.
+    pub count: u32,
+    /// The device they came from, when known.
+    pub device: Option<String>,
+}
+
 /// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct LinkOpenedEvent;
@@ -157,16 +315,139 @@ fn modules() -> Vec<Box<dyn Module>> {
         Box::new(CoreModule),
         Box::new(JournalModule),
         Box::new(TodoModule),
+        Box::new(SyncModule),
     ]
 }
 
+/// Turns "Sync changed a Module's data" into that Module's own change event: Todo's and the
+/// Journal's screens refresh in place after every batch, silently. The Todo widget redraws once per sync session,
+/// not per batch, so a big sync does not flood it.
+fn follow_remote<R: tauri::Runtime>(
+    bus: &EventBus,
+    handle: tauri::AppHandle<R>,
+    widgets: &Arc<widget::signal::WidgetSignal>,
+) {
+    let handle_for_merges = handle.clone();
+    let handle_for_deletes = handle.clone();
+    let toast_handle = handle.clone();
+    let rename_handle = handle.clone();
+    bus.subscribe(move |event: &RemoteChanged| {
+        let sent = match event.module.as_str() {
+            mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
+            mnemora_journal::MODULE_ID => JournalChangedEvent.emit(&handle),
+            // The names in the Devices list can have changed with the Activity lines (a rename).
+            mnemora_sync::MODULE_ID => SyncConflictsEvent
+                .emit(&handle)
+                .and_then(|()| SyncPeersEvent.emit(&handle))
+                .and_then(|()| SyncActivityEvent.emit(&handle)),
+            _ => Ok(()),
+        };
+        if let Err(e) = sent {
+            tracing::warn!(target: "sync", error = %e, "could not emit the change event");
+        }
+    });
+    // Another device renamed this one: the name is saved in the device file like a rename here.
+    // The file is written before the session goes on, so the name is there whenever the rename's
+    // Activity line is; advertising it is off the session's thread: that holds the database,
+    // which advertising the new name needs too.
+    bus.subscribe(move |event: &DeviceRenamed| {
+        use tauri::Manager;
+        let Some(state) = rename_handle.try_state::<state::AppState>() else {
+            return;
+        };
+        if let Err(e) = mnemora_sync::rename(&state.device, &event.name) {
+            tracing::warn!(target: "sync", error = %e, "could not save the new device name");
+            return;
+        }
+        let handle = rename_handle.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            use tauri::Manager;
+            let Some(state) = handle.try_state::<state::AppState>() else {
+                return;
+            };
+            // Tell the window first: advertising the new name can take a while (it waits for the
+            // network), and the Devices tab must not show the old name meanwhile.
+            let emit = || {
+                if let Err(e) = SyncPeersEvent.emit(&handle) {
+                    tracing::warn!(target: "sync", error = %e, "could not emit the device change");
+                }
+            };
+            emit();
+            state.sync.refresh_advert();
+            emit();
+        });
+    });
+    let merged_handle = handle_for_merges;
+    bus.subscribe(move |event: &ListsMerged| {
+        let event = TodoListsMergedEvent {
+            from_id: event.from_id.clone(),
+            from_name: event.from_name.clone(),
+            into_id: event.into_id.clone(),
+            into_name: event.into_name.clone(),
+            device: event.device.clone(),
+        };
+        if let Err(e) = event.emit(&merged_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the List merge event");
+        }
+    });
+    let deleted_handle = handle_for_deletes;
+    let entry_deleted_handle = deleted_handle.clone();
+    bus.subscribe(move |event: &TaskDeletedRemotely| {
+        let event = TodoTaskDeletedEvent {
+            task_id: event.task_id.clone(),
+            title: event.title.clone(),
+            device: event.device.clone(),
+        };
+        if let Err(e) = event.emit(&deleted_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the Task delete event");
+        }
+    });
+    bus.subscribe(move |event: &EntryDeletedRemotely| {
+        let event = JournalEntryDeletedEvent {
+            entry_id: event.entry_id.clone(),
+            page_date: event.page_date.clone(),
+            device: event.device.clone(),
+        };
+        if let Err(e) = event.emit(&entry_deleted_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the Entry delete event");
+        }
+    });
+    bus.subscribe(move |event: &ConflictsRaised| {
+        use tauri::Manager;
+        // Quietly is the default: only a device set to a toast hears about new conflicts.
+        let wants = toast_handle
+            .try_state::<state::AppState>()
+            .is_some_and(|s| s.device.get().sync.toast_conflicts);
+        if !wants {
+            return;
+        }
+        let toast = SyncNewConflictsEvent {
+            count: event.count,
+            device: event.device.clone(),
+        };
+        if let Err(e) = toast.emit(&toast_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the new-conflicts event");
+        }
+    });
+    let widgets = Arc::clone(widgets);
+    bus.subscribe(move |event: &RemoteSessionEnded| {
+        if event.modules.iter().any(|m| m == mnemora_todo::MODULE_ID) {
+            widgets.todo_changed();
+        }
+    });
+}
+
 /// A Settings store over every Module's registered keys.
-fn settings_store(modules: &[Box<dyn Module>], bus: &EventBus) -> SettingsStore {
+fn settings_store(
+    modules: &[Box<dyn Module>],
+    bus: &EventBus,
+    device: &Arc<DeviceStore>,
+) -> SettingsStore {
     let mut registry = SettingsRegistry::new();
     for module in modules {
         module.register_settings(&mut registry);
     }
-    SettingsStore::new(Arc::new(registry), bus.clone())
+    SettingsStore::new(Arc::new(registry), bus.clone(), Arc::clone(device))
 }
 
 /// Commands and events exposed over IPC. Also used to export bindings.
@@ -207,26 +488,38 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         tracing::warn!(error = %e, "ignoring invalid saved log level");
     }
     let paths = AppPaths::resolve(ENVIRONMENT, &base, device.data_dir_override().as_deref());
+    let device = Arc::new(DeviceStore::new(paths.device_file(), device));
 
-    let modules = modules();
+    let modules: Modules = Arc::new(modules());
     let module_refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
     let mut conn = db::open(&paths.db_file)?;
     let report = db::migrate::run(&mut conn, &module_refs, &paths.backup_dir)?;
     tracing::info!(applied = ?report.applied, backup = ?report.backup, "database ready");
 
     // Once per start, after migrations. A failing Module must not stop the app.
-    for module in &modules {
-        if let Err(e) = module.on_startup(&mut conn, &report) {
+    for module in modules.iter() {
+        if let Err(e) = module.on_startup(&mut conn, &device, &report) {
             tracing::warn!(module = module.id(), error = %e, "startup work failed");
         }
     }
 
+    // No editor survives a restart: merge what a previous run was still holding back for one.
+    editing::release_at_start(&mut conn, &modules, &device.device_id());
+
     let bus = EventBus::new();
-    let settings = settings_store(&modules, &bus);
+    let settings = settings_store(&modules, &bus, &device);
     // Settings that change what the Todo widget draws redraw it too.
     let widgets = Arc::new(widget::signal::WidgetSignal::platform());
     widget::signal::follow_settings(&bus, &widgets);
-    let snapshot = settings.get_all(&conn)?;
+    follow_remote(&bus, app.handle().clone(), &widgets);
+    // Sync starts only when this device has it on; off, nothing is started at all.
+    let sync = SyncRuntime::new();
+    sync.reconcile(device.get().sync.enabled);
+    // A change this device records wakes the session manager (a no-op while Sync is off).
+    let changes = sync.local_changes();
+    db::on_change_log_write(&conn, move || changes.notify_one())?;
+    // Look and feel comes from the device file alone, so the first paint never waits on the database.
+    let first_paint = settings.device_values();
 
     // Bridge core's in-process event to a typed IPC event.
     let handle = app.handle().clone();
@@ -241,20 +534,32 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         env: ENVIRONMENT,
         db: Mutex::new(conn),
         settings,
-        device: Arc::new(DeviceStore::new(paths.device_file(), device.clone())),
+        device: Arc::clone(&device),
         paths,
         log,
         widgets,
+        sync,
+        power: sync_power::Power::new(),
+        live_network: true,
+        modules,
+        bus,
     };
     app.manage(state);
+    // With Sync on, open the port and start announcing; with it off nothing is started.
+    if device.get().sync.enabled {
+        sync::launch_network(app.handle());
+    }
     #[cfg(target_os = "android")]
-    widget::register_app(app.handle().clone());
+    {
+        widget::register_app(app.handle().clone());
+        sync_power::android::register_app(app.handle().clone());
+    }
     // A Todo widget placed before the app ever ran (or before an update) shows a "open Mnemora"
     // state; now that the database exists and is current, it should redraw without waiting for
     // the next Todo write.
     app.state::<AppState>().widgets.todo_changed();
 
-    create_main_window(app, &snapshot.values, &device)?;
+    create_main_window(app, &first_paint, &device.get())?;
     Ok(())
 }
 
@@ -397,6 +702,27 @@ mod tests {
             "todoListSetSort",
             "todoListSetGroup",
             "deviceSetSpellcheck",
+            "syncGet",
+            "syncSetEnabled",
+            "syncRename",
+            "syncSetOption",
+            "syncLeave",
+            "syncDevices",
+            "syncPairState",
+            "syncPairShow",
+            "syncPairNewCode",
+            "syncPairEnter",
+            "syncPairDecide",
+            "syncPairCancel",
+            "syncNow",
+            "syncResume",
+            "syncConflicts",
+            "syncConflict",
+            "syncConflictDraft",
+            "syncConflictResolve",
+            "syncPeersEvent",
+            "syncConflictsEvent",
+            "syncPairingEvent",
             "settingsChangedEvent",
             "linkOpenedEvent",
         ] {

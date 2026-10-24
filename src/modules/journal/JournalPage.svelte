@@ -50,6 +50,7 @@
   import { feedEntries } from './focus-nav';
   import { EntryFocus, provideFocus } from './focus.svelte';
   import JournalCalendar from './JournalCalendar.svelte';
+  import JournalDeleteFollower from './JournalDeleteFollower.svelte';
   import { launcher, type JournalRequest } from './launcher.svelte';
   import { JournalNav, provideNav } from './navigation.svelte';
   import PageHeading from './PageHeading.svelte';
@@ -498,6 +499,7 @@
     {/if}
   </div>
   <ComposerDock class={search.active ? 'hidden' : ''} />
+  <JournalDeleteFollower />
   <KeyboardBar
     visible={viewport.isPhone && keyboard.open && editing.active !== null}
     onaction={(command) => editing.active?.run(command)}

@@ -7,13 +7,16 @@
 pub mod changelog;
 pub mod db;
 pub mod device;
+pub mod editing;
 pub mod env;
 pub mod error;
 pub mod events;
+pub mod hlc;
 pub mod logging;
 pub mod module;
 pub mod paths;
 pub mod search;
 pub mod settings;
+pub mod syncable;
 pub mod text;
 pub mod util;

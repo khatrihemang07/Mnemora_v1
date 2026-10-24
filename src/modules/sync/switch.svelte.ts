@@ -1,0 +1,68 @@
+import { createQuery } from '@tanstack/svelte-query';
+import { commands } from '../../lib/ipc/bindings';
+import { unwrap } from '../../lib/ipc/unwrap';
+import type { DeviceSwitch, ModuleContext } from '../../lib/router';
+import { deviceQuery } from '../../lib/settings/queries';
+import { notifyError } from '../../lib/ui/toast';
+import { askLocalNetworkOnEnable } from './local-network';
+import { refreshSync } from './queries';
+
+/** Whether the "Turn off Sync?" Dialog is open. It is mounted by the Module's overlay while Sync is on. */
+class TurnOffDialog {
+  open = $state(false);
+}
+export const turnOffDialog = new TurnOffDialog();
+
+async function setEnabled(on: boolean): Promise<boolean> {
+  try {
+    await unwrap(commands.syncSetEnabled(on));
+  } catch (e) {
+    notifyError(e instanceof Error ? e.message : 'Could not change Sync');
+    return false;
+  } finally {
+    // Wait for the fresh values: the shell routes by them, so `/sync` must be enabled before we go there.
+    await refreshSync();
+  }
+  return true;
+}
+
+/** Confirms the Dialog: this device stops syncing; its data and paired devices are kept. */
+export async function confirmTurnOff() {
+  turnOffDialog.open = false;
+  await setEnabled(false);
+}
+
+/**
+ * Sync's on/off, a Device setting read from the device file (never synced). Turning on opens the
+ * Module (its welcome page, until the first pairing); turning off asks first.
+ */
+export function useSyncSwitch(ctx: ModuleContext): DeviceSwitch {
+  // Turning on takes a moment (Rust starts, the shell refreshes, the page opens). Clicks that land
+  // meanwhile are the same click, and must never ask "Turn off Sync?" over the page being opened (R14).
+  let turningOn = false;
+  const device = createQuery(() => deviceQuery);
+  return {
+    get on() {
+      return device.data?.sync?.enabled === true;
+    },
+    get ready() {
+      return device.isSuccess;
+    },
+    set(on) {
+      if (turningOn) return;
+      if (!on) {
+        turnOffDialog.open = true;
+        return;
+      }
+      turningOn = true;
+      turnOffDialog.open = false;
+      void setEnabled(true).then((ok) => {
+        turningOn = false;
+        if (!ok) return;
+        // Android 17: the system asks to reach devices on the network, now and not before.
+        askLocalNetworkOnEnable();
+        ctx.navigate('/sync');
+      });
+    },
+  };
+}

@@ -1,23 +1,19 @@
-//! Editing a Task: its text, Priority, Won't do, deleting and bringing it back, and the purge of
-//! what was deleted long ago. Rules, persistence and change-log records in one transaction.
+//! Editing a Task: its text, Priority, Won't do, deleting and bringing it back.
+//! Rules, persistence and change-log records in one transaction.
 //! Task and Comment text must never reach a log line.
 
-use mnemora_core::changelog::{self, ChangeOp};
+use mnemora_core::changelog::ChangeOp;
 use mnemora_core::error::AppResult;
 use mnemora_core::util::now_ms;
 use rusqlite::Connection;
 
-use crate::comment_service;
 use crate::error::TodoError;
 use crate::list_repo;
 use crate::repeat::{rule_of, skip_task};
-use crate::service::{ENTITY, record, record_at, record_session};
+use crate::repo;
+use crate::service::{record, record_at, record_session};
 use crate::task::{Task, TaskState, validate_notes, validate_priority, validate_title};
 use crate::when::LocalNow;
-use crate::{comment_repo, repo};
-
-/// Deleted Tasks, Lists and Comments are erased this long after deletion (30 days).
-const PURGE_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 
 /// One Task, in any state.
 pub fn task(conn: &Connection, id: &str) -> AppResult<Task> {
@@ -95,7 +91,30 @@ pub fn wont_do(conn: &mut Connection, id: &str, local: &LocalNow) -> AppResult<T
     Ok(task)
 }
 
-/// Deletes a Task at once (soft: it is erased after 30 days); `restore_task` is Undo. Only this
+/// Puts a Task in the state it is asked to be in (open, done or Won't do), as the one change
+/// "Use ‹other› instead" makes in Sync's Resolved automatically. A repeating Task, or one of its
+/// occurrences, is closed and reopened by the ordinary commands, which know what it means for the
+/// next date: this refuses them.
+pub fn set_task_state(conn: &mut Connection, id: &str, state: TaskState) -> AppResult<Task> {
+    let tx = conn.transaction()?;
+    let mut task = repo::get(&tx, id)?.ok_or(TodoError::TaskNotFound)?;
+    if task.state == state {
+        return Ok(task);
+    }
+    if rule_of(&task)?.is_some() || task.repeat_of.is_some() {
+        return Err(TodoError::Validation("A repeating Task is changed from its own menu").into());
+    }
+    let now = now_ms();
+    task.state = state;
+    task.closed_at = (state != TaskState::Open).then_some(now);
+    task.updated_at = now;
+    repo::update_state(&tx, &task)?;
+    record(&tx, &task, ChangeOp::Tick)?;
+    tx.commit()?;
+    Ok(task)
+}
+
+/// Deletes a Task at once (soft: the row stays for good); `restore_task` is Undo. Only this
 /// row goes: the occurrences of a repeating Task stay in Done, and Comments stay with their Task.
 pub fn delete_task(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
@@ -134,44 +153,4 @@ pub fn restore_task(conn: &mut Connection, id: &str) -> AppResult<Task> {
     record(&tx, &task, ChangeOp::Restore)?;
     tx.commit()?;
     Ok(repo::get(conn, id)?.unwrap_or(task))
-}
-
-/// What a purge erased.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Purged {
-    /// Tasks erased.
-    pub tasks: usize,
-    /// Lists erased.
-    pub lists: usize,
-    /// Comments erased.
-    pub comments: usize,
-}
-
-/// Permanently erases Tasks, Lists and Comments deleted over 30 days ago, with their change-log
-/// records, in one transaction. A Task takes its Comments with it; its occurrences stay as plain
-/// done Tasks. Run once at app start.
-pub fn purge_deleted(conn: &mut Connection) -> AppResult<Purged> {
-    let cutoff = now_ms() - PURGE_AFTER_MS;
-    let tx = conn.transaction()?;
-    let task_ids = repo::deleted_before(&tx, cutoff)?;
-    let list_ids = list_repo::deleted_before(&tx, cutoff)?;
-    let comment_ids = comment_repo::purgeable(&tx, cutoff, &task_ids)?;
-    for id in &comment_ids {
-        comment_repo::remove(&tx, id)?;
-    }
-    for id in &task_ids {
-        repo::remove(&tx, id)?;
-    }
-    for id in &list_ids {
-        list_repo::remove(&tx, id)?;
-    }
-    changelog::purge(&tx, ENTITY, &task_ids)?;
-    changelog::purge(&tx, comment_service::ENTITY, &comment_ids)?;
-    changelog::purge(&tx, crate::list_service::ENTITY, &list_ids)?;
-    tx.commit()?;
-    Ok(Purged {
-        tasks: task_ids.len(),
-        lists: list_ids.len(),
-        comments: comment_ids.len(),
-    })
 }

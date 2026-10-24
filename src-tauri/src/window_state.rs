@@ -4,12 +4,12 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use mnemora_core::device::{DeviceSettings, WindowState};
+use mnemora_core::device::{DeviceSettings, DeviceStore, WindowState};
 use tauri::{
     AppHandle, LogicalPosition, LogicalSize, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
-use crate::state::{DeviceStore, lock};
+use crate::state::lock;
 
 /// Quiet period after the last move/resize before writing `device.toml`.
 const DEBOUNCE: Duration = Duration::from_millis(500);

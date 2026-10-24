@@ -1,0 +1,735 @@
+{
+  "about": "Merge cases for Sync, run by src-tauri/src/sync_merge_fixture_tests.rs (two real devices) and src/lib/ipc/mock-sync-merge.test.ts (the mock's TypeScript merge). Each step is one device (a or b) making one edit, or `sync`. Every step happens one second after the one before, on a clock both devices share. After the last step the devices sync until quiet; both must then agree and match `expect`. Ops: list_create(list,name) list_rename(list,name) list_delete(list) task_create(task,title,list?,notes?,understood?) task_edit(task,title?,notes?) task_priority(task,priority) task_when(task,date,time,repeat?) task_title(task,title,understood?) task_skip(task) task_done(task) task_move(task,list|null) task_delete(task) task_place(task,before|null) comment_add(comment,task,body) comment_edit(comment,body) entry_create(entry,body) entry_edit(entry,body) entry_delete(entry) list_sort(list,sort) list_group(list,group) pref(key,value). `expect` lists only what a case is about: lists (live, label to name), arrange (live Lists' sort and grouping), occurrences (live done copies of repeating Tasks), tasks (label to fields; list is a List label or null), order (a List label or inbox to the open Tasks in order), comments, entries (live), settings (shared), device (settings that stay per device, by device), conflicts (open Conflicts), resolved (kinds of Resolved automatically, sorted).",
+  "cases": [
+    {
+      "name": "different fields of one task both survive",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Pay rent" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_priority", "task": "t1", "priority": 1 },
+        { "d": "b", "op": "task_edit", "task": "t1", "notes": "by the 1st" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "title": "Pay rent", "priority": 1, "notes": "by the 1st" } },
+        "conflicts": 0,
+        "resolved": []
+      }
+    },
+    {
+      "name": "the same field changed on both sides: the newest wins and is logged",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Pay rent" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_priority", "task": "t1", "priority": 1 },
+        { "d": "b", "op": "task_priority", "task": "t1", "priority": 2 },
+        { "op": "sync" }
+      ],
+      "expect": { "tasks": { "t1": { "priority": 2 } }, "conflicts": 0, "resolved": ["value"] }
+    },
+    {
+      "name": "a change made after seeing the other is not a clash",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Pay rent" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_priority", "task": "t1", "priority": 1 },
+        { "op": "sync" },
+        { "d": "b", "op": "task_priority", "task": "t1", "priority": 2 },
+        { "op": "sync" }
+      ],
+      "expect": { "tasks": { "t1": { "priority": 2 } }, "resolved": [] }
+    },
+    {
+      "name": "the When group is taken whole from the newest side",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Call bank" },
+        { "d": "a", "op": "task_when", "task": "t1", "date": "2026-11-01", "time": "08:00" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_when", "task": "t1", "date": "2026-11-01", "time": "09:00" },
+        { "d": "b", "op": "task_when", "task": "t1", "date": "2026-11-05", "time": "08:00" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "due_date": "2026-11-05", "due_time": "08:00" } },
+        "resolved": ["value"]
+      }
+    },
+    {
+      "name": "a Task's state and its Priority are separate",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Water plants" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_done", "task": "t1" },
+        { "d": "b", "op": "task_priority", "task": "t1", "priority": 2 },
+        { "op": "sync" }
+      ],
+      "expect": { "tasks": { "t1": { "state": "done", "priority": 2 } }, "resolved": [] }
+    },
+    {
+      "name": "order: Tasks moved on both sides keep each side's move",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "One" },
+        { "d": "a", "op": "task_create", "task": "t2", "title": "Two" },
+        { "d": "a", "op": "task_create", "task": "t3", "title": "Three" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_place", "task": "t3", "before": "t1" },
+        { "d": "b", "op": "task_place", "task": "t1", "before": null },
+        { "op": "sync" }
+      ],
+      "expect": { "order": { "inbox": ["t3", "t2", "t1"] } }
+    },
+    {
+      "name": "order: the same Task moved on both sides goes where the newest put it",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "One" },
+        { "d": "a", "op": "task_create", "task": "t2", "title": "Two" },
+        { "d": "a", "op": "task_create", "task": "t3", "title": "Three" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_place", "task": "t3", "before": "t1" },
+        { "d": "b", "op": "task_place", "task": "t3", "before": "t2" },
+        { "op": "sync" }
+      ],
+      "expect": { "order": { "inbox": ["t1", "t3", "t2"] } }
+    },
+    {
+      "name": "text: edits in different lines merge",
+      "steps": [
+        {
+          "d": "a",
+          "op": "task_create",
+          "task": "t1",
+          "title": "Shop",
+          "notes": "Milk\nEggs\nBread\n"
+        },
+        { "op": "sync" },
+        { "d": "a", "op": "task_edit", "task": "t1", "notes": "Oat milk\nEggs\nBread\n" },
+        { "d": "b", "op": "task_edit", "task": "t1", "notes": "Milk\nEggs\nBread\nButter\n" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "notes": "Oat milk\nEggs\nBread\nButter\n" } },
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "text: edits to different words of one line merge",
+      "steps": [
+        {
+          "d": "a",
+          "op": "task_create",
+          "task": "t1",
+          "title": "Hike",
+          "notes": "Call Sam about the hike on Saturday morning"
+        },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Phone Sam about the hike on Saturday morning"
+        },
+        {
+          "d": "b",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Call Sam about the hike on Sunday morning"
+        },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "notes": "Phone Sam about the hike on Sunday morning" } },
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "text: a title merges by word too",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Buy milk and eggs" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_edit", "task": "t1", "title": "Buy oat milk and eggs" },
+        { "d": "b", "op": "task_edit", "task": "t1", "title": "Buy milk and free-range eggs" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "title": "Buy oat milk and free-range eggs" } },
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "text: the same words changed on both sides show the newest and raise a Conflict",
+      "steps": [
+        {
+          "d": "a",
+          "op": "task_create",
+          "task": "t1",
+          "title": "Hike",
+          "notes": "Route: to decide\nBring the stove\n"
+        },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Route: ridge loop\nBring the stove\n"
+        },
+        {
+          "d": "b",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Route: lake path\nBring the stove\n"
+        },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "notes": "Route: lake path\nBring the stove\n" } },
+        "conflicts": 1
+      }
+    },
+    {
+      "name": "text: an Entry merges and clashes like any text",
+      "steps": [
+        {
+          "d": "a",
+          "op": "entry_create",
+          "entry": "e1",
+          "body": "Went for a run along the canal.\nCoffee with Sam after.\n"
+        },
+        { "d": "a", "op": "entry_create", "entry": "e2", "body": "Slept in.\nRead all day.\n" },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "entry_edit",
+          "entry": "e1",
+          "body": "Went for a run along the canal, felt great after the rain.\nCoffee with Sam after.\n"
+        },
+        {
+          "d": "b",
+          "op": "entry_edit",
+          "entry": "e1",
+          "body": "Went for a run along the canal, legs heavy but good.\nCoffee with Sam after.\n"
+        },
+        {
+          "d": "a",
+          "op": "entry_edit",
+          "entry": "e2",
+          "body": "Slept in.\nRead all day.\nCalled mum.\n"
+        },
+        { "d": "b", "op": "entry_edit", "entry": "e2", "body": "Slept in late.\nRead all day.\n" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "entries": {
+          "e1": "Went for a run along the canal, legs heavy but good.\nCoffee with Sam after.\n",
+          "e2": "Slept in late.\nRead all day.\nCalled mum.\n"
+        },
+        "conflicts": 1
+      }
+    },
+    {
+      "name": "text: a Comment merges and shows as edited",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Hike" },
+        { "d": "a", "op": "comment_add", "comment": "c1", "task": "t1", "body": "Bring the stove" },
+        { "op": "sync" },
+        { "d": "a", "op": "comment_edit", "comment": "c1", "body": "Bring the big stove" },
+        { "d": "b", "op": "comment_edit", "comment": "c1", "body": "Bring the stove and fuel" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "comments": {
+          "c1": { "task": "t1", "body": "Bring the big stove and fuel", "edited": true }
+        },
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "a List renamed on both sides: the newest name stays",
+      "steps": [
+        { "d": "a", "op": "list_create", "list": "l1", "name": "Work" },
+        { "op": "sync" },
+        { "d": "a", "op": "list_rename", "list": "l1", "name": "Office" },
+        { "d": "b", "op": "list_rename", "list": "l1", "name": "Job" },
+        { "op": "sync" }
+      ],
+      "expect": { "lists": { "l1": "Job" } }
+    },
+    {
+      "name": "two Lists with one name merge into the older, Tasks after its own",
+      "steps": [
+        { "d": "a", "op": "list_create", "list": "l1", "name": "Groceries" },
+        { "d": "a", "op": "task_create", "task": "ta", "title": "Milk", "list": "l1" },
+        { "d": "b", "op": "list_create", "list": "l2", "name": "groceries" },
+        { "d": "b", "op": "task_create", "task": "tb", "title": "Eggs", "list": "l2" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "lists": { "l1": "Groceries" },
+        "tasks": { "ta": { "list": "l1" }, "tb": { "list": "l1" } },
+        "order": { "l1": ["ta", "tb"] },
+        "resolved": []
+      }
+    },
+    {
+      "name": "a Task moved into a List deleted elsewhere lands in the Inbox",
+      "steps": [
+        { "d": "a", "op": "list_create", "list": "l1", "name": "Trip" },
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Pack" },
+        { "op": "sync" },
+        { "d": "a", "op": "list_delete", "list": "l1" },
+        { "d": "b", "op": "task_move", "task": "t1", "list": "l1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "lists": {},
+        "tasks": { "t1": { "list": null, "deleted": false } },
+        "order": { "inbox": ["t1"] },
+        "resolved": ["task_inbox"]
+      }
+    },
+    {
+      "name": "a Task deleted on one side and edited later on the other stays deleted with the edit",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Old list", "notes": "Old" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "d": "b", "op": "task_edit", "task": "t1", "notes": "New" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true, "notes": "New" } },
+        "resolved": ["delete_edit"]
+      }
+    },
+    {
+      "name": "an edit made before a delete, neither device knowing of the other, is logged too",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Old list", "notes": "Old" },
+        { "op": "sync" },
+        { "d": "b", "op": "task_edit", "task": "t1", "notes": "New" },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true, "notes": "New" } },
+        "resolved": ["delete_edit"]
+      }
+    },
+    {
+      "name": "an edit the deleting device had already received is no clash",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Old list", "notes": "Old" },
+        { "op": "sync" },
+        { "d": "b", "op": "task_edit", "task": "t1", "notes": "New" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": { "tasks": { "t1": { "deleted": true, "notes": "New" } }, "resolved": [] }
+    },
+    {
+      "name": "a Comment added to a Task deleted elsewhere stays attached",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Plan weekend hike" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "d": "b", "op": "comment_add", "comment": "c1", "task": "t1", "body": "Bring the stove" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true } },
+        "comments": { "c1": { "task": "t1", "body": "Bring the stove", "edited": false } }
+      }
+    },
+    {
+      "name": "Preferences sync, look and feel stays on each device",
+      "steps": [
+        { "d": "a", "op": "pref", "key": "core.week_start", "value": "sun" },
+        { "d": "a", "op": "pref", "key": "core.theme", "value": "oled" },
+        { "d": "b", "op": "pref", "key": "todo.lists_sort", "value": "name_asc" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "settings": { "core.week_start": "sun", "todo.lists_sort": "name_asc" },
+        "device": { "core.theme": { "a": "oled", "b": "system" } }
+      }
+    },
+    {
+      "name": "a Preference changed on both sides: the newest wins",
+      "steps": [
+        { "d": "a", "op": "pref", "key": "core.date_format", "value": "short" },
+        { "d": "b", "op": "pref", "key": "core.date_format", "value": "iso" },
+        { "d": "b", "op": "pref", "key": "core.time_format", "value": "12h" },
+        { "op": "sync" }
+      ],
+      "expect": { "settings": { "core.date_format": "iso", "core.time_format": "12h" } }
+    },
+    {
+      "name": "the When group carries its Repeat: the newest side's Repeat stands whole with its date",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Water plants" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-01",
+          "time": "08:00",
+          "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-03",
+          "time": "08:00",
+          "repeat": { "freq": "day", "every": 2, "days": null, "mode": "fixed" }
+        },
+        {
+          "d": "b",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-01",
+          "time": "08:00",
+          "repeat": { "freq": "week", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": {
+          "t1": {
+            "due_date": "2026-11-01",
+            "due_time": "08:00",
+            "repeat_freq": "week",
+            "repeat_every": 1,
+            "repeat_days": null,
+            "repeat_mode": "fixed"
+          }
+        },
+        "resolved": ["value"]
+      }
+    },
+    {
+      "name": "a date and Repeat both changed on both sides: the newest group wins whole and is logged",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Water plants" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-01",
+          "time": "08:00",
+          "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-03",
+          "time": "08:00",
+          "repeat": { "freq": "day", "every": 2, "days": null, "mode": "fixed" }
+        },
+        {
+          "d": "b",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-05",
+          "time": "09:00",
+          "repeat": { "freq": "week", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": {
+          "t1": {
+            "due_date": "2026-11-05",
+            "due_time": "09:00",
+            "repeat_freq": "week",
+            "repeat_every": 1,
+            "repeat_days": null,
+            "repeat_mode": "fixed"
+          }
+        },
+        "resolved": ["value"]
+      }
+    },
+    {
+      "name": "a Repeat added on one side and the date moved on the other: whole group from the newest",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Water plants" },
+        { "d": "a", "op": "task_when", "task": "t1", "date": "2026-11-01", "time": null },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-01",
+          "time": null,
+          "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "d": "b", "op": "task_when", "task": "t1", "date": "2026-11-05", "time": null },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": {
+          "t1": {
+            "due_date": "2026-11-05",
+            "repeat_freq": null,
+            "repeat_every": null,
+            "repeat_mode": null
+          }
+        },
+        "resolved": ["value"]
+      }
+    },
+    {
+      "name": "recognised words follow the newest title when the newest title is shown",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Call bank" },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_title",
+          "task": "t1",
+          "title": "Call bank today",
+          "understood": "[{\"word\":\"today\"}]"
+        },
+        {
+          "d": "b",
+          "op": "task_title",
+          "task": "t1",
+          "title": "Call bank tomorrow",
+          "understood": "[{\"word\":\"tomorrow\"}]"
+        },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": {
+          "t1": { "title": "Call bank tomorrow", "understood": "[{\"word\":\"tomorrow\"}]" }
+        },
+        "conflicts": 1
+      }
+    },
+    {
+      "name": "recognised words are dropped when the merged title is neither side's",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Buy milk and eggs" },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_title",
+          "task": "t1",
+          "title": "Buy oat milk and eggs",
+          "understood": "[{\"word\":\"oat\"}]"
+        },
+        {
+          "d": "b",
+          "op": "task_title",
+          "task": "t1",
+          "title": "Buy milk and free-range eggs",
+          "understood": "[{\"word\":\"free-range\"}]"
+        },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "title": "Buy oat milk and free-range eggs", "understood": null } },
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "a Skip on one side and a completion on the other land on one next date",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Water plants" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-01",
+          "time": null,
+          "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "op": "sync" },
+        { "d": "a", "op": "task_skip", "task": "t1" },
+        { "d": "b", "op": "task_done", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "state": "open", "due_date": "2026-11-02" } },
+        "occurrences": 1,
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "a repeating Task completed on both sides is one occurrence",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Water plants" },
+        {
+          "d": "a",
+          "op": "task_when",
+          "task": "t1",
+          "date": "2026-11-01",
+          "time": "08:00",
+          "repeat": { "freq": "day", "every": 1, "days": null, "mode": "fixed" }
+        },
+        { "op": "sync" },
+        { "d": "a", "op": "task_done", "task": "t1" },
+        { "d": "b", "op": "task_done", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "state": "open", "due_date": "2026-11-02", "due_time": "08:00" } },
+        "occurrences": 1,
+        "conflicts": 0
+      }
+    },
+    {
+      "name": "a List's sort and grouping are separate values",
+      "steps": [
+        { "d": "a", "op": "list_create", "list": "l1", "name": "Work" },
+        { "op": "sync" },
+        { "d": "a", "op": "list_sort", "list": "l1", "sort": "title" },
+        { "d": "b", "op": "list_group", "list": "l1", "group": "priority" },
+        { "op": "sync" }
+      ],
+      "expect": { "arrange": { "l1": { "sort": "title", "group": "priority" } }, "resolved": [] }
+    },
+    {
+      "name": "a List sorted on both sides: the newest sort wins and is logged",
+      "steps": [
+        { "d": "a", "op": "list_create", "list": "l1", "name": "Work" },
+        { "op": "sync" },
+        { "d": "a", "op": "list_sort", "list": "l1", "sort": "title" },
+        { "d": "b", "op": "list_sort", "list": "l1", "sort": "due" },
+        { "op": "sync" }
+      ],
+      "expect": { "arrange": { "l1": { "sort": "due", "group": "none" } }, "resolved": ["value"] }
+    },
+    {
+      "name": "a List grouped on both sides: the newest grouping wins and is logged",
+      "steps": [
+        { "d": "a", "op": "list_create", "list": "l1", "name": "Work" },
+        { "op": "sync" },
+        { "d": "a", "op": "list_group", "list": "l1", "group": "priority" },
+        { "d": "b", "op": "list_group", "list": "l1", "group": "due" },
+        { "op": "sync" }
+      ],
+      "expect": { "arrange": { "l1": { "sort": "manual", "group": "due" } }, "resolved": ["value"] }
+    },
+    {
+      "name": "a text clash on a Task deleted by one of the editors is resolved and logged, not asked",
+      "steps": [
+        {
+          "d": "a",
+          "op": "task_create",
+          "task": "t1",
+          "title": "Hike",
+          "notes": "Route: to decide\nBring the stove\n"
+        },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Route: ridge loop\nBring the stove\n"
+        },
+        {
+          "d": "b",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Route: lake path\nBring the stove\n"
+        },
+        { "d": "b", "op": "task_delete", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true, "notes": "Route: lake path\nBring the stove\n" } },
+        "conflicts": 0,
+        "resolved": ["conflict_deleted", "delete_edit"]
+      }
+    },
+    {
+      "name": "a text clash on a Task deleted before the clash arrives is resolved and logged too",
+      "steps": [
+        {
+          "d": "a",
+          "op": "task_create",
+          "task": "t1",
+          "title": "Hike",
+          "notes": "Route: to decide\nBring the stove\n"
+        },
+        { "op": "sync" },
+        {
+          "d": "a",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Route: ridge loop\nBring the stove\n"
+        },
+        {
+          "d": "b",
+          "op": "task_edit",
+          "task": "t1",
+          "notes": "Route: lake path\nBring the stove\n"
+        },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true } },
+        "conflicts": 0,
+        "resolved": ["conflict_deleted", "delete_edit"]
+      }
+    },
+    {
+      "name": "a deleted Task stays deleted through later syncs",
+      "steps": [
+        { "d": "a", "op": "task_create", "task": "t1", "title": "Old list" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_delete", "task": "t1" },
+        { "op": "sync" },
+        { "d": "b", "op": "task_create", "task": "t2", "title": "New list" },
+        { "op": "sync" },
+        { "d": "a", "op": "task_priority", "task": "t2", "priority": 1 },
+        { "op": "sync" }
+      ],
+      "expect": {
+        "tasks": { "t1": { "deleted": true }, "t2": { "deleted": false, "priority": 1 } },
+        "order": { "inbox": ["t2"] },
+        "resolved": []
+      }
+    },
+    {
+      "name": "a deleted Entry stays deleted through later syncs",
+      "steps": [
+        { "d": "a", "op": "entry_create", "entry": "e1", "body": "Slept in.\n" },
+        { "op": "sync" },
+        { "d": "a", "op": "entry_delete", "entry": "e1" },
+        { "op": "sync" },
+        { "d": "b", "op": "entry_create", "entry": "e2", "body": "Read all day.\n" },
+        { "op": "sync" }
+      ],
+      "expect": { "entries": { "e2": "Read all day.\n" }, "resolved": [] }
+    },
+    {
+      "name": "an Entry deleted on one side and edited later on the other stays deleted and is logged",
+      "steps": [
+        { "d": "a", "op": "entry_create", "entry": "e1", "body": "Slept in.\n" },
+        { "op": "sync" },
+        { "d": "a", "op": "entry_delete", "entry": "e1" },
+        { "d": "b", "op": "entry_edit", "entry": "e1", "body": "Slept in late.\n" },
+        { "op": "sync" }
+      ],
+      "expect": { "entries": {}, "resolved": ["delete_edit"] }
+    },
+    {
+      "name": "an Entry edited before it was deleted elsewhere, neither knowing, is logged too",
+      "steps": [
+        { "d": "a", "op": "entry_create", "entry": "e1", "body": "Slept in.\n" },
+        { "op": "sync" },
+        { "d": "b", "op": "entry_edit", "entry": "e1", "body": "Slept in late.\n" },
+        { "d": "a", "op": "entry_delete", "entry": "e1" },
+        { "op": "sync" }
+      ],
+      "expect": { "entries": {}, "resolved": ["delete_edit"] }
+    }
+  ]
+}

@@ -59,9 +59,11 @@
     wontDoTask,
   } from './task-actions';
   import { taskFocus } from './task-focus.svelte';
+  import { editingHold } from '../../lib/editing-hold';
   import { TaskEditing } from './task-editing';
   import { IDLE_KEYS, reduceKey } from './task-keymap';
   import { inSheetScope } from './task-keys.svelte';
+  import { remoteDeletes } from './remote-delete';
   import { taskSheet } from './task-sheet.svelte';
   import { nextText } from './dates';
   import { priorityTone, PRIORITY_NAMES } from './tasks';
@@ -89,6 +91,14 @@
 
   // --- Editing: one session per opening of the sheet -----------------------------------------
   let editing = $state.raw<TaskEditing<Task> | null>(null);
+  // The field being typed in waits for changes from other devices (Rust merges them when we let
+  // go); the sheet's other fields refresh as they arrive. `title` also covers the recognised words.
+  const hold = editingHold('todo_task', untrack(() => id));
+  /** Lets go of a field once what was typed is saved. */
+  const letGo = async (scope: 'title' | 'notes') => {
+    await editing?.flush();
+    await hold.release(scope);
+  };
   let title = $state('');
   let notes = $state('');
   let saveError = $state<unknown>(null);
@@ -158,7 +168,9 @@
   // A Task that is gone (deleted elsewhere, a stale link): say so and close.
   $effect(() => {
     if (!deleting && query.isError && query.error instanceof IpcError && query.error.code === 'not_found') {
-      notifyError('That Task no longer exists');
+      // Sync already told the person (with Restore) when another device deleted it.
+      if (remoteDeletes.has(id)) remoteDeletes.clear(id);
+      else notifyError('That Task no longer exists');
       taskSheet.close();
     }
   });
@@ -175,7 +187,7 @@
       window.removeEventListener('beforeunload', leaving);
     };
   });
-  onDestroy(() => void editing?.flush());
+  onDestroy(() => void (editing?.flush() ?? Promise.resolve()).then(() => hold.releaseAll()));
 
   /** The Task as the sheet shows it: stored fields, with the text being edited. */
   const current = $derived<Task | null>(
@@ -317,10 +329,14 @@
           maxlength={500}
           placeholder="Title"
           class="{titleLook} {isOpen ? '' : 'text-muted'}"
-          oninput={() => (title = editing?.setTitle(title) ?? title)}
+          oninput={() => {
+            hold.take('title');
+            title = editing?.setTitle(title) ?? title;
+          }}
           onblur={() => {
             title = editing?.leaveTitle() ?? title;
             titleEditing = false;
+            void letGo('title');
           }}
           onkeydown={(e) => {
             if (e.key === 'Enter' && !e.isComposing && !e.metaKey && !e.ctrlKey) editor?.focus();
@@ -391,8 +407,12 @@
         bind:this={editor}
         value={notes}
         onchange={(text) => {
+          hold.take('notes');
           notes = text;
           editing?.setNotes(text);
+        }}
+        onfocuschange={(focused) => {
+          if (!focused) void letGo('notes');
         }}
         onfinish={() => taskSheet.close()}
         label="Notes"

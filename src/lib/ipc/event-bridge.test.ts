@@ -15,6 +15,7 @@ vi.mock('./bindings', () => {
     events: {
       settingsChangedEvent: event('settings'),
       todoChangedEvent: event('todo'),
+      journalChangedEvent: event('journal'),
     },
   };
 });
@@ -103,6 +104,20 @@ describe('startEventBridge, the Todo widget', () => {
     stop = await startEventBridge(client);
     handlers.get('settings')?.();
     await vi.waitFor(() => expect(fetched.sort()).toEqual(['journal', 'todo']));
+  });
+
+  it('refetches only the Journal when Sync changed Journal data', async () => {
+    const { client, fetched } = setup();
+    stop = await startEventBridge(client);
+    handlers.get('journal')?.();
+    await vi.waitFor(() => expect(fetched).toEqual(['journal']));
+  });
+
+  it('removes the earlier listeners when the Journal one cannot be registered', async () => {
+    const { client } = setup();
+    failing.add('journal');
+    await expect(startEventBridge(client)).rejects.toThrow('cannot listen to journal');
+    expect(handlers.size).toBe(0);
   });
 
   it('removes the first listener when the second cannot be registered', async () => {

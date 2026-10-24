@@ -4,6 +4,7 @@ export { createAppRouter } from './create';
 export { dynamicActions } from './dynamic-actions.svelte';
 export type {
   BareKey,
+  DeviceSwitch,
   HomeCardLoader,
   HomeCardProps,
   ModuleAction,

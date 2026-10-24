@@ -1,15 +1,15 @@
 //! Shared application state managed by Tauri.
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use mnemora_core::db::Connection;
-use mnemora_core::device::DeviceSettings;
+use mnemora_core::device::DeviceStore;
 use mnemora_core::env::Environment;
-use mnemora_core::error::AppResult;
+use mnemora_core::events::EventBus;
 use mnemora_core::logging::LogHandle;
 use mnemora_core::paths::AppPaths;
 use mnemora_core::settings::SettingsStore;
+use mnemora_sync::{Modules, SyncRuntime};
 
 use crate::widget::signal::WidgetSignal;
 
@@ -17,35 +17,6 @@ use crate::widget::signal::WidgetSignal;
 /// A poisoned lock here would otherwise brick every command for the rest of the session.
 pub fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// `device.toml` held in memory, written through on every change.
-pub struct DeviceStore {
-    path: PathBuf,
-    inner: Mutex<DeviceSettings>,
-}
-
-impl DeviceStore {
-    /// Wraps already-loaded settings that live at `path`.
-    pub fn new(path: PathBuf, settings: DeviceSettings) -> Self {
-        Self {
-            path,
-            inner: Mutex::new(settings),
-        }
-    }
-
-    /// A copy of the current settings.
-    pub fn get(&self) -> DeviceSettings {
-        lock(&self.inner).clone()
-    }
-
-    /// Applies `change` and saves atomically. The in-memory copy is updated even if the
-    /// write fails, so the session stays consistent; the error is still reported.
-    pub fn update(&self, change: impl FnOnce(&mut DeviceSettings)) -> AppResult<()> {
-        let mut guard = lock(&self.inner);
-        change(&mut guard);
-        guard.save(&self.path)
-    }
 }
 
 /// Everything commands need.
@@ -58,4 +29,15 @@ pub struct AppState {
     pub log: LogHandle,
     /// Tells the Todo widget that Todo data changed.
     pub widgets: Arc<WidgetSignal>,
+    /// Sync's services: nothing runs in them while Sync is off.
+    pub sync: SyncRuntime,
+    /// What lets Sync's network run: in front or flushing, and the kind of network (#74).
+    pub power: crate::sync_power::Power,
+    /// The app opens a real port and announces itself when Sync is on. False in tests, which
+    /// start their own network on loopback.
+    pub live_network: bool,
+    /// Every Module, for the Sync engine to reach through the `Module` contract.
+    pub modules: Modules,
+    /// The in-process event bus Sync publishes on.
+    pub bus: EventBus,
 }

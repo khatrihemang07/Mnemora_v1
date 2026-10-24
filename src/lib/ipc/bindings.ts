@@ -29,13 +29,26 @@ export const commands = {
 	backupNow: () => typedError<string, AppError>(__TAURI_INVOKE("backup_now")),
 	/**  Opens the log folder in the system file manager. */
 	openLogDir: () => typedError<null, AppError>(__TAURI_INVOKE("open_log_dir")),
+	/**
+	 *  An editor opened or is still open on `scope` (a field, a group of fields, or `*` for the whole
+	 *  record) of one record: what other devices send for it waits. Call again about every 30
+	 *  seconds; the hold lapses after two minutes without a call, so an editor that vanished cannot
+	 *  hold changes back for ever. Answers whether Sync is on: with it off nothing is stored, the editor
+	 *  has nothing to renew and starts no timer.
+	 */
+	editingHold: (entity: string, entityId: string, scope: string) => typedError<boolean, AppError>(__TAURI_INVOKE("editing_hold", { entity, entityId, scope })),
+	/**
+	 *  The editor is done (its text is saved): what was held back is merged now, and the screens
+	 *  refresh silently.
+	 */
+	editingRelease: (entity: string, entityId: string, scope: string) => typedError<null, AppError>(__TAURI_INVOKE("editing_release", { entity, entityId, scope })),
 	/**  Writes a new Entry on a Page. Rejects blank text and invalid dates or zones. */
 	journalEntryCreate: (entry: NewEntry) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_create", { entry })),
 	/**  Replaces an Entry's text. `session_id` groups a composer session's saves in the change log. */
 	journalEntryUpdate: (id: string, text: string, sessionId: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_update", { id, text, sessionId })),
 	/**  Ticks or unticks the checklist item on the 0-based source `line`. Never marks the Entry edited. */
 	journalEntryToggleTask: (id: string, line: number) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_toggle_task", { id, line })),
-	/**  Deletes an Entry. It can be restored for 30 days, then it is erased. */
+	/**  Deletes an Entry. It can be restored at any time. */
 	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
 	/**  Brings a deleted Entry back to its place on its Page. */
 	journalEntryRestore: (id: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_restore", { id })),
@@ -160,7 +173,7 @@ export const commands = {
 	 */
 	todoTaskWontDo: (id: string, local: LocalNow) => typedError<Task, AppError>(__TAURI_INVOKE("todo_task_wont_do", { id, local })),
 	/**
-	 *  Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
+	 *  Deletes a Task at once; the row stays for good. Occurrences of a repeating Task
 	 *  stay in Done. Records a `delete` change.
 	 */
 	todoTaskDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("todo_task_delete", { id })),
@@ -175,7 +188,7 @@ export const commands = {
 	todoCommentAdd: (taskId: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_add", { taskId, body })),
 	/**  Replaces a Comment's text; it then shows "edited". */
 	todoCommentEdit: (id: string, body: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_edit", { id, body })),
-	/**  Deletes a Comment (erased after 30 days); `todo_comment_restore` is Undo. */
+	/**  Deletes a Comment (the row stays for good); `todo_comment_restore` is Undo. */
 	todoCommentDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("todo_comment_delete", { id })),
 	/**  Undoes `todo_comment_delete`. */
 	todoCommentRestore: (id: string) => typedError<Comment, AppError>(__TAURI_INVOKE("todo_comment_restore", { id })),
@@ -277,16 +290,193 @@ export const commands = {
 	todoListSetSort: (id: string, sort: TaskSort) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_sort", { id, sort })),
 	/**  Sets how a List's page groups its Tasks: none, priority or due. */
 	todoListSetGroup: (id: string, groupBy: GroupBy) => typedError<TodoList, AppError>(__TAURI_INVOKE("todo_list_set_group", { id, groupBy })),
+	/**  Sync's state for this device: on or off, its name and options, and how many devices are paired. */
+	syncGet: () => typedError<SyncState, AppError>(__TAURI_INVOKE("sync_get")),
+	/**
+	 *  Turns Sync on or off for this device only (never synced). Off stops everything Sync runs and
+	 *  keeps the data and the paired devices.
+	 */
+	syncSetEnabled: (enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_enabled", { enabled })),
+	/**  Renames this device (1 to 40 characters, not a name another device of the group has). */
+	syncRename: (name: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_rename", { name })),
+	/**  Sets "Sync automatically", "Allow over mobile data" or "Visible on this network". */
+	syncSetOption: (option: SyncOption, enabled: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_set_option", { option, enabled })),
+	/**
+	 *  Leaves the group. If a member is connected it is told first (a signed revocation of this
+	 *  device and a "left" line, pushed now), waiting at most a few seconds; with nobody reachable
+	 *  this is local only and never blocks. Either way every paired device is then forgotten here.
+	 *  This device keeps its data.
+	 */
+	syncLeave: () => typedError<null, AppError>(__TAURI_INVOKE("sync_leave")),
+	/**  The Devices tab: this device (name, addresses, port) and the paired ones. */
+	syncDevices: () => typedError<DevicesView, AppError>(__TAURI_INVOKE("sync_devices")),
+	/**  The device sheet: what is known about one paired device. */
+	syncDevice: (id: string) => typedError<DeviceDetail, AppError>(__TAURI_INVOKE("sync_device", { id })),
+	/**  Renames a paired device for the whole group (unique, 1 to 40 characters). Returns the name saved. */
+	syncDeviceRename: (id: string, name: string) => typedError<string, AppError>(__TAURI_INVOKE("sync_device_rename", { id, name })),
+	/**
+	 *  Saves the Address typed for a device (a `MagicDNS` name, host, `host:port`, IPv4 or `[IPv6]`);
+	 *  empty clears it. Returns it as stored.
+	 */
+	syncDeviceAddress: (id: string, address: string) => typedError<string | null, AppError>(__TAURI_INVOKE("sync_device_address", { id, address })),
+	/**  "Check": dials the typed Address and says whether the device is there. */
+	syncDeviceCheck: (id: string, address: string) => typedError<CheckResult, AppError>(__TAURI_INVOKE("sync_device_check", { id, address })),
+	/**  "Sync now" for this device only. */
+	syncDeviceSyncNow: (id: string) => __TAURI_INVOKE<void>("sync_device_sync_now", { id }),
+	/**
+	 *  Forgets a paired device for the whole group: a signed revocation is written and spreads,
+	 *  every device drops and refuses that key, and any open connection to it closes. Its data
+	 *  stays on it; pairing it again undoes this.
+	 */
+	syncDeviceForget: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_device_forget", { id })),
+	/**  Where pairing stands. Idle while Sync is off or still starting. */
+	syncPairState: () => __TAURI_INVOKE<PairingView>("sync_pair_state"),
+	/**  "Pair a device": shows a code and waits for the other device to type it. */
+	syncPairShow: () => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_show")),
+	/**  "New code": a fresh code with 3 tries and 2 minutes. */
+	syncPairNewCode: () => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_new_code")),
+	/**  "Enter a code": looks for a device showing a code on the network and tries the typed one. */
+	syncPairEnter: (code: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_enter", { code })),
+	/**
+	 *  "Pair by address…": dials the typed address with the code (the other device need not be
+	 *  visible on the network). On success the address is kept as that device's typed Address.
+	 */
+	syncPairEnterAt: (address: string, code: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_enter_at", { address, code })),
+	/**  Allow or Deny the device that typed the right code. */
+	syncPairDecide: (allow: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_decide", { allow })),
+	/**
+	 *  Merge or Cancel on the first-merge preview (on the device that typed the code). Cancel tells
+	 *  the other device and leaves both databases as they were.
+	 */
+	syncPairMerge: (merge: boolean) => typedError<null, AppError>(__TAURI_INVOKE("sync_pair_merge", { merge })),
+	/**  Closes the pairing sheet's pairing: no code, no search; whoever was asked is told. */
+	syncPairCancel: () => __TAURI_INVOKE<void>("sync_pair_cancel"),
+	/**
+	 *  "Sync now": syncs with every reachable paired device now, even with Sync automatically off.
+	 *  Returns at once; each device's row shows how it goes.
+	 */
+	syncNow: () => __TAURI_INVOKE<void>("sync_now"),
+	/**
+	 *  The network changed or the app came back to the foreground: devices that could not be reached
+	 *  are tried again from the start of the retry schedule.
+	 */
+	syncResume: () => __TAURI_INVOKE<void>("sync_resume"),
+	/**
+	 *  "Open Settings" in the Local Network banner: System Settings at the Local Network switch, or
+	 *  at Privacy & Security where that pane's link is not understood. Nothing to open elsewhere (the
+	 *  phone's button goes to the app's settings from Kotlin).
+	 */
+	syncOpenLocalNetworkSettings: () => typedError<null, AppError>(__TAURI_INVOKE("sync_open_local_network_settings")),
+	/**
+	 *  The system says whether the app may use the local network (Android 17's permission; the phone
+	 *  asks when Sync is turned on). While Sync is off nothing is blocked, so a denial is ignored.
+	 */
+	syncLocalNetworkOs: (denied: boolean) => __TAURI_INVOKE<void>("sync_local_network_os", { denied }),
+	/**  "Needs you": the Conflicts that wait, newest first. */
+	syncConflicts: () => typedError<ConflictList, AppError>(__TAURI_INVOKE("sync_conflicts")),
+	/**  One Conflict for Compare, or nothing when there is none with that id. */
+	syncConflict: (id: string) => typedError<{
+	/**  The header. */
+	row: ConflictRow,
+	/**  Still waiting for a decision. */
+	open: boolean,
+	/**  How it ended, once it has. */
+	resolution: string | null,
+	/**  The text showing now, words the other version lacks marked. */
+	showing: DiffSpan[],
+	/**  The other version, words the showing text lacks marked. */
+	other: DiffSpan[],
+	/**  The text both devices started from. */
+	original: string,
+	/**  The text, cut at the clashes, for Edit merged. */
+	pieces: ClashPiece[],
+} | null, AppError>(__TAURI_INVOKE("sync_conflict", { id })),
+	/**
+	 *  The text Edit merged starts from: the agreed parts, each clash as chosen (in order; a clash
+	 *  without a choice takes the showing version).
+	 */
+	syncConflictDraft: (id: string, choices: ClashChoice[]) => typedError<string, AppError>(__TAURI_INVOKE("sync_conflict_draft", { id, choices })),
+	/**
+	 *  Settles a Conflict: keep what shows, write the other version, or write an edited merge. The
+	 *  text is written as an ordinary edit; the Conflict then reads resolved on every device.
+	 */
+	syncConflictResolve: (id: string, choice: ConflictChoice) => typedError<null, AppError>(__TAURI_INVOKE("sync_conflict_resolve", { id, choice })),
+	/**  What needs attention now: the Home card, the sidebar badge and the palette hint read this. */
+	syncAttention: () => typedError<Attention, AppError>(__TAURI_INVOKE("sync_attention")),
+	/**  The Activity tab: a page of the log, newest first, after `cursor` (the previous page's `next`). */
+	syncActivity: (filter: ActivityFilter, cursor: string | null, limit: number) => typedError<ActivityPage, AppError>(__TAURI_INVOKE("sync_activity", { filter, cursor, limit })),
+	/**
+	 *  "Use ‹other› instead": writes the value that gave way as an ordinary new edit through the
+	 *  owning Module (so it validates, reads as a normal History line and syncs like any change),
+	 *  and marks the row used on every device.
+	 */
+	syncResolutionUseOther: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("sync_resolution_use_other", { id })),
+	/**  The person looked at "Resolved automatically": its rows stop being new. */
+	syncResolutionsVisited: () => typedError<null, AppError>(__TAURI_INVOKE("sync_resolutions_visited")),
 };
 
 /** Events */
 export const events = {
+	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
+	journalEntryDeletedEvent: makeEvent<JournalEntryDeletedEvent>("journal-entry-deleted-event"),
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
+	syncActivityEvent: makeEvent<SyncActivityEvent>("sync-activity-event"),
+	syncConflictsEvent: makeEvent<SyncConflictsEvent>("sync-conflicts-event"),
+	syncNewConflictsEvent: makeEvent<SyncNewConflictsEvent>("sync-new-conflicts-event"),
+	syncPairingEvent: makeEvent<SyncPairingEvent>("sync-pairing-event"),
+	syncPeersEvent: makeEvent<SyncPeersEvent>("sync-peers-event"),
 	todoChangedEvent: makeEvent<TodoChangedEvent>("todo-changed-event"),
+	todoListsMergedEvent: makeEvent<TodoListsMergedEvent>("todo-lists-merged-event"),
+	todoTaskDeletedEvent: makeEvent<TodoTaskDeletedEvent>("todo-task-deleted-event"),
 };
 
 /* Types */
+/**  Whose events to show. */
+export type ActivityFilter = 
+/**  Every device's. */
+{ kind: "all" } | 
+/**  Those this device took part in. */
+{ kind: "this_device" } | 
+/**  Those the given device took part in. */
+{ kind: "device"; 
+/**  Its id. */
+id: string };
+
+/**  Where a line can take the person. */
+export type ActivityLink = 
+/**  To the Conflicts tab. */
+"conflicts";
+
+/**  A page of the log. */
+export type ActivityPage = {
+	/**  Newest first. */
+	rows: ActivityRow[],
+	/**  Pass this back for the next (older) page; `None` at the end. */
+	next: string | null,
+};
+
+/**  One line of the log. */
+export type ActivityRow = {
+	/**  Its id. */
+	id: string,
+	/**  What kind of event: picks the icon. */
+	kind: string,
+	/**  The sentence. */
+	text: Piece[],
+	/**
+	 *  The device it happened on, when that is neither this one nor the one the sentence names:
+	 *  "· on Pixel 8".
+	 */
+	on: string | null,
+	/**  When: UTC milliseconds. Rows group by the local day of this. */
+	at: number,
+	/**  A session's per-Module breakdown ("Todo: 9 Tasks, 1 List · Journal: 2 Entries"). */
+	breakdown: string | null,
+	/**  Where the line leads. */
+	link: ActivityLink | null,
+};
+
 /**
  *  The All view: open Tasks grouped (by List unless changed), the Inbox first. Empty groups are
  *  left out.
@@ -318,6 +508,80 @@ export type AppInfo = {
 	os_first_name: string,
 };
 
+/**  What needs attention now. */
+export type Attention = {
+	/**  Conflicts that wait for the person ("Needs you"). */
+	conflicts: number,
+	/**  Devices syncing is paused with (a version mismatch). */
+	paused: string[],
+	/**
+	 *  The system keeps this device off the local network (nothing on the Wi-Fi can be reached
+	 *  or found): shown like a pause.
+	 */
+	local_network_blocked: boolean,
+	/**  Paired devices not seen for 14 days. */
+	unseen: UnseenDevice[],
+	/**  The most recent finished sync, for the Home card's second half. */
+	last_synced: LastSynced | null,
+	/**  Whether the Home card shows: something above is not empty. */
+	needed: boolean,
+};
+
+/**  What a Check found. */
+export type CheckKind = 
+/**  The device answered. */
+"reached" | 
+/**  The text is not an address. */
+"invalid" | 
+/**  The name does not resolve. */
+"not_found" | 
+/**  Nothing answered there. */
+"unreachable" | 
+/**  Nothing answered in time. */
+"timed_out" | 
+/**  A different device answered. */
+"wrong_device" | 
+/**  Something answered that is not a device paired with this one, or no longer trusts it. */
+"not_paired" | 
+/**  Something answered that is not a Mnemora. */
+"other";
+
+/**  The result of a Check. */
+export type CheckResult = {
+	/**  The device was reached. */
+	reached: boolean,
+	/**  What happened. */
+	kind: CheckKind,
+	/**  "Reached Pixel 8 in 84 ms", or why not. */
+	message: string,
+	/**  How long the device took to answer, when it did. */
+	ms: number | null,
+};
+
+/**  The choice for one clash in Edit merged. */
+export type ClashChoice = 
+/**  The newer version's words. */
+"showing" | 
+/**  The other version's words. */
+"other" | 
+/**  Both, the newer one first. */
+"both";
+
+/**  A part of the text for Edit merged: agreed, or a clash to choose for. */
+export type ClashPiece = 
+/**  Text both versions have. */
+{ kind: "agreed"; 
+/**  The text. */
+text: string } | 
+/**  Words both rewrote. */
+{ kind: "clash"; 
+/**  The newer version's words. */
+showing: string; 
+/**  The other version's words. */
+other: string; 
+/**  What both started from. */
+original: string };
+
 /**
  *  A note left on a Task. It belongs to the Task row it was written on: for a repeating Task, the
  *  current occurrence (completing moves it to the done copy).
@@ -348,6 +612,101 @@ export type Completion = {
 	occurrence: Task | null,
 };
 
+/**  How the person settles a Conflict. */
+export type ConflictChoice = 
+/**  Keep what shows. */
+{ kind: "keep_this" } | 
+/**  Replace with the other version. */
+{ kind: "keep_other" } | 
+/**  Replace with this text. */
+{ kind: "merged"; 
+/**  The edited merge. */
+text: string };
+
+/**  The Conflicts tab's "Needs you". */
+export type ConflictList = {
+	/**  Conflicts that wait, newest first. Its length is the count. */
+	needs_you: ConflictRow[],
+	/**  What was decided without asking, newest first. */
+	resolved: ResolvedRow[],
+};
+
+/**  A row of "Needs you". */
+export type ConflictRow = {
+	/**  The Conflict's id. */
+	id: string,
+	/**  What it is about. */
+	subject: ConflictSubject,
+	/**  The Module it belongs to, for the row's icon: `journal` or `todo`. */
+	module: string,
+	/**  When the newest version was written: UTC milliseconds. Rows group by this day. */
+	raised_at: number,
+	/**  The newer version, the one that was applied. */
+	showing: ConflictSide,
+	/**  The other version. */
+	other: ConflictSide,
+};
+
+/**  One side of a Conflict: whose it was and when. */
+export type ConflictSide = {
+	/**  The device's name. */
+	device: string,
+	/**  When it was written: UTC milliseconds. */
+	at: number,
+};
+
+/**  What a Conflict is about, as the list names it. */
+export type ConflictSubject = 
+/**  A Journal Entry's text: "Wed 21 Oct · 09:12 Entry". */
+{ kind: "entry"; 
+/**  The Page it is on, `YYYY-MM-DD`. */
+page_date: string; 
+/**
+ *  When it was written: UTC milliseconds. The screen shows it as the time of day in the
+ *  zone it was written in (`written_offset_min`), in the Time format Preference.
+ */
+written_at: number; 
+/**  Minutes east of UTC where it was written. */
+written_offset_min: number } | 
+/**  A Task's title or notes: "‘Plan weekend hike’ · notes". */
+{ kind: "task"; 
+/**  The Task's title now. */
+title: string; 
+/**  Which text. */
+field: TaskText } | 
+/**  A Comment on a Task. */
+{ kind: "comment"; 
+/**  The Task's title now. */
+task_title: string };
+
+/**  One Conflict for Compare. */
+export type ConflictView = {
+	/**  The header. */
+	row: ConflictRow,
+	/**  Still waiting for a decision. */
+	open: boolean,
+	/**  How it ended, once it has. */
+	resolution: string | null,
+	/**  The text showing now, words the other version lacks marked. */
+	showing: DiffSpan[],
+	/**  The other version, words the showing text lacks marked. */
+	other: DiffSpan[],
+	/**  The text both devices started from. */
+	original: string,
+	/**  The text, cut at the clashes, for Edit merged. */
+	pieces: ClashPiece[],
+};
+
+/**  The numbers of one side of the preview. */
+export type Counts = {
+	/**  Journal Entries. */
+	entries: number,
+	/**  Tasks. */
+	tasks: number,
+	/**  Lists. */
+	lists: number,
+};
+
 /**  The number of open Tasks due on one date. */
 export type DayCount = {
 	/**  `YYYY-MM-DD`. */
@@ -367,8 +726,43 @@ export type DeleteChoice =
 /**  The receiving List. */
 list_id: string };
 
+/**  What the device sheet shows. */
+export type DeviceDetail = {
+	/**  Its device id. */
+	id: string,
+	/**  Its name here. */
+	name: string,
+	/**  Its kind. */
+	platform: Platform,
+	/**  Where it stands now. */
+	state: PeerState,
+	/**  When it was paired: UTC milliseconds. */
+	paired_at: number,
+	/**  The name of the device that paired it; this device's own name when this one did. */
+	paired_by: string | null,
+	/**  When it was last reached. */
+	last_seen_at: number | null,
+	/**  When a session with it last finished. */
+	last_synced_at: number | null,
+	/**  How it was reached the last time. */
+	route: Route | null,
+	/**  Addresses remembered for it, the one that worked most recently first. */
+	addresses: KnownAddress[],
+	/**  The Address typed for it, as stored. */
+	typed_address: string | null,
+	/**  Its app version, once it has been reached. */
+	app_version: string | null,
+	/**  Its Modules' data versions, once it has been reached. */
+	data_versions: ModuleVersion[],
+};
+
 /**  Everything stored per device. */
 export type DeviceSettings = {
+	/**
+	 *  Random id of this install in this Environment (a `UUIDv7`), made on first run and then
+	 *  stable. `None` until [`DeviceStore::device_id`] first needs it.
+	 */
+	device_id?: string | null,
 	/**  Custom data folder; `None` means the platform default. */
 	data_dir?: string | null,
 	/**  Window geometry. */
@@ -379,6 +773,26 @@ export type DeviceSettings = {
 	log_level?: string,
 	/**  Spellcheck in every text editor. Per device: input methods and dictionaries differ. */
 	spellcheck?: boolean,
+	/**  Theme, density, text size, reduce motion and phone tabs. */
+	look?: LookAndFeel,
+	/**  The Sync Module's choices for this device. */
+	sync?: SyncDevice,
+};
+
+/**  The Devices tab. */
+export type DevicesView = {
+	/**  This device. */
+	this_device: ThisDevice,
+	/**  The paired devices. */
+	peers: PeerRow[],
+};
+
+/**  A stretch of one text, and whether it differs from the other version. */
+export type DiffSpan = {
+	/**  The text, line breaks included. */
+	text: string,
+	/**  Words here are not in the other version. */
+	changed: boolean,
 };
 
 /**  The Tasks done on one day of Done. */
@@ -565,10 +979,45 @@ export type InboxView = {
 };
 
 /**
+ *  Sync changed Journal data from another device, so whatever the Journal shows is stale. The
+ *  UI refreshes in place, silently.
+ */
+export type JournalChangedEvent = null;
+
+/**
+ *  A Journal Entry was deleted on another device: if it is open in the editor, the editor closes
+ *  with a toast naming `device`, and Restore brings it back (as an ordinary change).
+ */
+export type JournalEntryDeletedEvent = {
+	/**  The Entry. */
+	entry_id: string,
+	/**  The Page it was on (an Entry has no title). */
+	page_date: string,
+	/**  The device that deleted it, when it is a paired one. */
+	device: string | null,
+};
+
+/**
  *  TypeScript-facing description of any JSON value. Only used for type generation: on the wire
  *  fields stay `serde_json::Value`, which specta cannot export (recursive, i64 numbers).
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
+
+/**  An address that was remembered for the device. */
+export type KnownAddress = {
+	/**  `ip:port`. */
+	address: string,
+	/**  When connecting to it last worked: UTC milliseconds; `None` if only heard of. */
+	last_ok_at: number | null,
+};
+
+/**  The last finished sync. */
+export type LastSynced = {
+	/**  The device it was with. */
+	device: string,
+	/**  When: UTC milliseconds. */
+	at: number,
+};
 
 /**  A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it. */
 export type LinkOpenedEvent = null;
@@ -639,6 +1088,35 @@ export type LocalNow = {
 	offset_min: number,
 };
 
+/**
+ *  Look and feel (ADR 0005, amended): per device so a phone and a Mac can look different. Each
+ *  field is `None` until chosen on this device, and then the registered default of its Setting
+ *  applies; that is how an upgrade tells "never saved" from "saved the default". Values are
+ *  validated by the Setting's own validator on the way in, never here.
+ */
+export type LookAndFeel = {
+	/**  `system`, `light`, `dark` or `oled`. */
+	theme?: string | null,
+	/**  `comfortable` or `compact`. */
+	density?: string | null,
+	/**  `s`, `m` or `l`. */
+	text_size?: string | null,
+	/**  Turn animations off. */
+	reduce_motion?: boolean | null,
+	/**  Ids of the phone tab bar's tabs, in order. */
+	phone_tabs?: string[] | null,
+	/**  The tabs were saved from Settings (an upgrade only pins them). */
+	phone_tabs_edited?: boolean | null,
+};
+
+/**  One Module's data version on the device. */
+export type ModuleVersion = {
+	/**  The Module's id, e.g. `todo`. */
+	module: string,
+	/**  How many migrations its data has had. */
+	version: number,
+};
+
 /**  Everything the UI supplies to write a new Entry. */
 export type NewEntry = {
 	/**  The Page to put it on, `YYYY-MM-DD`. Future dates are fine. */
@@ -675,6 +1153,15 @@ export type NewWhen = {
 	local: LocalNow,
 };
 
+/**  Which device has the older data, when two cannot pair because their data versions differ. */
+export type Older = 
+/**  This device: it must be updated. */
+"me" | 
+/**  The other device: it must be updated. */
+"them" | 
+/**  Each is older in some Module. */
+"both";
+
 /**  What "Move all" did: hand `previous` to `todo_tasks_restore_when` to undo it. */
 export type OverdueMove = {
 	/**  The date they were moved to. */
@@ -703,6 +1190,136 @@ export type PageDirection =
 "from" | 
 /**  The Pages just after the cursor (newer), nearest first picked; needs a cursor. */
 "newer";
+
+/**  Why pairing did not happen. Each is shown inline with what to do about it. */
+export type PairingError = 
+/**
+ *  The code typed was wrong. `tries_left` 0 means the code is dead. `name` is the device
+ *  showing it.
+ */
+{ kind: "wrong_code"; 
+/**  Tries left on that code. */
+tries_left: number; 
+/**  The device showing the code. */
+name: string } | 
+/**  The code ran out of time. On the typing side `name` says where to get a new one. */
+{ kind: "code_expired"; 
+/**  The device that showed the code, when known. */
+name: string | null } | 
+/**  The code was typed wrong three times (shown on the device showing it). */
+{ kind: "tries_used" } | 
+/**  The person on the other device pressed Deny. */
+{ kind: "declined"; 
+/**  The device that said no. */
+name: string } | 
+/**  The other device cancelled. */
+{ kind: "cancelled"; 
+/**  The device that left, when known. */
+name: string | null } | 
+/**  The other device runs the other Environment (Sandbox with Production). */
+{ kind: "different_environment"; 
+/**  What the other device is. */
+theirs: Environment } | 
+/**  The two devices run different data versions. */
+{ kind: "version_mismatch"; 
+/**  The other device. */
+name: string; 
+/**  Which of the two must be updated. */
+older: Older; 
+/**  The Modules this device has older data for (Module ids), when known. */
+older_here: string[]; 
+/**  The Modules the other device has older data for (Module ids), when known. */
+older_there: string[] } | 
+/**  Both devices already belong to a group of devices, not the same one. */
+{ kind: "different_groups" } | 
+/**  No device showing a code was found on the network. */
+{ kind: "nothing_nearby" } | 
+/**  The other device went away or could not be reached. */
+{ kind: "connection_lost" } | 
+/**  The typed address is a name that does not resolve (Pair by address). */
+{ kind: "address_not_found" } | 
+/**  Nothing answered at the typed address in time, or it is not Mnemora (Pair by address). */
+{ kind: "address_unreachable" } | 
+/**
+ *  A database could not be backed up first, so nothing was merged. `name` is the other
+ *  device when it was the one that could not; `None` is this device.
+ */
+{ kind: "backup_failed"; 
+/**  The device whose backup failed, when it is not this one. */
+name: string | null } | 
+/**  The other device is already pairing with someone. */
+{ kind: "busy" } | 
+/**  Sync is not ready (still starting, or off). */
+{ kind: "not_ready" };
+
+/**  The pairing sheet's state, in the order a pairing goes. */
+export type PairingView = 
+/**  Nothing is happening. */
+{ state: "idle" } | 
+/**  This device shows a code and waits for the other to type it. */
+{ state: "showing"; 
+/**  The 8 digits, `"4821 0937"`. */
+code: string; 
+/**  How long a code lives, in milliseconds (for the ring). */
+life_ms: number; 
+/**  How long this one has left. */
+left_ms: number; 
+/**  Wrong tries left before the code dies. */
+tries_left: number; 
+/**  Other devices can find this one (Visible on this network is on). */
+discoverable: boolean; 
+/**  The last attempt that failed for another reason than a wrong code. */
+notice: PairingError | null } | 
+/**  The right code was typed: Allow or Deny. */
+{ state: "asking"; 
+/**  The device that wants to pair. */
+name: string; 
+/**  Its kind. */
+platform: Platform; 
+/**  Length of the whole window, in milliseconds. */
+life_ms: number; 
+/**  What is left of it. */
+left_ms: number } | 
+/**  This device typed the code and is looking for the device that shows it. */
+{ state: "searching" } | 
+/**  The code was right; waiting for the person on the other device to Allow. */
+{ state: "waiting"; 
+/**  The device being waited for. */
+name: string } | 
+/**  Both devices have data: the typing device shows what will be combined and asks. */
+{ state: "preview"; 
+/**  The other device. */
+name: string; 
+/**  Its kind. */
+platform: Platform; 
+/**  What the other device holds. */
+there: Counts; 
+/**  What this device holds. */
+here: Counts; 
+/**  The Lists that will combine into one, by this device's spelling. */
+combine: string[] } | 
+/**  The showing device, while the typing device decides on the merge preview. */
+{ state: "confirming"; 
+/**  The device being waited for. */
+name: string } | 
+/**  Allowed here; recording the pairing and telling the other device. */
+{ state: "finishing"; 
+/**  The device being paired. */
+name: string } | 
+/**  Done. */
+{ state: "paired"; 
+/**  The other device's name here (may differ from its own if names clashed). */
+name: string; 
+/**  Its kind. */
+platform: Platform; 
+/**  The name was changed to keep names unique. */
+renamed: boolean; 
+/**  Devices of its group that came along. */
+also_joined: string[] } | 
+/**  It did not work. */
+{ state: "failed"; 
+/**  Why. */
+error: PairingError };
 
 /**  A word that was recognised but did not win. */
 export type ParseAlternative = {
@@ -771,6 +1388,100 @@ export type Parsed = {
 	new_list: string | null,
 };
 
+/**  What stops sync with a device. The words are made in the UI. */
+export type Pause = 
+/**  The Modules' data versions differ. A Module absent on one side counts as older there. */
+{ kind: "update"; 
+/**  Modules whose data is older on this device. */
+older_here: string[]; 
+/**  Modules whose data is older on the other device. */
+older_there: string[] } | 
+/**
+ *  The clocks agree now, but records were stamped by a clock that was ahead (the other
+ *  device's, or one it relays): they are refused until real time is within five minutes of
+ *  them. Fixing the clock does not shorten it.
+ */
+{ kind: "stamped"; 
+/**  How long until the newest of them is allowed, in milliseconds. */
+resumes_in_ms: number } | 
+/**  One clock is more than five minutes ahead of the other. */
+{ kind: "clock"; 
+/**  By how much, in milliseconds. */
+ahead_ms: number; 
+/**  Whether it is this device's clock that is ahead. */
+here: boolean };
+
+/**  A paired device as the Devices tab lists it. */
+export type PeerRow = {
+	/**  Its device id. */
+	id: string,
+	/**  Its name here. */
+	name: string,
+	/**  Its kind. */
+	platform: Platform,
+	/**  When it was paired: UTC milliseconds. */
+	paired_at: number,
+	/**  Where it stands now. */
+	state: PeerState,
+	/**  When it was last reached: UTC milliseconds. */
+	last_seen_at: number | null,
+	/**  When a session with it last finished. */
+	last_synced_at: number | null,
+	/**  Changes the last session that moved anything received from it. */
+	last_in: number | null,
+	/**  Changes that session sent to it. */
+	last_out: number | null,
+	/**  How it was reached the last time. */
+	route: Route | null,
+	/**  How far the running session has got. */
+	progress: Progress | null,
+	/**  Why sync with it is paused; set exactly while `state` is `Paused`. */
+	pause: Pause | null,
+};
+
+/**  Where a paired device stands, in the words the Devices tab uses. */
+export type PeerState = 
+/**  Connected and nothing left to exchange. */
+"up_to_date" | 
+/**  A session is running. */
+"syncing" | 
+/**  Not reachable right now. */
+"not_nearby" | 
+/**  Not reachable on purpose: this phone is on mobile data and "Allow over mobile data" is off. */
+"paused_on_mobile_data" | 
+/**
+ *  Not reachable because the system keeps this device off the local network (macOS Local
+ *  Network privacy, Android's local network permission).
+ */
+"blocked_by_local_network" | 
+/**  Sync with it is paused (its data version or clock differs). */
+"paused" | 
+/**  It was forgotten group-wide (#69). */
+"removed";
+
+/**  A run of a sentence; `strong` ones are names. */
+export type Piece = {
+	/**  The words. */
+	text: string,
+	/**  Shown bold (a device or List name). */
+	strong: boolean,
+};
+
+/**  What kind of device: decides the icon, and nothing else. */
+export type Platform = 
+/**  A computer. */
+"desktop" | 
+/**  A phone. */
+"phone";
+
+/**  How far a running session has got. */
+export type Progress = {
+	/**  Changes moved so far, in either direction. */
+	done: number,
+	/**  Changes the session will move. */
+	total: number,
+};
+
 /**
  *  Everything Quick edit can change, as the Task should be afterwards. What the box left alone is
  *  passed back as it was.
@@ -807,6 +1518,73 @@ export type RepeatRule = {
 	/**  `fixed` (from the Due date) or `after` (from the day it was done). */
 	mode: string,
 };
+
+/**  The icon a row wears. */
+export type ResolvedIcon = 
+/**  Priority. */
+"flag" | 
+/**  A date or time. */
+"calendar" | 
+/**  A List. */
+"list" | 
+/**  A state. */
+"check" | 
+/**  Something deleted. */
+"trash" | 
+/**  A text. */
+"text" | 
+/**  Order and Preferences. */
+"order" | 
+/**  The Inbox. */
+"inbox" | 
+/**  Anything else. */
+"other";
+
+/**  What a row is about, for its icon. */
+export type ResolvedKind = 
+/**  A value two devices changed; the newest took. */
+"value" | 
+/**  A record deleted on one device and edited on another. */
+"delete_edit" | 
+/**  A Task put in the Inbox because its List is gone. */
+"task_inbox" | 
+/**  A text clash on a record that is deleted. */
+"conflict_deleted" | 
+/**  Order and Preference changes folded into one line. */
+"order_prefs";
+
+/**  One line of "Resolved automatically". */
+export type ResolvedRow = {
+	/**  The row's id. */
+	id: string,
+	/**  What kind of decision it is. */
+	kind: ResolvedKind,
+	/**  The Module it belongs to for the row's tint: `journal`, `todo` or `sync`. */
+	module: string,
+	/**  Its icon. */
+	icon: ResolvedIcon,
+	/**  "‘Water plants’ · Priority". */
+	title: string,
+	/**  "P1 (Mac) kept · P2 (Pixel 8) replaced". */
+	detail: string,
+	/**  When it was decided: UTC milliseconds. Rows group by this day. */
+	at: number,
+	/**  This device learned of it since the person last looked. */
+	fresh: boolean,
+	/**  The button: "Use P2 instead". None when nothing can be changed back or it was done. */
+	action: string | null,
+	/**  After the button was used: "Changed to P2". */
+	used: string | null,
+	/**  For the folded line, what "Show" lists. */
+	changes: string[],
+};
+
+/**  How a connection reached the other device. */
+export type Route = 
+/**  Over the local network. */
+"wifi" | 
+/**  Over Tailscale. */
+"tailscale";
 
 /**  The outcome of a search. */
 export type SearchResults = {
@@ -898,6 +1676,84 @@ export type Span = {
 	text: string,
 	/**  Whether it matched the search. */
 	matched: boolean,
+};
+
+/**
+ *  Activity gained lines (a session was logged, or a line arrived from another device): the
+ *  Activity tab reads its first page again.
+ */
+export type SyncActivityEvent = null;
+
+/**  Sync raised, received or settled a Conflict: the Conflicts tab and Compare are stale. */
+export type SyncConflictsEvent = null;
+
+/**
+ *  The Sync Module's choices for this device (ADR 0017). Never synced: each device decides for
+ *  itself whether it talks to the network, so the on/off switch is a Device setting, not a
+ *  Preference.
+ */
+export type SyncDevice = {
+	/**  Sync is on. Off (the default) means nothing runs: no listener, no discovery, no tasks. */
+	enabled?: boolean,
+	/**  What the other devices call this one; `None` until Sync is first turned on. */
+	name?: string | null,
+	/**  Sync when devices are around and after changes. Off: only "Sync now". */
+	automatic?: boolean,
+	/**  Phone only: reach devices over Tailscale away from Wi-Fi. */
+	mobile_data?: boolean,
+	/**  Advertise on the local network so paired devices find this one. */
+	visible?: boolean,
+	/**
+	 *  "New conflicts: Show a toast" instead of Quietly (the default): per device, so the Mac can
+	 *  say so at once while the phone stays calm.
+	 */
+	toast_conflicts?: boolean,
+};
+
+/**
+ *  New Conflicts arrived from another device and this device is set to say so with a toast
+ *  ("New conflicts: Show a toast"). Never sent while it is set to Quietly.
+ */
+export type SyncNewConflictsEvent = {
+	/**  How many. */
+	count: number,
+	/**  The device they came from, when known. */
+	device: string | null,
+};
+
+/**  A yes/no choice in Settings › Sync. */
+export type SyncOption = 
+/**  Sync automatically. */
+"automatic" | 
+/**  Allow over mobile data. */
+"mobile_data" | 
+/**  Visible on this network. */
+"visible" | 
+/**  "New conflicts: Show a toast" (off is Quietly). */
+"toast_conflicts";
+
+/**  The pairing sheet's state changed (a code is shown, someone asks, it worked or failed). */
+export type SyncPairingEvent = PairingView;
+
+/**  A paired device's status or sync progress changed: the Devices tab reads `sync_devices` again. */
+export type SyncPeersEvent = null;
+
+/**  What the Sync screens show. */
+export type SyncState = {
+	/**  Sync is on for this device. */
+	enabled: boolean,
+	/**  This device's name; before it is first chosen, the one that would be prefilled. */
+	name: string,
+	/**  Sync on discovery and after changes. */
+	automatic: boolean,
+	/**  Phone: allow reaching devices away from Wi-Fi. */
+	mobile_data: boolean,
+	/**  Advertise on the local network. */
+	visible: boolean,
+	/**  Show a toast when a new conflict arrives (the other choice is Quietly). */
+	toast_conflicts: boolean,
+	/**  Other devices this one is paired with. */
+	paired_devices: number,
 };
 
 /**  One thing to do. */
@@ -1011,12 +1867,43 @@ export type TaskState =
 /**  Decided against; `closed_at` says when. */
 "wont";
 
+/**  Which text of a Task. */
+export type TaskText = 
+/**  Its title. */
+"title" | 
+/**  Its notes. */
+"notes";
+
 /**  A stretch of the text, in UTF-16 code units. */
 export type TextRange = {
 	/**  First unit. */
 	start: number,
 	/**  One past the last unit. */
 	end: number,
+};
+
+/**  This device, as the This-device card shows it. */
+export type ThisDevice = {
+	/**  Its name. */
+	name: string,
+	/**  Its kind. */
+	platform: Platform,
+	/**  The port it listens on; `None` while it is not listening. */
+	port: number | null,
+	/**  Its shareable addresses (Wi-Fi, Tailscale), without the port. */
+	addresses: string[],
+	/**
+	 *  Which kinds of network those addresses are on, Wi-Fi first (told by range, so the card
+	 *  says what is really there).
+	 */
+	routes: Route[],
+	/**  Sync is waiting because this phone is on mobile data and "Allow over mobile data" is off. */
+	paused_on_mobile_data: boolean,
+	/**
+	 *  The system keeps this device off the local network (macOS Local Network privacy, Android's
+	 *  local network permission): nothing on the Wi-Fi can be dialled or found.
+	 */
+	local_network_blocked: boolean,
 };
 
 /**  The Entry written last on the day. */
@@ -1096,6 +1983,45 @@ export type TodoList = {
 	created_at: number,
 	/**  Row update time: UTC milliseconds. */
 	updated_at: number,
+};
+
+/**
+ *  Sync merged two Todo Lists with the same name: whoever is looking at `from_id` moves to
+ *  `into_id` (the List that was kept) and is told. `device` names the other device the List came
+ *  from, when it is a paired one.
+ */
+export type TodoListsMergedEvent = {
+	/**  The List that went away. */
+	from_id: string,
+	/**  Its name. */
+	from_name: string,
+	/**  The List that was kept. */
+	into_id: string,
+	/**  Its name. */
+	into_name: string,
+	/**  The other device whose List it was. */
+	device: string | null,
+};
+
+/**
+ *  A Task was deleted on another device: if it is open in the sheet, the sheet closes with a toast
+ *  naming `device`, and Restore brings it back (as an ordinary change).
+ */
+export type TodoTaskDeletedEvent = {
+	/**  The Task. */
+	task_id: string,
+	/**  Its title. */
+	title: string,
+	/**  The device that deleted it, when it is a paired one. */
+	device: string | null,
+};
+
+/**  A paired device that has not been around for a long time. */
+export type UnseenDevice = {
+	/**  Its name. */
+	name: string,
+	/**  Whole days since it was last seen (since pairing, if never). */
+	days: number,
 };
 
 /**  Upcoming: Overdue on top, then the Tasks from tomorrow on in groups. */

@@ -61,6 +61,78 @@ pub struct SettingsChanged {
     pub keys: Vec<String>,
 }
 
+/// Sync applied changes from another device to a Module's data, so whatever that Module shows
+/// is stale. The app shell turns this into the Module's own change event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteChanged {
+    /// Id of the Module whose data changed, e.g. `todo`.
+    pub module: String,
+}
+
+/// Sync merged two Todo Lists with the same name: `from` is gone and its Tasks are in `into`.
+/// Whoever is looking at `from` is moved to `into`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListsMerged {
+    /// The List that went away.
+    pub from_id: String,
+    /// Its name.
+    pub from_name: String,
+    /// The List that survives.
+    pub into_id: String,
+    /// Its name.
+    pub into_name: String,
+    /// The other device whose List it was (its name), when known: "Groceries from Pixel 8".
+    pub device: Option<String>,
+}
+
+/// A Task was deleted on another device. Whoever has it open is told, with a way to Restore it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskDeletedRemotely {
+    /// The Task.
+    pub task_id: String,
+    /// Its title.
+    pub title: String,
+    /// The device that deleted it (its name), when known.
+    pub device: Option<String>,
+}
+
+/// A Journal Entry was deleted on another device. Whoever has it open is told, with a way to
+/// Restore it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryDeletedRemotely {
+    /// The Entry.
+    pub entry_id: String,
+    /// The Page it was on.
+    pub page_date: String,
+    /// The device that deleted it (its name), when known.
+    pub device: Option<String>,
+}
+
+/// A sync session left new Conflicts waiting for the person (raised here or learned from the other
+/// device). The app shows a toast if this device is set to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictsRaised {
+    /// How many.
+    pub count: u32,
+    /// The other device (its name), when known.
+    pub device: Option<String>,
+}
+
+/// Another device renamed this one. The app saves the name in its device file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceRenamed {
+    /// The new name.
+    pub name: String,
+}
+
+/// A sync session with another device ended, having changed these Modules' data. Sent once per
+/// session, not per batch, for things that only need to know at the end (the Todo widget).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteSessionEnded {
+    /// Ids of the Modules whose data the session changed.
+    pub modules: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;

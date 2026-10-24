@@ -23,6 +23,7 @@ tauri-build.workspace = true
 mnemora-core.workspace = true
 mnemora-journal.workspace = true
 mnemora-todo.workspace = true
+mnemora-sync.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 specta.workspace = true
@@ -40,6 +41,8 @@ jni.workspace = true
 # `test` adds the mock runtime used by the command-layer test harness; tests only, never in a release build.
 tauri = { workspace = true, features = ["test"] }
 tempfile.workspace = true
+# Pairing tests run real loopback sockets on a Tokio runtime.
+tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 
 [lints]
 workspace = true

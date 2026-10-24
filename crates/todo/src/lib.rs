@@ -4,15 +4,18 @@
 #![forbid(unsafe_code)]
 
 mod arrange;
+mod backfill;
 mod capture;
 mod comment;
 mod comment_repo;
 mod comment_service;
+mod comment_sync;
 mod error;
 mod history;
 mod list;
 mod list_repo;
 mod list_service;
+mod list_sync;
 mod migrations;
 mod order;
 mod parse;
@@ -26,6 +29,7 @@ mod search;
 mod search_repo;
 mod service;
 mod steps;
+mod sync;
 mod task;
 mod task_service;
 mod upgrade;
@@ -34,9 +38,11 @@ mod widget;
 mod widget_text;
 
 use mnemora_core::db::migrate::MigrationReport;
+use mnemora_core::device::DeviceStore;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
+use mnemora_core::syncable::{Applied, Holdings, RemoteChange, Settled, SyncEntity};
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -74,7 +80,7 @@ pub use service::{complete_task, create_task, inbox, move_task, reopen_task};
 pub use steps::{open_steps, tick_all_steps};
 pub use task::{InboxView, MAX_TITLE_CHARS, NewTaskDetails, Task, TaskState};
 pub use task_service::{
-    Purged, delete_task, purge_deleted, restore_task, set_priority, task, update_task, wont_do,
+    delete_task, restore_task, set_priority, set_task_state, task, update_task, wont_do,
 };
 pub use when::{LocalNow, NewWhen};
 pub use widget::{
@@ -116,17 +122,55 @@ impl Module for TodoModule {
         }
     }
 
-    fn on_startup(&self, conn: &mut Connection, report: &MigrationReport) -> AppResult<()> {
-        upgrade::append_todo_tab(conn, report)?;
-        let purged = purge_deleted(conn)?;
-        if purged.tasks + purged.lists + purged.comments > 0 {
-            tracing::info!(
-                tasks = purged.tasks,
-                lists = purged.lists,
-                comments = purged.comments,
-                "purged Todo items deleted over 30 days ago"
-            );
+    fn sync_entities(&self) -> &'static [SyncEntity] {
+        sync::ENTITIES
+    }
+
+    fn holdings(&self, conn: &Connection) -> AppResult<Holdings> {
+        let tasks: u32 = conn.query_row(
+            "SELECT COUNT(*) FROM todo_tasks WHERE deleted_at IS NULL",
+            [],
+            |r| r.get(0),
+        )?;
+        let mut names = conn.prepare("SELECT name FROM todo_lists WHERE deleted_at IS NULL")?;
+        let lists = names
+            .query_map([], |r| r.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+        Ok(Holdings {
+            entries: 0,
+            tasks,
+            lists,
+        })
+    }
+
+    fn backfill_log(&self, conn: &Connection, _settings: &SettingsRegistry) -> AppResult<()> {
+        backfill::run(conn)
+    }
+
+    fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
+        match change.entity {
+            service::ENTITY => sync::apply(conn, change),
+            list_service::ENTITY => list_sync::apply(conn, change),
+            comment_service::ENTITY => comment_sync::apply(conn, change),
+            _ => Err(TodoError::Validation("Todo does not sync that kind of record").into()),
         }
+    }
+
+    fn settle_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Settled> {
+        match change.entity {
+            service::ENTITY => sync::settle(conn, change),
+            list_service::ENTITY => list_sync::settle(conn, change),
+            _ => Ok(Settled::default()),
+        }
+    }
+
+    fn on_startup(
+        &self,
+        conn: &mut Connection,
+        device: &DeviceStore,
+        report: &MigrationReport,
+    ) -> AppResult<()> {
+        upgrade::append_todo_tab(conn, device, report)?;
         Ok(())
     }
 }

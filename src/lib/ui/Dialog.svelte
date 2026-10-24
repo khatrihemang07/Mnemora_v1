@@ -1,4 +1,8 @@
-<!-- Dialog: small modal with a title, body and an actions row. -->
+<!--
+  Dialog: small modal with a title, body and an actions row. `overSheet` lifts it above a Sheet
+  (z-50), for a Dialog opened from inside one: it then dims the whole Sheet, not only the page.
+  `locked` keeps it open while work is under way: Escape, a click outside and Back do nothing.
+-->
 <script lang="ts">
   import { Dialog } from 'bits-ui';
   import type { Snippet } from 'svelte';
@@ -12,17 +16,21 @@
     /** Content between the description and the actions: choices, a field. */
     children?: Snippet;
     actions: Snippet;
+    overSheet?: boolean;
+    locked?: boolean;
   }
-  let { open, title, description, onclose, children, actions }: Props = $props();
+  let { open, title, description, onclose, children, actions, overSheet = false, locked = false }: Props = $props();
 
-  closeOnBack(() => open, () => onclose());
+  closeOnBack(() => open, () => !locked && onclose());
 </script>
 
-<Dialog.Root {open} onOpenChange={(o) => !o && onclose()}>
+<Dialog.Root {open} onOpenChange={(o) => !o && !locked && onclose()}>
   <Dialog.Portal>
-    <Dialog.Overlay class="fixed inset-0 z-40 bg-scrim" />
+    <Dialog.Overlay class="fixed inset-0 {overSheet ? 'z-60' : 'z-40'} bg-scrim" />
     <Dialog.Content
-      class="fixed top-1/2 left-1/2 z-50 w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-md bg-pop p-5 shadow-pop"
+      escapeKeydownBehavior={locked ? 'ignore' : 'close'}
+      interactOutsideBehavior={locked ? 'ignore' : 'close'}
+      class="fixed top-1/2 left-1/2 {overSheet ? 'z-70' : 'z-50'} w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-md bg-pop p-5 shadow-pop"
     >
       <Dialog.Title class="text-base font-semibold text-ink">{title}</Dialog.Title>
       {#if description}

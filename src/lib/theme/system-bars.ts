@@ -5,6 +5,16 @@ export interface AndroidBridge {
   setSystemBars?: (dark: boolean, colorHex: string) => void;
   /** Sends the app to the background like Home, keeping the process alive (Back at the root). */
   moveTaskToBack?: () => void;
+  /** Holds or releases the Wi-Fi multicast lock that mDNS needs to receive anything (Sync). */
+  holdMulticastLock?: (hold: boolean) => void;
+  /** Android 17's local network permission: "unneeded" before it exists, "asking" until answered, else "granted" or "denied". */
+  localNetworkState?: () => string;
+  /** Shows the system's dialog; with `settingsIfBlocked`, opens the app's settings when it cannot. */
+  requestLocalNetwork?: (settingsIfBlocked: boolean) => void;
+  /** Sync already on: shows the system's dialog once if the permission was never requested. */
+  requestLocalNetworkOnce?: () => void;
+  /** Opens the app's page in the system settings. */
+  openAppSettings?: () => void;
 }
 
 const HEX_DIGITS = 2;

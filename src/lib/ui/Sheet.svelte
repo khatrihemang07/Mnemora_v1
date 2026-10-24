@@ -1,8 +1,8 @@
 <!--
   Sheet: a bottom sheet (the phone "More" menu, pickers). Marked `data-editor-popup` so an open
   Entry editor does not close when the sheet is used. `restoreFocus` decides where focus goes on
-  close instead of back to whatever opened it. `centered` makes it a panel in the middle of the
-  window on desktop (still a bottom sheet on a phone); `bare` leaves the padding and the title row
+  close; `returnFocus` sends it back to what had it when the sheet opened (on a desktop, when
+  nothing else decides). `centered` makes it a panel in the middle of the window on desktop (still a bottom sheet on a phone); `bare` leaves the padding and the title row
   to the caller, who lays the whole sheet out (the title is then for screen readers only), and
   `autoFocus={false}` keeps focus on the sheet itself instead of its first field. On a phone every
   sheet can be pulled down to close (see sheet-swipe.ts), rises above the on-screen keyboard, and
@@ -33,6 +33,8 @@
     autoFocus?: boolean;
     /** Nearly full height on a phone, for a sheet that is a page of its own. */
     tall?: boolean;
+    /** On a desktop, hand focus back to the element that had it when the sheet opened. */
+    returnFocus?: boolean;
     children: Snippet;
   }
   let {
@@ -46,10 +48,14 @@
     bare = false,
     autoFocus = true,
     tall = false,
+    returnFocus = false,
     children,
   }: Props = $props();
 
   let panel = $state<HTMLElement | null>(null);
+  // What had focus when the sheet opened (the button that opened it). A sheet is opened from outside
+  // (there is no Trigger), so nothing else knows where focus should return to.
+  let opener: Element | null = null;
 
   // Android Back closes the sheet instead of leaving the screen.
   closeOnBack(() => open, () => onclose());
@@ -94,6 +100,7 @@
         if (e.target instanceof Element && e.target.closest('[data-sonner-toast]')) e.preventDefault();
       }}
       onOpenAutoFocus={(e) => {
+        opener = document.activeElement;
         // On a phone nothing is focused on open: a ring on the first button helps no one.
         if (autoFocus && !viewport.isPhone) return;
         e.preventDefault();
@@ -101,9 +108,15 @@
       }}
       onCloseAutoFocus={(e) => {
         // On a phone focus is not handed back to the trigger: a touch user has no use for it, and
-        // it would show a keyboard focus ring there.
+        // it would show a keyboard focus ring there. On a desktop it goes back to what opened the
+        // sheet, if that is still on screen.
         if (!restoreFocus) {
           if (viewport.isPhone) e.preventDefault();
+          else if (returnFocus && opener instanceof HTMLElement && opener !== document.body && opener.isConnected) {
+            e.preventDefault();
+            opener.focus();
+          }
+          opener = null;
           return;
         }
         e.preventDefault();

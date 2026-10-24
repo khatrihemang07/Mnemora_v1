@@ -313,7 +313,7 @@ pub fn todo_task_wont_do(
     write(&state, |db| mnemora_todo::wont_do(db, &id, &local))
 }
 
-/// Deletes a Task at once; it is erased for good after 30 days. Occurrences of a repeating Task
+/// Deletes a Task at once; the row stays for good. Occurrences of a repeating Task
 /// stay in Done. Records a `delete` change.
 #[tauri::command]
 #[specta::specta]
@@ -361,7 +361,7 @@ pub fn todo_comment_edit(
     mnemora_todo::edit_comment(&mut lock(&state.db), &id, &body)
 }
 
-/// Deletes a Comment (erased after 30 days); `todo_comment_restore` is Undo.
+/// Deletes a Comment (the row stays for good); `todo_comment_restore` is Undo.
 #[tauri::command]
 #[specta::specta]
 pub fn todo_comment_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
@@ -997,7 +997,7 @@ mod tests {
             .unwrap();
         assert_eq!(deletion["deleted_task_ids"].as_array().unwrap().len(), 2);
         assert_eq!(deletion["moved_task_ids"].as_array().unwrap().len(), 0);
-        // Soft delete: the rows stay, flagged, so Undo and the 30-day purge can find them.
+        // Soft delete: the rows stay, flagged, so Undo can find them (nothing is ever erased).
         app.with_db(|c| {
             let n: i64 = c
                 .query_row(
@@ -1890,11 +1890,11 @@ mod tests {
             .unwrap();
         assert_eq!(comment_owner(&app, &c1), id);
         assert_eq!(comment_owner(&app, &late), id);
-        // The moves are logged by id, never by text.
+        // Each move is logged with the Comment's full state.
         let moves: i64 = app.with_db(|c| {
             c.query_row(
                 "SELECT COUNT(*) FROM change_log WHERE entity = 'todo_comment' AND op = 'move'
-                 AND snapshot NOT LIKE '%body%'",
+                 AND snapshot LIKE '%body%'",
                 [],
                 |r| r.get(0),
             )

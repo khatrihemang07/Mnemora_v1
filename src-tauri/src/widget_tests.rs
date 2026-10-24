@@ -53,6 +53,13 @@ impl Phone {
         (phone, conn)
     }
 
+    /// Settings ▸ Theme as the app saved it: in the device file, where the widget reads it.
+    fn set_theme(&self, theme: &str) {
+        let mut device = DeviceSettings::load(&self.paths.device_file());
+        device.look.theme = Some(theme.to_owned());
+        device.save(&self.paths.device_file()).unwrap();
+    }
+
     /// Creates and migrates a database with the Modules `keep` accepts.
     fn make_db(&self, file: &Path, keep: impl Fn(&str) -> bool) -> db::Connection {
         let modules = crate::modules();
@@ -876,9 +883,9 @@ fn a_missing_list_is_reported_as_not_found() {
 
 #[test]
 fn every_snapshot_carries_the_apps_theme() {
-    let (phone, conn) = Phone::migrated();
+    let (phone, _conn) = Phone::migrated();
     assert_eq!(view(&phone.bridge(), "today")["app_theme"], "system");
-    set_pref(&conn, "core", "theme", "oled");
+    phone.set_theme("oled");
     for name in ["today", "upcoming", "inbox", "all"] {
         assert_eq!(view(&phone.bridge(), name)["app_theme"], "oled", "{name}");
     }
@@ -890,7 +897,7 @@ fn lists_returns_the_lists_with_emoji_in_the_sidebars_order_and_the_theme() {
     let home = mnemora_todo::create_list(&mut conn, "Home").unwrap();
     mnemora_todo::set_list_emoji(&mut conn, &home.id, Some("🏠")).unwrap();
     let work = mnemora_todo::create_list(&mut conn, "Work").unwrap();
-    set_pref(&conn, "core", "theme", "dark");
+    phone.set_theme("dark");
 
     let reply = call(&phone.bridge(), &json!({ "method": "lists" }));
     assert_eq!(

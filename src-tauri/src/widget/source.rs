@@ -30,6 +30,17 @@ pub trait Source {
     fn write(&self, job: &mut dyn FnMut(&mut Connection) -> Result<Value, AppError>) -> Outcome {
         self.run(job)
     }
+
+    /// Settings ▸ Theme, which lives in the device file: `system`, `light`, `dark` or `oled`.
+    fn app_theme(&self) -> String;
+}
+
+/// The saved theme if it is one the widget knows, else `system`.
+fn known_theme(saved: Option<String>) -> String {
+    match saved.as_deref() {
+        Some(t @ ("system" | "light" | "dark" | "oled")) => t.to_owned(),
+        _ => "system".to_owned(),
+    }
 }
 
 /// The running app: its connection, shared with the commands.
@@ -54,6 +65,14 @@ impl<R: Runtime> Source for Live<R> {
         };
         let mut conn = lock(&state.db);
         into_outcome(job(&mut conn))
+    }
+
+    fn app_theme(&self) -> String {
+        let saved = self
+            .0
+            .try_state::<AppState>()
+            .and_then(|state| state.device.get().look.theme);
+        known_theme(saved)
     }
 
     fn write(&self, job: &mut dyn FnMut(&mut Connection) -> Result<Value, AppError>) -> Outcome {
@@ -136,5 +155,10 @@ impl Source for Standalone {
             *cached = None;
         }
         into_outcome(result)
+    }
+
+    fn app_theme(&self) -> String {
+        let boot = AppPaths::resolve(self.env, &self.base, None);
+        known_theme(DeviceSettings::load(&boot.device_file()).look.theme)
     }
 }

@@ -55,6 +55,53 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Option<Entry>> {
         .optional()?)
 }
 
+/// An Entry in any state, with when it was deleted (none while it is live).
+pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(Entry, Option<i64>)>> {
+    Ok(conn
+        .query_row(
+            &format!("SELECT {COLUMNS}, deleted_at FROM journal_entries WHERE id = ?1"),
+            [id],
+            |r| Ok((from_row(r)?, r.get(10)?)),
+        )
+        .optional()?)
+}
+
+/// Every Entry in any state, with when it was deleted, by id.
+pub fn every(conn: &Connection) -> AppResult<Vec<(Entry, Option<i64>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS}, deleted_at FROM journal_entries ORDER BY id"
+    ))?;
+    Ok(stmt
+        .query_map([], |r| Ok((from_row(r)?, r.get(10)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
+/// Writes the named columns of one Entry (names come from code, never from input).
+pub fn update_columns(
+    conn: &Connection,
+    id: &str,
+    sets: &[(&str, &dyn rusqlite::ToSql)],
+) -> AppResult<()> {
+    if sets.is_empty() {
+        return Ok(());
+    }
+    let assignments: Vec<String> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, (column, _))| format!("{column} = ?{}", i + 2))
+        .collect();
+    let mut values: Vec<&dyn rusqlite::ToSql> = vec![&id];
+    values.extend(sets.iter().map(|(_, v)| *v));
+    conn.execute(
+        &format!(
+            "UPDATE journal_entries SET {} WHERE id = ?1",
+            assignments.join(", ")
+        ),
+        values.as_slice(),
+    )?;
+    Ok(())
+}
+
 /// A soft-deleted Entry.
 pub fn get_deleted(conn: &Connection, id: &str) -> AppResult<Option<Entry>> {
     Ok(conn
@@ -74,22 +121,6 @@ pub fn set_deleted_at(conn: &Connection, id: &str, at: Option<i64>, now: i64) ->
         "UPDATE journal_entries SET deleted_at = ?2, updated_at = ?3 WHERE id = ?1",
         params![id, at, now],
     )?;
-    Ok(())
-}
-
-/// Ids of Entries soft-deleted before `cutoff`.
-pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT id FROM journal_entries WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
-    )?;
-    Ok(stmt
-        .query_map([cutoff], |r| r.get(0))?
-        .collect::<Result<_, _>>()?)
-}
-
-/// Permanently removes the Entry.
-pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
-    conn.execute("DELETE FROM journal_entries WHERE id = ?1", [id])?;
     Ok(())
 }
 

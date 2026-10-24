@@ -82,6 +82,17 @@ pub fn get_any(conn: &Connection, id: &str) -> AppResult<Option<(TodoList, Optio
         .optional()?)
 }
 
+/// Every List whether or not it is deleted, with its `deleted_at`, by id. Lists parked while a
+/// received change is settled are left out.
+pub fn every(conn: &Connection) -> AppResult<Vec<(TodoList, Option<i64>)>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {COLUMNS}, deleted_at FROM todo_lists WHERE deleted_at IS NOT ?1 ORDER BY id"
+    ))?;
+    Ok(stmt
+        .query_map([PARKED], |r| Ok((from_row(r)?, r.get(8)?)))?
+        .collect::<Result<_, _>>()?)
+}
+
 /// Every live List, first to last.
 pub fn all(conn: &Connection) -> AppResult<Vec<TodoList>> {
     let mut stmt = conn.prepare(&format!(
@@ -176,20 +187,103 @@ pub fn set_deleted(
     Ok(())
 }
 
-/// Ids of Lists deleted before `cutoff` (UTC milliseconds).
-pub fn deleted_before(conn: &Connection, cutoff: i64) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare("SELECT id FROM todo_lists WHERE deleted_at < ?1 ORDER BY id")?;
-    Ok(stmt
-        .query_map([cutoff], |r| r.get(0))?
-        .collect::<Result<_, _>>()?)
+/// `deleted_at` of a List received from another device that is waiting to find out whether its
+/// name clashes with a live List (see `list_sync`): hidden like a deleted one, and never stored
+/// past the transaction that wrote it. No real deletion happens at the Unix epoch.
+pub const PARKED: i64 = 0;
+
+/// Inserts a List received from another device with only what it must have, hidden (parked)
+/// until the rest of what it sent is written by `update_columns`.
+pub fn insert_remote(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    name_key: &str,
+    sort_key: &str,
+    created_at: i64,
+    now: i64,
+) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO todo_lists(id, name, name_key, sort_key, created_at, updated_at, deleted_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![id, name, name_key, sort_key, created_at, now, PARKED],
+    )?;
+    Ok(())
 }
 
-/// Erases a List row for good; any Task still pointing at it goes to the Inbox.
-pub fn remove(conn: &Connection, id: &str) -> AppResult<()> {
+/// Writes the named columns of a List, whatever its deletion (applying values received from
+/// another device). The names are the caller's own constants, never user input.
+pub fn update_columns(
+    conn: &Connection,
+    id: &str,
+    sets: &[(&str, &dyn rusqlite::ToSql)],
+) -> AppResult<()> {
+    if sets.is_empty() {
+        return Ok(());
+    }
+    let assignments: Vec<String> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, (column, _))| format!("{column} = ?{}", i + 2))
+        .collect();
+    let mut values: Vec<&dyn rusqlite::ToSql> = vec![&id];
+    values.extend(sets.iter().map(|(_, v)| *v));
     conn.execute(
-        "UPDATE todo_tasks SET list_id = NULL WHERE list_id = ?1",
-        [id],
+        &format!(
+            "UPDATE todo_lists SET {} WHERE id = ?1",
+            assignments.join(", ")
+        ),
+        values.as_slice(),
     )?;
-    conn.execute("DELETE FROM todo_lists WHERE id = ?1", [id])?;
     Ok(())
+}
+
+/// The other live List that has this folded name, if any (there is at most one).
+pub fn live_twin(conn: &Connection, name_key: &str, except: &str) -> AppResult<Option<TodoList>> {
+    Ok(conn
+        .query_row(
+            &format!(
+                "SELECT {COLUMNS} FROM todo_lists
+                 WHERE name_key = ?1 AND deleted_at IS NULL AND id <> ?2"
+            ),
+            params![name_key, except],
+            from_row,
+        )
+        .optional()?)
+}
+
+/// Makes a parked List live.
+pub fn unpark(conn: &Connection, id: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE todo_lists SET deleted_at = NULL WHERE id = ?1 AND deleted_at = ?2",
+        params![id, PARKED],
+    )?;
+    Ok(())
+}
+
+/// Where a List's Tasks belong now: the List itself while it is live; the live List it merged
+/// into when it is gone and an older live List has its name; otherwise nowhere (the Inbox). Two
+/// Lists with one name merge into the older, so this reads the same on every device from the
+/// Lists alone.
+pub fn home(conn: &Connection, id: &str) -> AppResult<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT COALESCE(
+                 (SELECT l.id FROM todo_lists l WHERE l.id = ?1 AND l.deleted_at IS NULL),
+                 (SELECT s.id FROM todo_lists n JOIN todo_lists s
+                      ON s.name_key = n.name_key AND s.deleted_at IS NULL AND s.id < n.id
+                  WHERE n.id = ?1 AND n.deleted_at IS NOT NULL))",
+            [id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// Ids of every List, live or not, that has this folded name.
+pub fn with_name_key(conn: &Connection, name_key: &str) -> AppResult<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT id FROM todo_lists WHERE name_key = ?1")?;
+    Ok(stmt
+        .query_map([name_key], |r| r.get(0))?
+        .collect::<Result<_, _>>()?)
 }

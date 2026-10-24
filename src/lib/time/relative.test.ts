@@ -22,7 +22,11 @@ describe('relativeTime (N15-A)', () => {
   });
 
   it('switches to an absolute date at 7 days', () => {
-    expect(relativeTime(ago(7 * DAY), now)).toBe('Oct 13, 2026');
+    expect(relativeTime(ago(7 * DAY), now)).toBe('Tue 13 Oct');
+  });
+
+  it('names the year of an absolute date only when it is not this year', () => {
+    expect(relativeTime(new Date(2025, 11, 31, 8), now)).toBe('Wed 31 Dec 2025');
   });
 
   it('treats the future as just now', () => {

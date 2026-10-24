@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/journal", "crates/todo", "src-tauri"]
+members = ["crates/core", "crates/journal", "crates/todo", "crates/sync", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ publish = false
 mnemora-core = { path = "crates/core" }
 mnemora-journal = { path = "crates/journal" }
 mnemora-todo = { path = "crates/todo" }
+mnemora-sync = { path = "crates/sync" }
 # Tauri 2.x stable. Crates.io "latest" is 3.0 alpha; we deliberately stay on 2.x.
 tauri = { version = "=2.12.4", default-features = false }
 tauri-build = "=2.7.3"
@@ -21,7 +22,7 @@ tauri-plugin-opener = "=2.7.2"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
-rusqlite = { version = "=0.40.2", features = ["bundled", "backup"] }
+rusqlite = { version = "=0.40.2", features = ["bundled", "backup", "functions", "hooks"] }
 rusqlite_migration = "=2.6.0"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = "=1.0.154"
@@ -30,9 +31,30 @@ toml = "=1.1.8"
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["env-filter", "fmt", "std", "ansi", "registry"] }
 tracing-appender = "=0.2.5"
-uuid = { version = "=1.28.0", features = ["v7"] }
+uuid = { version = "=1.28.0", features = ["v5", "v7"] }
 whoami = "=2.1.3"
 tempfile = "=3.27.0"
+# Sync network transport (#61): TLS 1.3 with pinned Ed25519 keys. `ring` is the crypto provider:
+# no cmake/NASM (unlike aws-lc-rs) and it cross-builds for aarch64-linux-android with the NDK clang.
+rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring"] }
+rcgen = { version = "=0.14.10", default-features = false, features = ["crypto", "ring"] }
+tokio = { version = "=1.54.0", default-features = false }
+# Pairing (#62): SPAKE2 turns the 8-digit code into a key (RFC-style PAKE, Ed25519 group); mdns-sd
+# advertises and browses `_mnemora._tcp` (no async runtime, cross-builds for Android); ring is
+# already in the tree through rustls and does the key-confirmation HMAC and the code's randomness;
+# if-addrs (already a dependency of mdns-sd) lists this device's addresses for the Devices tab.
+spake2 = { version = "=0.4.0", features = ["std"] }
+mdns-sd = { version = "=0.21.6", default-features = false, features = ["async"] }
+ring = { version = "=0.17.14", default-features = false }
+if-addrs = "=0.15.0"
+# Tailscale reach (#71): an IPv6 listener on the same port as the IPv4 one needs IPV6_V6ONLY, which
+# tokio does not expose. Already in the tree through tokio and mdns-sd. `all` (already turned on
+# there by tokio, so no new code) is for the TCP keepalive probe count (Android, #74).
+socket2 = { version = "=0.6.5", features = ["all"] }
+# Three-way text merge (#66): Myers diff of lines and words. No default features: the slice diff
+# is all we use, and it then has no dependencies.
+similar = { version = "=2.7.0", default-features = false }
 # JNI glue for the Todo widget (ADR 0014); Android only.
 jni = "=0.21.1"
 

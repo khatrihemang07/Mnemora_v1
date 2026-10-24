@@ -1,11 +1,14 @@
 //! Device-only values stored in `device.toml` (never synced, never in the database).
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use specta::Type;
 
 use crate::error::{AppError, AppResult, ErrorCode};
+use crate::util::new_id;
 
 /// Last known window geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -59,10 +62,124 @@ impl Default for SidebarState {
     }
 }
 
+/// Look and feel (ADR 0005, amended): per device so a phone and a Mac can look different. Each
+/// field is `None` until chosen on this device, and then the registered default of its Setting
+/// applies; that is how an upgrade tells "never saved" from "saved the default". Values are
+/// validated by the Setting's own validator on the way in, never here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(default)]
+pub struct LookAndFeel {
+    /// `system`, `light`, `dark` or `oled`.
+    pub theme: Option<String>,
+    /// `comfortable` or `compact`.
+    pub density: Option<String>,
+    /// `s`, `m` or `l`.
+    pub text_size: Option<String>,
+    /// Turn animations off.
+    pub reduce_motion: Option<bool>,
+    /// Ids of the phone tab bar's tabs, in order.
+    pub phone_tabs: Option<Vec<String>>,
+    /// The tabs were saved from Settings (an upgrade only pins them).
+    pub phone_tabs_edited: Option<bool>,
+}
+
+/// The `core` keys that live in [`LookAndFeel`] instead of the `settings` table.
+pub const LOOK_KEYS: [&str; 6] = [
+    "theme",
+    "density",
+    "text_size",
+    "reduce_motion",
+    "phone_tabs",
+    "phone_tabs_edited",
+];
+
+impl LookAndFeel {
+    /// The saved value of `key` (a [`LOOK_KEYS`] name) as JSON, or `None` when never saved.
+    pub fn get(&self, key: &str) -> Option<Value> {
+        match key {
+            "theme" => self.theme.as_ref().map(|v| json!(v)),
+            "density" => self.density.as_ref().map(|v| json!(v)),
+            "text_size" => self.text_size.as_ref().map(|v| json!(v)),
+            "reduce_motion" => self.reduce_motion.map(|v| json!(v)),
+            "phone_tabs" => self.phone_tabs.as_ref().map(|v| json!(v)),
+            "phone_tabs_edited" => self.phone_tabs_edited.map(|v| json!(v)),
+            _ => None,
+        }
+    }
+
+    /// Saves `value` for `key`. False (and nothing changed) for an unknown key or a value of
+    /// the wrong JSON type; the caller has already validated the value's content.
+    pub fn set(&mut self, key: &str, value: &Value) -> bool {
+        let text = || value.as_str().map(str::to_owned);
+        match key {
+            "theme" => text().map(|v| self.theme = Some(v)).is_some(),
+            "density" => text().map(|v| self.density = Some(v)).is_some(),
+            "text_size" => text().map(|v| self.text_size = Some(v)).is_some(),
+            "reduce_motion" => value
+                .as_bool()
+                .map(|v| self.reduce_motion = Some(v))
+                .is_some(),
+            "phone_tabs_edited" => value
+                .as_bool()
+                .map(|v| self.phone_tabs_edited = Some(v))
+                .is_some(),
+            "phone_tabs" => value
+                .as_array()
+                .and_then(|a| {
+                    a.iter()
+                        .map(|t| t.as_str().map(str::to_owned))
+                        .collect::<Option<Vec<_>>>()
+                })
+                .map(|v| self.phone_tabs = Some(v))
+                .is_some(),
+            _ => false,
+        }
+    }
+}
+
+/// The Sync Module's choices for this device (ADR 0017). Never synced: each device decides for
+/// itself whether it talks to the network, so the on/off switch is a Device setting, not a
+/// Preference.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(default)]
+// Five independent switches in a settings file; an enum per switch would only add noise.
+#[allow(clippy::struct_excessive_bools)]
+pub struct SyncDevice {
+    /// Sync is on. Off (the default) means nothing runs: no listener, no discovery, no tasks.
+    pub enabled: bool,
+    /// What the other devices call this one; `None` until Sync is first turned on.
+    pub name: Option<String>,
+    /// Sync when devices are around and after changes. Off: only "Sync now".
+    pub automatic: bool,
+    /// Phone only: reach devices over Tailscale away from Wi-Fi.
+    pub mobile_data: bool,
+    /// Advertise on the local network so paired devices find this one.
+    pub visible: bool,
+    /// "New conflicts: Show a toast" instead of Quietly (the default): per device, so the Mac can
+    /// say so at once while the phone stays calm.
+    pub toast_conflicts: bool,
+}
+
+impl Default for SyncDevice {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            name: None,
+            automatic: true,
+            mobile_data: false,
+            visible: true,
+            toast_conflicts: false,
+        }
+    }
+}
+
 /// Everything stored per device.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(default)]
 pub struct DeviceSettings {
+    /// Random id of this install in this Environment (a `UUIDv7`), made on first run and then
+    /// stable. `None` until [`DeviceStore::device_id`] first needs it.
+    pub device_id: Option<String>,
     /// Custom data folder; `None` means the platform default.
     pub data_dir: Option<String>,
     /// Window geometry.
@@ -73,16 +190,23 @@ pub struct DeviceSettings {
     pub log_level: String,
     /// Spellcheck in every text editor. Per device: input methods and dictionaries differ.
     pub spellcheck: bool,
+    /// Theme, density, text size, reduce motion and phone tabs.
+    pub look: LookAndFeel,
+    /// The Sync Module's choices for this device.
+    pub sync: SyncDevice,
 }
 
 impl Default for DeviceSettings {
     fn default() -> Self {
         Self {
+            device_id: None,
             data_dir: None,
             window: WindowState::default(),
             sidebar: SidebarState::default(),
             log_level: "info".to_owned(),
             spellcheck: true,
+            look: LookAndFeel::default(),
+            sync: SyncDevice::default(),
         }
     }
 }
@@ -126,6 +250,53 @@ impl DeviceSettings {
             .as_deref()
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
+    }
+}
+
+/// `device.toml` held in memory, written through on every change.
+pub struct DeviceStore {
+    path: PathBuf,
+    inner: Mutex<DeviceSettings>,
+}
+
+impl DeviceStore {
+    /// Wraps already-loaded settings that live at `path`.
+    pub fn new(path: PathBuf, settings: DeviceSettings) -> Self {
+        Self {
+            path,
+            inner: Mutex::new(settings),
+        }
+    }
+
+    /// A copy of the current settings.
+    pub fn get(&self) -> DeviceSettings {
+        self.inner
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// This install's id. The first call makes and saves it (an unsaved id would change on the
+    /// next start, so a failed write is logged and the session still uses the new one).
+    pub fn device_id(&self) -> String {
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(id) = &guard.device_id {
+            return id.clone();
+        }
+        let id = new_id();
+        guard.device_id = Some(id.clone());
+        if let Err(e) = guard.save(&self.path) {
+            tracing::warn!(error = %e, "could not save the new device id");
+        }
+        id
+    }
+
+    /// Applies `change` and saves atomically. The in-memory copy is updated even if the
+    /// write fails, so the session stays consistent; the error is still reported.
+    pub fn update(&self, change: impl FnOnce(&mut DeviceSettings)) -> AppResult<()> {
+        let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        change(&mut guard);
+        guard.save(&self.path)
     }
 }
 
@@ -182,6 +353,26 @@ mod tests {
     }
 
     #[test]
+    fn device_id_is_made_once_saved_and_stable_across_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        let first = DeviceStore::new(path.clone(), DeviceSettings::load(&path));
+        let id = first.device_id();
+        assert_eq!(id.len(), 36);
+        assert_eq!(first.device_id(), id, "same on every call");
+        let restarted = DeviceStore::new(path.clone(), DeviceSettings::load(&path));
+        assert_eq!(restarted.device_id(), id, "same after a restart");
+        let other = tempfile::tempdir().unwrap();
+        let other_path = other.path().join("device.toml");
+        let other_env = DeviceStore::new(other_path.clone(), DeviceSettings::load(&other_path));
+        assert_ne!(
+            other_env.device_id(),
+            id,
+            "another Environment is another device"
+        );
+    }
+
+    #[test]
     fn corrupt_file_falls_back_to_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("device.toml");
@@ -208,5 +399,58 @@ mod tests {
             ..DeviceSettings::default()
         };
         assert_eq!(s.data_dir_override(), None);
+    }
+
+    #[test]
+    fn look_and_feel_is_unset_until_chosen_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        assert_eq!(DeviceSettings::default().look.get("theme"), None);
+        let mut s = DeviceSettings::default();
+        assert!(s.look.set("theme", &json!("oled")));
+        assert!(s.look.set("reduce_motion", &json!(true)));
+        assert!(s.look.set("phone_tabs", &json!(["home", "todo"])));
+        assert!(!s.look.set("theme", &json!(3)), "wrong type is refused");
+        assert!(!s.look.set("bogus", &json!("x")));
+        s.save(&path).unwrap();
+        let back = DeviceSettings::load(&path);
+        assert_eq!(back.look.get("theme"), Some(json!("oled")));
+        assert_eq!(back.look.get("reduce_motion"), Some(json!(true)));
+        assert_eq!(back.look.get("phone_tabs"), Some(json!(["home", "todo"])));
+        assert_eq!(back.look.get("density"), None, "unchosen stays unset");
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("density"), "{text}");
+    }
+
+    #[test]
+    fn sync_is_off_and_nameless_until_chosen_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        let fresh = DeviceSettings::default().sync;
+        assert!(!fresh.enabled, "Sync is off by default");
+        assert_eq!(fresh.name, None);
+        assert!(fresh.automatic && fresh.visible && !fresh.mobile_data);
+        assert!(!fresh.toast_conflicts, "new conflicts arrive quietly");
+        // A file from before Sync has no [sync] table at all.
+        std::fs::write(&path, "log_level = \"debug\"\n").unwrap();
+        assert_eq!(DeviceSettings::load(&path).sync, fresh);
+        let mut s = DeviceSettings::default();
+        s.sync.enabled = true;
+        s.sync.name = Some("Studio Mac".into());
+        s.sync.mobile_data = true;
+        s.save(&path).unwrap();
+        assert_eq!(DeviceSettings::load(&path).sync, s.sync);
+    }
+
+    #[test]
+    fn a_file_from_before_look_and_feel_has_none_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("device.toml");
+        std::fs::write(&path, "log_level = \"debug\"\n").unwrap();
+        let s = DeviceSettings::load(&path);
+        assert_eq!(s.look, LookAndFeel::default());
+        for key in LOOK_KEYS {
+            assert_eq!(s.look.get(key), None, "{key}");
+        }
     }
 }

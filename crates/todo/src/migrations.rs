@@ -16,6 +16,12 @@ const SEARCH_VOCABULARY: &str =
     "CREATE VIRTUAL TABLE todo_tasks_fts_vocab USING fts5vocab('todo_tasks_fts', 'row');
      CREATE VIRTUAL TABLE todo_comments_fts_vocab USING fts5vocab('todo_comments_fts', 'row');";
 
+/// "Edited" was `updated_at > created_at`. Deleting, restoring and moving a Comment now stamp
+/// `updated_at` too (so a sync sees them), so the flag needs a column of its own.
+const COMMENT_EDITED_FLAG: &str =
+    "ALTER TABLE todo_comments ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;
+     UPDATE todo_comments SET edited = 1 WHERE updated_at > created_at;";
+
 pub fn all() -> Migrations<'static> {
     Migrations::new(vec![
         // Dates are `YYYY-MM-DD` and times `HH:MM`, both floating local. `sort_key` is text that
@@ -124,5 +130,6 @@ pub fn all() -> Migrations<'static> {
         ),
         M::up(TRIM_KEY_ZEROS),
         M::up(SEARCH_VOCABULARY),
+        M::up(COMMENT_EDITED_FLAG),
     ])
 }

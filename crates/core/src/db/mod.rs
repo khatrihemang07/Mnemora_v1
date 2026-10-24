@@ -4,21 +4,61 @@ pub mod backup;
 pub mod migrate;
 
 use std::path::Path;
+use std::sync::Arc;
 
 pub use rusqlite::Connection;
 use rusqlite::OpenFlags;
+use rusqlite::functions::FunctionFlags;
 
 use crate::error::AppResult;
+use crate::util::now_ms;
+
+/// Where a connection reads wall-clock milliseconds from. The system clock unless a test swaps
+/// it (see [`set_time_source`]), so tests can simulate clock skew between devices.
+pub type TimeSource = Arc<dyn Fn() -> i64 + Send + Sync>;
+
+/// The SQL function that serves the connection's time source.
+const TIME_FUNCTION: &str = "mnemora_now";
+
+/// Replaces the wall clock this connection stamps change-log records with.
+pub fn set_time_source(conn: &Connection, source: TimeSource) -> AppResult<()> {
+    conn.create_scalar_function(TIME_FUNCTION, 0, FunctionFlags::SQLITE_UTF8, move |_| {
+        Ok(source())
+    })?;
+    Ok(())
+}
+
+/// Calls `notify` whenever a row of the change log is written (or rewritten) through this
+/// connection. It fires before the transaction commits, so a listener should wait a moment
+/// before reading. Replaces any earlier hook on the connection.
+pub fn on_change_log_write(conn: &Connection, notify: impl Fn() + Send + 'static) -> AppResult<()> {
+    conn.update_hook(Some(
+        move |_action: rusqlite::hooks::Action, _db: &str, table: &str, _row: i64| {
+            if table == "change_log" {
+                notify();
+            }
+        },
+    ))?;
+    Ok(())
+}
+
+/// Wall-clock milliseconds as this connection's time source says; the system clock when none
+/// was set.
+pub fn physical_now(conn: &Connection) -> i64 {
+    conn.query_row(&format!("SELECT {TIME_FUNCTION}()"), [], |r| r.get(0))
+        .unwrap_or_else(|_| now_ms())
+}
 
 /// Opens (creating if needed) the database at `path` with WAL and foreign keys on.
 pub fn open(path: &Path) -> AppResult<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     // journal_mode returns a row, so it cannot go through `execute`.
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
     configure(&conn)?;
+    write_transactions_wait_their_turn(&mut conn);
     Ok(conn)
 }
 
@@ -35,6 +75,14 @@ pub fn open_existing(path: &Path) -> AppResult<Option<Connection>> {
     Ok(Some(conn))
 }
 
+/// Makes `conn.transaction()` take the write lock when it begins. A deferred transaction that
+/// reads first and writes later fails at once with `SQLITE_BUSY` (the busy timeout does not apply)
+/// when another connection committed in between, and Sync writes through a second connection;
+/// beginning with the lock makes it wait its turn instead. Only for the connections that write.
+fn write_transactions_wait_their_turn(conn: &mut Connection) {
+    conn.set_transaction_behavior(rusqlite::TransactionBehavior::Immediate);
+}
+
 /// An in-memory database with the same pragmas that apply to memory databases; for tests.
 pub fn open_in_memory() -> AppResult<Connection> {
     let conn = Connection::open_in_memory()?;
@@ -46,6 +94,7 @@ fn configure(conn: &Connection) -> AppResult<()> {
     conn.pragma_update(None, "foreign_keys", true)?;
     // Another connection (e.g. a backup) may briefly hold a lock.
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    set_time_source(conn, Arc::new(now_ms))?;
     Ok(())
 }
 
@@ -71,6 +120,45 @@ mod tests {
         let conn = open(&dir.path().join("deep/er/x.db")).unwrap();
         assert_eq!(pragma_string(&conn, "journal_mode"), "wal");
         assert_eq!(pragma_string(&conn, "foreign_keys"), "1");
+    }
+
+    #[test]
+    fn a_transaction_holds_the_write_lock_from_its_start_so_a_second_connection_cannot_slip_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.db");
+        let mut app = open(&path).unwrap();
+        app.execute_batch("CREATE TABLE t(x)").unwrap();
+        let other = open(&path).unwrap();
+        other.busy_timeout(std::time::Duration::ZERO).unwrap();
+
+        let tx = app.transaction().unwrap();
+        tx.query_row("SELECT COUNT(*) FROM t", [], |r| r.get::<_, i64>(0))
+            .unwrap();
+        // Were the transaction deferred, this write would commit between the app's read and
+        // its write, and the app's write would then fail with a snapshot error.
+        assert!(other.execute("INSERT INTO t VALUES (1)", []).is_err());
+        tx.execute("INSERT INTO t VALUES (2)", []).unwrap();
+        tx.commit().unwrap();
+    }
+
+    #[test]
+    fn the_change_log_hook_fires_for_that_table_only() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let conn = open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE change_log(x); CREATE TABLE other(x)")
+            .unwrap();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let seen = Arc::clone(&hits);
+        on_change_log_write(&conn, move || {
+            seen.fetch_add(1, Ordering::SeqCst);
+        })
+        .unwrap();
+        conn.execute("INSERT INTO other VALUES (1)", []).unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+        conn.execute("INSERT INTO change_log VALUES (1)", [])
+            .unwrap();
+        conn.execute("UPDATE change_log SET x = 2", []).unwrap();
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
     }
 
     #[test]

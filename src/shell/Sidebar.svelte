@@ -1,4 +1,4 @@
-<!-- Sidebar: Search entry, Modules, then Settings at the bottom, plus Environment and version. -->
+<!-- Sidebar: Search entry, Modules, then Sync and Settings in the bottom group, plus Environment and version. -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import Search from '~icons/lucide/search';
@@ -67,9 +67,10 @@
         label={e.manifest.name}
         icon={e.manifest.icon}
         href={router.href(e.path)}
-        active={router.isActive(e.path)}
+        active={router.isWithin(e.path)}
         accentVar={e.manifest.accentVar}
-        shortcut={shortcutLabel(',')}
+        badgeOf={e.manifest}
+        shortcut={e.id === 'settings' ? shortcutLabel(',') : hint(e.manifest.nav.shortcut)}
         {rail}
       />
     {/each}

@@ -2,10 +2,12 @@
 //! Entry text and snapshots must never reach a log line.
 
 use mnemora_core::changelog::{self, Change, ChangeOp};
+use mnemora_core::db::physical_now;
 use mnemora_core::error::AppResult;
 use mnemora_core::search::plain;
-use mnemora_core::util::{new_id, now_ms};
+use mnemora_core::util::new_id;
 use rusqlite::Connection;
+use serde_json::Value;
 
 use crate::MODULE_ID;
 use crate::entry::{
@@ -16,13 +18,11 @@ use crate::error::JournalError;
 use crate::repo::{self, Window};
 
 /// Change-log entity name for Entries.
-const ENTITY: &str = "journal_entry";
-/// Deleted Entries are kept this long (for Undo and recovery), then erased for good.
-const PURGE_AFTER_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+pub(crate) const ENTITY: &str = "journal_entry";
 /// Most Pages one request may return.
 const MAX_PAGES: u32 = 100;
 /// Changes sooner than this after the written instant are typo fixes, not edits.
-const EDIT_GRACE_MS: i64 = 10 * 60 * 1000;
+pub(crate) const EDIT_GRACE_MS: i64 = 10 * 60 * 1000;
 
 /// The "edited" instant after an update at `now`: the last edit, so it moves forward with every
 /// update past the grace; within the grace the existing value stays.
@@ -41,10 +41,6 @@ fn record(
     op: ChangeOp,
     session_id: Option<&str>,
 ) -> AppResult<()> {
-    let mut snapshot = serde_json::to_value(entry).map_err(JournalError::Snapshot)?;
-    if let Some(fields) = snapshot.as_object_mut() {
-        fields.insert("deleted_at".into(), deleted_at.into());
-    }
     changelog::record(
         conn,
         &Change {
@@ -53,9 +49,18 @@ fn record(
             entity_id: entry.id.clone(),
             op,
             session_id: session_id.map(str::to_owned),
-            snapshot,
+            snapshot: snapshot_of(entry, deleted_at)?,
         },
     )
+}
+
+/// The Entry plus its `deleted_at`, in the shape of its change-log snapshots.
+pub(crate) fn snapshot_of(entry: &Entry, deleted_at: Option<i64>) -> AppResult<Value> {
+    let mut snapshot = serde_json::to_value(entry).map_err(JournalError::Snapshot)?;
+    if let Some(fields) = snapshot.as_object_mut() {
+        fields.insert("deleted_at".into(), deleted_at.into());
+    }
+    Ok(snapshot)
 }
 
 /// Writes a new Entry on its Page. The written instant is now.
@@ -64,7 +69,8 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
     validate_page_date(&new.page_date)?;
     validate_written_zone(&new.written_tz, new.written_offset_min)?;
 
-    let now = now_ms();
+    let tx = conn.transaction()?;
+    let now = physical_now(&tx);
     let entry = Entry {
         id: new_id(),
         page_date: new.page_date,
@@ -77,7 +83,6 @@ pub fn create_entry(conn: &mut Connection, new: NewEntry) -> AppResult<Entry> {
         created_at: now,
         updated_at: now,
     };
-    let tx = conn.transaction()?;
     repo::insert(&tx, &entry)?;
     record(&tx, &entry, None, ChangeOp::Create, Some(&new.session_id))?;
     tx.commit()?;
@@ -98,7 +103,7 @@ pub fn update_entry(
 
     entry.word_count = plain::word_count(&text);
     entry.body = text;
-    let now = now_ms();
+    let now = physical_now(&tx);
     entry.updated_at = now;
     entry.edited_at = edited_after_update(&entry, now);
     repo::update_body(&tx, &entry)?;
@@ -113,7 +118,7 @@ pub fn toggle_task_line(conn: &mut Connection, id: &str, line: usize) -> AppResu
     let tx = conn.transaction()?;
     let mut entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
     entry.body = toggle_task(&entry.body, line)?;
-    entry.updated_at = now_ms();
+    entry.updated_at = physical_now(&tx);
     repo::update_body(&tx, &entry)?;
     record(&tx, &entry, None, ChangeOp::Tick, None)?;
     tx.commit()?;
@@ -130,18 +135,18 @@ pub fn move_entry(conn: &mut Connection, id: &str, page_date: &str) -> AppResult
         return Ok(entry);
     }
     page_date.clone_into(&mut entry.page_date);
-    entry.updated_at = now_ms();
+    entry.updated_at = physical_now(&tx);
     repo::update_page_date(&tx, &entry)?;
     record(&tx, &entry, None, ChangeOp::Move, None)?;
     tx.commit()?;
     Ok(entry)
 }
 
-/// Soft-deletes an Entry: it leaves its Page at once and is erased after 30 days.
+/// Soft-deletes an Entry: it leaves its Page at once and stays as its own tombstone.
 pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
     let tx = conn.transaction()?;
     let entry = repo::get(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
-    let now = now_ms();
+    let now = physical_now(&tx);
     repo::set_deleted_at(&tx, id, Some(now), now)?;
     record(&tx, &entry, Some(now), ChangeOp::Delete, None)?;
     tx.commit()?;
@@ -152,25 +157,12 @@ pub fn delete_entry(conn: &mut Connection, id: &str) -> AppResult<()> {
 pub fn restore_entry(conn: &mut Connection, id: &str) -> AppResult<Entry> {
     let tx = conn.transaction()?;
     let mut entry = repo::get_deleted(&tx, id)?.ok_or(JournalError::EntryNotFound)?;
-    let now = now_ms();
+    let now = physical_now(&tx);
     repo::set_deleted_at(&tx, id, None, now)?;
     entry.updated_at = now;
     record(&tx, &entry, None, ChangeOp::Restore, None)?;
     tx.commit()?;
     Ok(entry)
-}
-
-/// Permanently removes Entries deleted over 30 days ago, with their change-log records, in one
-/// transaction. Returns how many Entries went. Run once at app start.
-pub fn purge_deleted(conn: &mut Connection) -> AppResult<usize> {
-    let tx = conn.transaction()?;
-    let ids = repo::deleted_before(&tx, now_ms() - PURGE_AFTER_MS)?;
-    for id in &ids {
-        repo::remove(&tx, id)?;
-    }
-    changelog::purge(&tx, ENTITY, &ids)?;
-    tx.commit()?;
-    Ok(ids.len())
 }
 
 /// Dates in the given month (`month` is 1-12) that hold live Entries, oldest first.

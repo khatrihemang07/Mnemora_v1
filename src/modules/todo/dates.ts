@@ -134,14 +134,7 @@ export const completedRepeatMessage = (title: string, next: string, today: strin
 export const skippedMessage = (title: string, next: string, today: string): string =>
   `Skipped ${quotedTitle(title)} · next ${nextText(next, today)}`;
 
-/** A heading of Done: `Today`, `Yesterday`, then the weekday, with the small date beside it. */
-export function doneHeading(date: string, today: string): DayHeading {
-  const n = daysBetween(date, today);
-  const small = dayText(date, today).split(' ').slice(1).join(' ');
-  if (n === 0) return { name: 'Today', small };
-  if (n === 1) return { name: 'Yesterday', small };
-  return { name: WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '', small };
-}
+export { doneHeading } from '../../lib/time/day-heading';
 
 /** The toast after Move all: `Moved 3 Tasks to Today`. */
 export function movedAllMessage(count: number, date: string, today: string): string {

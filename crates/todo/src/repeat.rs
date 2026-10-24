@@ -3,19 +3,21 @@
 //! records no occurrence (only a `tick` marked skipped). Also the Done view, which lists those
 //! copies with everything else done. Task text must never reach a log line.
 
-use mnemora_core::changelog::{self, Change, ChangeOp};
+use mnemora_core::changelog::ChangeOp;
 use mnemora_core::error::AppResult;
-use mnemora_core::util::{new_id, now_ms};
+use mnemora_core::util::now_ms;
 use rusqlite::Connection;
 use serde::Serialize;
 use specta::Type;
+use uuid::Uuid;
 
+use crate::comment_service;
 use crate::error::TodoError;
 use crate::recurrence::Rule;
 use crate::service::{record, record_at, record_skip};
 use crate::task::{Task, TaskState};
 use crate::when::{DAY_MS, LocalNow, add_days, epoch_day, validate_date};
-use crate::{MODULE_ID, repo};
+use crate::{comment_repo, repo};
 
 /// What ticking a Task did.
 #[derive(Debug, Clone, PartialEq, Serialize, Type)]
@@ -47,6 +49,18 @@ pub struct DoneView {
 
 /// The most days one page of Done holds.
 const MAX_PAGE_DAYS: u32 = 60;
+
+/// Namespace of the `UUIDv5` ids of occurrence copies. It was generated once and must never
+/// change: every device derives the same occurrence id from it, and changing it would give each
+/// completion a second id next to the ones already stored and synced.
+const OCCURRENCE_NAMESPACE: Uuid = Uuid::from_u128(0x98e7_3eb4_587f_441e_9d52_017d_09da_c720);
+
+/// The id of the occurrence copy of `task_id` due on `due` (`YYYY-MM-DD`): the same on every
+/// device and in every database, so completing the same occurrence twice, or on two devices,
+/// is one record.
+pub fn occurrence_id(task_id: &str, due: &str) -> String {
+    Uuid::new_v5(&OCCURRENCE_NAMESPACE, format!("{task_id}|{due}").as_bytes()).to_string()
+}
 
 /// A Task's Repeat, or none. A stored rule that no longer checks is the app's fault.
 pub(crate) fn rule_of(task: &Task) -> AppResult<Option<Rule>> {
@@ -104,7 +118,7 @@ pub(crate) fn complete(
     let next = rule.next_due(&due, &local.today)?;
     let now = now_ms();
     let occurrence = Task {
-        id: new_id(),
+        id: occurrence_id(&task.id, &due),
         list_id: task.list_id.clone(),
         title: task.title.clone(),
         notes: task.notes.clone(),
@@ -124,10 +138,19 @@ pub(crate) fn complete(
         updated_at: now,
         comment_count: 0,
     };
-    repo::insert(conn, &occurrence)?;
-    record(conn, &occurrence, ChangeOp::Create)?;
+    // Completing a reopened occurrence again finds its row (deleted) and brings it back.
+    let reused = repo::upsert_occurrence(conn, &occurrence)?;
+    let mut occurrence = repo::get(conn, &occurrence.id)?.unwrap_or(occurrence);
+    record(
+        conn,
+        &occurrence,
+        if reused {
+            ChangeOp::Restore
+        } else {
+            ChangeOp::Create
+        },
+    )?;
     move_comments(conn, &task.id, &occurrence.id, now)?;
-    let mut occurrence = occurrence;
     occurrence.comment_count = repo::count_comments(conn, &occurrence.id)?;
     task.comment_count = 0;
     task.notes = reset_checklist(&task.notes);
@@ -177,20 +200,12 @@ pub(crate) fn rewind(conn: &Connection, occurrence: Task, parent_id: &str) -> Ap
     Ok(task)
 }
 
-/// Hands Comments to another Task and records each move (ids only, never text).
+/// Hands Comments to another Task, stamps them and records each move with its full state.
 fn move_comments(conn: &Connection, from: &str, to: &str, now: i64) -> AppResult<()> {
-    for id in repo::move_comments(conn, from, to)? {
-        changelog::record(
-            conn,
-            &Change {
-                module: MODULE_ID.into(),
-                entity: "todo_comment".into(),
-                entity_id: id.clone(),
-                op: ChangeOp::Move,
-                session_id: None,
-                snapshot: serde_json::json!({ "id": id, "task_id": to, "updated_at": now }),
-            },
-        )?;
+    for id in repo::move_comments(conn, from, to, now)? {
+        if let Some((comment, deleted_at)) = comment_repo::get_any(conn, &id)? {
+            comment_service::record(conn, &comment, ChangeOp::Move, deleted_at)?;
+        }
     }
     Ok(())
 }
@@ -275,7 +290,7 @@ pub fn done(
 
 #[cfg(test)]
 mod tests {
-    use super::reset_checklist;
+    use super::{occurrence_id, reset_checklist};
 
     #[test]
     fn ticked_checklist_items_are_unticked_and_the_rest_is_left_alone() {
@@ -289,6 +304,24 @@ mod tests {
         assert_eq!(
             reset_checklist("- [x] a\r\n- [x] b\r\n"),
             "- [ ] a\r\n- [ ] b\r\n"
+        );
+    }
+
+    #[test]
+    fn an_occurrence_id_depends_only_on_the_task_and_the_due_date() {
+        let task = "0190a2c4-7b1e-7c3a-8d55-1f2e3d4c5b6a";
+        let id = occurrence_id(task, "2026-10-21");
+        assert_eq!(id, occurrence_id(task, "2026-10-21"));
+        assert_ne!(id, occurrence_id(task, "2026-10-22"));
+        assert_ne!(id, occurrence_id("other", "2026-10-21"));
+    }
+
+    #[test]
+    fn the_namespace_never_changes() {
+        // Pinned: another namespace would give every device new ids for stored occurrences.
+        assert_eq!(
+            occurrence_id("task", "2026-10-21"),
+            "af39dd36-4c85-5afb-8493-cb04929d1950"
         );
     }
 }

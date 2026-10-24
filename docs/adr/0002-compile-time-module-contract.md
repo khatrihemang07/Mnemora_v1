@@ -5,3 +5,11 @@ Every Module implements the Rust `Module` trait (id, migrations, Settings schema
 ## Considered Options
 
 - **Runtime plugins**: rejected; they add loading, sandboxing and versioning problems we do not need for a single-developer app.
+
+## Amendment (2026-10-22): Modules can be off by default, and declare what syncs
+
+The `Module` trait and the UI manifest gain `default_enabled`. A Module that is off by default (Sync) is enabled only when the user opts in: a core Preference lists the opted-in default-off Modules, so a Module is enabled when it is on by default and not disabled, or off by default and opted in. Sync's own on/off is the exception, a Device setting that is never synced, because each device chooses whether it talks to the network.
+
+The trait also gains a sync contract (ADR 0017). A Module declares its syncable entities and classifies each field as text (three-way merge), value (newest wins), order (newest wins, reported in one line) or derived (recomputed locally, never synced). It applies a set of remote field values through its own repository and validation, as ADR 0001 requires, records the result as a remote change rather than a new local one and emits its usual change events (`apply_remote`). After a remote record is stored, `settle_remote` lets the Module finish what that record implies (for example merging two Lists with one name), recording its own changes as ordinary ones. Text is not merged by the Module: the engine replays the records (ADR 0008). The Sync Module drives this contract and still imports neither Journal nor Todo.
+
+The trait also gains `holdings` (default: nothing): the Entries, Tasks and List names a Module holds, deleted ones excluded, which Sync shows in the preview before two devices that both have data merge for the first time. Core and Settings hold nothing a person counts.

@@ -1,0 +1,234 @@
+//! What Sync runs while it is on: the TLS listener, the discovery announcement, pairing and the
+//! session manager. One [`Network`] exists per "Sync on"; dropping it closes the port, stops
+//! announcing, ends every connection, dial and timer, which is how "inert when off" holds.
+
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, Ordering};
+
+use tokio::runtime::Handle;
+use tokio::task::JoinHandle;
+
+use crate::SyncError;
+use crate::discovery::Discovery;
+use crate::live::{Host, Live, Pace, PeerLive};
+use crate::local_network::LocalNetwork;
+use crate::net::{
+    DEFAULT_PORT, DeviceIdentity, Incoming, Listener, LocalHandshake, NetConfig, Trust,
+};
+use crate::pair::{Pairing, PairingHost, Timing};
+
+/// How a [`Network`] starts.
+pub struct NetworkOptions {
+    /// The address to listen on.
+    pub ip: IpAddr,
+    /// The port to try first; another is used if it is busy.
+    pub port: u16,
+    /// A second listener on this IPv6 address and the same port, for Tailscale's `fd7a:` addresses
+    /// (`None`: IPv4 only). Failing to open it (no IPv6 on this machine) is logged, not an error.
+    pub ip6: Option<Ipv6Addr>,
+    /// Pairing timings.
+    pub timing: Timing,
+    /// Announcing and finding devices.
+    pub discovery: Arc<dyn Discovery>,
+    /// How eagerly paired devices are synced and dialled.
+    pub pace: Pace,
+    /// What is known about the system keeping this device off the local network; it outlives
+    /// the network side, so the runtime hands the same one to every start.
+    pub local_network: Arc<LocalNetwork>,
+}
+
+impl NetworkOptions {
+    /// The app's: every interface, IPv4 and IPv6 (Wi-Fi and Tailscale), port 47311, the real timings.
+    pub fn app(discovery: Arc<dyn Discovery>, local_network: Arc<LocalNetwork>) -> Self {
+        Self {
+            ip: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            port: DEFAULT_PORT,
+            ip6: Some(Ipv6Addr::UNSPECIFIED),
+            timing: Timing::default(),
+            discovery,
+            pace: Pace::default(),
+            local_network,
+        }
+    }
+}
+
+/// The running network side of Sync.
+pub struct Network {
+    live: Live,
+    pairing: Arc<Pairing>,
+    addr: SocketAddr,
+    fell_back: bool,
+    accept: JoinHandle<()>,
+    discovery: Arc<dyn Discovery>,
+    /// What a connection needs (its `trust` is the set the listener and dialler check).
+    config: Box<NetConfig>,
+}
+
+impl Network {
+    /// Binds the port, pins the paired devices' keys, announces this device and starts accepting.
+    /// Call inside the Tokio runtime.
+    pub async fn start(
+        host: Arc<dyn Host>,
+        identity: Arc<DeviceIdentity>,
+        options: NetworkOptions,
+    ) -> Result<Self, SyncError> {
+        let trust = Trust::new();
+        for (key, device) in host.pinned() {
+            trust.pin(key, &device);
+        }
+        let me = host.handshake()?.device;
+        // The port is only known once bound, and the group and addresses change over time: the
+        // handshake is built afresh for every connection.
+        let port = Arc::new(AtomicU16::new(0));
+        let local = {
+            let (host, port) = (Arc::clone(&host), Arc::clone(&port));
+            LocalHandshake::new(move || {
+                let mut handshake = host.handshake()?;
+                let port = port.load(Ordering::SeqCst);
+                handshake.addresses = crate::addresses::local()
+                    .into_iter()
+                    .map(|ip| SocketAddr::new(ip, port).to_string())
+                    .collect();
+                Ok(handshake)
+            })
+        };
+        let config = NetConfig {
+            identity,
+            trust: trust.clone(),
+            local,
+        };
+        let mut listener = Listener::bind(config.clone(), options.ip, options.port).await?;
+        let addr = listener.local_addr();
+        let mut listener6 = match options.ip6 {
+            Some(ip6) => {
+                match Listener::bind_exact(config.clone(), IpAddr::V6(ip6), addr.port()).await {
+                    Ok(l) => Some(l),
+                    Err(e) => {
+                        tracing::warn!(target: "sync", error = %e, "not listening on IPv6");
+                        None
+                    }
+                }
+            }
+            None => None,
+        };
+        port.store(addr.port(), Ordering::SeqCst);
+        let fell_back = listener.fell_back();
+        let live = Live::start(
+            Arc::clone(&host),
+            config.clone(),
+            Arc::clone(&options.discovery),
+            options.pace,
+            me,
+            options.local_network,
+            &Handle::current(),
+        );
+        let pairing_host: Arc<dyn PairingHost> = host;
+        let pairing = Pairing::new(
+            pairing_host,
+            Arc::clone(&options.discovery),
+            config.clone(),
+            addr.port(),
+            options.timing,
+            Handle::current(),
+        );
+        let hub = Arc::clone(&pairing);
+        let sessions = live.acceptor();
+        let accept = tokio::spawn(async move {
+            loop {
+                let incoming = tokio::select! {
+                    i = listener.accept() => i,
+                    Some(i) = async {
+                        match listener6.as_mut() {
+                            Some(l) => l.accept().await,
+                            None => std::future::pending().await,
+                        }
+                    } => Some(i),
+                };
+                match incoming {
+                    Some(Incoming::Unpinned(secured)) => hub.handle_incoming(secured),
+                    Some(Incoming::Peer(established)) => sessions.accept(*established),
+                    None => break,
+                }
+            }
+        });
+        pairing.refresh_advert();
+        Ok(Self {
+            live,
+            pairing,
+            addr,
+            fell_back,
+            accept,
+            discovery: options.discovery,
+            config: Box::new(config),
+        })
+    }
+
+    /// Pairing: show a code, type one, allow, cancel.
+    pub fn pairing(&self) -> &Arc<Pairing> {
+        &self.pairing
+    }
+
+    /// The address bound (the unspecified address when listening on every interface).
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// The preferred port was busy, so another is used.
+    pub fn fell_back(&self) -> bool {
+        self.fell_back
+    }
+
+    /// Live announcements and browses.
+    pub fn discovery_active(&self) -> usize {
+        self.discovery.active()
+    }
+
+    /// Live tasks: the accept loop, pairing's and the session manager's.
+    pub fn tasks(&self) -> usize {
+        usize::from(!self.accept.is_finished()) + self.pairing.tasks() + self.live.tasks()
+    }
+
+    /// Sessions started with paired devices.
+    pub fn sessions(&self) -> usize {
+        self.live.sessions()
+    }
+
+    /// The session manager.
+    pub fn live(&self) -> &Live {
+        &self.live
+    }
+
+    /// What is happening with each paired device.
+    pub fn peers_live(&self) -> HashMap<String, PeerLive> {
+        self.live.snapshot()
+    }
+
+    /// Announces again (Visible on this network changed, the group changed).
+    pub fn refresh_advert(&self) {
+        self.pairing.refresh_advert();
+    }
+
+    /// Stops trusting every key (this device left its group).
+    pub fn unpin_all(&self) {
+        self.config.trust.unpin_all();
+    }
+
+    /// Stops trusting one key (a device was forgotten): its next connection is refused.
+    pub fn unpin(&self, key: &crate::net::PublicKey) {
+        self.config.trust.unpin(key);
+    }
+
+    /// What a connection to another device needs: this device's key, who it trusts, what it says.
+    pub fn config(&self) -> NetConfig {
+        (*self.config).clone()
+    }
+}
+
+impl Drop for Network {
+    fn drop(&mut self) {
+        self.accept.abort();
+        self.pairing.shutdown();
+    }
+}

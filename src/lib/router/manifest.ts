@@ -9,10 +9,17 @@ export interface HomeCardProps {
 }
 export type HomeCardLoader = () => Promise<{ default: Component<HomeCardProps> }>;
 
-/** A count beside a Module's name in the sidebar and the phone tab bar; red when `alert`. */
+/**
+ * A count beside a Module's name in the sidebar and the phone tab bar; red when `alert`. `tone`
+ * recolours it (Sync's hue, or amber for a warning), `text` replaces the number (Sync's "!" while
+ * paused), and `label` is what a screen reader says (default: the count as "due or overdue").
+ */
 export interface ModuleBadge {
   count: number;
   alert: boolean;
+  tone?: 'sync' | 'warn';
+  text?: string;
+  label?: string;
 }
 
 /** What the shell hands to a Module's actions, so Modules never import the shell. */
@@ -78,13 +85,31 @@ export interface ModuleAction {
    * shows how it read the date, Priority and List). Asked as the text changes; none shows nothing.
    */
   queryPreview?: (query: string) => Promise<string | null>;
+  /** A short note on the right of the row, asked while the palette renders ("2 waiting"). */
+  hint?: () => string | null;
   run: (ctx: ModuleContext, query: string) => void;
+}
+
+/**
+ * A Module's on/off switch when it is a Device setting rather than a Preference (Sync): read from
+ * the device file and never synced, so each device chooses for itself. Created during component
+ * setup, like `useBadge`, so it may hold queries.
+ */
+export interface DeviceSwitch {
+  /** Whether the Module is on for this device. */
+  readonly on: boolean;
+  /** The device file has been read, so `on` can be trusted (until then it reads off). */
+  readonly ready: boolean;
+  /** Asks for it on or off. Turning off may ask first; turning on may open the Module. */
+  set: (on: boolean) => void;
 }
 
 /** What a Module tells the shell about itself. Registered in one place: `shell/registry.ts`. */
 export interface ModuleManifest {
   id: string;
   name: string;
+  /** One line under the name in Settings ▸ Modules, for a Module that needs explaining. */
+  description?: string;
   icon: Component<{ class?: string }>;
   /** CSS custom property holding this Module's hue, e.g. `--hue-home`. */
   accentVar: string;
@@ -96,10 +121,19 @@ export interface ModuleManifest {
   /** Home and Settings: always on, no switch in Settings ▸ Modules. */
   required?: true;
   /**
+   * `false`: off until the user opts in (Sync). Enabled = (default on and not disabled) or
+   * (default off and opted in); see `enabledModules`. Absent means on by default.
+   */
+  defaultEnabled?: false;
+  /** For a default-off Module whose on/off is a Device setting: the shell reads and sets it here. */
+  deviceSwitch?: (ctx: ModuleContext) => DeviceSwitch;
+  /**
    * The Module's badge. Called while a sidebar row or tab renders (it may create queries), and
    * read reactively; none means nothing to show.
    */
   useBadge?: () => { readonly badge: ModuleBadge | null };
+  /** `false`: the badge shows in the desktop sidebar only, never on the phone tab bar (Sync). */
+  phoneBadge?: false;
   /** A card on Home, loaded only when Home renders it. */
   homeCard?: HomeCardLoader;
   /** The Module's own Settings section, appended after the core sections. */

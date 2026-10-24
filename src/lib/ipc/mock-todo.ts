@@ -46,8 +46,11 @@ import type {
   TodayView,
   TodoCounts,
   TodoList,
+  TodoListsMergedEvent,
   UpcomingView,
 } from './bindings';
+import { occurrenceId } from './mock-occurrence';
+import { type Doc, textMerge, textOf } from './mock-sync-merge';
 import {
   compareTasks,
   groupTasks,
@@ -281,9 +284,9 @@ const byListKey = (a: TodoList, b: TodoList) =>
   a.sort_key < b.sort_key ? -1 : a.sort_key > b.sort_key ? 1 : a.id < b.id ? -1 : 1;
 
 /** A Task as the mock stores it: `deleted` marks a soft delete, which Undo clears. */
-type Stored = Task & { deleted?: boolean };
-type StoredList = TodoList & { deleted?: boolean };
-type StoredComment = Comment & { deleted?: boolean };
+type Stored = Task & { deleted?: boolean; deleted_at?: number };
+type StoredList = TodoList & { deleted?: boolean; deleted_at?: number };
+type StoredComment = Comment & { deleted?: boolean; deleted_at?: number };
 
 /**
  * `prefs` reads a saved Setting by its full key (`todo.group_today`), the way Rust reads the
@@ -299,12 +302,19 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   /** Every op recorded, in order: what a test reads to see what a command logged. */
   const ops: string[] = [];
   /** Mirrors `record_in`: a session keeps one record, and a `create` stays a `create`. */
+  /**
+   * Text fields an editor holds (Rust: `editing_hold`, scope = the field), as `id/field`, with the
+   * text a remote change left waiting and what the field said when it first had to wait.
+   */
+  const held = new Set<string>();
+  const waiting = new Map<string, { base: string; text: string }>();
+  const HELD_FIELDS = ['title', 'notes'] as const;
   const record = (
     t: Stored,
     op: LogRecord['op'],
     opts: { session?: string; deletedAt?: number; skipped?: boolean } = {},
   ) => {
-    const { deleted: _d, comment_count: _c, ...rest } = t;
+    const { deleted: _d, deleted_at: _a, comment_count: _c, ...rest } = t;
     const snapshot = {
       ...copy(rest),
       deleted_at: opts.deletedAt ?? null,
@@ -333,7 +343,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   const findComment = (id: unknown) => comments.find((c) => c.id === id && !c.deleted);
   const commentMissing = () => fail('not_found', 'That comment no longer exists');
   const wireComment = (c: StoredComment): Comment => {
-    const { deleted: _deleted, ...comment } = c;
+    const { deleted: _deleted, deleted_at: _at, ...comment } = c;
     return comment;
   };
   const countComments = (taskId: string) =>
@@ -397,7 +407,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   };
   /** A Task without the mock's own flag, like the wire shape. */
   const wire = (t: Stored): Task => {
-    const { deleted: _deleted, ...task } = t;
+    const { deleted: _deleted, deleted_at: _at, ...task } = t;
     return { ...task, comment_count: countComments(t.id) };
   };
   /** Skip to the next date: a `tick` marked skipped (Won't do on a repeating Task does the same). */
@@ -416,17 +426,252 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
     return copy(wire(task));
   };
   const wireList = (l: StoredList): TodoList => {
-    const { deleted: _deleted, ...list } = l;
+    const { deleted: _deleted, deleted_at: _at, ...list } = l;
     return list;
   };
 
   return {
     handles: (cmd: string) => cmd.startsWith('todo_'),
+
+    /** Whether an `editing_*` call is about a Task (the Journal takes the rest). */
+    handlesEditing: (cmd: string, a: Record<string, unknown>) =>
+      cmd.startsWith('editing_') && a.entity === 'todo_task',
+
+    /** Set by the IPC mock: a held change was merged when its editor let go. */
+    onRemoteChange: undefined as (() => void) | undefined,
+    /**
+     * Set by the IPC mock: a held change and the person's own typing clashed when the editor let
+     * go. The typing shows; the Conflict keeps the other text, as in Rust.
+     */
+    onHeldClash: undefined as
+      | ((c: {
+          task: Stored;
+          field: 'title' | 'notes';
+          base: string;
+          showing: string;
+          other: string;
+        }) => void)
+      | undefined,
     /** The change-log ops recorded so far, oldest first: a test seam, not a command. */
     ops: (): readonly string[] => ops,
 
+    /**
+     * What Sync does when another device made a List with the same name: that one is older, so it
+     * survives with this List's Tasks added at its end, and this List goes. Returns the event the
+     * app emits (none when there is no such List). A browser-only simulation, not a command.
+     */
+    simulateMerge(name: string | undefined, device: string): TodoListsMergedEvent | null {
+      const loser = liveLists().find(
+        (l) => name === undefined || foldName(l.name) === foldName(name),
+      );
+      if (!loser) return null;
+      const now = Date.now();
+      const survivor: StoredList = {
+        id: crypto.randomUUID(),
+        name: loser.name,
+        emoji: null,
+        sort_key: loser.sort_key,
+        task_sort: 'manual',
+        group_by: 'none',
+        created_at: now,
+        updated_at: now,
+      };
+      lists.push(survivor);
+      for (const task of live().filter((t) => t.list_id === loser.id)) {
+        task.list_id = survivor.id;
+        task.updated_at = now;
+        record(task, 'move');
+      }
+      loser.deleted = true;
+      loser.updated_at = now;
+      return {
+        from_id: loser.id,
+        from_name: loser.name,
+        into_id: survivor.id,
+        into_name: survivor.name,
+        device,
+      };
+    },
+
+    /**
+     * Sync's view of the data (mock-sync-merge.ts): every List, Task and Comment as the fields the
+     * merge knows, deleted ones too. A browser-only seam, not a command.
+     */
+    exportDocs(): Doc[] {
+      const gone = (x: { deleted?: boolean; deleted_at?: number; updated_at: number }) =>
+        x.deleted ? (x.deleted_at ?? x.updated_at) : null;
+      return [
+        ...lists.map((l) => ({
+          entity: 'list' as const,
+          id: l.id,
+          values: {
+            name: l.name,
+            emoji: l.emoji,
+            sort_key: l.sort_key,
+            created_at: l.created_at,
+            deleted_at: gone(l),
+          },
+        })),
+        ...all.map((t) => ({
+          entity: 'task' as const,
+          id: t.id,
+          values: {
+            list_id: t.list_id,
+            title: t.title,
+            notes: t.notes,
+            due_date: t.due_date,
+            due_time: t.due_time,
+            repeat_freq: t.repeat_freq,
+            repeat_every: t.repeat_every,
+            repeat_days: t.repeat_days,
+            repeat_mode: t.repeat_mode,
+            repeat_of: t.repeat_of,
+            understood: t.understood,
+            priority: t.priority,
+            state: t.state,
+            closed_at: t.closed_at,
+            sort_key: t.sort_key,
+            created_at: t.created_at,
+            deleted_at: gone(t),
+          },
+        })),
+        ...comments.map((c) => ({
+          entity: 'comment' as const,
+          id: c.id,
+          values: {
+            body: c.body,
+            edited: c.edited,
+            task_id: c.task_id,
+            created_at: c.created_at,
+            deleted_at: gone(c),
+          },
+        })),
+      ];
+    },
+
+    /**
+     * Takes in what a sync merged: the fields of these docs that differ from here are written, and
+     * unknown ones are made. True when anything changed. A browser-only seam, not a command.
+     */
+    importDocs(docs: Doc[]): boolean {
+      const now = Date.now();
+      let changed = false;
+      const write = (row: Record<string, unknown>, values: Record<string, unknown>) => {
+        let touched = false;
+        for (const [k, value] of Object.entries(values)) {
+          if (k === 'deleted_at') {
+            const gone = value !== null && value !== undefined;
+            if (gone !== (row.deleted === true) || (gone && row.deleted_at !== value)) {
+              row.deleted = gone;
+              row.deleted_at = gone ? (value as number) : undefined;
+              touched = true;
+            }
+          } else if (row[k] !== value) {
+            row[k] = value;
+            touched = true;
+          }
+        }
+        if (touched) row.updated_at = now;
+        changed ||= touched;
+        return touched;
+      };
+      for (const d of docs.filter((x) => x.entity === 'list')) {
+        const row = lists.find((l) => l.id === d.id);
+        if (row) write(row as unknown as Record<string, unknown>, d.values);
+        else {
+          const fresh = {
+            id: d.id,
+            emoji: null,
+            task_sort: 'manual',
+            group_by: 'none',
+            updated_at: now,
+          };
+          lists.push(fresh as unknown as StoredList);
+          write(lists[lists.length - 1] as unknown as Record<string, unknown>, d.values);
+        }
+      }
+      for (const d of docs.filter((x) => x.entity === 'task')) {
+        const row = all.find((t) => t.id === d.id);
+        if (row) {
+          // A field an editor holds waits for it to let go; the other fields refresh now.
+          const values = { ...d.values };
+          for (const f of HELD_FIELDS) {
+            const key = `${row.id}/${f}`;
+            if (!held.has(key) || !(f in values)) continue;
+            const text = String(values[f]);
+            const pending = waiting.get(key);
+            if (pending) pending.text = text;
+            else if (row[f] !== text) waiting.set(key, { base: row[f], text });
+            delete values[f];
+          }
+          if (write(row as unknown as Record<string, unknown>, values))
+            record(row, row.deleted ? 'delete' : 'update', { deletedAt: row.deleted_at });
+          continue;
+        }
+        const fresh = {
+          id: d.id,
+          repeat_freq: null,
+          repeat_every: null,
+          repeat_days: null,
+          repeat_mode: null,
+          repeat_of: null,
+          understood: null,
+          comment_count: 0,
+          updated_at: now,
+        } as unknown as Stored;
+        all.push(fresh);
+        write(fresh as unknown as Record<string, unknown>, d.values);
+        record(fresh, 'create');
+      }
+      for (const d of docs.filter((x) => x.entity === 'comment')) {
+        const row = comments.find((c) => c.id === d.id);
+        if (row) write(row as unknown as Record<string, unknown>, d.values);
+        else {
+          const fresh = { id: d.id, updated_at: now } as unknown as StoredComment;
+          comments.push(fresh);
+          write(fresh as unknown as Record<string, unknown>, d.values);
+        }
+      }
+      return changed;
+    },
+
     handle(cmd: string, a: Record<string, unknown>): unknown {
       switch (cmd) {
+        case 'editing_hold':
+          held.add(`${a.entityId}/${a.scope}`);
+          return null;
+        case 'editing_release': {
+          const key = `${a.entityId}/${a.scope}`;
+          held.delete(key);
+          const pending = waiting.get(key);
+          waiting.delete(key);
+          const row = find(a.entityId);
+          const field = HELD_FIELDS.find((f) => f === a.scope);
+          if (!pending || !row || !field) return null;
+          // Rust (held.rs, texts.rs): the three-way merge of what waited and what was typed since.
+          const typed = row[field];
+          const merged =
+            typed === pending.base
+              ? pending.text
+              : textOf(textMerge(pending.base, pending.text, typed));
+          if (merged !== typed) {
+            row[field] = merged;
+            row.updated_at = Date.now();
+            record(row, 'update');
+            this.onRemoteChange?.();
+          }
+          // On a clash the typing shows (it is the newer) and the other text becomes a Conflict.
+          if (typed !== pending.base && merged !== pending.text && typed !== pending.text)
+            if (textMerge(pending.base, pending.text, typed).some((p) => 'clash' in p))
+              this.onHeldClash?.({
+                task: row,
+                field,
+                base: pending.base,
+                showing: merged,
+                other: pending.text,
+              });
+          return null;
+        }
         case 'todo_inbox': {
           const local = a.local as LocalNow;
           checkClock(local);
@@ -521,7 +766,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
             const now = Date.now();
             const occurrence: Stored = {
               ...task,
-              id: crypto.randomUUID(),
+              id: occurrenceId(task.id, due),
               repeat_freq: null,
               repeat_every: null,
               repeat_days: null,

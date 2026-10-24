@@ -120,4 +120,14 @@ describe('EntryEditing', () => {
     e.input('hello');
     expect(e.blankKept).toBe(false);
   });
+
+  it('an abandoned session (the Entry was deleted elsewhere) saves nothing more and hands back its text', async () => {
+    const { e, calls, hasTimer } = setup();
+    e.input('typed after the delete');
+    expect(hasTimer()).toBe(true);
+    expect(e.abandon()).toEqual({ text: 'typed after the delete', saved: expect.any(String) });
+    expect(hasTimer()).toBe(false);
+    expect(await e.flush()).toBe(true);
+    expect(calls).toEqual([]);
+  });
 });

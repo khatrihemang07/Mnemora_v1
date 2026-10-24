@@ -1,0 +1,548 @@
+//! The device sheet, Forget and Leave between `TestApp`s over real loopback sockets: the commands
+//! the UI calls and what each device shows afterwards (ADR 0009). Three devices are paired with
+//! each other so a forgotten one has more than one member to be refused by.
+
+use std::time::Duration;
+
+use serde_json::{Value, json};
+
+use crate::sync_live_tests::{create, has, meet, peer_of, quick, row_named, task_count, until};
+use crate::sync_pairing_tests::Device;
+
+/// Alice, Bob and Carol, each paired with the other two.
+async fn trio() -> (Device, Device, Device) {
+    let a = Device::with_pace("Alice", quick()).await;
+    let b = Device::with_pace("Bob", quick()).await;
+    let c = Device::with_pace("Carol", quick()).await;
+    crate::sync_live_tests::pair(&a, &b).await;
+    crate::sync_live_tests::pair(&a, &c).await;
+    // Carol already knows Bob (Alice introduced him); Bob shows the code, Carol types it.
+    crate::sync_live_tests::pair(&b, &c).await;
+    (a, b, c)
+}
+
+fn meet_all(a: &Device, b: &Device, c: &Device) {
+    meet(a, b);
+    meet(a, c);
+    meet(b, c);
+}
+
+fn id(d: &Device) -> String {
+    d.app.device_id()
+}
+
+fn state_of(d: &Device, name: &str) -> Value {
+    row_named(d, name)["state"].clone()
+}
+
+/// Carol cannot reach the member: it is "Not nearby", or "Removed" when a member that had not yet
+/// dropped her passed the Forget on first (which of the two is a race).
+fn cut_off(d: &Device, name: &str) -> bool {
+    let state = state_of(d, name);
+    state == "not_nearby" || state == "removed"
+}
+
+fn all_up_to_date(d: &Device) -> bool {
+    let peers = d.devices()["peers"].as_array().unwrap().clone();
+    peers.len() == 2 && peers.iter().all(|p| p["state"] == "up_to_date")
+}
+
+fn check(d: &Device, device: &str, address: &str) -> Value {
+    d.call(
+        "sync_device_check",
+        json!({ "id": device, "address": address }),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_forgotten_device_is_refused_by_every_member() {
+    let (a, b, c) = trio().await;
+    meet_all(&a, &b, &c);
+    until("everyone connected", || {
+        all_up_to_date(&a) && all_up_to_date(&b) && all_up_to_date(&c)
+    })
+    .await;
+
+    a.call::<()>("sync_device_forget", json!({ "id": id(&c) }));
+    assert_eq!(a.listed(), ["Bob"], "gone from the device that forgot it");
+    // Bob learns it from Alice, through an ordinary sync.
+    until("Bob to drop Carol", || b.listed() == ["Alice"]).await;
+
+    // Carol is refused by both: it keeps trying and never gets in.
+    c.found.announce(&id(&a), a.address());
+    c.found.announce(&id(&b), b.address());
+    until("Carol to lose both", || {
+        cut_off(&c, "Alice") && cut_off(&c, "Bob")
+    })
+    .await;
+    let secret = create(&c, "Carol's own");
+    let shared = create(&a, "For the others");
+    until("Bob to get Alice's Task", || has(&b, &shared)).await;
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert!(!has(&a, &secret) && !has(&b, &secret), "Carol still synced");
+    assert!(!has(&c, &shared), "Carol still received");
+    assert!(cut_off(&c, "Alice") && cut_off(&c, "Bob"));
+
+    // The same thing, asked of the network directly: neither member answers Carol.
+    for member in [&a, &b] {
+        let was = check(&c, &id(member), &member.address().to_string());
+        assert_eq!(was["kind"], "not_paired", "{was}");
+    }
+    // Its data stays on it.
+    assert!(has(&c, &secret));
+    // Alice wrote it in Activity.
+    let forgot: Value = a.call(
+        "sync_activity",
+        json!({ "filter": { "kind": "all" }, "cursor": null, "limit": 100 }),
+    );
+    assert!(
+        forgot["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["kind"] == "forgot"),
+        "{forgot}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pairing_a_forgotten_device_again_takes_it_back_everywhere() {
+    let (a, b, c) = trio().await;
+    meet_all(&a, &b, &c);
+    until("everyone connected", || {
+        all_up_to_date(&a) && all_up_to_date(&b) && all_up_to_date(&c)
+    })
+    .await;
+    a.call::<()>("sync_device_forget", json!({ "id": id(&c) }));
+    until("Bob to drop Carol", || b.listed() == ["Alice"]).await;
+    until("Carol to lose both", || {
+        cut_off(&c, "Alice") && cut_off(&c, "Bob")
+    })
+    .await;
+
+    crate::sync_live_tests::pair(&a, &c).await;
+    assert!(a.listed().contains(&"Carol".to_owned()));
+    // Bob takes Carol back too, without being paired with it again.
+    until("Bob to list Carol", || {
+        b.listed().contains(&"Carol".to_owned())
+    })
+    .await;
+    meet_all(&a, &b, &c);
+    until("everyone connected again", || {
+        all_up_to_date(&a) && all_up_to_date(&b) && all_up_to_date(&c)
+    })
+    .await;
+    let made = create(&c, "Back in step");
+    until("Task on both", || has(&a, &made) && has(&b, &made)).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn leaving_stops_syncing_for_good_and_keeps_the_data() {
+    let (a, b) = crate::sync_live_tests::paired_pair(quick()).await;
+    meet(&a, &b);
+    until("connected", || peer_of(&a)["state"] == "up_to_date").await;
+    let before = create(&a, "Written before leaving");
+    until("Bob has it", || has(&b, &before)).await;
+
+    a.call::<()>("sync_leave", json!({}));
+    assert!(a.listed().is_empty());
+    assert_eq!(a.call::<Value>("sync_get", json!({}))["paired_devices"], 0);
+    let group: i64 = a.app.with_db(|c| {
+        c.query_row("SELECT COUNT(*) FROM sync_group", [], |r| r.get(0))
+            .unwrap()
+    });
+    assert_eq!(group, 0, "its group id is gone");
+    assert!(has(&a, &before), "the data stays");
+
+    // Nothing travels either way, now or later, however hard both try.
+    let after = create(&a, "Written after leaving");
+    let theirs = create(&b, "Bob keeps writing");
+    b.call::<()>("sync_now", json!({}));
+    a.call::<()>("sync_now", json!({}));
+    meet(&a, &b);
+    tokio::time::sleep(Duration::from_millis(1_800)).await;
+    assert!(!has(&b, &after) && !has(&a, &theirs));
+    assert!(b.listed().is_empty(), "Bob was told and dropped it");
+    assert_eq!(task_count(&a), 2);
+}
+
+/// The lines of Activity that say someone left, as the screen reads them.
+fn left_lines(d: &Device) -> Vec<String> {
+    let page: Value = d.call(
+        "sync_activity",
+        json!({ "filter": { "kind": "all" }, "cursor": null, "limit": 100 }),
+    );
+    page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["kind"] == "left")
+        .map(|r| {
+            r["text"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|p| p["text"].as_str().unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn leaving_while_connected_tells_every_member_before_forgetting() {
+    let (a, b, c) = trio().await;
+    // Alice reaches Bob only; Carol can hear it through Bob.
+    meet(&a, &b);
+    meet(&b, &c);
+    until("Alice and Bob connected", || {
+        row_named(&a, "Bob")["state"] == "up_to_date"
+    })
+    .await;
+
+    a.call::<()>("sync_leave", json!({}));
+    assert!(a.listed().is_empty());
+    until("Bob and Carol to drop Alice", || {
+        b.listed() == ["Carol"] && c.listed() == ["Bob"]
+    })
+    .await;
+    // One line each, naming Alice on the others and plain on Alice's own.
+    until("the line on both", || {
+        left_lines(&b).len() == 1 && left_lines(&c).len() == 1
+    })
+    .await;
+    assert_eq!(left_lines(&a), ["Left the group"]);
+    assert_eq!(left_lines(&b), ["Alice left the group"]);
+    assert_eq!(left_lines(&c), ["Alice left the group"]);
+
+    // Nobody dials her or answers her any more.
+    let after = create(&b, "Written after Alice left");
+    meet(&a, &b);
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    assert!(!has(&a, &after));
+    assert_eq!(left_lines(&b).len(), 1, "told once, however many rounds");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn leaving_with_nobody_reachable_is_local_only_and_quick() {
+    let (a, b) = crate::sync_live_tests::paired_pair(quick()).await;
+    // Never met: no one is connected.
+    let started = std::time::Instant::now();
+    a.call::<()>("sync_leave", json!({}));
+    assert!(started.elapsed() < Duration::from_secs(2), "Leave waited");
+    assert!(a.listed().is_empty());
+    assert_eq!(left_lines(&a), ["Left the group"]);
+    // Bob was never told: it still lists Alice and holds no revocation.
+    assert_eq!(b.listed(), ["Mac"]);
+    let revocations: i64 = b.app.with_db(|c| {
+        c.query_row("SELECT COUNT(*) FROM sync_revocations", [], |r| r.get(0))
+            .unwrap()
+    });
+    assert_eq!(revocations, 0);
+    assert!(left_lines(&b).is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pairing_again_after_leaving_works() {
+    let (a, b) = crate::sync_live_tests::paired_pair(quick()).await;
+    meet(&a, &b);
+    until("connected", || peer_of(&a)["state"] == "up_to_date").await;
+    a.call::<()>("sync_leave", json!({}));
+    until("Bob to drop Mac", || b.listed().is_empty()).await;
+
+    crate::sync_live_tests::pair(&a, &b).await;
+    assert_eq!(a.listed(), ["Pixel 8"]);
+    assert_eq!(b.listed(), ["Mac"], "the revocation no longer stands");
+    meet(&a, &b);
+    until("connected again", || {
+        peer_of(&a)["state"] == "up_to_date" && peer_of(&b)["state"] == "up_to_date"
+    })
+    .await;
+    let made = create(&b, "After the return");
+    until("Mac to get it", || has(&a, &made)).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn check_says_who_answered_in_words() {
+    let (a, b, c) = trio().await;
+    let (a_id, b_id, c_id) = (id(&a), id(&b), id(&c));
+
+    let ok = check(&a, &b_id, &b.address().to_string());
+    assert_eq!(ok["reached"], true, "{ok}");
+    assert_eq!(ok["kind"], "reached");
+    let message = ok["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("Reached Bob in ") && message.ends_with(" ms"),
+        "{message}"
+    );
+    assert!(ok["ms"].is_u64());
+
+    // A name that resolves, with the port.
+    let port = b.address().port();
+    let by_name = check(&a, &b_id, &format!("localhost:{port}"));
+    assert_eq!(by_name["reached"], true, "{by_name}");
+
+    // Nothing is listening.
+    let closed = {
+        let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        socket.local_addr().unwrap()
+    };
+    let nobody = check(&a, &b_id, &closed.to_string());
+    assert_eq!(nobody["kind"], "unreachable", "{nobody}");
+    assert_eq!(nobody["reached"], false);
+
+    // Another of the devices is there.
+    let wrong = check(&a, &c_id, &b.address().to_string());
+    assert_eq!(wrong["kind"], "wrong_device", "{wrong}");
+    assert_eq!(wrong["message"], "That is Bob, not Carol.");
+
+    // Not an address; a name that is nowhere.
+    let bad = check(&a, &b_id, "not an address!");
+    assert_eq!(bad["kind"], "invalid");
+    assert_eq!(bad["message"], "That isn’t a host name or an IP address");
+    let nowhere = check(&a, &b_id, "no-such-device.invalid");
+    assert_eq!(nowhere["kind"], "not_found", "{nowhere}");
+
+    // A device that is not paired.
+    let err = a
+        .app
+        .invoke::<Value>(
+            "sync_device_check",
+            json!({ "id": "nobody", "address": "127.0.0.1" }),
+        )
+        .unwrap_err();
+    assert_eq!(err["code"], "not_found");
+    // The answer is remembered as an address that worked.
+    let sheet: Value = a.call("sync_device", json!({ "id": b_id }));
+    let worked: Vec<String> = sheet["addresses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["address"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(worked.contains(&b.address().to_string()), "{sheet}");
+    let _ = a_id;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_typed_address_is_a_way_to_reach_the_device() {
+    let (a, b) = crate::sync_live_tests::paired_pair(quick()).await;
+    // Nothing announced, nothing remembered: only the typed Address can lead there.
+    a.app.with_db(|c| {
+        c.execute("DELETE FROM sync_peer_addresses", []).unwrap();
+    });
+    let b_id = id(&b);
+    let bad = a
+        .app
+        .invoke::<Value>(
+            "sync_device_address",
+            json!({ "id": b_id, "address": "pixel 8" }),
+        )
+        .unwrap_err();
+    assert_eq!(bad["message"], "That isn’t a host name or an IP address");
+    let stored: Value = a.call(
+        "sync_device_address",
+        json!({ "id": b_id, "address": format!("  LOCALHOST:{} ", b.address().port()) }),
+    );
+    assert_eq!(stored, json!(format!("localhost:{}", b.address().port())));
+    let sheet: Value = a.call("sync_device", json!({ "id": b_id }));
+    assert_eq!(sheet["typed_address"], stored);
+    until("reached through the typed Address", || {
+        peer_of(&a)["state"] == "up_to_date"
+    })
+    .await;
+    // Clearing it again.
+    let cleared: Value = a.call("sync_device_address", json!({ "id": b_id, "address": "" }));
+    assert!(cleared.is_null());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_address_typed_on_one_device_is_dialled_by_another() {
+    let (a, b, c) = trio().await;
+    let (a_id, b_id) = (id(&a), id(&b));
+    // Carol has no other way to Bob: nothing announced, nothing remembered. Alice and Bob do
+    // reach each other, and Carol reaches Alice, so the typed Address is the only news.
+    for d in [&b, &c] {
+        d.app.with_db(|db| {
+            db.execute("DELETE FROM sync_peer_addresses", []).unwrap();
+        });
+    }
+    a.found.announce(&id(&c), c.address());
+    c.found.announce(&a_id, a.address());
+    // Alice types it; it reaches Carol with the next session.
+    let stored: Value = a.call(
+        "sync_device_address",
+        json!({ "id": b_id, "address": format!("localhost:{}", b.address().port()) }),
+    );
+    until("Carol to hold the Address typed on Alice", || {
+        c.call::<Value>("sync_device", json!({ "id": b_id }))["typed_address"] == stored
+    })
+    .await;
+    // It is what Carol's dial race to Bob would try third.
+    let port = b.address().port();
+    let dialled = c
+        .app
+        .with_db(|db| mnemora_sync::typed_for_dial(db, &b_id).unwrap())
+        .expect("an Address to dial");
+    assert_eq!(dialled.port(), port);
+    // Bob ignores what is typed for himself.
+    assert!(b.call::<Value>("sync_device", json!({ "id": a_id }))["typed_address"].is_null());
+    until("Carol to reach Bob through it", || {
+        row_named(&c, "Bob")["state"] == "up_to_date"
+    })
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_sheet_shows_what_is_known_and_syncs_only_that_device() {
+    let (a, b, c) = trio().await;
+    // Alice only syncs when asked; Carol takes nothing it did not ask for, so Bob's own
+    // relaying cannot reach it either.
+    for device in [&a, &c] {
+        device.call::<()>(
+            "sync_set_option",
+            json!({ "option": "automatic", "enabled": false }),
+        );
+    }
+    meet_all(&a, &b, &c);
+    let made = create(&a, "Only for Bob");
+    a.call::<()>("sync_device_sync_now", json!({ "id": id(&b) }));
+    until("Bob to get the Task", || has(&b, &made)).await;
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    assert!(!has(&c, &made), "Carol was not asked");
+
+    let sheet: Value = a.call("sync_device", json!({ "id": id(&b) }));
+    assert_eq!(sheet["name"], "Bob");
+    assert_eq!(
+        sheet["paired_by"], "Alice",
+        "Alice showed the code: {sheet}"
+    );
+    assert!(sheet["app_version"].as_str().is_some_and(|v| !v.is_empty()));
+    let modules: Vec<&str> = sheet["data_versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["module"].as_str().unwrap())
+        .collect();
+    assert!(
+        modules.contains(&"core") && modules.contains(&"todo"),
+        "{sheet}"
+    );
+    assert!(sheet["paired_at"].as_u64().unwrap() > 0);
+    let gone = a
+        .app
+        .invoke::<Value>("sync_device", json!({ "id": "nobody" }))
+        .unwrap_err();
+    assert_eq!(gone["code"], "not_found");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn renaming_this_device_is_unique_in_the_group_too() {
+    let (a, _b, _c) = trio().await;
+    // Not a name a paired device has, whatever the case or accents; the message is the same.
+    for clash in ["bob", " BÓB "] {
+        let err = a
+            .app
+            .invoke::<()>("sync_rename", json!({ "name": clash }))
+            .unwrap_err();
+        assert_eq!(err["code"], "validation", "{clash}");
+        assert_eq!(
+            err["message"], "Another of your devices already has that name",
+            "{clash}"
+        );
+    }
+    assert_eq!(a.call::<Value>("sync_get", json!({}))["name"], "Alice");
+    // Its own name, in another case, is still its own.
+    a.call::<()>("sync_rename", json!({ "name": "ALICE" }));
+    a.call::<()>("sync_rename", json!({ "name": "Alicia" }));
+    assert_eq!(a.call::<Value>("sync_get", json!({}))["name"], "Alicia");
+    // Each change of this device's own name is in Activity (story 85); a repeat is not.
+    a.call::<()>("sync_rename", json!({ "name": "Alicia" }));
+    let page: Value = a.call(
+        "sync_activity",
+        json!({ "filter": { "kind": "all" }, "cursor": null, "limit": 100 }),
+    );
+    let renamed = page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["kind"] == "renamed")
+        .count();
+    assert_eq!(renamed, 2, "{page}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_rename_is_unique_and_reaches_every_device() {
+    let (a, b, c) = trio().await;
+    let c_id = id(&c);
+    // Not a name another device has, whatever the case or accents.
+    for clash in ["bob", "ALICE", " Bób "] {
+        let err = a
+            .app
+            .invoke::<String>("sync_device_rename", json!({ "id": c_id, "name": clash }))
+            .unwrap_err();
+        assert_eq!(err["code"], "validation", "{clash}");
+    }
+    for bad in ["", &"x".repeat(41)] {
+        assert!(
+            a.app
+                .invoke::<String>("sync_device_rename", json!({ "id": c_id, "name": bad }))
+                .is_err()
+        );
+    }
+    let saved: String = a.call(
+        "sync_device_rename",
+        json!({ "id": c_id, "name": "  Charlie " }),
+    );
+    assert_eq!(saved, "Charlie");
+    assert_eq!(row_named(&a, "Charlie")["id"], json!(c_id));
+    meet_all(&a, &b, &c);
+    until("Bob and Carol to take the name", || {
+        row_named(&b, "Charlie")["id"] == json!(c_id)
+            && c.call::<Value>("sync_get", json!({}))["name"] == "Charlie"
+    })
+    .await;
+    // The rename is in Activity.
+    let page: Value = a.call(
+        "sync_activity",
+        json!({ "filter": { "kind": "all" }, "cursor": null, "limit": 100 }),
+    );
+    let renamed = page["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["kind"] == "renamed")
+        .count();
+    assert_eq!(renamed, 1, "{page}");
+    // A device renaming itself in Settings reaches the others too.
+    b.call::<()>("sync_rename", json!({ "name": "Robert" }));
+    until("Alice to see Robert", || {
+        row_named(&a, "Robert")["id"] == json!(id(&b))
+    })
+    .await;
+}
+
+/// N2 (device pass): after the Mac forgot the phone, the phone's "Pair a device" did nothing on
+/// five taps. Whatever the UI does, the commands under it must open a code on a device that
+/// still lists the one that forgot it, every time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_forgotten_device_can_show_a_code_again_and_again() {
+    let (a, b, c) = trio().await;
+    meet_all(&a, &b, &c);
+    until("everyone connected", || {
+        all_up_to_date(&a) && all_up_to_date(&b) && all_up_to_date(&c)
+    })
+    .await;
+    a.call::<()>("sync_device_forget", json!({ "id": id(&c) }));
+    until("Carol to lose both", || {
+        cut_off(&c, "Alice") && cut_off(&c, "Bob")
+    })
+    .await;
+    for _ in 0..5 {
+        c.call::<()>("sync_pair_show", json!({}));
+        let view: Value = c.call("sync_pair_state", json!({}));
+        assert_eq!(view["state"], "showing", "{view}");
+        c.call::<()>("sync_pair_cancel", json!({}));
+        let devices = c.devices();
+        assert_eq!(devices["this_device"]["paused_on_mobile_data"], false);
+    }
+}
