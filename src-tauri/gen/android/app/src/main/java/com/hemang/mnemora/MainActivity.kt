@@ -150,6 +150,18 @@ class MainActivity : TauriActivity() {
       runOnUiThread { this@MainActivity.askLocalNetwork(settingsIfBlocked) }
     }
 
+    // Sync was already on (app start or resume): asks once if the permission was never requested, e.g.
+    // after an update to Android 17. Never asks again after an answer; the banner does that.
+    @JavascriptInterface
+    fun requestLocalNetworkOnce() {
+      runOnUiThread {
+        val asked = getSharedPreferences("sync", Context.MODE_PRIVATE).getBoolean("asked_local_network", false)
+        if (LocalNetworkPolicy.shouldAskUnprompted(Build.VERSION.SDK_INT, localNetworkGranted(), asked)) {
+          this@MainActivity.askLocalNetwork(false)
+        }
+      }
+    }
+
     @JavascriptInterface
     fun openAppSettings() {
       runOnUiThread { this@MainActivity.openAppSettings() }

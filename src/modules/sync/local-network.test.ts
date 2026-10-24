@@ -105,6 +105,24 @@ describe('reporting the permission to Rust', () => {
     expect(listeners.size).toBe(0);
   });
 
+  it('asks once for a never-requested permission when Sync is already on, not when it is off', () => {
+    const once = vi.fn();
+    const bridge: AndroidBridge = {
+      localNetworkState: () => 'asking',
+      requestLocalNetworkOnce: once,
+    };
+    const report = vi.fn();
+    const { src } = sources();
+    const stop = reportLocalNetworkPermission(bridge, report, src);
+    expect(once).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenLastCalledWith(false);
+    stop();
+    // Sync off: the overlay never mounts the reporter, so nothing asks.
+    expect(once).toHaveBeenCalledTimes(1);
+    reportLocalNetworkPermission(bridge, report, sources(true).src);
+    expect(once).toHaveBeenCalledTimes(1);
+  });
+
   it('counts "unneeded" (before Android 17) as not denied', () => {
     const report = vi.fn();
     reportLocalNetworkPermission({ localNetworkState: () => 'unneeded' }, report, sources().src);

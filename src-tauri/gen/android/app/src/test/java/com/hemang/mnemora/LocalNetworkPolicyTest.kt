@@ -38,6 +38,14 @@ class LocalNetworkPolicyTest {
     }
 
     @Test
+    fun syncAlreadyOnAsksOnlyWhenTheGrantWasNeverRequested() {
+        assertTrue(LocalNetworkPolicy.shouldAskUnprompted(37, granted = false, askedBefore = false))
+        assertFalse(LocalNetworkPolicy.shouldAskUnprompted(37, granted = false, askedBefore = true))
+        assertFalse(LocalNetworkPolicy.shouldAskUnprompted(37, granted = true, askedBefore = false))
+        assertFalse(LocalNetworkPolicy.shouldAskUnprompted(36, granted = false, askedBefore = false))
+    }
+
+    @Test
     fun theDialogCanBeShownTheFirstTimeAndWhileARationaleIsDue() {
         assertTrue(LocalNetworkPolicy.canAsk(askedBefore = false, rationaleDue = false))
         assertTrue(LocalNetworkPolicy.canAsk(askedBefore = true, rationaleDue = true))

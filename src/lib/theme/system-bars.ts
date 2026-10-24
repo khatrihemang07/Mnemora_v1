@@ -11,6 +11,8 @@ export interface AndroidBridge {
   localNetworkState?: () => string;
   /** Shows the system's dialog; with `settingsIfBlocked`, opens the app's settings when it cannot. */
   requestLocalNetwork?: (settingsIfBlocked: boolean) => void;
+  /** Sync already on: shows the system's dialog once if the permission was never requested. */
+  requestLocalNetworkOnce?: () => void;
   /** Opens the app's page in the system settings. */
   openAppSettings?: () => void;
 }

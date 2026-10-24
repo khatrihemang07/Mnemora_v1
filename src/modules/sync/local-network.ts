@@ -80,7 +80,8 @@ export interface PermissionSources {
 }
 
 /**
- * While Sync is on (the overlay mounts this), tells Rust whether Android's local network permission
+ * While Sync is on (the overlay mounts this), asks once if the permission was never requested (Sync
+ * was on before an update to Android 17), then tells Rust whether Android's local network permission
  * is denied: now, when the app comes back to the front and when the dialog is answered. Returns what
  * stops it. No-op without the bridge (desktop, browser) and where the permission does not exist.
  */
@@ -93,6 +94,7 @@ export function reportLocalNetworkPermission(
   if (typeof read !== 'function') return () => {};
   const tell = () => {
     if (doc.hidden) return;
+    if (typeof bridge?.requestLocalNetworkOnce === 'function') bridge.requestLocalNetworkOnce();
     const state = read.call(bridge);
     report(state === 'denied');
   };

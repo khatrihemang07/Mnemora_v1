@@ -28,6 +28,14 @@ object LocalNetworkPolicy {
     }
 
     /**
+     * Whether Sync, already on at app start or resume, should ask now: only where the permission
+     * exists, is not granted and was never requested (an update to Android 17 with Sync on). Once
+     * asked, only the banner asks again.
+     */
+    fun shouldAskUnprompted(sdk: Int, granted: Boolean, askedBefore: Boolean): Boolean =
+        applies(sdk) && !granted && !askedBefore
+
+    /**
      * Whether the system's dialog can still be shown: the first time, and again while the system
      * says a rationale is due. After "Don't ask again" only the app's settings page can grant it.
      */
