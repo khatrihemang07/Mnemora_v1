@@ -274,6 +274,7 @@ pub fn view(
     me: &str,
     my_name: &str,
 ) -> AppResult<Option<ConflictView>> {
+    conflicts::settle_all_deleted(conn)?;
     let Some(c) = conflicts::get(conn, id)? else {
         return Ok(None);
     };

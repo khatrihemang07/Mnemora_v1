@@ -145,6 +145,7 @@ pub(crate) fn get(conn: &Connection, id: &str) -> Result<Option<Stored>, SyncErr
 
 /// Every Conflict that waits, newest first.
 pub(crate) fn open(conn: &Connection) -> Result<Vec<Stored>, SyncError> {
+    settle_all_deleted(conn)?;
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLUMNS} FROM sync_conflicts WHERE status = 'open' ORDER BY raised_at DESC, id"
     ))?;
@@ -153,6 +154,7 @@ pub(crate) fn open(conn: &Connection) -> Result<Vec<Stored>, SyncError> {
 
 /// How many Conflicts wait.
 pub fn open_count(conn: &Connection) -> Result<u32, SyncError> {
+    settle_all_deleted(conn)?;
     Ok(conn.query_row(
         "SELECT COUNT(*) FROM sync_conflicts WHERE status = 'open'",
         [],
@@ -373,6 +375,24 @@ pub(crate) fn resolve(
         }
     }
     Ok(true)
+}
+
+/// Settles every waiting Conflict whose record is deleted. A delete made on this device never
+/// passes through the receiving side (`settle_deleted` after a record), so what lists or counts
+/// the Conflicts that wait looks for these first: a record deleted after its clash was raised
+/// leaves "Needs you" on every path, not only when the delete arrives from another device.
+pub(crate) fn settle_all_deleted(conn: &Connection) -> Result<(), SyncError> {
+    let targets: Vec<(String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT target, target_id FROM sync_conflicts WHERE status = 'open'",
+        )?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?
+    };
+    for (target, target_id) in targets {
+        settle_deleted(conn, &target, &target_id)?;
+    }
+    Ok(())
 }
 
 /// Resolves, without asking, every Conflict that waits on a record that has since been deleted.

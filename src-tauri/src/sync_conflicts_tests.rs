@@ -892,3 +892,53 @@ fn one_clash_over_a_session_that_saved_twice_raises_one_conflict() {
         );
     }
 }
+
+// ---------------------------------------------------------------- R5: deleted after the clash
+
+fn conflict_rows(app: &TestApp) -> Vec<String> {
+    app.with_db(|db| {
+        let mut st = db
+            .prepare(
+                "SELECT status || ':' || COALESCE(resolution, '') FROM sync_conflicts ORDER BY id",
+            )
+            .unwrap();
+        st.query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    })
+}
+
+/// Story 70 / F14: a Conflict on a record that is then deleted, here or on another device, is
+/// settled and logged, not left in Needs you with Compare still offering it.
+#[test]
+fn a_conflict_raised_before_the_entry_was_deleted_is_resolved_on_both_devices() {
+    for deleter in [0, 1] {
+        let (c, id) = clashing();
+        assert_eq!(ids(&c[0]).len(), 1, "raised first (deleter {deleter})");
+        let conflict = ids(&c[0])[0].clone();
+        c[deleter].clock().advance(10_000);
+        delete_entry(&c[deleter], &id);
+        assert!(
+            waiting(&c[deleter]).is_empty(),
+            "the device that deleted is not asked any more (deleter {deleter})"
+        );
+        c.sync(0, 1);
+        c.sync(0, 1);
+        for d in 0..2 {
+            assert!(waiting(&c[d]).is_empty(), "device {d} (deleter {deleter})");
+            let shown: Option<Value> = c[d]
+                .invoke("sync_conflict", json!({ "id": conflict }))
+                .unwrap();
+            assert!(
+                shown.is_none_or(|s| s["open"] == false),
+                "Compare no longer offers it on device {d} (deleter {deleter})"
+            );
+            assert_eq!(
+                conflict_rows(&c[d]),
+                ["resolved:deleted"],
+                "device {d} (deleter {deleter})"
+            );
+        }
+    }
+}

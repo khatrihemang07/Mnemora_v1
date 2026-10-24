@@ -278,6 +278,7 @@ export function createPixelMock(ports: PixelPorts) {
     o: Outcome,
     write: (text: string) => void,
     live: () => string | undefined,
+    deleted: () => boolean,
   ): Sample => {
     const id = `pixel-conflict-${hash(`${c.entity}/${c.id}/${c.field}/${c.base}/${c.ours}/${c.theirs}`)}`;
     const row: ConflictRow = {
@@ -297,6 +298,13 @@ export function createPixelMock(ports: PixelPorts) {
       resolution: null,
       apply: write,
       live,
+      deleted: () =>
+        deleted()
+          ? {
+              title: `${targetWords(o, c.entity, c.id)} · ${c.field === 'body' ? 'text' : c.field}`,
+              detail: `Deleted, so nothing was asked · ${deviceName(c.theirsDevice)} and ${deviceName(c.oursDevice)} both rewrote it`,
+            }
+          : null,
     };
   };
 
@@ -569,7 +577,10 @@ export function createPixelMock(ports: PixelPorts) {
           : subject.kind === 'task'
             ? subjectWords('task', subject.field)
             : subjectWords('comment', '');
-      const sample = conflictOf(c, o, writeText(c), liveText(c));
+      const sample = conflictOf(c, o, writeText(c), liveText(c), () => {
+        const v = docOf(c).doc?.values.deleted_at;
+        return v !== undefined && v !== null;
+      });
       ports.conflicts.raise(sample);
       add('conflict_raised', { subject: words, conflict: sample.row.id });
     }

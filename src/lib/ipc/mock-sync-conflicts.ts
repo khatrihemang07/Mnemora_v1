@@ -29,6 +29,12 @@ export interface Sample {
   live?: () => string | undefined;
   /** The simulated device's Conflicts: what to write into the data when a person chooses the other text. */
   apply?: (text: string) => void;
+  /**
+   * Set when the record is deleted now, here or on the phone: the Resolved row's title and detail
+   * (Rust `Kind::ConflictDeleted`). A Conflict on a deleted record is settled without asking, also
+   * when the delete came after the clash was raised (story 70, F14).
+   */
+  deleted?: () => { title: string; detail: string } | null;
 }
 
 const COMMANDS = [
@@ -265,7 +271,33 @@ export function createConflictsMock(
 
   for (const id of samples.keys()) sampleIds.add(id);
   const shown = (id: string) => !sampleIds.has(id) || paired();
-  const openSamples = () => [...samples.values()].filter((s) => s.open && shown(s.row.id));
+  /** Closes, with a Resolved row, every Conflict whose record has been deleted since (R5). */
+  const settleDeleted = () => {
+    for (const s of samples.values()) {
+      if (!s.open) continue;
+      const gone = s.deleted?.();
+      if (!gone) continue;
+      s.open = false;
+      s.resolution = 'deleted';
+      resolved.unshift({
+        id: `${s.row.id}-deleted`,
+        kind: 'conflict_deleted',
+        module: s.row.module,
+        icon: 'text',
+        title: gone.title,
+        detail: gone.detail,
+        at: now(),
+        fresh: true,
+        action: null,
+        used: null,
+        changes: [],
+      });
+    }
+  };
+  const openSamples = () => {
+    settleDeleted();
+    return [...samples.values()].filter((s) => s.open && shown(s.row.id));
+  };
 
   const view = (s: Sample): ConflictView => {
     const [showing, other] = diffSpans(showingNow(s), s.other);
@@ -352,6 +384,7 @@ export function createConflictsMock(
           for (const r of resolved) r.fresh = false;
           return null;
         case 'sync_conflict':
+          settleDeleted();
           return sample ? view(sample) : null;
         case 'sync_conflict_draft':
           if (!sample) throw gone();

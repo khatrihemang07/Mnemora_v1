@@ -126,6 +126,25 @@ describe('the simulated Pixel 8', () => {
     expect(t.lists().needs_you).toHaveLength(1);
   });
 
+  it('settles a Conflict without asking when its Entry is deleted afterwards (R5)', () => {
+    const t = setup();
+    t.pixel.scenario('conflict');
+    const entry = t.lists().needs_you.find((c) => c.module === 'journal');
+    expect(entry).toBeDefined();
+    const waiting = t.conflicts.openCount();
+    const entryId = (t.pixel.world().find((d) => d.entity === 'entry') as { id: string }).id;
+    t.journal.handle('journal_entry_delete', { id: entryId });
+    expect(t.lists().needs_you.map((c) => c.module)).toEqual(['todo']);
+    const view = t.conflicts.handle('sync_conflict', { id: entry?.id }) as { open: boolean };
+    expect(view.open).toBe(false);
+    expect(t.conflicts.openCount()).toBe(waiting - 1);
+    const row = t.lists().resolved.find((r) => r.kind === 'conflict_deleted');
+    expect(row?.detail).toMatch(/^Deleted, so nothing was asked · .* and .* both rewrote it$/);
+    // Once, however often it is listed.
+    t.lists();
+    expect(t.lists().resolved.filter((r) => r.kind === 'conflict_deleted')).toHaveLength(1);
+  });
+
   it('takes the Review link off a Conflict’s Activity line once it is resolved', () => {
     const t = setup();
     t.pixel.scenario('conflict');
