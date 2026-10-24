@@ -97,7 +97,13 @@ impl SyncRuntime {
 
     /// Whether the system keeps this device off the local network, as far as is known.
     pub fn local_network_blocked(&self) -> bool {
-        self.local_network.blocked()
+        // Sync off: nothing is asked of the network, so nothing is blocked.
+        let on = self
+            .services
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some();
+        on && self.local_network.blocked()
     }
 
     /// The signal a write to the change log raises; the session manager waits on it.

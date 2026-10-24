@@ -25,6 +25,8 @@ class MainActivity : TauriActivity() {
   private var wantMulticast = false
   // The page, to tell it when the local network permission dialog is answered.
   private var page: WebView? = null
+  // The system's dialog is up: a missing grant is not a refusal yet.
+  @Volatile private var askingLocalNetwork = false
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -60,18 +62,21 @@ class MainActivity : TauriActivity() {
   private fun localNetworkGranted() =
     checkSelfPermission(LocalNetworkPolicy.PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-  private fun currentLocalNetworkState() =
-    LocalNetworkPolicy.state(Build.VERSION.SDK_INT, localNetworkGranted())
+  private fun currentLocalNetworkState(): String {
+    val asked = getSharedPreferences("sync", Context.MODE_PRIVATE).getBoolean("asked_local_network", false)
+    return LocalNetworkPolicy.state(Build.VERSION.SDK_INT, localNetworkGranted(), asked && !askingLocalNetwork)
+  }
 
   // UI thread. Shows the system's dialog when it still can; otherwise, if asked to, the app's settings
   // page (after "Don't ask again" only that can grant it). Does nothing where the permission does not
   // exist or is already granted.
   private fun askLocalNetwork(settingsIfBlocked: Boolean) {
-    if (currentLocalNetworkState() != LocalNetworkPolicy.DENIED) return
+    if (!LocalNetworkPolicy.applies(Build.VERSION.SDK_INT) || localNetworkGranted()) return
     val prefs = getSharedPreferences("sync", Context.MODE_PRIVATE)
     val asked = prefs.getBoolean("asked_local_network", false)
     if (LocalNetworkPolicy.canAsk(asked, shouldShowRequestPermissionRationale(LocalNetworkPolicy.PERMISSION))) {
       prefs.edit().putBoolean("asked_local_network", true).apply()
+      askingLocalNetwork = true
       requestPermissions(arrayOf(LocalNetworkPolicy.PERMISSION), REQUEST_LOCAL_NETWORK)
     } else if (settingsIfBlocked) {
       openAppSettings()
@@ -90,6 +95,7 @@ class MainActivity : TauriActivity() {
   override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
     super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     if (requestCode == REQUEST_LOCAL_NETWORK) {
+      askingLocalNetwork = false
       // The page asks again what the state is (the dialog may not have paused the page).
       page?.evaluateJavascript("window.dispatchEvent(new Event('mnemora-local-network'))", null)
     }

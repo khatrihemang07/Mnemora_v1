@@ -115,6 +115,14 @@ async fn a_simultaneous_dial_and_its_duplicate_teardown_leave_both_rows_up_to_da
         peer_of(&mac)["state"] == "up_to_date" && peer_of(&phone)["state"] == "up_to_date"
     })
     .await;
+    // The first session's own follow-up round (the quiet period, then a short session that reads
+    // `syncing`) must be over before the rows are held to `up_to_date`; what is checked below is
+    // that the duplicate's teardown leaves nothing wrong once the sessions have settled.
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    until("both settled", || {
+        peer_of(&mac)["state"] == "up_to_date" && peer_of(&phone)["state"] == "up_to_date"
+    })
+    .await;
     // Long enough for every racing dial to finish or give up.
     for _ in 0..40 {
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -572,4 +580,28 @@ async fn a_denial_reported_while_sync_is_off_is_ignored() {
         phone.devices()["this_device"]["local_network_blocked"],
         false
     );
+}
+
+/// A refusal that was true while Sync was on is not shown once it is off.
+#[tokio::test]
+async fn turning_sync_off_clears_the_local_network_warning() {
+    let (_mac, phone) = paired_pair(quick()).await;
+    phone
+        .app
+        .invoke::<()>("sync_local_network_os", json!({ "denied": true }))
+        .unwrap();
+    assert_eq!(
+        phone.devices()["this_device"]["local_network_blocked"],
+        true
+    );
+    phone.call::<()>("sync_set_enabled", json!({ "enabled": false }));
+    assert_eq!(
+        phone.devices()["this_device"]["local_network_blocked"],
+        false
+    );
+    let attention = phone
+        .app
+        .invoke::<Value>("sync_attention", json!({}))
+        .unwrap();
+    assert_eq!(attention["local_network_blocked"], false);
 }

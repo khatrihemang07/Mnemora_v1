@@ -153,6 +153,8 @@ impl Live {
         local: Arc<LocalNetwork>,
         runtime: &Handle,
     ) -> Self {
+        // Failures from before this start (Sync was off, the app was away) prove nothing now.
+        local.reset();
         let shared = Arc::new(Shared::new(host, me));
         // Looking and counting start now, not when the task first runs, so what is running is
         // what the caller was told.

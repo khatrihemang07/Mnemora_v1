@@ -26,6 +26,18 @@ class LocalNetworkPolicyTest {
     }
 
     @Test
+    fun aGrantNotAnsweredYetIsNotARefusal() {
+        assertEquals(
+            LocalNetworkPolicy.ASKING,
+            LocalNetworkPolicy.state(37, granted = false, answered = false),
+        )
+        assertEquals(
+            LocalNetworkPolicy.GRANTED,
+            LocalNetworkPolicy.state(37, granted = true, answered = false),
+        )
+    }
+
+    @Test
     fun theDialogCanBeShownTheFirstTimeAndWhileARationaleIsDue() {
         assertTrue(LocalNetworkPolicy.canAsk(askedBefore = false, rationaleDue = false))
         assertTrue(LocalNetworkPolicy.canAsk(askedBefore = true, rationaleDue = true))

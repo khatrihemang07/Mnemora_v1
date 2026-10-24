@@ -13,14 +13,17 @@ object LocalNetworkPolicy {
     const val UNNEEDED = "unneeded"
     const val GRANTED = "granted"
     const val DENIED = "denied"
+    /** Not answered yet (never asked, or the dialog is up): not a refusal, so nothing is blamed. */
+    const val ASKING = "asking"
 
     /** Whether the permission exists on this Android version. */
     fun applies(sdk: Int): Boolean = sdk >= FIRST_SDK
 
     /** What the web side is told: [UNNEEDED] where the permission does not exist. */
-    fun state(sdk: Int, granted: Boolean): String = when {
+    fun state(sdk: Int, granted: Boolean, answered: Boolean = true): String = when {
         !applies(sdk) -> UNNEEDED
         granted -> GRANTED
+        !answered -> ASKING
         else -> DENIED
     }
 

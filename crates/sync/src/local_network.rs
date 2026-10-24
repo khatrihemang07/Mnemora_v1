@@ -45,7 +45,7 @@ impl Default for Rhythm {
         Self {
             grace: Duration::from_secs(30),
             fast: Duration::from_secs(3),
-            slow: Duration::from_secs(30),
+            slow: Duration::from_secs(10),
             steady: Duration::from_secs(60),
         }
     }
@@ -86,7 +86,10 @@ pub enum Outcome {
 
 /// What a dial to `addr` that failed with `error` shows.
 pub fn outcome_of_failure(addr: SocketAddr, error: &NetError) -> Outcome {
-    if !is_lan(addr.ip()) {
+    // A link-local IPv6 address needs its interface named to be dialled; without it the system
+    // answers "No route to host" with the permission wide open.
+    let scopeless = matches!(addr.ip(), IpAddr::V6(v6) if v6.segments()[0] & 0xffc0 == 0xfe80);
+    if !is_lan(addr.ip()) || scopeless {
         return Outcome::Unknown;
     }
     match error {
@@ -188,6 +191,9 @@ pub struct LocalNetwork {
     rhythm: Rhythm,
     os_denied: AtomicBool,
     probe: Option<Box<ProbeFn>>,
+    /// Whether dials count. Where the system gives no such refusal (not macOS) an unreachable
+    /// device would look like one, so only the system's own report decides there.
+    dials_count: bool,
     /// What the window last heard, to raise `changed` only on a change.
     shown: AtomicBool,
     changed: Notify,
@@ -195,7 +201,12 @@ pub struct LocalNetwork {
 
 impl LocalNetwork {
     fn new(probe: Option<Box<ProbeFn>>, rhythm: Rhythm) -> Arc<Self> {
+        Self::counting(probe, rhythm, true)
+    }
+
+    fn counting(probe: Option<Box<ProbeFn>>, rhythm: Rhythm, dials_count: bool) -> Arc<Self> {
         Arc::new(Self {
+            dials_count,
             detector: Mutex::new(Detector::new(rhythm.grace)),
             rhythm,
             os_denied: AtomicBool::new(false),
@@ -211,7 +222,7 @@ impl LocalNetwork {
         if cfg!(target_os = "macos") {
             Self::new(Some(Box::new(probe_mdns_group)), Rhythm::default())
         } else {
-            Self::new(None, Rhythm::default())
+            Self::counting(None, Rhythm::default(), false)
         }
     }
 
@@ -260,6 +271,9 @@ impl LocalNetwork {
 
     /// Records a dial to `addr` that failed with `error`.
     pub fn dial_failed(&self, addr: SocketAddr, error: &NetError) {
+        if !self.dials_count {
+            return;
+        }
         self.record(Source::Dial, outcome_of_failure(addr, error));
     }
 
@@ -268,6 +282,13 @@ impl LocalNetwork {
         if is_lan(addr.ip()) {
             self.record(Source::Dial, Outcome::Worked);
         }
+    }
+
+    /// Forgets what the dials and the probe showed (the network side starts afresh); what the
+    /// system itself reported stays.
+    pub fn reset(&self) {
+        *self.detector() = Detector::new(self.rhythm.grace);
+        self.publish();
     }
 
     /// The system said whether the app may use the local network (Android).
@@ -323,10 +344,23 @@ impl LocalNetwork {
 /// Sends a datagram with no questions to the mDNS group: nothing answers it, and macOS needs the
 /// Local Network permission for the send (the first one also raises the prompt).
 fn probe_mdns_group() -> io::Result<()> {
-    let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))?;
-    socket.connect((Ipv4Addr::new(224, 0, 0, 251), 5353))?;
-    socket.send(&[0u8; 12])?;
-    Ok(())
+    let sent = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).and_then(|socket| {
+        socket.connect((Ipv4Addr::new(224, 0, 0, 251), 5353))?;
+        socket.send(&[0u8; 12]).map(drop)
+    });
+    match sent {
+        // With no Wi-Fi or Ethernet up (or only a VPN) the same error comes from having no route
+        // at all, which says nothing about the permission.
+        Err(e) if is_denial(&e) && !on_a_lan() => {
+            Err(io::Error::from(io::ErrorKind::NetworkUnreachable))
+        }
+        other => other,
+    }
+}
+
+/// Whether some interface has a local network address.
+fn on_a_lan() -> bool {
+    if_addrs::get_if_addrs().is_ok_and(|all| all.iter().any(|i| is_lan(i.ip())))
 }
 
 #[cfg(test)]
@@ -519,5 +553,38 @@ mod tests {
             local.next_probe_at(false, at(40, base)),
             Rhythm::default().slow
         );
+    }
+
+    #[test]
+    fn a_link_local_ipv6_dial_says_nothing() {
+        let addr: SocketAddr = "[fe80::1]:47311".parse().unwrap();
+        let denied = NetError::Io(io::Error::from(io::ErrorKind::HostUnreachable));
+        assert_eq!(outcome_of_failure(addr, &denied), Outcome::Unknown);
+    }
+
+    #[test]
+    fn where_the_system_gives_no_refusal_dials_never_block() {
+        let local = LocalNetwork::counting(None, Rhythm::default(), false);
+        let addr: SocketAddr = "192.168.1.9:47311".parse().unwrap();
+        let denied = NetError::Io(io::Error::from(io::ErrorKind::HostUnreachable));
+        for _ in 0..10 {
+            local.dial_failed(addr, &denied);
+        }
+        assert_eq!(local.detector().failures, 0, "not even counted");
+    }
+
+    #[test]
+    fn a_fresh_start_forgets_old_failures_but_not_what_the_system_said() {
+        let local = LocalNetwork::off();
+        let base = Instant::now();
+        local.record_at(Source::Dial, Outcome::Blocked, base);
+        local.record_at(Source::Dial, Outcome::Blocked, at(1, base));
+        local.record_at(Source::Dial, Outcome::Blocked, at(40, base));
+        assert!(local.blocked());
+        local.reset();
+        assert!(!local.blocked());
+        local.set_os_denied(true);
+        local.reset();
+        assert!(local.blocked());
     }
 }

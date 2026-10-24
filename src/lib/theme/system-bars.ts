@@ -7,7 +7,7 @@ export interface AndroidBridge {
   moveTaskToBack?: () => void;
   /** Holds or releases the Wi-Fi multicast lock that mDNS needs to receive anything (Sync). */
   holdMulticastLock?: (hold: boolean) => void;
-  /** Android 17's local network permission: "unneeded" before it exists, else "granted" or "denied". */
+  /** Android 17's local network permission: "unneeded" before it exists, "asking" until answered, else "granted" or "denied". */
   localNetworkState?: () => string;
   /** Shows the system's dialog; with `settingsIfBlocked`, opens the app's settings when it cannot. */
   requestLocalNetwork?: (settingsIfBlocked: boolean) => void;
