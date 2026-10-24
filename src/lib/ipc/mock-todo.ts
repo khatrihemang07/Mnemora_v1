@@ -50,7 +50,7 @@ import type {
   UpcomingView,
 } from './bindings';
 import { occurrenceId } from './mock-occurrence';
-import type { Doc } from './mock-sync-merge';
+import { type Doc, textMerge, textOf } from './mock-sync-merge';
 import {
   compareTasks,
   groupTasks,
@@ -302,6 +302,13 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
   /** Every op recorded, in order: what a test reads to see what a command logged. */
   const ops: string[] = [];
   /** Mirrors `record_in`: a session keeps one record, and a `create` stays a `create`. */
+  /**
+   * Text fields an editor holds (Rust: `editing_hold`, scope = the field), as `id/field`, with the
+   * text a remote change left waiting and what the field said when it first had to wait.
+   */
+  const held = new Set<string>();
+  const waiting = new Map<string, { base: string; text: string }>();
+  const HELD_FIELDS = ['title', 'notes'] as const;
   const record = (
     t: Stored,
     op: LogRecord['op'],
@@ -425,6 +432,13 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
 
   return {
     handles: (cmd: string) => cmd.startsWith('todo_'),
+
+    /** Whether an `editing_*` call is about a Task (the Journal takes the rest). */
+    handlesEditing: (cmd: string, a: Record<string, unknown>) =>
+      cmd.startsWith('editing_') && a.entity === 'task',
+
+    /** Set by the IPC mock: a held change was merged when its editor let go. */
+    onRemoteChange: undefined as (() => void) | undefined,
     /** The change-log ops recorded so far, oldest first: a test seam, not a command. */
     ops: (): readonly string[] => ops,
 
@@ -566,7 +580,18 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
       for (const d of docs.filter((x) => x.entity === 'task')) {
         const row = all.find((t) => t.id === d.id);
         if (row) {
-          if (write(row as unknown as Record<string, unknown>, d.values))
+          // A field an editor holds waits for it to let go; the other fields refresh now.
+          const values = { ...d.values };
+          for (const f of HELD_FIELDS) {
+            const key = `${row.id}/${f}`;
+            if (!held.has(key) || !(f in values)) continue;
+            const text = String(values[f]);
+            const pending = waiting.get(key);
+            if (pending) pending.text = text;
+            else if (row[f] !== text) waiting.set(key, { base: row[f], text });
+            delete values[f];
+          }
+          if (write(row as unknown as Record<string, unknown>, values))
             record(row, row.deleted ? 'delete' : 'update', { deletedAt: row.deleted_at });
           continue;
         }
@@ -599,6 +624,31 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
 
     handle(cmd: string, a: Record<string, unknown>): unknown {
       switch (cmd) {
+        case 'editing_hold':
+          held.add(`${a.entityId}/${a.scope}`);
+          return null;
+        case 'editing_release': {
+          const key = `${a.entityId}/${a.scope}`;
+          held.delete(key);
+          const pending = waiting.get(key);
+          waiting.delete(key);
+          const row = find(a.entityId);
+          const field = HELD_FIELDS.find((f) => f === a.scope);
+          if (!pending || !row || !field) return null;
+          // Rust (held.rs, texts.rs): the three-way merge of what waited and what was typed since.
+          const typed = row[field];
+          const merged =
+            typed === pending.base
+              ? pending.text
+              : textOf(textMerge(pending.base, pending.text, typed));
+          if (merged !== typed) {
+            row[field] = merged;
+            row.updated_at = Date.now();
+            record(row, 'update');
+            this.onRemoteChange?.();
+          }
+          return null;
+        }
         case 'todo_inbox': {
           const local = a.local as LocalNow;
           checkClock(local);

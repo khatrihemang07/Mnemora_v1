@@ -843,3 +843,48 @@ describe('Sync docs of the Todo mock', () => {
     });
   });
 });
+
+describe('the Task sheet’s editing hold (R10, Rust held.rs, story 94)', () => {
+  const setup = () => {
+    const mock = createTodoMock();
+    const task = mock.handle('todo_task_create', { title: 'Plan the hike' }) as Task;
+    const remote = (title: string, notes: string) =>
+      mock.importDocs(
+        mock
+          .exportDocs()
+          .filter((d) => d.id === task.id)
+          .map((d) => ({ ...d, values: { ...d.values, title, notes } })),
+      );
+    const now = () => mock.handle('todo_task', { id: task.id }) as Task;
+    const hold = (scope: string) => ({ entity: 'task', entityId: task.id, scope });
+    return { mock, task, remote, now, hold };
+  };
+
+  it('holds the field being edited and refreshes the other', () => {
+    const { mock, remote, now, hold } = setup();
+    mock.handle('editing_hold', hold('title'));
+    expect(remote('Plan the long hike', 'Boots')).toBe(true);
+    expect(now().title).toBe('Plan the hike');
+    expect(now().notes).toBe('Boots');
+    const changed = vi.fn();
+    mock.onRemoteChange = changed;
+    mock.handle('editing_release', hold('title'));
+    expect(now().title).toBe('Plan the long hike');
+    expect(changed).toHaveBeenCalledOnce();
+  });
+
+  it('merges what waited with what was typed since', () => {
+    const { mock, task, remote, now, hold } = setup();
+    mock.handle('todo_task_update', { id: task.id, title: 'x', notes: 'a\nb\nc', sessionId: 's' });
+    mock.handle('editing_hold', hold('notes'));
+    remote('x', 'a\nb\nc, remote');
+    mock.handle('todo_task_update', {
+      id: task.id,
+      title: 'x',
+      notes: 'a, typed\nb\nc',
+      sessionId: 's',
+    });
+    mock.handle('editing_release', hold('notes'));
+    expect(now().notes).toBe('a, typed\nb\nc, remote');
+  });
+});

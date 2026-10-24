@@ -410,7 +410,12 @@ export function createPixelMock(ports: PixelPorts) {
         module: d.entity === 'entry' ? 'journal' : 'todo',
         icon: 'trash',
         title: `${targetWords(o, d.entity, d.id)} · Deleted`,
-        detail: `Deleted (${deviceName(d.deleter)}) kept · edited (${deviceName(d.editor)}) kept inside it`,
+        // As Rust: the edited units in words ("notes edited"), else "changes edited".
+        detail: `Deleted (${deviceName(d.deleter)}) kept · ${
+          d.units.length > 0
+            ? d.units.map((u) => (UNIT_WORDS[u] ?? humanize(u)).toLowerCase()).join(', ')
+            : 'changes'
+        } edited (${deviceName(d.editor)}) kept inside it`,
         action: null,
       });
     for (const i of fresh.inbox)

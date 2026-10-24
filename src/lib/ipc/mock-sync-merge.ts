@@ -165,7 +165,14 @@ export interface Outcome {
   deletedConflicts: TextClash[];
   values: ValueClash[];
   /** A record deleted by one device and edited later by another. */
-  deleteEdits: { entity: Entity; id: string; deleter: string; editor: string; at: number }[];
+  deleteEdits: {
+    entity: Entity;
+    id: string;
+    deleter: string;
+    editor: string;
+    at: number;
+    units: string[];
+  }[];
   /** A Task put in the Inbox because its List is gone. */
   inbox: { task: string; list: string; deleter: string; at: number }[];
   /** Lists that merged into an older one with the same name. */
@@ -464,6 +471,14 @@ export function fold(log: Rec[]): Outcome {
           deleter: gone.stamp.device,
           editor: edit.stamp.device,
           at: edit.stamp.ms,
+          // The edited units (a group counts once), as Rust's `replaced` keys; order is not shown.
+          units: [
+            ...new Set(
+              Object.keys(edit.fields)
+                .filter((f) => f !== 'deleted_at' && SCHEMA[first.entity][f]?.cls !== 'order')
+                .map((f) => SCHEMA[first.entity][f]?.group ?? f),
+            ),
+          ],
         });
     }
   }

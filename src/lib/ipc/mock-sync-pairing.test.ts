@@ -266,6 +266,13 @@ describe('pairing by address', () => {
     expect(t.last()).toMatchObject({ state: 'failed', error: { kind: 'address_unreachable' } });
   });
 
+  it('never says "nothing nearby" for a typed address (R9)', () => {
+    const s = setup();
+    s.call('sync_pair_enter_at', { address: '100.64.0.9', code: '00000000' });
+    vi.advanceTimersByTime(900);
+    expect(s.last()).toMatchObject({ state: 'failed', error: { kind: 'address_unreachable' } });
+  });
+
   it('the usual pairing errors still apply', () => {
     const s = setup();
     expect(pairAt(s, 'mac.ts.net', '11111111')).toMatchObject({

@@ -23,7 +23,7 @@
  *   93000000  the same, but backing up fails after Merge
  *
  * "Pair by address…" (`sync_pair_enter_at`) takes the same codes, and the address decides first:
- *   …nowhere…  the name does not resolve        …closed… or …timeout…  nothing answered
+ *   …nowhere…  the name does not resolve        …closed… or …timeout… or code 00000000  nothing answered
  * Anything else valid reaches the simulated device; on success the address is kept as its typed
  * Address.
  */
@@ -369,6 +369,9 @@ export function createPairingMock(deps: Deps) {
             if (text.includes('nowhere'))
               set({ state: 'failed', error: { kind: 'address_not_found' } });
             else if (text.includes('closed') || text.includes('timeout'))
+              set({ state: 'failed', error: { kind: 'address_unreachable' } });
+            // With an address there is no "nothing nearby": Rust says nothing answered there.
+            else if (code === '00000000')
               set({ state: 'failed', error: { kind: 'address_unreachable' } });
             else typed(code, parsed.stored);
           });

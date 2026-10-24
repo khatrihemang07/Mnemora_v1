@@ -171,6 +171,7 @@ export async function installMock() {
   };
 
   const todo = createTodoMock((key) => values[key]);
+  todo.onRemoteChange = () => void events.todoChangedEvent.emit();
   // Console: `__listMergeMock()` (or `('Groceries', 'Pixel 8')`) acts out another device having made
   // a List with the same name: the one you are looking at merges away, you are moved to the
   // survivor and told. Browser only; Rust sends the same event after a real sync.
@@ -313,7 +314,10 @@ export async function installMock() {
         return changed;
       },
     },
-    command: (cmd, a) => (todo.handles(cmd) ? todo.handle(cmd, a) : journal.handle(cmd, a)),
+    command: (cmd, a) =>
+      todo.handles(cmd) || todo.handlesEditing(cmd, a)
+        ? todo.handle(cmd, a)
+        : journal.handle(cmd, a),
     conflicts,
     activity,
     myName: () => (device.sync?.name as string | null) ?? 'Alex’s MacBook Pro',
@@ -422,7 +426,7 @@ export async function installMock() {
           if (activity.handles(cmd)) return activity.handle(cmd, a);
           if (conflicts.handles(cmd)) return conflicts.handle(cmd, a);
           if (sync.handles(cmd)) return sync.handle(cmd, a);
-          if (todo.handles(cmd)) return todo.handle(cmd, a);
+          if (todo.handles(cmd) || todo.handlesEditing(cmd, a)) return todo.handle(cmd, a);
           return journal.handles(cmd) ? journal.handle(cmd, a) : undefined;
       }
     },

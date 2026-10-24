@@ -157,6 +157,9 @@ describe('the simulated Pixel 8', () => {
     const value = t.lists().resolved.find((r) => r.kind === 'value');
     expect(value?.title).toBe('‘Water plants’ · Priority');
     expect(value?.detail).toBe('P2 (Mac) kept · P1 (Pixel 8 (simulated)) replaced');
+    // Like Rust: the edited units in words, never a bare "edited (" (R6).
+    const gone = t.lists().resolved.find((r) => r.kind === 'delete_edit');
+    expect(gone?.detail).toMatch(/^Deleted \(.+\) kept · [a-z, ]+ edited \(.+\) kept inside it$/);
   });
 
   it('"Use P1 instead" writes the other value as a real edit, once (M2)', () => {
