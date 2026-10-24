@@ -439,6 +439,19 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
 
     /** Set by the IPC mock: a held change was merged when its editor let go. */
     onRemoteChange: undefined as (() => void) | undefined,
+    /**
+     * Set by the IPC mock: a held change and the person's own typing clashed when the editor let
+     * go. The typing shows; the Conflict keeps the other text, as in Rust.
+     */
+    onHeldClash: undefined as
+      | ((c: {
+          task: Stored;
+          field: 'title' | 'notes';
+          base: string;
+          showing: string;
+          other: string;
+        }) => void)
+      | undefined,
     /** The change-log ops recorded so far, oldest first: a test seam, not a command. */
     ops: (): readonly string[] => ops,
 
@@ -647,6 +660,16 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
             record(row, 'update');
             this.onRemoteChange?.();
           }
+          // On a clash the typing shows (it is the newer) and the other text becomes a Conflict.
+          if (typed !== pending.base && merged !== pending.text && typed !== pending.text)
+            if (textMerge(pending.base, pending.text, typed).some((p) => 'clash' in p))
+              this.onHeldClash?.({
+                task: row,
+                field,
+                base: pending.base,
+                showing: merged,
+                other: pending.text,
+              });
           return null;
         }
         case 'todo_inbox': {

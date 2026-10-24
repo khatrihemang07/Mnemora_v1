@@ -895,4 +895,47 @@ describe('the Task sheet’s editing hold (R10, Rust held.rs, story 94)', () => 
     mock.handle('editing_release', hold('notes'));
     expect(now().notes).toBe('a, typed\nb\nc, remote');
   });
+
+  it('on a clash the typing shows and the other text goes to a Conflict (T2)', () => {
+    const { mock, task, remote, now, hold } = setup();
+    mock.handle('todo_task_update', { id: task.id, title: 'x', notes: 'a\nb\nc', sessionId: 's' });
+    mock.handle('editing_hold', hold('notes'));
+    remote('x', 'a\nb, remote\nc');
+    mock.handle('todo_task_update', {
+      id: task.id,
+      title: 'x',
+      notes: 'a\nb, typed\nc',
+      sessionId: 's',
+    });
+    const clash = vi.fn();
+    mock.onHeldClash = clash;
+    mock.handle('editing_release', hold('notes'));
+    expect(now().notes).toBe('a\nb, typed\nc');
+    expect(clash).toHaveBeenCalledOnce();
+    expect(clash).toHaveBeenCalledWith(
+      expect.objectContaining({
+        field: 'notes',
+        base: 'a\nb\nc',
+        showing: 'a\nb, typed\nc',
+        other: 'a\nb, remote\nc',
+      }),
+    );
+  });
+
+  it('raises no Conflict when the lines differ', () => {
+    const { mock, task, remote, hold } = setup();
+    mock.handle('todo_task_update', { id: task.id, title: 'x', notes: 'a\nb\nc', sessionId: 's' });
+    mock.handle('editing_hold', hold('notes'));
+    remote('x', 'a\nb\nc, remote');
+    mock.handle('todo_task_update', {
+      id: task.id,
+      title: 'x',
+      notes: 'a, typed\nb\nc',
+      sessionId: 's',
+    });
+    const clash = vi.fn();
+    mock.onHeldClash = clash;
+    mock.handle('editing_release', hold('notes'));
+    expect(clash).not.toHaveBeenCalled();
+  });
 });

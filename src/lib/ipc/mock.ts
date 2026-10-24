@@ -172,6 +172,45 @@ export async function installMock() {
 
   const todo = createTodoMock((key) => values[key]);
   todo.onRemoteChange = () => void events.todoChangedEvent.emit();
+  // The person typed in a Task's notes while a change for them waited: the typing shows when the
+  // editor lets go and the other text becomes a Conflict, as for an Entry (Rust held.rs).
+  let taskClashes = 0;
+  todo.onHeldClash = ({ task, field, base, showing, other }) => {
+    const at = Date.now();
+    const id = `held-conflict-${task.id}-${field}-${++taskClashes}`;
+    const mine = () => (device.sync?.name as string | null) ?? 'Alex’s MacBook Pro';
+    const docOf = () => todo.exportDocs().find((d) => d.entity === 'task' && d.id === task.id);
+    conflicts.raise({
+      row: {
+        id,
+        subject: { kind: 'task', title: task.title, field },
+        module: 'todo',
+        raised_at: at,
+        showing: { device: mine(), at },
+        other: { device: 'Pixel 8 (simulated)', at: at - 1 },
+      },
+      base,
+      showing,
+      other,
+      open: true,
+      resolution: null,
+      live: () => {
+        const v = docOf()?.values[field];
+        return typeof v === 'string' ? v : undefined;
+      },
+      apply: (text) => {
+        const doc = docOf();
+        if (doc) todo.importDocs([{ ...doc, values: { ...doc.values, [field]: text } }]);
+        void events.todoChangedEvent.emit();
+      },
+    });
+    logActivity(
+      lineNow('conflict_raised', at, {
+        peer: 'mock-pixel',
+        extra: { subject: subjectWords('task', field), conflict: id },
+      }),
+    );
+  };
   // Console: `__listMergeMock()` (or `('Groceries', 'Pixel 8')`) acts out another device having made
   // a List with the same name: the one you are looking at merges away, you are moved to the
   // survivor and told. Browser only; Rust sends the same event after a real sync.
