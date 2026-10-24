@@ -21,6 +21,13 @@ const GO_KEYS: Record<string, GoTarget> = {
 /** A chord ends when the second key is slower than this. */
 export const CHORD_MS = 1500;
 
+/**
+ * Whether the bare T (go to Today, ADR 0011) may fire. On Todo with a Task row ringed, T is the row
+ * key that sets the Task due today. The shell's key listener runs before the page's, so the bare
+ * key yields here rather than relying on `defaultPrevented`.
+ */
+export const bareTodayFires = (onTodo: boolean, ringed: boolean): boolean => !(onTodo && ringed);
+
 export type KeyAction =
   /** ↑ ↓ moves the focus ring to the previous or next Task. */
   | { type: 'ring'; dir: 'up' | 'down' }

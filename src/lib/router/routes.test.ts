@@ -9,7 +9,7 @@ const manifest = (id: string, order: number, paths: `/${string}`[]): ModuleManif
   icon: {} as never,
   accentVar: `--color-${id}`,
   routes: paths.map((path) => ({ path, component: comp })),
-  nav: { order, shortcut: null },
+  nav: { order },
 });
 
 describe('buildRoutes', () => {

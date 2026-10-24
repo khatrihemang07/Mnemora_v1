@@ -16,12 +16,18 @@ class WidgetConfigTest {
 
     @Test
     fun aConfigRoundTripsThroughJson() {
-        val config = WidgetConfig("list:0199-abc", ThemeChoice.MATERIAL_YOU_DARK, Background.SEE_THROUGH)
+        val config = WidgetConfig("list:0199-abc", ThemeChoice.DARK, Background.SEE_THROUGH)
         assertEquals(config, WidgetConfig.fromJson(config.toJson()))
         for (view in listOf("today", "upcoming", "inbox", "all")) {
             val c = WidgetConfig(view, ThemeChoice.TRUE_BLACK, Background.NONE)
             assertEquals(c, WidgetConfig.fromJson(c.toJson()))
         }
+    }
+
+    @Test
+    fun aWidgetSavedWithARetiredMaterialYouThemeFollowsTheApp() {
+        val json = "{\"view\":\"today\",\"theme\":\"you_dark\",\"background\":\"solid\"}"
+        assertEquals(ThemeChoice.APP, WidgetConfig.fromJson(json).theme)
     }
 
     @Test

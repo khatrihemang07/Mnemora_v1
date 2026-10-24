@@ -31,11 +31,6 @@ export function buildPaletteItems({ setTheme, toggleSidebar, enabled }: Actions)
     label: `Go to ${e.manifest.name}`,
     group: 'Navigate',
     icon: e.manifest.icon,
-    shortcut: e.manifest.nav.shortcut
-      ? shortcutLabel(String(e.manifest.nav.shortcut))
-      : e.id === 'settings'
-        ? shortcutLabel(',')
-        : undefined,
     run: () => void router.navigate(e.path),
   }));
   const moduleActions: PaletteItem[] = enabled.flatMap((m) =>

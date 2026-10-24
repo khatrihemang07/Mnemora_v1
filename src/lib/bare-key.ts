@@ -41,7 +41,9 @@ export interface BareKeyScene {
 
 /** Whether `e` is the bare key `key` (a letter, either case) and may fire in `scene`. */
 export function bareKeyFires(e: BareKeyEvent, key: string, scene: BareKeyScene): boolean {
-  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return false;
+  if (e.metaKey || e.ctrlKey || e.altKey) return false;
+  // Shift is how "?" is typed, so only that key takes it.
+  if (e.shiftKey && key !== '?') return false;
   if (e.repeat || e.isComposing || e.defaultPrevented) return false;
   if (e.key.toLowerCase() !== key.toLowerCase()) return false;
   return !scene.overlayOpen && !isTypingTarget(scene.target);

@@ -152,6 +152,12 @@
     if (refocus && !viewport.isPhone) editor?.focus();
   }
 
+  /** Esc saves and clears the box like ⌘↵, then leaves the editor (⌘↵ keeps focus). */
+  async function escape() {
+    await finish(false);
+    editor?.blur();
+  }
+
   /** Blur and closing: a cleared Entry is discarded, any other text is only saved. */
   async function settle() {
     if (composer.cleared) await finish(false);
@@ -210,6 +216,7 @@
           composer.input(t);
         }}
         onfinish={() => void finish()}
+        onescape={() => void escape()}
         onfocuschange={(f) => {
           focused = f;
           if (f) editing.active = editor;

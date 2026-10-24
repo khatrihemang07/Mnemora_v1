@@ -7,18 +7,19 @@ enum class ThemeChoice(val key: String) {
     LIGHT("light"),
     DARK("dark"),
     TRUE_BLACK("oled"),
-    MATERIAL_YOU("you"),
-    MATERIAL_YOU_DARK("you_dark"),
     ;
 
     companion object {
-        /** Reads a stored key; anything unknown is [APP]. */
+        /**
+         * Reads a stored key; anything unknown is [APP]. That includes the retired Material You keys
+         * ("you", "you_dark"), so a widget saved with them follows the app's theme.
+         */
         fun fromKey(key: String?): ThemeChoice = values().firstOrNull { it.key == key } ?: APP
     }
 }
 
 /** The look a widget is actually drawn in. */
-enum class Look { LIGHT, DARK, TRUE_BLACK, MATERIAL_YOU, MATERIAL_YOU_DARK }
+enum class Look { LIGHT, DARK, TRUE_BLACK }
 
 /** What a Todo widget's Background setting can be. */
 enum class Background(val key: String, val alpha: Float) {
@@ -48,8 +49,6 @@ object WidgetTheme {
         ThemeChoice.LIGHT -> Look.LIGHT
         ThemeChoice.DARK -> Look.DARK
         ThemeChoice.TRUE_BLACK -> Look.TRUE_BLACK
-        ThemeChoice.MATERIAL_YOU -> Look.MATERIAL_YOU
-        ThemeChoice.MATERIAL_YOU_DARK -> Look.MATERIAL_YOU_DARK
         ThemeChoice.APP -> when (appTheme) {
             "light" -> Look.LIGHT
             "dark" -> Look.DARK
@@ -67,5 +66,5 @@ object WidgetTheme {
         choice == ThemeChoice.APP && appTheme !in setOf("light", "dark", "oled")
 
     /** Whether a look is a dark one (its Priority colours are the lighter set). */
-    fun isDark(look: Look): Boolean = look != Look.LIGHT && look != Look.MATERIAL_YOU
+    fun isDark(look: Look): Boolean = look != Look.LIGHT
 }

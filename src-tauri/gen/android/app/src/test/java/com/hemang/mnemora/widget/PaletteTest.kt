@@ -49,7 +49,6 @@ class PaletteTest {
         assertTrue((dark ushr 24) in 40..150)
         assertTrue((light ushr 24) in 40..150)
         assertEquals(dark, Palette.scrim(Look.TRUE_BLACK))
-        assertEquals(light, Palette.scrim(Look.MATERIAL_YOU))
     }
 
     @Test

@@ -7,7 +7,7 @@ import type { ModuleContext, ModuleManifest } from '../../lib/router';
 import { requestCompose, requestGoToDate } from './launcher.svelte';
 import { requestSearch } from './search.svelte';
 
-/** ⌘N, N, "New journal entry" and the Home card's Write: Today, composer focused, from anywhere. */
+/** N, "New journal entry" and the Home card's Write: Today, composer focused, from anywhere. */
 function compose(ctx: ModuleContext) {
   requestCompose();
   ctx.navigate('/journal');
@@ -19,22 +19,25 @@ export const journalManifest: ModuleManifest = {
   icon: NotebookPen,
   accentVar: '--hue-journal',
   routes: [{ path: '/journal', component: () => import('./JournalPage.svelte') }],
-  nav: { order: 20, shortcut: 2 },
+  nav: { order: 20 },
   homeCard: () => import('./HomeCard.svelte'),
   settingsSection: {
     label: 'Journal',
     icon: NotebookPen,
     component: () => import('./JournalSettings.svelte'),
   },
-  create: compose,
-  // N starts an Entry from anywhere (ADR 0011): ⌘N's bare twin, never while typing.
-  bareKeys: [{ key: 'n', run: compose }],
+  // N starts an Entry from anywhere (ADR 0011). / searches the Journal while it is on screen.
+  bareKeys: [
+    { key: 'n', run: compose },
+    { key: 'j', run: (ctx) => ctx.navigate('/journal') },
+    { key: '/', when: (ctx) => ctx.isActive('/journal'), run: () => requestSearch('') },
+  ],
   paletteActions: [
     {
       id: 'new',
       label: 'New journal entry',
       icon: PenLine,
-      shortcut: shortcutLabel('N'),
+      shortcut: 'N',
       run: compose,
     },
     {

@@ -66,18 +66,6 @@ data class Palette(
                     c(R.color.widget_oled_warning), c(R.color.widget_oled_accent), c(R.color.widget_oled_todo),
                     c(R.color.widget_oled_on_todo),
                 )
-                Look.MATERIAL_YOU -> Palette(
-                    c(R.color.widget_you_bg), c(R.color.widget_you_surface2), c(R.color.widget_you_ink),
-                    c(R.color.widget_you_muted), c(R.color.widget_you_faint), c(R.color.widget_you_danger),
-                    c(R.color.widget_you_warning), c(R.color.widget_you_accent), c(R.color.widget_you_todo),
-                    c(R.color.widget_you_on_todo),
-                )
-                Look.MATERIAL_YOU_DARK -> Palette(
-                    c(R.color.widget_you_dark_bg), c(R.color.widget_you_dark_surface2), c(R.color.widget_you_dark_ink),
-                    c(R.color.widget_you_dark_muted), c(R.color.widget_you_dark_faint), c(R.color.widget_you_dark_danger),
-                    c(R.color.widget_you_dark_warning), c(R.color.widget_you_dark_accent), c(R.color.widget_you_dark_todo),
-                    c(R.color.widget_you_dark_on_todo),
-                )
             }
             // No background: the same text colours straight on the wallpaper (a soft shadow or glow
             // in the layout keeps them readable), so the theme still means light or dark text.

@@ -7,6 +7,7 @@ export const homeManifest: ModuleManifest = {
   icon: House,
   accentVar: '--hue-home',
   routes: [{ path: '/', component: () => import('./HomePage.svelte') }],
-  nav: { order: 10, shortcut: 1 },
+  nav: { order: 10 },
   required: true,
+  bareKeys: [{ key: 'h', run: (ctx) => ctx.navigate('/') }],
 };

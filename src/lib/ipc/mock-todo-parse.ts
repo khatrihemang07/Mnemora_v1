@@ -324,10 +324,12 @@ function readDate(t: Token[], i: number, cx: Context): Match | null {
   const untilWeekday = (w: number) => (w + 7 - weekdayOf(today)) % 7;
   switch (first) {
     case 'today':
+    case 'tod':
       return date(1, today);
     case 'tomorrow':
     case 'tmr':
     case 'tmrw':
+    case 'tom':
       return date(1, addDays(today, 1));
     case 'tonight':
       return [

@@ -431,8 +431,8 @@ fn read_date(t: &[Token], i: usize, cx: &Context) -> Option<Match> {
     let date = |used: usize, d: String| Some((used, vec![Meaning::Date(d)]));
     let first = at(i)?;
     match first {
-        "today" => return date(1, today.into()),
-        "tomorrow" | "tmr" | "tmrw" => return date(1, add_days(today, 1)?),
+        "today" | "tod" => return date(1, today.into()),
+        "tomorrow" | "tmr" | "tmrw" | "tom" => return date(1, add_days(today, 1)?),
         "tonight" => {
             return Some((
                 1,

@@ -32,8 +32,6 @@
     <string name="widget_theme_light">Light</string>
     <string name="widget_theme_dark">Dark</string>
     <string name="widget_theme_true_black">True black</string>
-    <string name="widget_theme_material_you">Material You</string>
-    <string name="widget_theme_material_you_dark">Material You dark</string>
     <string name="widget_background_solid">Solid</string>
     <string name="widget_background_see_through">See-through</string>
     <string name="widget_background_none">None</string>

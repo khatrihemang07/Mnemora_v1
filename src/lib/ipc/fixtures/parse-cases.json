@@ -49,6 +49,39 @@
       }
     },
     {
+      "name": "tod is today",
+      "text": "Call mum tod",
+      "expect": {
+        "spans": [["tod", "date", "2026-10-21"]],
+        "date": "2026-10-21"
+      }
+    },
+    {
+      "name": "tom is tomorrow",
+      "text": "Call mum tom",
+      "expect": {
+        "spans": [["tom", "date", "2026-10-22"]],
+        "date": "2026-10-22"
+      }
+    },
+    {
+      "name": "tom with a time",
+      "text": "Call mum tom 3pm",
+      "expect": {
+        "spans": [["tom", "date", "2026-10-22"], ["3pm", "time", "15:00"]],
+        "date": "2026-10-22",
+        "time": "15:00"
+      }
+    },
+    {
+      "name": "a name that is a short date word gets a chip",
+      "text": "Call Tom",
+      "expect": {
+        "spans": [["Tom", "date", "2026-10-22"]],
+        "date": "2026-10-22"
+      }
+    },
+    {
       "name": "tonight is today at 20:00",
       "text": "Dinner tonight",
       "expect": {

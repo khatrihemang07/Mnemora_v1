@@ -6,7 +6,9 @@ import { openTodoLink } from './deep-link';
 import { todoNav } from './nav.svelte';
 import { addTaskFromPalette, previewAddTask } from './palette-add';
 import { quickAdd } from './quick-add.svelte';
-import type { GoTarget } from './task-keymap';
+import { todoSearch } from './search.svelte';
+import { taskFocus } from './task-focus.svelte';
+import { bareTodayFires, type GoTarget } from './task-keymap';
 import { VIEW_ICONS } from './view-icons';
 import { SMART_VIEWS, smartView } from './views';
 
@@ -36,11 +38,30 @@ export const todoManifest: ModuleManifest = {
   icon: SquareCheckBig,
   accentVar: '--hue-todo',
   routes: [{ path: '/todo', component: () => import('./TodoPage.svelte') }],
-  nav: { order: 30, shortcut: 3 },
+  nav: { order: 30 },
   useBadge: useTodoBadge,
   homeCard: () => import('./HomeCard.svelte'),
-  // Q adds a Task from anywhere (ADR 0011): in place inside Todo, in a floating box elsewhere.
-  bareKeys: [{ key: 'q', run: (ctx) => quickAdd.request(ctx.isActive('/todo')) }],
+  // Bare keys (ADR 0011). Q adds a Task from anywhere: in place inside Todo, in a floating box
+  // elsewhere. T yields to the focus ring, whose row keys (T sets a Task due today) win.
+  bareKeys: [
+    { key: 'q', run: (ctx) => quickAdd.request(ctx.isActive('/todo')) },
+    {
+      key: 't',
+      when: (ctx) => bareTodayFires(ctx.isActive('/todo'), taskFocus.id !== null),
+      run: (ctx) => {
+        todoNav.go(smartView('today'));
+        ctx.navigate('/todo');
+      },
+    },
+    {
+      key: 'i',
+      run: (ctx) => {
+        todoNav.go(smartView('inbox'));
+        ctx.navigate('/todo');
+      },
+    },
+    { key: '/', when: (ctx) => ctx.isActive('/todo'), run: () => todoSearch.open() },
+  ],
   overlay: () => import('./TodoOverlay.svelte'),
   // The Todo widget's taps: mnemora://todo?view=...&task=...
   openLink: openTodoLink,

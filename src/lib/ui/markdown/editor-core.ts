@@ -57,8 +57,10 @@ export interface EditorOptions {
   /** Draw Checklist items as clickable square boxes instead of faded `- [ ]` text. */
   checklist?: boolean;
   onchange: (text: string) => void;
-  /** Esc (with no slash menu open) or ⌘/Ctrl+Enter. */
+  /** ⌘/Ctrl+Enter. */
   onfinish: () => void;
+  /** Esc, with no slash menu open. Separate from `onfinish` so a caller can make Esc leave the editor. */
+  onescape: () => void;
   onfocuschange: (focused: boolean) => void;
   onslash: (state: SlashState | null) => void;
   slashValues: () => SlashValues;
@@ -70,6 +72,7 @@ export interface EditorController {
   setDoc: (text: string) => void;
   getDoc: () => string;
   focus: () => void;
+  blur: () => void;
   run: (command: EditorCommand) => boolean;
   pickSlash: (id: string) => void;
   /** Turns spellcheck on or off in the open editor. */
@@ -178,7 +181,7 @@ export function createEditor(opts: EditorOptions): EditorController {
           closeSlash(v);
           return true;
         }
-        opts.onfinish();
+        opts.onescape();
         return true;
       },
     },
@@ -385,6 +388,7 @@ export function createEditor(opts: EditorOptions): EditorController {
     },
     getDoc: () => doc(view),
     focus: () => view.focus(),
+    blur: () => view.contentDOM.blur(),
     run: (command) => {
       view.focus();
       return run(view, command, true);

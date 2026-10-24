@@ -3,7 +3,7 @@
   main bundle. Symbols stay visible but faded; the text is typeset like MarkdownView. Includes
   shortcuts, list keys, auto-pairs, the slash menu, rich-text paste and ⌘/Ctrl-click links.
   `value` is the text and `onchange` reports every edit; saving is the caller's job. `onfinish` fires
-  on Esc and ⌘/Ctrl+Enter. `checklist` draws `- [ ]` items as clickable square boxes (Todo's notes); the Journal keeps faded text. `bare` drops the editor's focus ring for use inside a frame that shows
+  on ⌘/Ctrl+Enter and `onescape` (or `onfinish` when absent) on Esc. `checklist` draws `- [ ]` items as clickable square boxes (Todo's notes); the Journal keeps faded text. `bare` drops the editor's focus ring for use inside a frame that shows
   focus itself. Call `focus()` and `run()` (the phone KeyboardBar) through `bind:this`.
 -->
 <script lang="ts">
@@ -19,6 +19,8 @@
     value: string;
     onchange: (text: string) => void;
     onfinish?: () => void;
+    /** Esc; falls back to `onfinish`. */
+    onescape?: () => void;
     onfocuschange?: (focused: boolean) => void;
     /** The accessible name. */
     label: string;
@@ -39,6 +41,7 @@
     value,
     onchange,
     onfinish,
+    onescape,
     onfocuschange,
     label,
     placeholder = 'Write…',
@@ -72,6 +75,11 @@
     else wantsFocus = true;
   }
 
+  /** Takes focus away (the Journal composer's Esc). */
+  export function blur() {
+    ctrl?.blur();
+  }
+
   /** Runs a formatting command, as the phone KeyboardBar does. */
   export function run(command: EditorCommand): boolean {
     return ctrl?.run(command) ?? false;
@@ -92,6 +100,7 @@
         checklist,
         onchange: (text) => onchange(text),
         onfinish: () => onfinish?.(),
+        onescape: () => (onescape ?? onfinish)?.(),
         onfocuschange: (f) => {
           if (f) {
             hasFocus = true;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bareTodayFires,
   CHORD_MS,
   IDLE_KEYS,
   type KeyAction,
@@ -282,5 +283,13 @@ describe('the focus ring', () => {
     expect(ringAfterRemoval(ids, 'c')).toBe('b');
     expect(ringAfterRemoval(['a'], 'a')).toBeNull();
     expect(ringAfterRemoval(ids, 'zz')).toBeNull();
+  });
+});
+
+describe('the bare T (go to Today)', () => {
+  it('fires unless a Task row on Todo holds the focus ring', () => {
+    expect(bareTodayFires(true, false)).toBe(true);
+    expect(bareTodayFires(false, true)).toBe(true);
+    expect(bareTodayFires(true, true)).toBe(false);
   });
 });

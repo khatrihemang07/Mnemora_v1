@@ -187,8 +187,6 @@ class WidgetSetupActivity : Activity() {
         Triple(ThemeChoice.LIGHT, getString(R.string.widget_theme_light), null),
         Triple(ThemeChoice.DARK, getString(R.string.widget_theme_dark), null),
         Triple(ThemeChoice.TRUE_BLACK, getString(R.string.widget_theme_true_black), null),
-        Triple(ThemeChoice.MATERIAL_YOU, getString(R.string.widget_theme_material_you), null),
-        Triple(ThemeChoice.MATERIAL_YOU_DARK, getString(R.string.widget_theme_material_you_dark), null),
     )
 
     private fun backgroundChoices() = listOf(

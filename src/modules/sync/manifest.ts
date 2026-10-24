@@ -28,7 +28,8 @@ export const syncManifest: ModuleManifest = {
     { path: '/sync/activity', component: () => import('./ActivityPage.svelte') },
   ],
   // Beside Settings in the sidebar's bottom group, with no ⌘-digit: the digits keep matching content Modules.
-  nav: { order: 90, shortcut: null, placement: 'bottom' },
+  nav: { order: 90, placement: 'bottom' },
+  bareKeys: [{ key: 's', run: (ctx) => ctx.navigate('/sync') }],
   defaultEnabled: false,
   deviceSwitch: useSyncSwitch,
   // The conflicts that need you, an amber "!" while paused: the desktop sidebar only (B7, B8).
