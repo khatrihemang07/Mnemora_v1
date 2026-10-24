@@ -490,7 +490,7 @@ const LOCKED = {
   M1: 'tokio', M2: 'own', M3: 'flush', M4: 'rust', M5: 'cm', M6: 'alive', M7: 'info',
   N1: 'multi', N2: 'seeded', N3: ['drop', 'dup', 'skew', 'ver', 'rev'], N4: 'sandbox',
   P1: 'line', P2: 'toast', P3: 'full', P4: 'gated', P5: 'live', P6: 'enforce', P7: 'pref', P8: 'synced', P9: 'both', P10: 'tell', P11: 'besteffort', P12: ['window', 'clock', 'rewrite', 'untold', 'cost'],
-  P13: 'onenable', P14: 'banner', P15: ['inbound', 'showaddr', 'tailscale'], P16: 'onenable',
+  P13: 'onenable', P14: 'banner', P15: ['inbound', 'showaddr', 'tailscale'], P16: 'onenable', P17: 'close', P18: 'none',
 };
 /* "Preview in mock": one option shown in the mock without picking it. */
 let PREVIEW = null;
@@ -1305,6 +1305,15 @@ sec('P', 'Post-audit decisions', 'Decided after the plan-conformance audit of th
     opt('later', 'Follow-up issue: declare and request it at Sync enable when the target SDK moves to 37', '', {}),
     opt('now', 'Declare and request it now, at app start', 'Prompts every Android 17 user, syncing or not.', {}),
     opt('onenable', 'Declare it now; ask only when Sync is turned on', 'Never asked while Sync is off. On Android 17+ the request comes when the user turns Sync on (and again from the denied banner).', { rec: true }),
+  ] },
+  { id: 'P17', kind: 'ui', title: 'The Entry you are typing in is deleted on another device', why: 'Found in device QA. Story 93 holds remote changes to the Entry being edited until you finish; story 97 / H6 close an open Task sheet with a toast. Today the delete waits until you press Done, silently.', options: [
+    opt('close', 'Close the editor at once, toast with Restore', '"‘Wed 21 Oct’ was deleted on Pixel 8 · Restore". Restore brings it back including what you had typed. Same as a Task sheet.', { rec: true, demo: `<div class="banner info" style="margin:0">${ic('trash-2')}<div>‘Wed 21 Oct’ was deleted on Pixel 8</div><button class="btn" style="margin-left:auto">Restore</button></div>`, pros: ['Consistent with Tasks', 'You learn at once'], cons: ['Interrupts typing'] }),
+    opt('finish', 'Let me finish, then toast with Restore', 'The editor stays open; when you press Done the delete applies and the toast offers Restore with your text.', { pros: ['Never interrupts typing'], cons: ['You keep typing into something already deleted'] }),
+    opt('banner', 'Keep editing with a banner "Deleted on Pixel 8 · Restore"', 'A banner above the editor; Done keeps it deleted unless you press Restore.', { pros: ['Informed without interruption'], cons: ['New UI'] }),
+  ] },
+  { id: 'P18', kind: 'ui', title: 'Activity: a live connection drops', why: 'Device QA: turning Wi-Fi off logged nothing; only refusals were logged. G1 includes failures.', options: [
+    opt('none', 'Don\'t log drops; the peer row already says Not nearby', 'Failures stay for refused, pairing and version problems.', { rec: true, pros: ['Activity stays calm: phones drop all the time'], cons: [] }),
+    opt('log', 'Log "Lost connection to Pixel 8" once per drop', '', { pros: ['Complete record'], cons: ['Noisy: every time the phone sleeps'] }),
   ] },
 ]);
 
