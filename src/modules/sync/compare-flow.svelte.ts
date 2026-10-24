@@ -34,10 +34,15 @@ const dialogOpen = () =>
 /** Esc in the Choose or Polish step is Cancel (T4); Compare is a page, so Esc leaves it alone. True when it cancelled. */
 export function escapeCancels(
   flow: CompareFlow,
-  e: { key: string; defaultPrevented: boolean },
+  e: { key: string; defaultPrevented: boolean; target?: EventTarget | null },
   overlayOpen: () => boolean = dialogOpen,
+  /** The editor's slash menu was open when the key went down: that Esc closes it, it is not Cancel's. */
+  editorPopupOpen = false,
 ): boolean {
-  if (e.key !== 'Escape' || e.defaultPrevented || flow.step === 'compare') return false;
+  if (e.key !== 'Escape' || flow.step === 'compare') return false;
+  // CodeMirror takes its own Esc (preventDefault), so one pressed inside the Polish editor counts too.
+  const inEditor = (e.target as Element | null | undefined)?.closest?.('.cm-editor') != null;
+  if (e.defaultPrevented && !(inEditor && !editorPopupOpen)) return false;
   // A Dialog or Sheet open over the page (Quick add) takes this Esc; it is not Cancel's.
   if (overlayOpen()) return false;
   discardEdit(flow);

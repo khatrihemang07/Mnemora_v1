@@ -112,3 +112,28 @@ describe('Esc in Edit merged (T4)', () => {
     forgetCompareFlow('esc3');
   });
 });
+
+describe('Esc inside the Polish editor (T4)', () => {
+  const inEditor = { closest: (sel: string) => (sel === '.cm-editor' ? {} : null) } as never;
+  const esc = { key: 'Escape', defaultPrevented: true, target: inEditor };
+
+  it('cancels although CodeMirror took the key', () => {
+    const flow = compareFlow('esc4');
+    flow.step = 'polish';
+    flow.draft = 'x';
+    expect(escapeCancels(flow, esc, () => false)).toBe(true);
+    expect(flow.step).toBe('compare');
+    expect(flow.draft).toBe('');
+    forgetCompareFlow('esc4');
+  });
+
+  it('leaves the Esc that closes the slash menu, or a Dialog, alone', () => {
+    const flow = compareFlow('esc5');
+    flow.step = 'polish';
+    expect(escapeCancels(flow, esc, () => false, true)).toBe(false);
+    expect(escapeCancels(flow, esc, () => true)).toBe(false);
+    expect(escapeCancels(flow, { ...esc, target: null }, () => false)).toBe(false);
+    expect(flow.step).toBe('polish');
+    forgetCompareFlow('esc5');
+  });
+});

@@ -53,6 +53,8 @@
   const choices = $derived(flow.choices);
   const draft = $derived(flow.draft);
   let busy = $state(false);
+  /** The editor's slash menu was open as the key went down (its Esc closes the menu only). */
+  let editorPopup = false;
 
   // Back inside Edit merged goes one step back and keeps the draft, as Back finishes any transient mode.
   closeOnBack(
@@ -122,7 +124,10 @@
   </p>
 {/snippet}
 
-<svelte:window onkeydown={(e) => escapeCancels(flow, e)} />
+<svelte:window
+  onkeydowncapture={() => (editorPopup = document.querySelector('[data-editor-popup]') !== null)}
+  onkeydown={(e) => escapeCancels(flow, e, undefined, editorPopup)}
+/>
 
 <!-- The Sync header and tabs stay (Conflicts is the one on show), at the width of the other Sync pages. -->
 <SyncFrame tab="conflicts">
