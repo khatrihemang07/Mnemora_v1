@@ -2295,7 +2295,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jni",
  "mnemora-core",
@@ -2318,7 +2318,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "rusqlite",
  "rusqlite_migration",
@@ -2336,7 +2336,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-journal"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mnemora-core",
  "rusqlite",
@@ -2351,7 +2351,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-sync"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "if-addrs",
  "mdns-sd",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-todo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "mnemora-core",
  "rusqlite",
