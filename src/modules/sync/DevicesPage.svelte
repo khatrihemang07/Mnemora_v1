@@ -13,6 +13,12 @@
   import WelcomeCard from './WelcomeCard.svelte';
 
   const sync = createQuery(() => syncQuery);
+
+  // This device was forgotten (or left) while a device's sheet was open: nobody is left to show. The
+  // sheet is dropped with its URL parameter, not left behind a welcome card (N2).
+  $effect(() => {
+    if (deviceSheet.id && sync.data?.paired_devices === 0) deviceSheet.dismiss();
+  });
 </script>
 
 <SyncFrame tab="devices">

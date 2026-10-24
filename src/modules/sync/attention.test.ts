@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Attention } from '../../lib/ipc/bindings';
 import { badgeOf, homeCardLine, newConflictsText, paletteHint, reviewPath } from './attention';
+
+vi.mock('../../lib/router/url-param', () => ({
+  urlParam: { get: () => null, set: () => {}, delete: () => {} },
+}));
 
 const calm: Attention = {
   conflicts: 0,

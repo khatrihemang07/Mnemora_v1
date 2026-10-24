@@ -57,7 +57,7 @@
       ></span>
     </span>
     <div class="min-w-0">
-      <div class="truncate font-semibold">{peer.name}</div>
+      <div class="font-semibold wrap-anywhere">{peer.name}</div>
       <div class="flex flex-wrap items-center gap-x-1.5 text-sm text-muted">
         <span class="rounded-full px-2 text-xs leading-5 font-semibold {CHIP[peer.state]}">{parts[0]}</span>
         {#if detail}

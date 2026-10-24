@@ -24,6 +24,9 @@ vi.mock('../../lib/ipc/bindings', () => ({
   events: {},
 }));
 vi.mock('./queries', () => ({ refreshSync: vi.fn() }));
+vi.mock('../../lib/router/url-param', () => ({
+  urlParam: { get: () => null, set: () => {}, delete: () => {} },
+}));
 
 const { pairing } = await import('./pairing.svelte');
 

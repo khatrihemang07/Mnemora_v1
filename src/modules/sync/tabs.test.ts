@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildRoutes } from '../../lib/router/routes';
 import { syncManifest } from './manifest';
 import { pathForTab, SYNC_TABS, tabForPath, tabsWithCounts } from './tabs';
+
+vi.mock('../../lib/router/url-param', () => ({
+  urlParam: { get: () => null, set: () => {}, delete: () => {} },
+}));
 
 describe('tab routing', () => {
   it('gives every tab its own address', () => {

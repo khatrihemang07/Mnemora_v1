@@ -37,6 +37,9 @@ export async function confirmTurnOff() {
  * Module (its welcome page, until the first pairing); turning off asks first.
  */
 export function useSyncSwitch(ctx: ModuleContext): DeviceSwitch {
+  // Turning on takes a moment (Rust starts, the shell refreshes, the page opens). Clicks that land
+  // meanwhile are the same click, and must never ask "Turn off Sync?" over the page being opened (R14).
+  let turningOn = false;
   const device = createQuery(() => deviceQuery);
   return {
     get on() {
@@ -46,11 +49,15 @@ export function useSyncSwitch(ctx: ModuleContext): DeviceSwitch {
       return device.isSuccess;
     },
     set(on) {
+      if (turningOn) return;
       if (!on) {
         turnOffDialog.open = true;
         return;
       }
+      turningOn = true;
+      turnOffDialog.open = false;
       void setEnabled(true).then((ok) => {
+        turningOn = false;
         if (!ok) return;
         // Android 17: the system asks to reach devices on the network, now and not before.
         askLocalNetworkOnEnable();

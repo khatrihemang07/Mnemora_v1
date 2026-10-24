@@ -162,7 +162,7 @@
             />
             {#if rename.error}<p role="alert" class="mt-1 text-sm text-danger">{rename.error}</p>{/if}
           {:else}
-            <div class="truncate font-semibold">{d.name}</div>
+            <div class="font-semibold wrap-anywhere">{d.name}</div>
             <div class="flex flex-wrap items-center gap-x-1.5 text-sm text-muted">
               <span class="rounded-full px-2 text-xs leading-5 font-semibold {CHIP[d.state]}">{statusWord(d.state)}</span>
               <span>{syncedText(d, clock.now)}</span>

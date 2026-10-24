@@ -16,6 +16,12 @@
   import { WELCOME_LINE } from './local-network';
   import { pairing } from './pairing.svelte';
   import { isMac } from '../../lib/platform';
+  import { createQuery } from '@tanstack/svelte-query';
+  import LocalNetworkBanner from './LocalNetworkBanner.svelte';
+  import { devicesQuery } from './queries';
+
+  // D13: a blocked Local Network shows here too, before anything is paired.
+  const devices = createQuery(() => devicesQuery);
 
   const lines: { icon: Component<{ class?: string }>; text: string }[] = [
     { icon: Wifi, text: 'Your devices talk directly, on the same Wi-Fi or over Tailscale.' },
@@ -33,6 +39,7 @@
 </script>
 
 <Card>
+  <LocalNetworkBanner device={devices.data?.this_device} class="mb-3" />
   <h2 class="font-display text-xl" style="font-weight: var(--display-weight); letter-spacing: var(--display-track)">
     Keep your devices in step
   </h2>

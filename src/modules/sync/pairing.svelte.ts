@@ -1,11 +1,15 @@
 import { commands, events, type PairingView } from '../../lib/ipc/bindings';
 import { unwrap } from '../../lib/ipc/unwrap';
+import { urlParam } from '../../lib/router/url-param';
 import { notify } from '../../lib/ui/toast';
 import { parseAddress } from './address';
 import { problem } from './pair-view';
 import { refreshSync } from './queries';
 
 export type PairMode = 'show' | 'enter' | 'address';
+
+/** The history entry an open sheet adds (`/sync?pair=show`), so browser Back closes it. */
+const PARAM = 'pair';
 
 /**
  * The pairing sheet's state. Rust owns the phases (`view` is whatever it last said); this adds only
@@ -27,6 +31,8 @@ class Pairing {
   /** The phone is on mobile data with "Allow over mobile data" off: the sheet says so instead of showing a code. */
   pausedOnMobile = $state(false);
   arrivedAt = $state(Date.now());
+  /** Whether opening pushed the history entry that closing should step back over. */
+  #pushed = false;
 
   /** Called once the sheet is mounted; returns what stops listening. */
   async listen(): Promise<() => void> {
@@ -52,6 +58,10 @@ class Pairing {
 
   /** "Pair a device" shows a code; "Enter a code" types one. */
   async start(mode: PairMode) {
+    if (!this.open) {
+      this.#pushed = urlParam.get(PARAM) === null;
+      urlParam.set(PARAM, mode, !this.#pushed);
+    }
     this.open = true;
     this.mode = mode;
     this.code = '';
@@ -148,7 +158,7 @@ class Pairing {
     const asked = this.view.state === 'asking' ? this.view.name : null;
     // Deny ends the pairing (the other device is told it was declined), so the sheet has nothing
     // left to show: it closes at once, before the new view arrives and shows an empty step.
-    if (!allow) this.open = false;
+    if (!allow) this.shut();
     await this.run(() => unwrap(commands.syncPairDecide(allow)));
     if (!allow) {
       if (this.commandError) this.open = true;
@@ -161,17 +171,37 @@ class Pairing {
    * databases as they were, so the sheet has nothing left to show.
    */
   async merge(merge: boolean) {
-    if (!merge) this.open = false;
+    if (!merge) this.shut();
     await this.run(() => unwrap(commands.syncPairMerge(merge)));
   }
 
   /** Closes the sheet; whatever was going on stops, and whoever was asked is told. */
-  async close() {
-    this.open = false;
+  async close(stepBack = true) {
+    if (stepBack) this.shut();
+    else {
+      // The page is being left: its history stays as it is.
+      this.open = false;
+      this.#pushed = false;
+    }
     this.commandError = null;
     await commands.syncPairCancel();
     // The list behind the sheet may have missed a pairing made while it was open.
     await refreshSync();
+  }
+
+  /** The sheet is gone from the screen: its history entry is stepped back over. */
+  private shut() {
+    this.open = false;
+    if (!this.#pushed) return;
+    this.#pushed = false;
+    history.back();
+  }
+
+  /** Back removed the entry while the sheet was open: close it (and end the pairing) without stepping back again. */
+  backed() {
+    if (!this.open || !this.#pushed) return;
+    this.#pushed = false;
+    void this.close(false);
   }
 
   private async run(call: () => Promise<unknown>) {

@@ -25,6 +25,7 @@
   import LocalNetworkBanner from './LocalNetworkBanner.svelte';
   import { pairByAddressHint } from './local-network';
   import { PAIRING_PAUSED, clock, fractionLeft, previewStats, problem, remaining } from './pair-view';
+  import { urlParam } from '../../lib/router/url-param';
   import { pairing } from './pairing.svelte';
   import { devicesQuery } from './queries';
 
@@ -45,6 +46,11 @@
     pairing.view.state === 'showing' || pairing.view.state === 'asking' ? pairing.view.life_ms : 0,
   );
 
+  // Browser Back removes the entry the open sheet added: the sheet closes with it.
+  $effect(() => {
+    if (pairing.open && urlParam.get('pair') === null) pairing.backed();
+  });
+
   onMount(() => {
     let stop = () => {};
     let gone = false;
@@ -56,7 +62,7 @@
       gone = true;
       stop();
       // Leaving the Devices page ends a pairing in progress: no code is left open behind it.
-      if (pairing.open) void pairing.close();
+      if (pairing.open) void pairing.close(false);
     };
   });
 
@@ -139,7 +145,7 @@
     {:else if view.state === 'paired'}
       <div class="flex flex-col items-center gap-1 text-center">
         <CircleCheck class="size-9 text-success" />
-        <h2 class="text-base font-semibold text-ink">Paired with {view.name}</h2>
+        <h2 class="text-base font-semibold text-ink wrap-anywhere">Paired with {view.name}</h2>
         {#if view.renamed}
           <p class="text-sm text-muted">
             You already had a "{unnumbered(view.name)}", so this one is called <b>{view.name}</b>. Rename it any time.
@@ -159,7 +165,7 @@
       <div class="flex items-center gap-3">
         <span class="grid size-10 shrink-0 place-items-center rounded-md bg-hue-sync-soft text-hue-sync"><Icon class="size-5" /></span>
         <div class="min-w-0">
-          <div class="truncate font-semibold text-ink">{view.name}</div>
+          <div class="font-semibold text-ink wrap-anywhere">{view.name}</div>
           <div class="text-sm text-muted">wants to pair with this device</div>
         </div>
       </div>
@@ -192,14 +198,14 @@
       </div>
     {:else if view.state === 'confirming'}
       {@render heading(title)}
-      <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Waiting for {view.name} to confirm the merge…</div>
+      <div class="my-3 flex items-center gap-2.5 text-muted wrap-anywhere"><CountdownRing fraction={1} still />Waiting for {view.name} to confirm the merge…</div>
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if view.state === 'finishing'}
       {@render heading(title)}
       <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Pairing with {view.name}…</div>
     {:else if view.state === 'waiting'}
       {@render heading(title)}
-      <div class="my-3 flex items-center gap-2.5 text-muted"><CountdownRing fraction={1} still />Waiting for {view.name} to allow…</div>
+      <div class="my-3 flex items-center gap-2.5 text-muted wrap-anywhere"><CountdownRing fraction={1} still />Waiting for {view.name} to allow…</div>
       <div class="mt-4 flex justify-end"><Button onclick={() => void pairing.close()}>Cancel</Button></div>
     {:else if view.state === 'searching'}
       {@render heading(title)}

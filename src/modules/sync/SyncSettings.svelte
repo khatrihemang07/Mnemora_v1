@@ -112,7 +112,7 @@
     label="Leave and forget all devices"
     hint={paired === 0
       ? 'No paired devices yet.'
-      : 'This device stops syncing with them for good. Its data stays here.'}
+      : 'This device stops syncing for good. Its data stays here.'}
   >
     <Button variant="danger" size="sm" disabled={paired === 0} onclick={() => (leaving = true)}>
       Leave…

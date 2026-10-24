@@ -213,7 +213,7 @@
 </SyncFrame>
 
 {#snippet sentence(r: ActivityRow)}
-  <span>
+  <span class="wrap-anywhere">
     {#each r.text as piece, i (i)}{#if piece.strong}<b class="font-semibold">{piece.text}</b>{:else}{piece.text}{/if}{/each}
     {#if r.on}<span class="text-faint"> · on {r.on}</span>{/if}
   </span>

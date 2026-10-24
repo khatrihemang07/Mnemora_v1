@@ -30,7 +30,7 @@
     </span>
     <div class="min-w-0">
       <div class="flex flex-wrap items-center gap-2">
-        <span class="font-semibold">{device.name}</span>
+        <span class="min-w-0 font-semibold wrap-anywhere">{device.name}</span>
         <span class="rounded-full border border-line px-2 text-2xs leading-5 font-medium text-muted">This device</span>
       </div>
       <button

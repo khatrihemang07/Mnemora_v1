@@ -134,7 +134,7 @@
       <h1 class="font-display text-xl font-semibold">{step === 'compare' ? rowTitle(view.row.subject, timeFormat) : 'Edit merged'}</h1>
       {#if step === 'compare'}
         <p class="mb-3 text-sm text-muted">
-          Both devices rewrote the same words. {showingName}’s version shows in the {view.row.module === 'journal'
+          Both devices rewrote the same sentence. {showingName}’s version shows in the {view.row.module === 'journal'
             ? 'Journal'
             : 'Task'} for now.
         </p>
@@ -150,23 +150,23 @@
           {/if}
           <section class="overflow-hidden rounded-md border border-hue-sync bg-surface" data-side="showing">
             <header class="border-b border-line px-3 py-2 text-xs text-muted">
-              <b class="text-ink">Showing</b> {showingName} · {timeText(view.row.showing.at, timeFormat)}
+              <b class="text-ink">Showing</b> <span class="wrap-anywhere">{showingName}</span> · {timeText(view.row.showing.at, timeFormat)}
             </header>
             <div class="px-3.5 py-2.5">{@render words(view.showing, 'bg-diff-add')}</div>
           </section>
           <section class="overflow-hidden rounded-md border border-line bg-surface" data-side="other">
             <header class="border-b border-line px-3 py-2 text-xs text-muted">
-              <b class="text-ink">Other</b> {otherName} · {timeText(view.row.other.at, timeFormat)}
+              <b class="text-ink">Other</b> <span class="wrap-anywhere">{otherName}</span> · {timeText(view.row.other.at, timeFormat)}
             </header>
             <div class="px-3.5 py-2.5">{@render words(view.other, 'bg-diff-del', true)}</div>
           </section>
         </div>
         {#if view.open}
           <div class="mt-3 flex flex-wrap gap-1.5">
-            <Button variant="primary" disabled={busy} onclick={() => settle({ kind: 'keep_this' }, 'Kept this version')}>
+            <Button variant="primary" class="max-w-full h-auto! min-h-7 py-1 whitespace-normal! text-left wrap-anywhere" disabled={busy} onclick={() => settle({ kind: 'keep_this' }, 'Kept this version')}>
               Keep {showingName}’s
             </Button>
-            <Button disabled={busy} onclick={() => settle({ kind: 'keep_other' }, `Kept ${otherName}’s version`)}>
+            <Button class="max-w-full h-auto! min-h-7 py-1 whitespace-normal! text-left wrap-anywhere" disabled={busy} onclick={() => settle({ kind: 'keep_other' }, `Kept ${otherName}’s version`)}>
               Keep {otherName}’s
             </Button>
             <Button disabled={busy} onclick={startEdit}>Edit merged…</Button>
@@ -184,10 +184,10 @@
                 <!-- whitespace-normal: the text around is pre-wrap, which would draw the template's line breaks between the rows as blank bands. -->
                 <span class="my-2 block rounded-sm border border-line font-sans text-sm whitespace-normal" data-clash={n}>
                   <span class="block bg-diff-add border-l-3 px-2.5 py-1.5 {choices[n] !== 'other' ? 'border-l-hue-sync' : 'border-l-transparent'}">
-                    <b>{showingName}</b> {p.showing}
+                    <b class="wrap-anywhere">{showingName}</b> {p.showing}
                   </span>
                   <span class="block bg-diff-del border-l-3 px-2.5 py-1.5 {choices[n] !== 'showing' ? 'border-l-hue-sync' : 'border-l-transparent'}">
-                    <b>{otherName}</b> {p.other}
+                    <b class="wrap-anywhere">{otherName}</b> {p.other}
                   </span>
                   <!-- Buttons, not a SegmentedControl: the device names are long, so they wrap (and stack on a phone), and the chosen one carries a check as well as the tint. -->
                   <span
@@ -202,11 +202,11 @@
                         role="radio"
                         aria-checked={chosen}
                         data-chosen={chosen}
-                        class="max-w-full phone:justify-start {chosen ? 'border-hue-sync! bg-hue-sync-soft!' : ''}"
+                        class="max-w-full h-auto! min-h-7 py-1 whitespace-normal! text-left wrap-anywhere phone:justify-start {chosen ? 'border-hue-sync! bg-hue-sync-soft!' : ''}"
                         onclick={() => pick(n, value as ClashChoice)}
                       >
                         {#if chosen}<Check class="size-3.5 shrink-0" />{/if}
-                        <span class="truncate">{text}</span>
+                        <span>{text}</span>
                       </Button>
                     {/each}
                   </span>
