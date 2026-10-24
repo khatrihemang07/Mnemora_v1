@@ -13,6 +13,7 @@
   import { unwrap } from '../../lib/ipc/unwrap';
   import { readCore } from '../../lib/settings/core';
   import { settingsQuery } from '../../lib/settings/queries';
+  import { closeOnBack } from '../../lib/router/back-button.svelte';
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
@@ -24,7 +25,7 @@
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
   import { conflictIdOf, rowTitle, timeText, usePossessive } from './conflicts';
-  import { compareFlow, forgetCompareFlow } from './compare-flow.svelte';
+  import { compareFlow, forgetCompareFlow, stepBack } from './compare-flow.svelte';
   import { conflictQuery, watchConflicts } from './queries';
   import SyncFrame from './SyncFrame.svelte';
 
@@ -52,6 +53,15 @@
   const choices = $derived(flow.choices);
   const draft = $derived(flow.draft);
   let busy = $state(false);
+
+  // Back inside Edit merged goes one step back and keeps the draft, as Back finishes any transient mode.
+  closeOnBack(
+    () => stepBack(step) !== null,
+    () => {
+      const previous = stepBack(flow.step);
+      if (previous) flow.step = previous;
+    },
+  );
 
   const clashes = $derived(view?.pieces.filter((p) => p.kind === 'clash') ?? []);
   const showingName = $derived(view?.row.showing.device ?? '');

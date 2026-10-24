@@ -12,6 +12,14 @@ export class CompareFlow {
   showOriginal = $state(false);
 }
 
+/**
+ * Back inside Edit merged: Polish goes back to Choose, Choose to Compare; the choices and the text stay,
+ * so nothing typed is lost (R4). Compare itself has no step to go back to (`null`: Back leaves the page).
+ */
+export function stepBack(step: CompareFlow['step']): CompareFlow['step'] | null {
+  return step === 'polish' ? 'choose' : step === 'choose' ? 'compare' : null;
+}
+
 const flows = new Map<string, CompareFlow>();
 
 /** The flow of conflict `id`, made on first use. */
