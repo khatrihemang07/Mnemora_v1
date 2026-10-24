@@ -34,6 +34,7 @@ export function formatMenu({ environment, states, environments, queue, keysAvail
     line('r', 'relaunch the running or queued app(s)'),
     line('x', 'stop the native app(s), keep Vite'),
     line('?', 'show this menu'),
+    line('q', 'quit everything'),
     line('Ctrl-C', 'quit everything'),
     formatStatus({ environment, states, queue }),
   ].join('\n');

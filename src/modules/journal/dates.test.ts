@@ -171,7 +171,7 @@ describe('pills while the window is away from Today', () => {
 describe('dayHue', () => {
   it('gives Today and Yesterday their own colour and every other day the Journal hue', () => {
     expect(dayHue('2026-10-24', '2026-10-24')).toBe('--accent');
-    expect(dayHue('2026-10-23', '2026-10-24')).toBe('--muted');
+    expect(dayHue('2026-10-23', '2026-10-24')).toBe('--warning');
     expect(dayHue('2026-10-22', '2026-10-24')).toBe('--hue-journal');
     expect(dayHue('2026-10-25', '2026-10-24')).toBe('--hue-journal');
   });

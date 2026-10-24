@@ -14,7 +14,7 @@ RUN := ./scripts/with-env.sh
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-dev: ## Vite + key menu (w web, q Mac, a Android, r relaunch, x stop); Production data
+dev: ## Vite + key menu (w web, z Mac, a Android, r relaunch, x stop, q quit); Production data
 	$(RUN) node scripts/dev.mjs $(ARGS)
 
 sandbox: ## Vite + key menu, Mac app on separate Sandbox data with the SANDBOX badge

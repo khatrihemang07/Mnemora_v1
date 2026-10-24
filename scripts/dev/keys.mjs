@@ -15,6 +15,7 @@ const CORE_KEYS = Object.freeze({
   w: ACTION.WEB,
   r: ACTION.RELAUNCH,
   x: ACTION.STOP,
+  q: ACTION.QUIT,
   '?': ACTION.HELP,
   '\u0003': ACTION.QUIT,
 });

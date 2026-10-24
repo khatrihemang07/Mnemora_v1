@@ -15,11 +15,12 @@ describe('formatMenu', () => {
     const text = formatMenu(idle);
     for (const line of [
       '  w        open the web mock',
-      '  q        launch the Mac app (Production)',
+      '  z        launch the Mac app (Production)',
       '  a        launch the Android app (Sandbox)',
       '  r        relaunch',
       '  x        stop the native app(s), keep Vite',
       '  ?        show this menu',
+      '  q        quit everything',
       'Ctrl-C   quit everything',
       DEV_URL,
     ]) {

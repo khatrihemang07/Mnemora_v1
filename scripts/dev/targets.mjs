@@ -28,7 +28,7 @@ export const TARGETS = Object.freeze({
   mac: Object.freeze({
     id: 'mac',
     label: 'Mac',
-    key: 'q',
+    key: 'z',
     usesSandbox: (sandbox) => sandbox,
     command: macCommand,
     // cargo prints "Finished" when the build ends and "Running" when the app starts. Either
