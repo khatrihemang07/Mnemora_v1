@@ -60,8 +60,8 @@ export function dayLabel(date: string, today: string): string {
 
 /** The colour token for a day's badge or chip: Today and Yesterday each have their own, any other day the Journal hue. */
 export function dayHue(date: string, today: string): string {
-  if (date === today) return '--accent';
-  if (date === addDays(today, -1)) return '--warning';
+  if (date === today) return '--day-today';
+  if (date === addDays(today, -1)) return '--day-yesterday';
   return '--hue-journal';
 }
 

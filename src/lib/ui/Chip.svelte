@@ -34,7 +34,7 @@
     transition-[transform,background-color,border-color] duration-(--dur) ease-out active:scale-[0.96]
     disabled:cursor-default disabled:opacity-60 disabled:active:scale-100
     {tone === 'warm'
-    ? 'border-transparent bg-[color-mix(in_oklch,var(--chip-hue)_14%,transparent)] text-[color-mix(in_oklab,var(--chip-hue)_55%,var(--ink))]'
+    ? 'border-transparent bg-[color-mix(in_oklch,var(--chip-hue)_24%,transparent)] text-[color-mix(in_oklab,var(--chip-hue)_65%,var(--ink))]'
     : 'border-line-strong bg-surface-2 text-ink hover:border-faint'} {cls}"
   {...rest}
 >

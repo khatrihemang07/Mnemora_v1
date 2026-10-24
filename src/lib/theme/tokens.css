@@ -37,6 +37,9 @@
   /* C1 Jewel: Module hues */
   --hue-home: oklch(72% 0.15 65);
   --hue-journal: oklch(65% 0.17 32);
+  /* The Today and Yesterday markers: emerald and fuchsia, apart from each other and from coral. */
+  --day-today: oklch(56% 0.16 158);
+  --day-yesterday: oklch(52% 0.25 328);
   --hue-todo: oklch(63% 0.12 182);
   --hue-ai: oklch(60% 0.2 295);
   --hue-settings: oklch(57% 0.03 260);
@@ -112,6 +115,8 @@
   --danger-soft: oklch(70% 0.17 27 / 0.14);
   --on-danger: oklch(18% 0.03 27);
   --success: oklch(75% 0.14 160);
+  --day-today: oklch(80% 0.17 158);
+  --day-yesterday: oklch(74% 0.2 328);
 
   /* Lighter indigo on dark surfaces; True black keeps the dark value, as every other hue does. */
   --hue-sync: oklch(78% 0.1 265);

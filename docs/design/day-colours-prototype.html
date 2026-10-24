@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Today / Yesterday colours: prototype</title>
+<style>
+  /* Tokens copied from src/lib/theme/tokens.css (light / dark); coral = --hue-journal. */
+  :root[data-theme="light"] {
+    --bg: oklch(98.2% 0.006 70); --surface: oklch(100% 0 0); --ink: oklch(21% 0.014 60);
+    --faint: oklch(62% 0.014 65); --line: oklch(91% 0.011 70); --coral: oklch(65% 0.17 32);
+  }
+  :root[data-theme="dark"] {
+    --bg: oklch(16.5% 0.008 60); --surface: oklch(19.8% 0.01 60); --ink: oklch(94% 0.009 80);
+    --faint: oklch(58% 0.012 65); --line: oklch(26% 0.01 60); --coral: oklch(72% 0.15 32);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, sans-serif; padding: 24px 16px 64px; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.lede { color: var(--faint); margin: 0 0 16px; }
+  .bar { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; position: sticky; top: 0; background: var(--bg); padding: 8px 0; z-index: 2; }
+  button.mode { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  button.mode[aria-pressed="true"] { border-color: var(--ink); font-weight: 600; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; margin: 0 0 2px; }
+  .card .why { color: var(--faint); margin: 0 0 12px; font-size: 13px; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; margin-bottom: 10px; }
+  .hd { display: flex; align-items: baseline; gap: 10px; background: var(--bg); padding: 6px 10px; border-radius: 8px; min-width: 330px; }
+  .hd h3 { font-family: Georgia, serif; font-weight: 600; font-size: 20px; margin: 0; }
+  .badge { border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 34px; border-radius: 999px; padding: 0 10px; font-size: 12px; font-weight: 600; white-space: nowrap; border: 0; }
+  .chip svg { width: 14px; height: 14px; }
+  .chev { width: 12px !important; height: 12px !important; opacity: .7; }
+  .nums { font: 11px/1.4 ui-monospace, monospace; color: var(--faint); }
+  .gaps { font-size: 12px; color: var(--faint); margin-top: 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Today / Yesterday colours</h1>
+  <p class="lede">Each card shows the Page header badge and the composer chip (icon only for Today and Yesterday, text for any other day, coral) on the real light and dark backgrounds. Toggle the theme: a good pair must work in both. The numbers under each sample are the measured contrast of its text against its own tinted background (aim: 4.5 or more for badge text, 3 or more for chip icons).</p>
+  <div class="bar">
+    <button class="mode" data-mode="light" aria-pressed="true">Light</button>
+    <button class="mode" data-mode="dark" aria-pressed="false">Dark</button>
+  </div>
+  <div id="cards"></div>
+</main>
+<script>
+// Each pair: light and dark colour for Today and Yesterday, as oklch() strings.
+const PAIRS = [
+  { id: 'A', name: 'Electric blue + Lime green',
+    why: 'Cool and energetic; the most natural now-vs-just-before pairing. Blue and lime are 120 degrees apart and both 90+ from coral.',
+    today: ['oklch(56% 0.22 258)', 'oklch(76% 0.15 258)'], yest: ['oklch(62% 0.2 140)', 'oklch(84% 0.2 140)'], gaps: 'blue-lime 118, lime-coral 108, coral-blue 134' },
+  { id: 'B', name: 'Cyan + Magenta',
+    why: 'Near opposites, very loud. Magenta is closer to coral (about 47 degrees), so the stronger tint matters.',
+    today: ['oklch(58% 0.12 215)', 'oklch(84% 0.12 210)'], yest: ['oklch(54% 0.24 350)', 'oklch(74% 0.2 350)'], gaps: 'cyan-magenta 140, magenta-coral 42 (close), coral-cyan 177' },
+  { id: 'C', name: 'Purple + Chartreuse',
+    why: 'Almost complementary, the highest hue contrast. Chartreuse reads olive on white unless darkened.',
+    today: ['oklch(48% 0.25 303)', 'oklch(74% 0.16 303)'], yest: ['oklch(66% 0.2 122)', 'oklch(88% 0.22 122)'], gaps: 'purple-chartreuse 181, chartreuse-coral 90, coral-purple 89' },
+  { id: 'D', name: 'Emerald + Fuchsia',
+    why: 'Rich jewel tones; emerald is calm, fuchsia stands out. Fuchsia is 67 degrees from coral.',
+    today: ['oklch(56% 0.16 158)', 'oklch(80% 0.17 158)'], yest: ['oklch(52% 0.25 328)', 'oklch(74% 0.2 328)'], gaps: 'emerald-fuchsia 170, fuchsia-coral 64, coral-emerald 126' },
+  { id: 'E', name: 'Blue + Gold',
+    why: 'Classic complementary pair. Gold is the closest to coral (about 58 degrees) but far brighter and more yellow.',
+    today: ['oklch(54% 0.22 262)', 'oklch(76% 0.15 262)'], yest: ['oklch(72% 0.16 90)', 'oklch(86% 0.17 92)'], gaps: 'blue-gold 172, gold-coral 58, coral-blue 130' },
+];
+const OTHER = { label: 'Tue 20 Oct' };
+const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>';
+const CHEV = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+const TINT = 24, MIX = 65; // tint strength (%), and how much of the hue stays in the text (rest is ink)
+
+const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+const cx = cv.getContext('2d', { willReadFrequently: true });
+function px(css) { cx.clearRect(0, 0, 1, 1); cx.fillStyle = '#000'; cx.fillStyle = css; cx.fillRect(0, 0, 1, 1); return [...cx.getImageData(0, 0, 1, 1).data].slice(0, 3); }
+function lum([r, g, b]) { const f = c => { c /= 255; return c <= .03928 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4; }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); }
+function ratio(a, b) { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return ((x + .05) / (y + .05)).toFixed(2); }
+
+function sample(kind, hue, label, surfaceVar) {
+  const style = `--h:${hue};background:color-mix(in oklch, var(--h) ${TINT}%, transparent);color:color-mix(in oklab, var(--h) ${MIX}%, var(--ink));`;
+  const el = kind === 'badge'
+    ? `<span class="badge" style="${style}">${label}</span>`
+    : `<button class="chip" style="${style}" tabindex="-1">${ICON}${label === '' ? '' : label}${CHEV}</button>`;
+  return `<span data-hue="${hue}" data-surface="${surfaceVar}" data-kind="${kind}">${el}<div class="nums"></div></span>`;
+}
+
+function render() {
+  const dark = document.documentElement.dataset.theme === 'dark' ? 1 : 0;
+  const cards = document.getElementById('cards');
+  cards.innerHTML = PAIRS.map(p => {
+    const t = p.today[dark], y = p.yest[dark], o = 'var(--coral)';
+    return `<section class="card"><h2>${p.id}. ${p.name}</h2><p class="why">${p.why}</p>
+      <div class="row">
+        <div class="hd">${sample('badge', t, 'Today', '--bg')}<h3>Saturday, 24 October</h3></div>
+        <div class="hd">${sample('badge', y, 'Yesterday', '--bg')}<h3>Friday, 23 October</h3></div>
+      </div>
+      <div class="row">
+        ${sample('chip', t, '', '--surface')}
+        ${sample('chip', y, '', '--surface')}
+        ${sample('chip', o, OTHER.label, '--surface')}
+      </div>
+      <div class="gaps">Hue gaps (degrees): ${p.gaps}</div></section>`;
+  }).join('');
+  // Measure: text colour against its own tinted background, composited over the surface.
+  const css = getComputedStyle(document.documentElement);
+  document.querySelectorAll('[data-hue]').forEach(wrap => {
+    const hue = wrap.dataset.hue;
+    const surf = px(`${css.getPropertyValue(wrap.dataset.surface).trim()}`);
+    cx.clearRect(0, 0, 1, 1);
+    cx.fillStyle = `rgb(${surf.join(',')})`; cx.fillRect(0, 0, 1, 1);
+    cx.fillStyle = `color-mix(in oklch, ${hue.replace('var(--coral)', css.getPropertyValue('--coral'))} ${TINT}%, transparent)`; cx.fillRect(0, 0, 1, 1);
+    const bg = [...cx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+    const text = px(`color-mix(in oklab, ${hue.replace('var(--coral)', css.getPropertyValue('--coral'))} ${MIX}%, ${css.getPropertyValue('--ink')})`);
+    wrap.querySelector('.nums').textContent = `contrast ${ratio(text, bg)}:1`;
+  });
+}
+document.querySelectorAll('button.mode').forEach(b => b.addEventListener('click', () => {
+  document.documentElement.dataset.theme = b.dataset.mode;
+  document.querySelectorAll('button.mode').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+}));
+render();
+</script>
+</body>
+</html>

@@ -26,7 +26,7 @@
   {#if heading.badge}
     <span
       style="--badge-hue: var({dayHue(page.date, today)})"
-      class="rounded-full bg-[color-mix(in_oklch,var(--badge-hue)_14%,transparent)] px-2 py-px text-2xs font-semibold text-[color-mix(in_oklab,var(--badge-hue)_55%,var(--ink))]"
+      class="rounded-full bg-[color-mix(in_oklch,var(--badge-hue)_24%,transparent)] px-2 py-px text-2xs font-semibold text-[color-mix(in_oklab,var(--badge-hue)_65%,var(--ink))]"
     >
       {heading.badge}
     </span>

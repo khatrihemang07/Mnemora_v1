@@ -46,7 +46,7 @@ Three layers, all in `src/lib/theme/tokens.css` and `src/app.css`:
 1. **Primitive**: raw OKLCH values and scales, written once per theme inside `:root` / `[data-theme]`. Only `tokens.css` contains colour literals.
 2. **Semantic**: names that say what a value is *for*. Components use only these.
    - Surfaces and ink: `--bg`, `--side`, `--surface`, `--surface-2`, `--pop`, `--ink`, `--muted`, `--faint`, `--line`, `--hover`, `--active`
-   - Brand and feedback: `--accent`, `--on-accent`, `--accent-soft`, `--ring`, `--danger`, `--danger-soft`, `--on-danger`, `--success`, `--warning`, `--on-warning`
+   - Brand and feedback: `--accent`, `--on-accent`, `--accent-soft`, `--ring`, `--danger`, `--danger-soft`, `--on-danger`, `--success`, `--warning`, `--on-warning`, `--day-today`, `--day-yesterday` (the Journal's Today and Yesterday markers)
    - Module hues (C1): `--hue-home`, `--hue-journal`, `--hue-todo`, `--hue-sync`, `--hue-ai`, `--hue-settings`. `--hue-sync` is indigo and the only hue with a lighter dark value (True black keeps the dark value); it comes with `--on-hue-sync` (ink on a filled pill) and `--hue-sync-soft` (a faint tile or chip wash)
    - Hero (S1): `--hero-from`, `--hero-via`, `--hero-to`, `--hero-ink`, `--hero-ink-muted` (darkened so white text passes AA)
    - Shape and depth: `--r1`/`--r2`/`--r3` (8/12/16), `--card-border`, `--elev-card`, `--elev-pop`, `--scroll-thumb`, `--scrim`
