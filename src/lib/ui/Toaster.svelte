@@ -1,5 +1,6 @@
 <!--
-  Toaster: the single toast host (N5-A). Bottom-right, max 3 visible, 4s, pauses on hover.
+  Toaster: the single toast host (N5-A). Bottom-right, up to 3 expanded (fully readable), pauses on hover.
+  Lifetimes come from toast.ts: 5s with a button or an error, 2s for a plain confirmation.
   On the phone it sits above the tab bar, and moves to the top of the screen while a bottom sheet is
   open: the sheet covers the bottom, and a toast there would sit on its content (a picker's summary
   line, a comment box). The top is the scrim, which the toast and its Undo can use freely.
@@ -8,6 +9,7 @@
   import { Toaster } from 'svelte-sonner';
   import { viewport } from '../viewport.svelte';
   import { openSheets, phoneFab } from './sheet-open.svelte';
+  import { MINOR_MS } from './toast';
 
   const atTop = $derived(viewport.isPhone && openSheets.count > 0);
 </script>
@@ -15,7 +17,8 @@
 <Toaster
   position={atTop ? 'top-center' : 'bottom-right'}
   visibleToasts={3}
-  duration={4000}
+  expand
+  duration={MINOR_MS}
   offset={16}
   mobileOffset={{
     top: 'calc(8px + env(safe-area-inset-top))',

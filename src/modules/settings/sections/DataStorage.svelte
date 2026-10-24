@@ -8,7 +8,7 @@
   import EnvBadge from '../../../lib/ui/EnvBadge.svelte';
   import SettingRow from '../../../lib/ui/SettingRow.svelte';
   import SettingSection from '../../../lib/ui/SettingSection.svelte';
-  import { notify, notifyError } from '../../../lib/ui/toast';
+  import { MINOR_MS, notify, notifyError } from '../../../lib/ui/toast';
 
   const info = createQuery(() => appInfoQuery);
   let backingUp = $state(false);
@@ -29,7 +29,7 @@
       const { revealItemInDir } = await import('@tauri-apps/plugin-opener');
       await revealItemInDir(path);
     } catch {
-      notifyError('Could not open the folder');
+      notifyError('Could not open the folder', MINOR_MS);
     }
   }
 </script>

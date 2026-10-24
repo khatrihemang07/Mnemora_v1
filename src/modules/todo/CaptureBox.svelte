@@ -40,7 +40,7 @@
   import type { WhenValue } from '../../lib/ui/WhenPicker.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import TaskCheckbox from '../../lib/ui/TaskCheckbox.svelte';
-  import { notify, notifyError, notifyUndo } from '../../lib/ui/toast';
+  import { notify, notifyError } from '../../lib/ui/toast';
   import { todoClock } from './clock.svelte';
   import {
     applySuggestion,
@@ -78,9 +78,8 @@
     listsQuery,
     parseCapture,
     quickEdit,
-    quickEditUndo,
   } from './queries';
-  import { editedMessage, PRIORITY_NAMES, quickAddedMessage } from './tasks';
+  import { PRIORITY_NAMES, quickAddedMessage } from './tasks';
   import {
     mergeUnderstood,
     parseUnderstood,
@@ -107,8 +106,6 @@
     onadded?: (task: Task, where: string) => void;
     /** The quick edit ended: saved, or nothing to save. */
     onsaved?: () => void;
-    /** The floating Quick add: its hint line says so. */
-    quick?: boolean;
     /** Set while Esc belongs to something inside (suggestions, notes), for a Sheet around. */
     guard?: { escape: boolean };
     class?: string;
@@ -119,7 +116,6 @@
     listId = null,
     date = null,
     placeholder = 'New task',
-    quick = false,
     onclose,
     onadded,
     onsaved,
@@ -212,7 +208,8 @@
 
   const meaningCx = $derived({ today: todoClock.today, timeFormat: todoPrefs.timeFormat });
   const mark = (s: ParseSpan) => spanMeaning(s, meaningCx);
-  const word = (s: ParseSpan) => text.slice(s.start, s.end);
+  // The spans are offsets into the text they were read from (`parsedFor`), which may lag the typing.
+  const word = (s: ParseSpan) => parsedFor.slice(s.start, s.end);
 
   // Highlight only while the reading is of this very text, so it never sits on the wrong letters.
   const segments = $derived(
@@ -433,11 +430,6 @@
       }
       await quickEdit(old.id, next);
       void invalidateTodo();
-      notifyUndo(editedMessage(title), () => {
-        quickEditUndo(old.id, previous)
-          .catch(() => notifyError("Couldn't undo the edit"))
-          .finally(() => void invalidateTodo());
-      });
       onsaved?.();
     } catch (e) {
       notifyError(e instanceof IpcError ? e.message : "Couldn't save the Task");
@@ -669,7 +661,7 @@
       ></textarea>
     {/if}
 
-    {#if parsed && parsedFor === text && (parsed.spans.length > 0 || parsed.alternatives.length > 0 || parsed.ignored.length > 0)}
+    {#if parsed && (parsed.spans.length > 0 || parsed.alternatives.length > 0 || parsed.ignored.length > 0)}
       <div class="flex flex-wrap items-center gap-1.5 pt-1.5" role="group" aria-label="How the words were read">
         {#each parsed.spans as s (s.key + s.kind)}
           {@const Icon = KIND_ICON[s.kind as UnderstoodKind]}
@@ -791,14 +783,6 @@
           onclick={submitByTap}
         />
       </div>
-    </div>
-
-    <div class="hidden flex-wrap gap-x-3 pt-1.5 text-[0.7rem] text-faint desktop:flex">
-      <span>↵ {editing ? 'save' : 'add'}</span>
-      {#if !editing}<span>⇧↵ notes</span>{/if}
-      <span>Esc {editing ? 'cancel' : 'close'}</span>
-      <span>⌫ after a word keeps it as text</span>
-      {#if quick}<span class="ml-auto">Quick add · Q</span>{/if}
     </div>
   </div>
 </div>

@@ -1,7 +1,6 @@
 import { commands } from '../../lib/ipc/bindings';
 import { unwrap } from '../../lib/ipc/unwrap';
 import { settingsDraft } from '../../lib/settings/store.svelte';
-import { notify } from '../../lib/ui/toast';
 
 /** Saves the draft (N9-B). A failure keeps the edits so the user can retry. */
 class SaveState {
@@ -16,7 +15,6 @@ class SaveState {
     try {
       await unwrap(commands.settingsSave(changes));
       settingsDraft.commit();
-      notify('Settings saved');
       return true;
     } catch (e) {
       this.error = e;

@@ -70,7 +70,6 @@ class DragController {
   #tap: (() => void) | null = null;
   #canDrag = true;
   #pending: Item | null = null;
-  #from: Neighbours = { before: null, after: null };
   #drop: Drop | null = null;
   #scroller: HTMLElement | null = null;
   #frame = 0;
@@ -153,7 +152,6 @@ class DragController {
 
   #start(): void {
     this.item = this.#pending;
-    if (this.item?.kind === 'task') this.#from = this.#neighboursOfTask(this.item.task.id);
     document.body.dataset.dragging = '';
     window.getSelection()?.removeAllRanges();
     // The click that ends a drag must not open the Task under it.
@@ -273,22 +271,9 @@ class DragController {
     return list ? `${list.emoji ?? '≡'} ${list.name}` : null;
   }
 
-  /** The neighbours a Task has now, in its group on the page: where Undo puts it back. */
-  #neighboursOfTask(id: string): Neighbours {
-    const row = document.querySelector<HTMLElement>(`[data-task-row="${CSS.escape(id)}"]`);
-    const group = row?.closest<HTMLElement>('[data-task-group]');
-    const ids = group ? rowBoxes(group).map((r) => r.id) : [];
-    const at = ids.indexOf(id);
-    return at === -1
-      ? { before: null, after: null }
-      : { before: ids[at - 1] ?? null, after: ids[at + 1] ?? null };
-  }
-
   #up = (): void => {
     const item = this.item;
     const drop = this.#drop;
-    const from = this.#from;
-    const summary = this.summary;
     const tap = this.item ? null : this.#tap;
     this.#end();
     if (tap) {
@@ -299,7 +284,7 @@ class DragController {
     if (item.kind === 'list' && drop.kind === 'list-place' && !drop.same) {
       void placeList(item.list.id, drop.place.before, drop.place.after);
     } else if (item.kind === 'task' && drop.kind === 'place' && !drop.same) {
-      void placeTask(item.task, { ...drop.place, adopt: drop.adopt }, from, summary);
+      void placeTask(item.task, { ...drop.place, adopt: drop.adopt });
     } else if (item.kind === 'task' && drop.kind === 'sidebar') {
       const target = drop.target;
       if (target === 'inbox') void dropTaskOnSidebar(item.task, { kind: 'inbox' });
@@ -353,7 +338,7 @@ class DragController {
     const to = stepNeighbours(ids, task.id, dir);
     if (!to) return false;
     const adopt: GroupKey[] = [];
-    void placeTask(task, { ...to, adopt }, this.#neighboursIn(ids, task.id), null).then(() => {
+    void placeTask(task, { ...to, adopt }).then(() => {
       // The row is re-rendered in its new place: give it focus back.
       requestAnimationFrame(() => {
         document
@@ -362,11 +347,6 @@ class DragController {
       });
     });
     return true;
-  }
-
-  #neighboursIn(ids: string[], id: string): Neighbours {
-    const at = ids.indexOf(id);
-    return { before: ids[at - 1] ?? null, after: ids[at + 1] ?? null };
   }
 }
 

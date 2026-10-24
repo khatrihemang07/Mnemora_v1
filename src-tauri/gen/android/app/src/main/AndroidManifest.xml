@@ -18,14 +18,14 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
     <application
-        android:icon="@mipmap/ic_launcher"
+        android:icon="${appIcon}"
         android:label="${appLabel}"
         android:theme="@style/Theme.mnemora_app"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
-            android:label="@string/main_activity_title"
+            android:label="${appLabel}"
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
