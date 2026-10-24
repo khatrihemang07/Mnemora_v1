@@ -5,11 +5,10 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 RUN := ./scripts/with-env.sh
-SANDBOX_ARGS := --config src-tauri/tauri.sandbox.conf.json --features sandbox
 DEV_PORT := 47821
-# Tauri merges build.features from the sandbox config too; passing it explicitly as well
-# means a CLI that ignored the config could still never start Sandbox on Production data
-# (the app also refuses to start when identifier and build Environment disagree).
+# `make dev` and `make sandbox` start Vite only and show a key menu (scripts/dev.mjs).
+# ARGS passes flags to it, e.g. make dev ARGS="--mac --android". The sandbox config and features
+# live in scripts/dev-menu.mjs; the Sandbox Environment also refuses to start on Production data.
 
 .PHONY: help dev sandbox build android-dev android android-sandbox android-test test lint fmt icons bindings trim clean-heavy setup
 
@@ -23,13 +22,13 @@ define require_free_port
 	fi
 endef
 
-dev: ## Hot reload on Production data (DB is backed up before migrations)
+dev: ## Vite + key menu (w web, q Mac, a Android, r relaunch, x stop); Production data
 	$(require_free_port)
-	$(RUN) cargo tauri dev
+	$(RUN) node scripts/dev.mjs $(ARGS)
 
-sandbox: ## Hot reload on separate Sandbox data with the SANDBOX badge
+sandbox: ## Vite + key menu, Mac app on separate Sandbox data with the SANDBOX badge
 	$(require_free_port)
-	$(RUN) cargo tauri dev $(SANDBOX_ARGS)
+	$(RUN) node scripts/dev.mjs --sandbox $(ARGS)
 
 build: ## Release build for this machine (.app/.dmg), signed if setup-signing was run
 	@eval "$$(./scripts/signing-env.sh mac)"; $(RUN) cargo tauri build

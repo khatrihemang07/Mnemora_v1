@@ -23,8 +23,8 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 
 | Command | What it does |
 |---|---|
-| `make dev` | Hot-reload app on **Production** data (DB is backed up before migrations) |
-| `make sandbox` | Hot-reload app on separate **Sandbox** data, with an orange SANDBOX badge |
+| `make dev` | Vite plus a key menu; build the app on **Production** data (DB is backed up before migrations) |
+| `make sandbox` | Vite plus a key menu; build the app on separate **Sandbox** data, with an orange SANDBOX badge |
 | `make build` | Release build for this machine (`.app` / `.dmg`) |
 | `make android-dev` | Hot reload on a USB-connected phone (Sandbox data) |
 | `make android-sandbox` | Debug Sandbox APK (no hot reload) installed on the phone |
@@ -38,6 +38,22 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make icons` | Regenerate every app icon and the favicon from `src-tauri/icons/source/*.svg` |
 
 Every target runs with `CARGO_BUILD_JOBS=2` and cleans up the processes it started.
+
+### Dev menu (`make dev`, `make sandbox`)
+
+Both start only Vite on port 47821 and show a key menu. The native app is built only when you ask for it, and native builds run one at a time.
+
+| Key | Action |
+|---|---|
+| `w` | Open the web mock in your browser |
+| `q` | Launch the Mac app (Production for `make dev`, Sandbox for `make sandbox`) |
+| `a` | Launch the Android app on a USB phone (always Sandbox data) |
+| `r` | Relaunch the running app(s) |
+| `x` | Stop the native app(s), keep Vite |
+| `?` | Show the menu again |
+| Ctrl-C | Quit everything |
+
+Flags launch apps as soon as Vite is up, and combine: `make dev ARGS="--mac --android"`. Without `make` you can run `pnpm dev:menu --mac`, but that skips the port check and `.env.local`. A second app waits in the queue until the first has finished building. Without a terminal (`make dev </dev/null`) it runs Vite only and logs that keys are unavailable. Android needs exactly one phone connected.
 
 ## Trying the Todo widget
 
@@ -54,7 +70,7 @@ The Todo widget (Android 12+) is a native home-screen widget for the Todo Module
 
 | | Production | Sandbox |
 |---|---|---|
-| Started by | `make dev`, `make build` | `make sandbox`, `make android-dev` |
+| Started by | `make dev` (press `q` or `ARGS="--mac"`), `make build` | `make sandbox` (press `q`), `make android-dev` |
 | Identifier | `com.hemang.mnemora` | `com.hemang.mnemora.sandbox` |
 | Data | `<platform data root>/com.hemang.mnemora/data/mnemora.db` | `<platform data root>/com.hemang.mnemora.sandbox/data/mnemora.db` |
 | Config, logs | `.../config/device.toml`, `.../logs/` | same layout under the Sandbox folder |
