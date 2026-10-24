@@ -27,12 +27,19 @@ export function discardEdit(flow: CompareFlow) {
   flow.draftFor = null;
 }
 
+const dialogOpen = () =>
+  typeof document !== 'undefined' &&
+  document.querySelector('[role="dialog"][data-state="open"]') !== null;
+
 /** Esc in the Choose or Polish step is Cancel (T4); Compare is a page, so Esc leaves it alone. True when it cancelled. */
 export function escapeCancels(
   flow: CompareFlow,
   e: { key: string; defaultPrevented: boolean },
+  overlayOpen: () => boolean = dialogOpen,
 ): boolean {
   if (e.key !== 'Escape' || e.defaultPrevented || flow.step === 'compare') return false;
+  // A Dialog or Sheet open over the page (Quick add) takes this Esc; it is not Cancel's.
+  if (overlayOpen()) return false;
   discardEdit(flow);
   return true;
 }

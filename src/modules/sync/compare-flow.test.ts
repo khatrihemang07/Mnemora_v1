@@ -102,4 +102,13 @@ describe('Esc in Edit merged (T4)', () => {
     expect(flow.step).toBe('choose');
     forgetCompareFlow('esc2');
   });
+
+  it('leaves an Esc that closes a Dialog or Sheet over the page alone', () => {
+    const flow = compareFlow('esc3');
+    flow.step = 'choose';
+    expect(escapeCancels(flow, esc, () => true)).toBe(false);
+    expect(flow.step).toBe('choose');
+    expect(escapeCancels(flow, esc, () => false)).toBe(true);
+    forgetCompareFlow('esc3');
+  });
 });
