@@ -10,7 +10,13 @@ import { createTodoMock } from './mock-todo';
 function setup(formats?: () => Formats) {
   const todo = createTodoMock();
   const journal = createJournalMock();
-  const conflicts = createConflictsMock();
+  // The Conflicts mock logs to the Activity mock, as mock.ts wires them.
+  const conflicts = createConflictsMock(
+    undefined,
+    Date.now,
+    () => true,
+    (line) => activity.add(line),
+  );
   const activity = createActivityMock(0, Date.now(), (id) => conflicts.isOpen(id));
   const announce = {
     todoChanged: vi.fn(),
@@ -143,6 +149,35 @@ describe('the simulated Pixel 8', () => {
     // Once, however often it is listed.
     t.lists();
     expect(t.lists().resolved.filter((r) => r.kind === 'conflict_deleted')).toHaveLength(1);
+  });
+
+  it('logs one Activity line when a Conflict closes because its record was deleted (R5-activity)', () => {
+    const t = setup();
+    t.pixel.scenario('conflict');
+    const lines = () =>
+      (
+        t.activity.handle('sync_activity', {
+          filter: { kind: 'all' },
+          cursor: null,
+          limit: 200,
+        }) as {
+          rows: { id: string; kind: string; text: { text: string }[] }[];
+        }
+      ).rows.filter((r) => r.kind === 'conflict_resolved');
+    const before = lines().length;
+    const entryId = (t.pixel.world().find((d) => d.entity === 'entry') as { id: string }).id;
+    t.journal.handle('journal_entry_delete', { id: entryId });
+    t.lists();
+    t.lists();
+    const after = lines();
+    expect(after).toHaveLength(before + 1);
+    expect(after.some((r) => r.id.startsWith('mock-act-resolved-'))).toBe(true);
+    expect(
+      after
+        .find((r) => r.id.startsWith('mock-act-resolved-'))
+        ?.text.map((p) => p.text)
+        .join(''),
+    ).toMatch(/^Conflict in .* resolved$/);
   });
 
   it('takes the Review link off a Conflict’s Activity line once it is resolved', () => {

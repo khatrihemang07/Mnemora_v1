@@ -13,7 +13,7 @@
   import Button from '../../lib/ui/Button.svelte';
   import Card from '../../lib/ui/Card.svelte';
   import DeviceNameField from './DeviceNameField.svelte';
-  import { WELCOME_LINE } from './local-network';
+  import { WELCOME_LINE, welcomeLine } from './local-network';
   import { pairing } from './pairing.svelte';
   import { isMac } from '../../lib/platform';
   import { createQuery } from '@tanstack/svelte-query';
@@ -34,7 +34,7 @@
       text: 'Changes merge on their own. If the same text was rewritten on two devices, Sync keeps both and asks you.',
     },
     // macOS 15+ asks before Mnemora may find devices on the network; tell them first (D12).
-    ...(isMac ? [{ icon: Radar, text: WELCOME_LINE }] : []),
+    ...(welcomeLine(isMac, devices.data?.this_device) ? [{ icon: Radar, text: WELCOME_LINE }] : []),
   ];
 </script>
 

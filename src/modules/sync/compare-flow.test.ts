@@ -3,6 +3,7 @@ import {
   compareFlow,
   discardEdit,
   draftIsCurrent,
+  escapeCancels,
   forgetCompareFlow,
   stepBack,
 } from './compare-flow.svelte';
@@ -74,5 +75,31 @@ describe('keeping the draft (R4)', () => {
     expect(flow.choices).toEqual([]);
     expect(draftIsCurrent(flow)).toBe(false);
     forgetCompareFlow('cancel');
+  });
+});
+
+describe('Esc in Edit merged (T4)', () => {
+  const esc = { key: 'Escape', defaultPrevented: false };
+  it('cancels from Choose and Polish like the Cancel button', () => {
+    for (const step of ['choose', 'polish'] as const) {
+      const flow = compareFlow('esc');
+      flow.step = step;
+      flow.choices = ['other'];
+      flow.draft = 'x';
+      expect(escapeCancels(flow, esc)).toBe(true);
+      expect(flow.step).toBe('compare');
+      expect(flow.draft).toBe('');
+    }
+    forgetCompareFlow('esc');
+  });
+
+  it('leaves Compare, other keys and an Esc something else took alone', () => {
+    const flow = compareFlow('esc2');
+    expect(escapeCancels(flow, esc)).toBe(false);
+    flow.step = 'choose';
+    expect(escapeCancels(flow, { key: 'a', defaultPrevented: false })).toBe(false);
+    expect(escapeCancels(flow, { key: 'Escape', defaultPrevented: true })).toBe(false);
+    expect(flow.step).toBe('choose');
+    forgetCompareFlow('esc2');
   });
 });

@@ -569,6 +569,30 @@ pub(crate) fn log_conflict_resolved(
     log(conn, &row)
 }
 
+/// A Conflict was closed because its record was deleted (here or elsewhere): nobody was asked, but
+/// it reads as the other resolutions do. The id is the one the person's resolution would have, so
+/// every device logs it once and the copies that sync agree. `extra.auto` keeps it from naming
+/// whichever device happened to log it.
+pub(crate) fn log_conflict_deleted(
+    conn: &Connection,
+    conflict: &str,
+    entity: &str,
+    field: &str,
+) -> Result<bool, SyncError> {
+    let me = hlc::device_id(conn)?;
+    let mut row = blank(
+        conn,
+        named_id(&["conflict_resolved", conflict]),
+        Kind::ConflictResolved,
+        Local {
+            device: &me,
+            name: "",
+        },
+    );
+    row.extra = json!({ "entity": entity, "field": field, "auto": true });
+    log(conn, &row)
+}
+
 /// Two Lists with one name became one. `other_device` made the List that went away (or the one
 /// that stayed), when it was not this one.
 pub(crate) fn log_lists_merged(

@@ -45,10 +45,10 @@ let written = 0;
 export function lineNow(
   kind: string,
   at: number,
-  rest: { device?: string; peer?: string; extra?: Record<string, string> } = {},
+  rest: { id?: string; device?: string; peer?: string; extra?: Record<string, string> } = {},
 ): Event {
   return {
-    id: `mock-act-now-${at}-${String(++written).padStart(4, '0')}`,
+    id: rest.id ?? `mock-act-now-${at}-${String(++written).padStart(4, '0')}`,
     kind,
     at,
     device: rest.device ?? ME,
@@ -289,7 +289,9 @@ export function createActivityMock(
   return {
     /** Lines a sync wrote (the simulated device's), in with the rest. */
     add(...added: Event[]) {
-      events.push(...added);
+      // A line with a name of its own is written once, as on every device in Rust.
+      const known = new Set(events.map((e) => e.id));
+      events.push(...added.filter((e) => !known.has(e.id)));
       events.sort(newestFirst);
     },
     handles: (cmd: string) => COMMANDS.includes(cmd),

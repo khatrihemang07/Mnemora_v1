@@ -27,6 +27,16 @@ export function discardEdit(flow: CompareFlow) {
   flow.draftFor = null;
 }
 
+/** Esc in the Choose or Polish step is Cancel (T4); Compare is a page, so Esc leaves it alone. True when it cancelled. */
+export function escapeCancels(
+  flow: CompareFlow,
+  e: { key: string; defaultPrevented: boolean },
+): boolean {
+  if (e.key !== 'Escape' || e.defaultPrevented || flow.step === 'compare') return false;
+  discardEdit(flow);
+  return true;
+}
+
 /**
  * Back inside Edit merged: Polish goes back to Choose, Choose to Compare; the choices and the text stay,
  * so nothing typed is lost (R4). Compare itself has no step to go back to (`null`: Back leaves the page).

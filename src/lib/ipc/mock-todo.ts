@@ -435,7 +435,7 @@ export function createTodoMock(prefs: (key: string) => unknown = () => undefined
 
     /** Whether an `editing_*` call is about a Task (the Journal takes the rest). */
     handlesEditing: (cmd: string, a: Record<string, unknown>) =>
-      cmd.startsWith('editing_') && a.entity === 'task',
+      cmd.startsWith('editing_') && a.entity === 'todo_task',
 
     /** Set by the IPC mock: a held change was merged when its editor let go. */
     onRemoteChange: undefined as (() => void) | undefined,

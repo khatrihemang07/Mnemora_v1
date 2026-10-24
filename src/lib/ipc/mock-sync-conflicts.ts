@@ -279,6 +279,13 @@ export function createConflictsMock(
       if (!gone) continue;
       s.open = false;
       s.resolution = 'deleted';
+      // Like a person's resolution, with an id of its own per Conflict (Rust `log_conflict_deleted`).
+      log(
+        lineNow('conflict_resolved', now(), {
+          id: `mock-act-resolved-${s.row.id}`,
+          extra: { subject: subjectOfRow(s.row.subject) },
+        }),
+      );
       resolved.unshift({
         id: `${s.row.id}-deleted`,
         kind: 'conflict_deleted',

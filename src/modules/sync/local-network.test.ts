@@ -6,6 +6,7 @@ import {
   pairByAddressHint,
   reportLocalNetworkPermission,
   WELCOME_LINE,
+  welcomeLine,
 } from './local-network';
 
 describe('the banner', () => {
@@ -48,6 +49,13 @@ describe('the Welcome page line (P13)', () => {
     expect(WELCOME_LINE).toBe(
       'Mnemora will ask to find devices on your local network. Allow it so your devices can find each other.',
     );
+  });
+
+  it('is hidden on other platforms and while the system blocks the network (T3)', () => {
+    expect(welcomeLine(true, { local_network_blocked: false })).toBe(WELCOME_LINE);
+    expect(welcomeLine(true, undefined)).toBe(WELCOME_LINE);
+    expect(welcomeLine(true, { local_network_blocked: true })).toBeNull();
+    expect(welcomeLine(false, { local_network_blocked: false })).toBeNull();
   });
 });
 

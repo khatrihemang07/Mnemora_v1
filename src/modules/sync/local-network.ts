@@ -12,6 +12,14 @@ import type { AndroidBridge } from '../../lib/theme/system-bars';
 export const WELCOME_LINE =
   'Mnemora will ask to find devices on your local network. Allow it so your devices can find each other.';
 
+/** The Welcome card's "will ask" line: Mac only, and not once the system already blocks it (the banner says so, T3). */
+export function welcomeLine(
+  mac: boolean,
+  device: Pick<ThisDevice, 'local_network_blocked'> | undefined,
+): string | null {
+  return mac && !device?.local_network_blocked ? WELCOME_LINE : null;
+}
+
 export interface LocalNetworkBannerText {
   title: string;
   body: string;

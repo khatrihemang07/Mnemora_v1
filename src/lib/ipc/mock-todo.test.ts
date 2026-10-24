@@ -856,9 +856,17 @@ describe('the Task sheet’s editing hold (R10, Rust held.rs, story 94)', () => 
           .map((d) => ({ ...d, values: { ...d.values, title, notes } })),
       );
     const now = () => mock.handle('todo_task', { id: task.id }) as Task;
-    const hold = (scope: string) => ({ entity: 'task', entityId: task.id, scope });
+    const hold = (scope: string) => ({ entity: 'todo_task', entityId: task.id, scope });
     return { mock, task, remote, now, hold };
   };
+
+  it('routes the Task sheet’s own entity name (T2: the sheet says todo_task)', () => {
+    const { mock, hold } = setup();
+    expect(mock.handlesEditing('editing_hold', hold('notes'))).toBe(true);
+    expect(mock.handlesEditing('editing_hold', { ...hold('notes'), entity: 'journal_entry' })).toBe(
+      false,
+    );
+  });
 
   it('holds the field being edited and refreshes the other', () => {
     const { mock, remote, now, hold } = setup();

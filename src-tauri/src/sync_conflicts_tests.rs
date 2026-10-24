@@ -911,6 +911,18 @@ fn conflict_rows(app: &TestApp) -> Vec<String> {
 
 /// Story 70 / F14: a Conflict on a record that is then deleted, here or on another device, is
 /// settled and logged, not left in Needs you with Compare still offering it.
+fn resolved_lines(app: &TestApp) -> Vec<String> {
+    app.with_db(|db| {
+        let mut st = db
+            .prepare("SELECT id FROM sync_activity WHERE kind = 'conflict_resolved' ORDER BY id")
+            .unwrap();
+        st.query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    })
+}
+
 #[test]
 fn a_conflict_raised_before_the_entry_was_deleted_is_resolved_on_both_devices() {
     for deleter in [0, 1] {
@@ -940,5 +952,9 @@ fn a_conflict_raised_before_the_entry_was_deleted_is_resolved_on_both_devices() 
                 "device {d} (deleter {deleter})"
             );
         }
+        // R5-activity: one Activity line, with the same id on both devices.
+        let lines = resolved_lines(&c[0]);
+        assert_eq!(lines.len(), 1, "one line (deleter {deleter})");
+        assert_eq!(lines, resolved_lines(&c[1]), "same id (deleter {deleter})");
     }
 }

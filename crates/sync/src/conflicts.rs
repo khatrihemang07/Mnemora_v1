@@ -416,6 +416,7 @@ pub(crate) fn settle_deleted(
     for (id, field) in waiting {
         if resolve(conn, &id, Resolution::Deleted, "", 0)? {
             crate::resolutions::note_conflict_deleted(conn, &id)?;
+            crate::activity::log_conflict_deleted(conn, &id, target, &field)?;
             events.push(SyncEvent::ConflictAutoResolved {
                 id,
                 entity: target.to_owned(),

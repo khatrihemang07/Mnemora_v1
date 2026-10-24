@@ -51,6 +51,12 @@
     if (pairing.open && urlParam.get('pair') === null) pairing.backed();
   });
 
+  // Forward onto an entry with `?pair=` and no sheet: sv-router reads the address after popstate, so
+  // the address itself is watched, not the event.
+  $effect(() => {
+    pairing.dropStale();
+  });
+
   onMount(() => {
     pairing.dropStale();
     // Forward onto an entry whose pairing is long over; sv-router has read the address by the microtask.

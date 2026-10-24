@@ -33,6 +33,8 @@ class Pairing {
   arrivedAt = $state(Date.now());
   /** Whether opening pushed the history entry that closing should step back over. */
   #pushed = false;
+  /** Our own `history.back()` is in flight: the parameter is about to go, not stale. */
+  #stepping = false;
 
   /** Called once the sheet is mounted; returns what stops listening. */
   async listen(): Promise<() => void> {
@@ -59,6 +61,7 @@ class Pairing {
   /** "Pair a device" shows a code; "Enter a code" types one. */
   async start(mode: PairMode) {
     if (!this.open) {
+      this.#stepping = false;
       this.#pushed = urlParam.get(PARAM) === null;
       urlParam.set(PARAM, mode, !this.#pushed);
     }
@@ -192,8 +195,13 @@ class Pairing {
   /** The sheet is gone from the screen: its history entry is stepped back over. */
   private shut() {
     this.open = false;
-    if (!this.#pushed) return;
+    if (!this.#pushed) {
+      // The sheet reused an entry that already had the parameter: no entry to step over, so drop it.
+      if (urlParam.get(PARAM) !== null) urlParam.delete(PARAM, true);
+      return;
+    }
     this.#pushed = false;
+    this.#stepping = true;
     history.back();
   }
 
@@ -209,7 +217,9 @@ class Pairing {
    * the entry of a page that was left): nothing is pairing, so the parameter is dropped in place.
    */
   dropStale() {
-    if (!this.open && urlParam.get(PARAM) !== null) urlParam.delete(PARAM, true);
+    if (urlParam.get(PARAM) === null) this.#stepping = false;
+    // Back from our own sheet is still on its way: the entry goes by itself.
+    else if (!this.open && !this.#stepping) urlParam.delete(PARAM, true);
   }
 
   private async run(call: () => Promise<unknown>) {

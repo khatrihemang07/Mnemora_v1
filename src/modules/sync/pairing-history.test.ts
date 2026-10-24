@@ -75,6 +75,7 @@ describe('the Pair sheet and Back', () => {
   });
 
   it('a ?pair= with no sheet behind it (reload, Forward) is dropped in place, and a live sheet keeps its own', async () => {
+    pairing.dropStale(); // settles an earlier Back
     urlParam.set('pair', 'show');
     pairing.dropStale();
     expect(urlParam.get('pair')).toBeNull();
@@ -83,6 +84,28 @@ describe('the Pair sheet and Back', () => {
     pairing.dropStale();
     expect(urlParam.get('pair')).toBe('show');
     expect(pairing.open).toBe(true);
+  });
+
+  it('Esc/Done on a sheet that reused an existing ?pair= entry clears the parameter (T1)', async () => {
+    urlParam.set('pair', 'show');
+    await pairing.start('show');
+    await pairing.close();
+    expect(urlParam.get('pair')).toBeNull();
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('a ?pair= that arrives after a Forward is dropped, but not while our own Back is in flight (T1)', async () => {
+    const slowBack = vi.fn();
+    vi.stubGlobal('history', { back: slowBack });
+    await pairing.start('show');
+    await pairing.close();
+    pairing.dropStale();
+    expect(urlParam.get('pair')).toBe('show'); // still ours, Back is on its way
+    urlParam.delete('pair');
+    pairing.dropStale();
+    urlParam.set('pair', 'show'); // Forward
+    pairing.dropStale();
+    expect(urlParam.get('pair')).toBeNull();
   });
 
   it('a sheet closed because the page was left keeps the history alone', async () => {

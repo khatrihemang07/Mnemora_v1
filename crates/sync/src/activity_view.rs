@@ -324,7 +324,9 @@ fn describe(conn: &Connection, v: Viewer<'_>, row: &Row) -> ActivityRow {
         kind,
         Some(Kind::Renamed | Kind::Left | Kind::Joined | Kind::Forgot)
     ) && row.device != v.device;
-    let others_event = row.device != v.device && !about_me && !named_in_text;
+    // A closing nobody did (its record was deleted) belongs to no device.
+    let nobody = row.extra.get("auto").and_then(serde_json::Value::as_bool) == Some(true);
+    let others_event = row.device != v.device && !about_me && !named_in_text && !nobody;
     let on = (others_event && !matches!(kind, Some(Kind::Renamed))).then_some(logger);
     ActivityRow {
         id: row.id.clone(),

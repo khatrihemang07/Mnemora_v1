@@ -25,7 +25,7 @@
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
   import { conflictIdOf, rowTitle, timeText, usePossessive } from './conflicts';
-  import { compareFlow, discardEdit, draftIsCurrent, forgetCompareFlow, stepBack } from './compare-flow.svelte';
+  import { compareFlow, discardEdit, draftIsCurrent, escapeCancels, forgetCompareFlow, stepBack } from './compare-flow.svelte';
   import { conflictQuery, watchConflicts } from './queries';
   import SyncFrame from './SyncFrame.svelte';
 
@@ -121,6 +121,8 @@
     {#each spans as s}{#if s.changed}<mark class="rounded-[3px] px-px text-ink {tint} {removed ? 'line-through' : ''}">{s.text}</mark>{:else}{s.text}{/if}{/each}
   </p>
 {/snippet}
+
+<svelte:window onkeydown={(e) => escapeCancels(flow, e)} />
 
 <!-- The Sync header and tabs stay (Conflicts is the one on show), at the width of the other Sync pages. -->
 <SyncFrame tab="conflicts">
