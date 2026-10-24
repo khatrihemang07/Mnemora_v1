@@ -34,7 +34,6 @@
     <CaptureBox
       class="bg-transparent shadow-none"
       bind:guard
-      quick
       date={quickAdd.date}
       listId={quickAdd.listId}
       placeholder={quickAdd.date ? 'Quick add, due ' + (quickAdd.date === todoClock.today ? 'today' : 'tomorrow') : 'Quick add to Inbox'}
