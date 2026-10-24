@@ -74,6 +74,17 @@ describe('the Pair sheet and Back', () => {
     expect(back).toHaveBeenCalledOnce();
   });
 
+  it('a ?pair= with no sheet behind it (reload, Forward) is dropped in place, and a live sheet keeps its own', async () => {
+    urlParam.set('pair', 'show');
+    pairing.dropStale();
+    expect(urlParam.get('pair')).toBeNull();
+    expect(back).not.toHaveBeenCalled();
+    await pairing.start('show');
+    pairing.dropStale();
+    expect(urlParam.get('pair')).toBe('show');
+    expect(pairing.open).toBe(true);
+  });
+
   it('a sheet closed because the page was left keeps the history alone', async () => {
     await pairing.start('show');
     await pairing.close(false);

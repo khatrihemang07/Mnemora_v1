@@ -204,6 +204,14 @@ class Pairing {
     void this.close(false);
   }
 
+  /**
+   * A `?pair=` left in the address with no sheet behind it (a reload, Forward onto the entry, Back onto
+   * the entry of a page that was left): nothing is pairing, so the parameter is dropped in place.
+   */
+  dropStale() {
+    if (!this.open && urlParam.get(PARAM) !== null) urlParam.delete(PARAM, true);
+  }
+
   private async run(call: () => Promise<unknown>) {
     try {
       await call();

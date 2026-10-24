@@ -25,7 +25,7 @@
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
   import { conflictIdOf, rowTitle, timeText, usePossessive } from './conflicts';
-  import { compareFlow, forgetCompareFlow, stepBack } from './compare-flow.svelte';
+  import { compareFlow, discardEdit, draftIsCurrent, forgetCompareFlow, stepBack } from './compare-flow.svelte';
   import { conflictQuery, watchConflicts } from './queries';
   import SyncFrame from './SyncFrame.svelte';
 
@@ -56,12 +56,19 @@
 
   // Back inside Edit merged goes one step back and keeps the draft, as Back finishes any transient mode.
   closeOnBack(
-    () => stepBack(step) !== null,
+    () => view !== null && stepBack(step) !== null,
     () => {
       const previous = stepBack(flow.step);
       if (previous) flow.step = previous;
     },
   );
+
+  // A conflict settled elsewhere (or gone) leaves no half-made merge behind for a later visit.
+  $effect(() => {
+    if (conflict.isPending || conflict.isError) return;
+    if (view === null) forgetCompareFlow(id);
+    else if (!view.open) discardEdit(flow);
+  });
 
   const clashes = $derived(view?.pieces.filter((p) => p.kind === 'clash') ?? []);
   const showingName = $derived(view?.row.showing.device ?? '');
@@ -84,13 +91,18 @@
   }
 
   async function startEdit() {
-    flow.choices = clashes.map(() => 'showing');
+    // Back to Compare keeps the choices and the text; Edit merged picks up where they were left.
+    if (flow.choices.length !== clashes.length) flow.choices = clashes.map(() => 'showing');
     if (clashes.length === 0) await toPolish();
     else flow.step = 'choose';
   }
 
   async function toPolish() {
-    flow.draft = await unwrap(commands.syncConflictDraft(id, flow.choices));
+    if (!draftIsCurrent(flow)) {
+      const made = flow.choices.join(',');
+      flow.draft = await unwrap(commands.syncConflictDraft(id, flow.choices));
+      flow.draftFor = made;
+    }
     flow.step = 'polish';
   }
 
@@ -227,7 +239,7 @@
         </Card>
         <div class="mt-3 flex flex-wrap gap-1.5">
           <Button variant="primary" onclick={toPolish}><Check class="size-3.5" /> Next: polish</Button>
-          <Button variant="ghost" onclick={() => (flow.step = 'compare')}>Cancel</Button>
+          <Button variant="ghost" onclick={() => discardEdit(flow)}>Cancel</Button>
         </div>
       {:else}
         <p class="mb-3 text-xs text-faint">1 Choose for each clash › <b class="text-hue-sync">2 Polish</b></p>
@@ -242,7 +254,7 @@
           >
             Save
           </Button>
-          <Button variant="ghost" onclick={() => (flow.step = 'compare')}>Cancel</Button>
+          <Button variant="ghost" onclick={() => discardEdit(flow)}>Cancel</Button>
         </div>
       {/if}
     {/if}

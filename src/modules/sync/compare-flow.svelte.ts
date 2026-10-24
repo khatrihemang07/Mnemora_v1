@@ -10,6 +10,21 @@ export class CompareFlow {
   choices = $state<ClashChoice[]>([]);
   draft = $state('');
   showOriginal = $state(false);
+  /** The choices `draft` was made from: the draft is only made again when they change. */
+  draftFor = $state<string | null>(null);
+}
+
+/** Whether the text in the Polish step is still the person's own for these choices (Back and Next keep it). */
+export function draftIsCurrent(flow: CompareFlow): boolean {
+  return flow.draft !== '' && flow.draftFor === flow.choices.join(',');
+}
+
+/** Cancel (or a conflict that is no longer open): the choices and the text are thrown away. */
+export function discardEdit(flow: CompareFlow) {
+  flow.step = 'compare';
+  flow.choices = [];
+  flow.draft = '';
+  flow.draftFor = null;
 }
 
 /**

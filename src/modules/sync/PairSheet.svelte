@@ -52,6 +52,10 @@
   });
 
   onMount(() => {
+    pairing.dropStale();
+    // Forward onto an entry whose pairing is long over; sv-router has read the address by the microtask.
+    const onPop = () => queueMicrotask(() => pairing.dropStale());
+    window.addEventListener('popstate', onPop);
     let stop = () => {};
     let gone = false;
     void pairing.listen().then((unlisten) => {
@@ -60,6 +64,7 @@
     });
     return () => {
       gone = true;
+      window.removeEventListener('popstate', onPop);
       stop();
       // Leaving the Devices page ends a pairing in progress: no code is left open behind it.
       if (pairing.open) void pairing.close(false);

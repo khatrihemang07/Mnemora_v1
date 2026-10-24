@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { compareFlow, forgetCompareFlow, stepBack } from './compare-flow.svelte';
+import {
+  compareFlow,
+  discardEdit,
+  draftIsCurrent,
+  forgetCompareFlow,
+  stepBack,
+} from './compare-flow.svelte';
 
 describe('the Edit merged flow', () => {
   it('is the same flow when the page is mounted again', () => {
@@ -41,5 +47,32 @@ describe('Back inside Edit merged (R4)', () => {
 
   it('has nowhere to step back from Compare, so Back leaves the page', () => {
     expect(stepBack('compare')).toBeNull();
+  });
+});
+
+describe('keeping the draft (R4)', () => {
+  it('Back and Next keep the text while the choices are the same, and a changed choice makes it again', () => {
+    const flow = compareFlow('keep');
+    flow.choices = ['showing', 'other'];
+    flow.draft = 'made';
+    flow.draftFor = 'showing,other';
+    flow.draft = 'made, then polished';
+    expect(draftIsCurrent(flow)).toBe(true);
+    flow.choices = ['showing', 'showing'];
+    expect(draftIsCurrent(flow)).toBe(false);
+    forgetCompareFlow('keep');
+  });
+
+  it('Cancel throws the half-made merge away', () => {
+    const flow = compareFlow('cancel');
+    flow.step = 'polish';
+    flow.choices = ['other'];
+    flow.draft = 'x';
+    flow.draftFor = 'other';
+    discardEdit(flow);
+    expect(flow.step).toBe('compare');
+    expect(flow.choices).toEqual([]);
+    expect(draftIsCurrent(flow)).toBe(false);
+    forgetCompareFlow('cancel');
   });
 });
