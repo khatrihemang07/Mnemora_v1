@@ -58,6 +58,13 @@ export function dayLabel(date: string, today: string): string {
   return shortDate(date) + (year !== today.slice(0, 4) ? ` ${year}` : '');
 }
 
+/** The colour token for a day's badge or chip: Today and Yesterday each have their own, any other day the Journal hue. */
+export function dayHue(date: string, today: string): string {
+  if (date === today) return '--accent';
+  if (date === addDays(today, -1)) return '--muted';
+  return '--hue-journal';
+}
+
 /** The composer and editor date chip: "Today", "Yesterday" or the short date. */
 export function chipLabel(date: string, today: string): string {
   if (date === today) return 'Today';

@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import type { Page } from '../../lib/ipc/bindings';
-  import { pageHeading, pageSummary } from './dates';
+  import { dayHue, pageHeading, pageSummary } from './dates';
   import { useNav } from './navigation.svelte';
 
   let { page, today, summary }: { page: Page; today: string; summary: boolean } = $props();
@@ -25,7 +25,8 @@
   {#if heading.year}<span class="font-display text-lg leading-normal text-faint">{heading.year}</span>{/if}
   {#if heading.badge}
     <span
-      class="rounded-full bg-[color-mix(in_oklch,var(--hue-journal)_14%,transparent)] px-2 py-px text-2xs font-semibold text-(--hue-journal)"
+      style="--badge-hue: var({dayHue(page.date, today)})"
+      class="rounded-full bg-[color-mix(in_oklch,var(--badge-hue)_14%,transparent)] px-2 py-px text-2xs font-semibold text-(--badge-hue)"
     >
       {heading.badge}
     </span>

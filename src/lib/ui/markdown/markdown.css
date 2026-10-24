@@ -14,6 +14,14 @@
   --md-font: var(--f-ui);
 }
 
+/*
+ * CodeMirror's own styles are injected as an inline <style>, which the app's CSP nonce blocks on the
+ * phone WebView; without `break-spaces` a trailing space has no width and the caret does not move.
+ */
+.md .cm-content {
+  white-space: break-spaces;
+}
+
 /* Blocks are separated by one gap, however many blank lines were typed. */
 .md-p,
 .md-h,
