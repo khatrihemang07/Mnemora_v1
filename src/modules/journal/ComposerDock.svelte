@@ -193,7 +193,7 @@
         icon={CalendarDays}
         tone="warm"
         hue={dayHue(pageDate, nav.today)}
-        class="mt-0.5 self-start"
+        class="h-[2.15rem] self-start"
         aria-label="Entry date: {chipLabel(pageDate, nav.today)}. Choose another date"
         aria-haspopup="dialog"
         aria-expanded={dateOpen}
