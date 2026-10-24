@@ -407,3 +407,33 @@ async fn pairing_and_a_live_session_are_each_one_line_on_both_devices() {
     );
     assert_eq!(activity_lines(&phone, "session").len(), 1);
 }
+
+/// A rename is a record like any other change: it goes to the connected device after the quiet
+/// period, not at the next session (DV5).
+#[tokio::test]
+async fn renaming_a_device_reaches_it_within_the_quiet_period() {
+    let (mac, phone) = paired_pair(quick()).await;
+    meet(&mac, &phone);
+    until("connected", || peer_of(&mac)["state"] == "up_to_date").await;
+    // Pairing's own sessions and quiet period run out first.
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+
+    let phone_id = phone.app.device_id();
+    let made = Instant::now();
+    mac.app
+        .invoke::<String>(
+            "sync_device_rename",
+            json!({ "id": phone_id, "name": "Pixel QA" }),
+        )
+        .unwrap();
+    until("the new name on the phone", || {
+        phone.app.invoke::<Value>("sync_get", json!({})).unwrap()["name"] == "Pixel QA"
+    })
+    .await;
+    assert_eq!(phone.devices()["this_device"]["name"], "Pixel QA");
+    assert!(
+        made.elapsed() < Duration::from_secs(4),
+        "the rename waited for a later session: {:?}",
+        made.elapsed()
+    );
+}

@@ -407,6 +407,7 @@ export const commands = {
 /** Events */
 export const events = {
 	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
+	journalEntryDeletedEvent: makeEvent<JournalEntryDeletedEvent>("journal-entry-deleted-event"),
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
 	settingsChangedEvent: makeEvent<SettingsChangedEvent>("settings-changed-event"),
 	syncActivityEvent: makeEvent<SyncActivityEvent>("sync-activity-event"),
@@ -966,6 +967,19 @@ export type InboxView = {
  *  UI refreshes in place, silently.
  */
 export type JournalChangedEvent = null;
+
+/**
+ *  A Journal Entry was deleted on another device: if it is open in the editor, the editor closes
+ *  with a toast naming `device`, and Restore brings it back (as an ordinary change).
+ */
+export type JournalEntryDeletedEvent = {
+	/**  The Entry. */
+	entry_id: string,
+	/**  The Page it was on (an Entry has no title). */
+	page_date: string,
+	/**  The device that deleted it, when it is a paired one. */
+	device: string | null,
+};
 
 /**
  *  TypeScript-facing description of any JSON value. Only used for type generation: on the wire

@@ -182,6 +182,15 @@ pub fn apply_batch(
                     title,
                     device: Some(record.origin_device.clone()),
                 },
+                SyncEvent::EntryDeleted {
+                    entry_id,
+                    page_date,
+                    ..
+                } => SyncEvent::EntryDeleted {
+                    entry_id,
+                    page_date,
+                    device: Some(record.origin_device.clone()),
+                },
                 other => other,
             }));
         if outcome.changed && record.entity != settings::ENTITY {
@@ -266,6 +275,9 @@ struct Decided {
     folded: Vec<Folded>,
 }
 
+/// The field that marks a record deleted (and brings it back).
+const DELETE_MARK: &str = "deleted_at";
+
 /// The values of `record` that win against the clocks held, whole groups at a time, and the
 /// winning units an editor holds back (kept apart until it lets go, see `held`). The clocks of
 /// the winners move to the record's either way. A record that creates its entity is never
@@ -348,7 +360,9 @@ fn decide_fields(
                 clocks::raise(conn, &record.entity, &record.entity_id, member, &stamp)?;
             }
         }
-        if editing::is_held(&scopes, key) {
+        // The delete mark is never held back: an editor open on a record deleted elsewhere closes
+        // at once, and Restore is the way back (D16, like an open Task sheet).
+        if key != DELETE_MARK && editing::is_held(&scopes, key) {
             out.kept_back.push(HeldUnit {
                 unit: key.to_owned(),
                 fields: values,

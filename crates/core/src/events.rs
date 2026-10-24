@@ -96,6 +96,18 @@ pub struct TaskDeletedRemotely {
     pub device: Option<String>,
 }
 
+/// A Journal Entry was deleted on another device. Whoever has it open is told, with a way to
+/// Restore it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryDeletedRemotely {
+    /// The Entry.
+    pub entry_id: String,
+    /// The Page it was on.
+    pub page_date: String,
+    /// The device that deleted it (its name), when known.
+    pub device: Option<String>,
+}
+
 /// A sync session left new Conflicts waiting for the person (raised here or learned from the other
 /// device). The app shows a toast if this device is set to.
 #[derive(Debug, Clone, PartialEq, Eq)]

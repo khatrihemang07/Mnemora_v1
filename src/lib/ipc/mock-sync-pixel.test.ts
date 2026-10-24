@@ -17,6 +17,7 @@ function setup(formats?: () => Formats) {
     journalChanged: vi.fn(),
     listsMerged: vi.fn(),
     taskDeleted: vi.fn(),
+    entryDeleted: vi.fn(),
     activityChanged: vi.fn(),
     settingsChanged: vi.fn(),
     newConflicts: vi.fn(),
@@ -318,6 +319,19 @@ describe('the simulated Pixel 8', () => {
     });
     t.pixel.sync();
     expect(t.announce.taskDeleted).toHaveBeenCalledOnce();
+  });
+
+  it('tells the editor when the phone deleted an Entry that was showing, once', () => {
+    const t = setup();
+    t.pixel.scenario('remoteEntryDelete');
+    expect(t.announce.entryDeleted).not.toHaveBeenCalled();
+    t.pixel.sync();
+    expect(t.announce.entryDeleted).toHaveBeenCalledOnce();
+    expect(t.announce.entryDeleted.mock.calls[0]?.[0]).toMatchObject({
+      device: 'Pixel 8 (simulated)',
+    });
+    t.pixel.sync();
+    expect(t.announce.entryDeleted).toHaveBeenCalledOnce();
   });
 
   it('words a session’s breakdown as Rust does', () => {

@@ -37,10 +37,10 @@ use tempfile::TempDir;
 use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    JournalChangedEvent, LinkOpenedEvent, SettingsChangedEvent, SyncActivityEvent,
-    SyncConflictsEvent, SyncNewConflictsEvent, SyncPairingEvent, SyncPeersEvent, TodoChangedEvent,
-    TodoListsMergedEvent, TodoTaskDeletedEvent, commands, editing, journal, links, modules,
-    settings_store, sync, sync_conflicts, todo,
+    JournalChangedEvent, JournalEntryDeletedEvent, LinkOpenedEvent, SettingsChangedEvent,
+    SyncActivityEvent, SyncConflictsEvent, SyncNewConflictsEvent, SyncPairingEvent, SyncPeersEvent,
+    TodoChangedEvent, TodoListsMergedEvent, TodoTaskDeletedEvent, commands, editing, journal,
+    links, modules, settings_store, sync, sync_conflicts, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a

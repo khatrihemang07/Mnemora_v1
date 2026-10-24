@@ -119,7 +119,8 @@ macro_rules! specta_builder_for {
                 SyncActivityEvent,
                 SyncNewConflictsEvent,
                 TodoListsMergedEvent,
-                TodoTaskDeletedEvent
+                TodoTaskDeletedEvent,
+                JournalEntryDeletedEvent
             ])
     };
 }
@@ -192,8 +193,8 @@ use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
 use mnemora_core::events::{
-    ConflictsRaised, DeviceRenamed, EventBus, ListsMerged, RemoteChanged, RemoteSessionEnded,
-    SettingsChanged, TaskDeletedRemotely,
+    ConflictsRaised, DeviceRenamed, EntryDeletedRemotely, EventBus, ListsMerged, RemoteChanged,
+    RemoteSessionEnded, SettingsChanged, TaskDeletedRemotely,
 };
 use mnemora_core::logging;
 use mnemora_core::module::{CoreModule, Module};
@@ -259,6 +260,18 @@ pub struct TodoTaskDeletedEvent {
     pub task_id: String,
     /// Its title.
     pub title: String,
+    /// The device that deleted it, when it is a paired one.
+    pub device: Option<String>,
+}
+
+/// A Journal Entry was deleted on another device: if it is open in the editor, the editor closes
+/// with a toast naming `device`, and Restore brings it back (as an ordinary change).
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct JournalEntryDeletedEvent {
+    /// The Entry.
+    pub entry_id: String,
+    /// The Page it was on (an Entry has no title).
+    pub page_date: String,
     /// The device that deleted it, when it is a paired one.
     pub device: Option<String>,
 }
@@ -342,10 +355,16 @@ fn follow_remote<R: tauri::Runtime>(
                 tracing::warn!(target: "sync", error = %e, "could not save the new device name");
                 return;
             }
+            // Tell the window first: advertising the new name can take a while (it waits for the
+            // network), and the Devices tab must not show the old name meanwhile.
+            let emit = || {
+                if let Err(e) = SyncPeersEvent.emit(&handle) {
+                    tracing::warn!(target: "sync", error = %e, "could not emit the device change");
+                }
+            };
+            emit();
             state.sync.refresh_advert();
-            if let Err(e) = SyncPeersEvent.emit(&handle) {
-                tracing::warn!(target: "sync", error = %e, "could not emit the device change");
-            }
+            emit();
         });
     });
     let merged_handle = handle_for_merges;
@@ -362,6 +381,7 @@ fn follow_remote<R: tauri::Runtime>(
         }
     });
     let deleted_handle = handle_for_deletes;
+    let entry_deleted_handle = deleted_handle.clone();
     bus.subscribe(move |event: &TaskDeletedRemotely| {
         let event = TodoTaskDeletedEvent {
             task_id: event.task_id.clone(),
@@ -370,6 +390,16 @@ fn follow_remote<R: tauri::Runtime>(
         };
         if let Err(e) = event.emit(&deleted_handle) {
             tracing::warn!(target: "sync", error = %e, "could not emit the Task delete event");
+        }
+    });
+    bus.subscribe(move |event: &EntryDeletedRemotely| {
+        let event = JournalEntryDeletedEvent {
+            entry_id: event.entry_id.clone(),
+            page_date: event.page_date.clone(),
+            device: event.device.clone(),
+        };
+        if let Err(e) = event.emit(&entry_deleted_handle) {
+            tracing::warn!(target: "sync", error = %e, "could not emit the Entry delete event");
         }
     });
     bus.subscribe(move |event: &ConflictsRaised| {

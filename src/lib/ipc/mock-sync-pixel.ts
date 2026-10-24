@@ -21,6 +21,7 @@
 import type {
   ConflictRow,
   ConflictSubject,
+  JournalEntryDeletedEvent,
   ResolvedIcon,
   ResolvedRow,
   TodoListsMergedEvent,
@@ -63,6 +64,7 @@ export interface PixelPorts {
     journalChanged(): void;
     listsMerged(e: TodoListsMergedEvent): void;
     taskDeleted(e: TodoTaskDeletedEvent): void;
+    entryDeleted(e: JournalEntryDeletedEvent): void;
     activityChanged(): void;
     settingsChanged(module: string, keys: string[]): void;
     newConflicts(count: number, device: string): void;
@@ -466,6 +468,12 @@ export function createPixelMock(ports: PixelPorts) {
         .filter((d) => d.entity === 'task' && d.values.deleted_at == null)
         .map((d) => d.id),
     );
+    const liveEntries = new Set(
+      ports.data.journal
+        .exportDocs()
+        .filter((d) => d.entity === 'entry' && d.values.deleted_at == null)
+        .map((d) => d.id),
+    );
     const todoChanged = ports.data.todo.importDocs(o.docs);
     // A Task that was showing here and was deleted on the phone: the open sheet is told.
     for (const d of o.docs)
@@ -476,6 +484,14 @@ export function createPixelMock(ports: PixelPorts) {
           device: PIXEL.name,
         });
     const journalChanged = ports.data.journal.importDocs(o.docs);
+    // An Entry that was showing here and was deleted on the phone: an open editor is told.
+    for (const d of o.docs)
+      if (d.entity === 'entry' && d.values.deleted_at != null && liveEntries.has(d.id))
+        ports.announce.entryDeleted({
+          entry_id: d.id,
+          page_date: String(d.values.page_date ?? ''),
+          device: PIXEL.name,
+        });
 
     // What is new.
     const fresh = <T>(items: T[], key: (x: T) => string) =>
@@ -721,6 +737,26 @@ export function createPixelMock(ports: PixelPorts) {
         rebase();
         edit('task_delete', { task: id });
         return 'Open the Task "Call mum", then run __pixel.sync().';
+      },
+    },
+    // "Deleted elsewhere" for the Journal (P17, D16): the Entry open in the editor is deleted on the phone.
+    remoteEntryDelete: {
+      about: 'The Entry open in the editor is deleted on the phone',
+      sync: false,
+      stage() {
+        flush();
+        const entry = ports.command('journal_entry_create', {
+          entry: {
+            page_date: local().today,
+            text: 'Walked by the river.\n',
+            written_tz: 'UTC',
+            written_offset_min: 0,
+            session_id: `stage-${now()}`,
+          },
+        }) as { id: string };
+        rebase();
+        edit('entry_delete', { entry: entry.id });
+        return 'Open that Entry for editing (type something), then run __pixel.sync().';
       },
     },
     // "List merged" (H7): you are on "Groceries" when it merges with the phone's.

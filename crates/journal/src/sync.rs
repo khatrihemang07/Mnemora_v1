@@ -17,7 +17,7 @@ use mnemora_core::changelog::{self, Change, ChangeOp, Unlogged};
 use mnemora_core::db::physical_now;
 use mnemora_core::error::AppResult;
 use mnemora_core::search::plain;
-use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity, SyncField};
+use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity, SyncEvent, SyncField};
 use rusqlite::Connection;
 use serde_json::{Map, Value};
 
@@ -166,6 +166,7 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
             "Entry vanished while syncing",
         )
     })?;
+    let page_date = entry.page_date.clone();
     let snapshot = snapshot_of(&entry, deleted_at)?;
     let changed = before_snapshot.as_ref().map(strip_updated) != Some(strip_updated(&snapshot));
     let snapshot = if changed {
@@ -182,10 +183,23 @@ pub(crate) fn apply(conn: &Connection, change: &RemoteChange<'_>) -> AppResult<A
     } else {
         snapshot
     };
+    // An Entry that was showing here and was deleted on another device: an open editor is told.
+    let mut events = Vec::new();
+    if before
+        .as_ref()
+        .is_some_and(|(_, deleted)| deleted.is_none())
+        && deleted_at.is_some()
+    {
+        events.push(SyncEvent::EntryDeleted {
+            entry_id: id.to_owned(),
+            page_date,
+            device: None,
+        });
+    }
     Ok(Applied {
         snapshot,
         changed,
-        events: Vec::new(),
+        events,
     })
 }
 

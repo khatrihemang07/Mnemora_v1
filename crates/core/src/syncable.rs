@@ -197,6 +197,16 @@ pub enum SyncEvent {
         /// The device that deleted it.
         device: Option<String>,
     },
+    /// A Journal Entry that was showing here was deleted on another device. `device` is filled in
+    /// by the engine, like `TaskDeleted`'s.
+    EntryDeleted {
+        /// The Entry.
+        entry_id: String,
+        /// The Page it is on (what names it: an Entry has no title).
+        page_date: String,
+        /// The device that deleted it.
+        device: Option<String>,
+    },
     /// Two Lists with the same name became one: `from` was soft-deleted and its Tasks joined
     /// the end of `into`.
     ListsMerged {

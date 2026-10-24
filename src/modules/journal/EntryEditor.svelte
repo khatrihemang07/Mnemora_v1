@@ -93,6 +93,7 @@
 
   onMount(() => {
     editing.finisher = finish;
+    editing.abandon = () => session.abandon();
     editor?.focus();
 
     const outside = (e: PointerEvent) => {

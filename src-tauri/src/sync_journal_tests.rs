@@ -467,6 +467,50 @@ fn an_editor_can_only_hold_something_that_exists_to_be_edited() {
     assert_eq!(err["code"], "validation");
 }
 
+/// DV4 / D16: an Entry deleted on another device while an editor holds it is deleted here at once
+/// and the open editor is told (the window closes it with a toast and Restore); what the person
+/// typed survives a restore.
+#[test]
+fn an_entry_deleted_elsewhere_while_its_editor_is_open_is_deleted_at_once_and_announced() {
+    let (c, id) = pair_with_entry("first draft");
+    let told = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+    let sink = Arc::clone(&told);
+    tauri_specta::Event::listen(
+        &c[1].handle(),
+        move |e: tauri_specta::TypedEvent<crate::JournalEntryDeletedEvent>| {
+            sink.lock()
+                .unwrap()
+                .push(serde_json::to_value(&e.payload).unwrap());
+        },
+    );
+    hold(&c[1], ENTRY, &id, "*");
+    // The person typed; the editor saved it under its session.
+    c[1].clock().advance(1_000);
+    edit(&c[1], &id, "first draft, typed on", "s-b");
+    c[0].clock().advance(2_000);
+    delete(&c[0], &id);
+    c.sync(0, 1);
+
+    assert!(entry(&c[1], &id).is_none(), "the delete is not held back");
+    let told = told.lock().unwrap().clone();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(told[0]["entry_id"], id);
+    assert_eq!(told[0]["page_date"], "2026-10-20");
+
+    // Restore, as the toast does: the typed text is still there, on both devices.
+    c[1].clock().advance(3_000);
+    release(&c[1], ENTRY, &id, "*");
+    restore(&c[1], &id);
+    c.sync_all();
+    for d in 0..2 {
+        assert_eq!(
+            body(&c[d], &id).as_deref(),
+            Some("first draft, typed on"),
+            "device {d}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------- Task sheet fields
 
 #[test]
@@ -528,6 +572,51 @@ fn a_task_field_held_and_then_saved_locally_keeps_the_local_text_everywhere() {
     for d in 0..2 {
         let t: Value = c[d].invoke("todo_task", json!({ "id": id })).unwrap();
         assert_eq!(t["notes"], "typed on B", "device {d}");
+    }
+}
+
+/// DV3: a device typing in a Task's notes, a line added on the other device while the notes are
+/// held, then more typing in the same editing session. The held line must not be lost.
+#[test]
+fn a_line_added_elsewhere_while_notes_are_held_survives_further_typing_in_the_same_session() {
+    let c = Cluster::new(2);
+    let t: Value = c[0]
+        .invoke("todo_task_create", json!({ "title": "Hold test" }))
+        .unwrap();
+    let id = t["id"].clone();
+    c.sync(0, 1);
+    let notes = |d: usize| -> String {
+        let t: Value = c[d].invoke("todo_task", json!({ "id": id })).unwrap();
+        t["notes"].as_str().unwrap().to_owned()
+    };
+    let save = |d: usize, text: &str, session: &str| {
+        c[d].invoke::<Value>(
+            "todo_task_update",
+            json!({ "id": id, "title": "Hold test", "notes": text, "sessionId": session }),
+        )
+        .unwrap();
+    };
+
+    // The phone opens the sheet and types; the text is saved (and sent) as it goes.
+    hold(&c[1], TASK, &id, "notes");
+    c[1].clock().advance(1_000);
+    save(1, "typing-on-phone", "s-phone");
+    c.sync(1, 0);
+    assert_eq!(notes(0), "typing-on-phone");
+
+    // The Mac adds a line; it waits on the phone.
+    c[0].clock().advance(1_000);
+    save(0, "typing-on-phone\nmac-line", "s-mac");
+    c.sync(0, 1);
+    assert_eq!(notes(1), "typing-on-phone", "held while typing");
+
+    // The phone goes on typing in the same editing session and leaves.
+    c[1].clock().advance(1_000);
+    save(1, "typing-on-phone-more", "s-phone");
+    release(&c[1], TASK, &id, "notes");
+    c.sync_all();
+    for d in 0..2 {
+        assert_eq!(notes(d), "typing-on-phone-more\nmac-line", "device {d}");
     }
 }
 

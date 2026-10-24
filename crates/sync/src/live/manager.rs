@@ -537,6 +537,11 @@ impl Supervisor {
             return;
         };
         peer.dialling = false;
+        if peer.conn.is_some() {
+            // The other device's own connection was adopted while this dial raced (both dialled
+            // at once): the device is reachable, and a failed dial says nothing against it.
+            return;
+        }
         if auto {
             peer.retry_at = Some(Instant::now() + peer.backoff.next_delay());
         } else {

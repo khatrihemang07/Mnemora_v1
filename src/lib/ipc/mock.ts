@@ -45,6 +45,7 @@
  *   remote       /todo?P on Today, then `__pixel.scenario('remote')`    "Call mum" changes under you
  *   taskSheet    `__pixel.scenario('conflict')`, then open the URL it prints (/todo?task=ID)
  *   remoteDelete `__pixel.scenario('remoteDelete')`, open the Task "Call mum", then `__pixel.sync()`
+ *   remoteEntryDelete `__pixel.scenario('remoteEntryDelete')`, open that Entry for editing, then `__pixel.sync()`
  *   listMerged   `__pixel.scenario('listMerged')`, open the List "Groceries", then `__pixel.sync()`
  *                (or `__listMergeMock('Groceries')`)
  */
@@ -309,6 +310,7 @@ export async function installMock() {
       journalChanged: () => void events.journalChangedEvent.emit(),
       listsMerged: (e) => void events.todoListsMergedEvent.emit(e),
       taskDeleted: (e) => void events.todoTaskDeletedEvent.emit(e),
+      entryDeleted: (e) => void events.journalEntryDeletedEvent.emit(e),
       activityChanged: () => void events.syncActivityEvent.emit(),
       settingsChanged: (module, keys) => void events.settingsChangedEvent.emit({ module, keys }),
       newConflicts: (count, name) => {

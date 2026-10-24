@@ -95,6 +95,10 @@ struct Device {
 
 impl Device {
     async fn new(id: &'static str) -> Self {
+        Self::paced(id, Duration::from_secs(3)).await
+    }
+
+    async fn paced(id: &'static str, dial_each: Duration) -> Self {
         let mut conn = db::open_in_memory().unwrap();
         let dir = tempfile::tempdir().unwrap();
         migrate::run(&mut conn, &[&CoreModule, &SyncModule], dir.path()).unwrap();
@@ -116,6 +120,7 @@ impl Device {
         };
         let listener = Listener::bind(config.clone(), LOCALHOST, 0).await.unwrap();
         let pace = Pace {
+            dial_each,
             // No retries during the test.
             retry: Schedule {
                 steps: vec![Duration::from_secs(600)],
@@ -248,4 +253,61 @@ async fn a_connection_task_that_panics_does_not_leave_its_device_marked_connecte
             && a.live.snapshot().get("dev-b").is_some_and(|l| !l.reachable)
     })
     .await;
+}
+
+/// A dial that was still racing addresses when the other device's own connection was adopted must
+/// not, when it gives up, mark the device as not nearby: a connection is open (DV2).
+#[tokio::test]
+async fn a_dial_that_fails_after_a_connection_was_adopted_leaves_the_device_reachable() {
+    let (mut a, b) = (
+        Device::paced("dev-a", Duration::from_millis(400)).await,
+        Device::new("dev-b").await,
+    );
+    b.pair_with(&a);
+    // An address that accepts and never answers: a's dial of b takes its whole 400 ms.
+    let silent = tokio::net::TcpListener::bind((LOCALHOST, 0)).await.unwrap();
+    let silent_addr = silent.local_addr().unwrap();
+    let held = tokio::spawn(async move {
+        let mut open = Vec::new();
+        while let Ok((s, _)) = silent.accept().await {
+            open.push(s);
+        }
+    });
+    a.config.trust.pin(b.config.identity.public_key(), b.id);
+    a.live
+        .host()
+        .with_db(&mut |conn| {
+            conn.execute(
+                "INSERT INTO sync_peers(id, name, paired_at, public_key) VALUES ('dev-b', 'dev-b', 1, ?1)",
+                [b.config.identity.public_key().to_hex()],
+            )?;
+            conn.execute(
+                "INSERT INTO sync_peer_addresses(device, address, last_ok_at) VALUES ('dev-b', ?1, NULL)",
+                [silent_addr.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    a.live.refresh_peers();
+
+    // b's own dial arrives while a is still dialling.
+    let b_to_a = dial(&b.config, a.addr()).await.unwrap();
+    let Some(Incoming::Peer(at_a)) = a.listener.accept().await else {
+        panic!("a did not get b's connection");
+    };
+    a.live.accept(*at_a);
+    b.live.adopt(b_to_a);
+    until("a session over b's connection", || {
+        a.live.snapshot().get("dev-b").is_some_and(|l| l.reachable)
+    })
+    .await;
+
+    // a's dial gives up (400 ms); the connection is still open.
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    assert_eq!(a.live.dialled_by_me("dev-b"), Some(false));
+    assert!(
+        a.live.snapshot().get("dev-b").is_some_and(|l| l.reachable),
+        "a failed dial must not clear the presence of an open connection"
+    );
+    held.abort();
 }

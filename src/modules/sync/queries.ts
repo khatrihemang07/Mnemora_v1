@@ -40,6 +40,8 @@ export async function watchDevices(): Promise<() => void> {
   return events.syncPeersEvent.listen(() => {
     void queryClient.invalidateQueries({ queryKey: devicesQuery.queryKey });
     void queryClient.invalidateQueries({ queryKey: ['sync', 'device'] });
+    // Another device may have renamed this one.
+    void queryClient.invalidateQueries({ queryKey: syncQuery.queryKey });
   });
 }
 
