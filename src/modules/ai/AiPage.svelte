@@ -93,11 +93,14 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-  <PageHeader title="AI" icon={Sparkles} hue="--hue-ai">
-    {#snippet actions()}
-      <IconButton icon={SquarePen} label="New Conversation" onclick={newConversation} />
-    {/snippet}
-  </PageHeader>
+  <!-- Phone shows a large title here; on desktop PageHeader renders nothing and the box collapses. -->
+  <div class="shrink-0 px-(--pad) pt-(--pad) empty:hidden">
+    <PageHeader title="AI" icon={Sparkles} hue="--hue-ai">
+      {#snippet actions()}
+        <IconButton icon={SquarePen} label="New Conversation" onclick={newConversation} />
+      {/snippet}
+    </PageHeader>
+  </div>
   <div class="min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-10">
     {#if conversation.isError && conversationId}
       <ErrorBanner error={conversation.error} onretry={() => void conversation.refetch()} />

@@ -33,7 +33,8 @@
 </script>
 
 <form
-  class="mx-auto flex w-full max-w-[42.5rem] items-end gap-2 rounded-md border border-line bg-surface p-2"
+  class="mx-auto flex w-full max-w-[42.5rem] items-end gap-2 rounded-md border border-line bg-surface p-2
+    transition-colors duration-(--dur) ease-out focus-within:border-accent"
   onsubmit={(event) => {
     event.preventDefault();
     void send();
@@ -43,6 +44,8 @@
     bind:value={draft}
     label="Ask a question"
     multiline
+    enterBreaks={viewport.isPhone}
+    data-bare
     {placeholder}
     class="min-h-6 flex-1 px-2 py-1 text-base"
     {onkeydown}

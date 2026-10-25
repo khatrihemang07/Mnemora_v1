@@ -2,10 +2,11 @@
   AutoTextarea: a frameless text field that grows with its text instead of scrolling: a Task's title
   in the sheet, which may wrap but is one line of text. Bind `value`; `label` is the accessible
   name. Enter never inserts a line break (the caller handles it through `onkeydown`); with
-  `multiline`, Shift+Enter does (a comment). Bind `ref` to focus it.
+  `multiline`, Shift+Enter does (a comment); with `enterBreaks`, Enter does too. Bind `ref` to focus it.
 -->
 <script lang="ts">
   import type { HTMLTextareaAttributes } from 'svelte/elements';
+  import { enterBreaksLine } from './auto-textarea-enter';
 
   interface Props extends Omit<HTMLTextareaAttributes, 'value'> {
     value: string;
@@ -13,12 +14,15 @@
     ref?: HTMLTextAreaElement | null;
     /** Shift+Enter adds a line break. */
     multiline?: boolean;
+    /** Enter adds a line break too (no key sends, so the caller's button does). */
+    enterBreaks?: boolean;
   }
   let {
     value = $bindable(),
     label,
     ref = $bindable(null),
     multiline = false,
+    enterBreaks = false,
     class: cls = '',
     onkeydown,
     ...rest
@@ -50,7 +54,9 @@
   aria-label={label}
   class="selectable block w-full resize-none overflow-hidden bg-transparent text-ink outline-none placeholder:text-faint {cls}"
   onkeydown={(e) => {
-    if (e.key === 'Enter' && !(multiline && e.shiftKey)) e.preventDefault();
+    if (e.key === 'Enter' && !enterBreaksLine({ shiftKey: e.shiftKey, multiline, enterBreaks })) {
+      e.preventDefault();
+    }
     onkeydown?.(e);
   }}
   {...rest}
