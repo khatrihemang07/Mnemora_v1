@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Prototype</title>
+<!-- Preview-only: fonts and icons load from the web here. The real app bundles them locally. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Fraunces:opsz,wght@9..144,300..800&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/iconify-icon@3.0.3/dist/iconify-icon.min.js"></script>
+<style>
+/* =====================================================================
+   1. DOCUMENT CHROME (neutral, same as the Todo, Journal and Sync prototypes)
+   ===================================================================== */
+:root {
+  --p-bg: #f4f4f2; --p-surface: #fff; --p-ink: #1b1b1f; --p-muted: #6a6a73; --p-line: #e2e2de; --p-line2: #c9c9c3;
+  --p-accent: #3d5afe; --p-ai: #7c4dff; --p-code: #ececea; --p-good: #13795b; --p-bad: #b42318; --p-warn: #9a5b00;
+}
+body[data-mtheme="dark"] {
+  --p-bg: #111113; --p-surface: #19191c; --p-ink: #ececf0; --p-muted: #9a9aa5; --p-line: #2a2a30; --p-line2: #45454d;
+  --p-accent: #8ea0ff; --p-ai: #a98bff; --p-code: #232328; --p-good: #4cc79a; --p-bad: #f07167; --p-warn: #f0b860;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 15px/1.6 "Inter", ui-sans-serif, system-ui, sans-serif; padding-bottom: 60px; }
+.wrap { max-width: 1500px; margin: 0 auto; padding: 0 16px; }
+header.top { padding: 36px 0 4px; }
+h1.doc { font-size: clamp(28px, 4vw, 42px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 10px; }
+h2 { font-size: 24px; letter-spacing: -0.01em; margin: 48px 0 4px; padding-top: 18px; border-top: 1px solid var(--p-line); scroll-margin-top: 70px; }
+p.lead { font-size: 16.5px; color: var(--p-muted); max-width: 980px; margin: 0 0 8px; }
+.muted { color: var(--p-muted); }
+code, kbd { font: 12.5px "JetBrains Mono", ui-monospace, monospace; background: var(--p-code); padding: 1px 6px; border-radius: 5px; }
+.note { font-size: 13.5px; color: var(--p-muted); background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 12px; padding: 10px 14px; margin: 10px 0; max-width: 1100px; }
+.note b { color: var(--p-ink); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; }
+.toc a { text-decoration: none; color: var(--p-ink); border: 1px solid var(--p-line); background: var(--p-surface); padding: 3px 11px; border-radius: 999px; font-size: 13px; }
+.toc a:hover { border-color: var(--p-accent); }
+.controls { position: sticky; top: 0; z-index: 50; background: color-mix(in srgb, var(--p-bg) 88%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--p-line); padding: 10px 0; margin-top: 18px; }
+.controls .row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+.ctl { display: flex; align-items: center; gap: 6px; font-size: 12px; flex-wrap: wrap; }
+.ctl > span { color: var(--p-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; font-size: 10.5px; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--p-line); border-radius: 9px; overflow: hidden; background: var(--p-surface); }
+.seg button { font: inherit; font-size: 12.5px; color: var(--p-ink); background: var(--p-surface); border: 0; padding: 5px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--p-ink); color: var(--p-bg); }
+.stage { display: flex; gap: 28px; align-items: flex-start; margin: 20px 0 8px; flex-wrap: wrap; justify-content: center; }
+.frame-label { font-size: 12px; color: var(--p-muted); margin: 0 0 8px; }
+.desk-wrap { flex: 1 1 880px; max-width: 1200px; min-width: 0; }
+.phone-wrap { flex: 0 0 auto; }
+.scen-note { max-width: 1200px; margin: 0 auto; }
+.nu { background: var(--p-surface); border: 1px solid var(--p-line); border-radius: 16px; padding: 16px; margin: 14px 0; scroll-margin-top: 70px; }
+.nu > header { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 2px; }
+.nu > header h4 { margin: 0; font-size: 15.5px; }
+.secid { font: 600 12px "JetBrains Mono", monospace; background: var(--p-code); padding: 2px 8px; border-radius: 6px; }
+.tag { font-size: 11px; color: var(--p-muted); border: 1px solid var(--p-line); border-radius: 999px; padding: 0 8px; }
+.tag.ui { color: var(--p-accent); border-color: var(--p-accent); }
+.tag.wire { color: var(--p-warn); border-color: var(--p-warn); }
+.nu > p.why { margin: 2px 0 10px; font-size: 13.5px; color: var(--p-muted); max-width: 1050px; }
+.nu > p.why b { color: var(--p-ink); }
+.nu > p.ev { margin: 0 0 10px; font-size: 12.5px; color: var(--p-muted); max-width: 1050px; border-left: 3px solid var(--p-line2); padding-left: 10px; }
+.nu-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+.nopt { border: 1px solid var(--p-line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; background: var(--p-surface); color: var(--p-ink); font: inherit; padding: 0; text-align: left; }
+.nopt:hover { border-color: var(--p-muted); }
+.nopt.on { outline: 2px solid var(--p-accent); outline-offset: -1px; border-color: var(--p-accent); }
+.nopt .demo { padding: 12px; min-height: 130px; display: flex; flex-direction: column; justify-content: center; gap: 6px; background: var(--p-bg); color: var(--p-ink); }
+.nopt .meta { padding: 10px 12px; border-top: 1px solid var(--p-line); font-size: 12.5px; flex: 1; }
+.nopt .meta b { font-size: 13.5px; }
+.nopt .meta p { margin: 4px 0 0; color: var(--p-muted); }
+.nopt .pc { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.nopt .pc li { padding-left: 16px; position: relative; color: var(--p-muted); }
+.nopt .pc li::before { position: absolute; left: 0; font-weight: 700; }
+.nopt .pc li.pro::before { content: "+"; color: var(--p-good); }
+.nopt .pc li.con::before { content: "\2212"; color: var(--p-bad); }
+.wf { background: var(--p-surface); border: 1px solid var(--p-line2); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; color: var(--p-ink); min-width: 0; }
+.wf.row { flex-direction: row; align-items: stretch; }
+.wf .ln { height: 5px; border-radius: 3px; background: var(--p-line2); }
+.wf .ln.w60 { width: 60%; } .wf .ln.w80 { width: 80%; } .wf .ln.w40 { width: 40%; } .wf .ln.w30 { width: 30%; }
+.wf .ln.ai { background: var(--p-ai); opacity: .75; }
+.wf .hd { height: 8px; width: 55%; border-radius: 3px; background: var(--p-ink); opacity: .75; }
+.wf .bub { align-self: flex-end; background: color-mix(in srgb, var(--p-ai) 22%, transparent); border-radius: 8px 8px 2px 8px; padding: 4px 8px; width: 60%; }
+.wf .bub2 { background: var(--p-bg); border: 1px solid var(--p-line2); border-radius: 2px 8px 8px 8px; padding: 5px 8px; display: flex; flex-direction: column; gap: 4px; }
+.wf .pill { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--p-line2); border-radius: 99px; padding: 1px 7px; font-size: 9.5px; color: var(--p-muted); white-space: nowrap; background: var(--p-surface); }
+.wf .pill.ai { color: var(--p-ai); border-color: var(--p-ai); }
+.wf .pr { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.wf .box { border: 1px solid var(--p-line2); border-radius: 6px; padding: 5px 6px; background: var(--p-bg); display: flex; flex-direction: column; gap: 4px; }
+.wf .side { width: 34%; border-left: 1px solid var(--p-line2); padding-left: 6px; display: flex; flex-direction: column; gap: 4px; }
+.wf .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--p-ai); flex: 0 0 auto; }
+.wf .rail { border-left: 2px solid var(--p-line2); padding-left: 8px; display: flex; flex-direction: column; gap: 5px; margin-left: 3px; }
+.wf .bar { height: 14px; border-radius: 99px; border: 1px solid var(--p-line2); background: var(--p-bg); display: flex; align-items: center; justify-content: space-between; padding: 0 5px; color: var(--p-muted); font-size: 9.5px; }
+.wf .btnw { height: 12px; min-width: 26px; border-radius: 4px; background: var(--p-ai); }
+.wf .btnw.g { background: var(--p-line2); }
+.wf .lbl { font-size: 9.5px; color: var(--p-muted); }
+.wf .err { border: 1px solid var(--p-bad); background: color-mix(in srgb, var(--p-bad) 12%, transparent); border-radius: 6px; padding: 4px 6px; }
+.wf .warn { border: 1px solid var(--p-warn); background: color-mix(in srgb, var(--p-warn) 14%, transparent); border-radius: 6px; padding: 4px 6px; }
+
+/* =====================================================================
+   2. MOCK APP: real Mnemora tokens (src/lib/theme/tokens.css) and real sizes
+      (src/shell/*, src/lib/ui/*), scoped to .mx. Sizes are in px at 15px body.
+   ===================================================================== */
+.mx {
+  --bg: oklch(98.2% 0.006 70); --side: oklch(96.2% 0.009 70); --surface: oklch(100% 0 0); --surface-2: oklch(95.6% 0.01 70);
+  --pop: oklch(100% 0 0); --ink: oklch(21% 0.014 60); --muted: oklch(50% 0.016 60); --faint: oklch(62% 0.014 65);
+  --line: oklch(91% 0.011 70); --line-strong: oklch(83% 0.013 70); --hover: oklch(30% 0.03 60 / 0.06); --active: oklch(30% 0.03 60 / 0.1);
+  --accent: oklch(55% 0.19 280); --on-accent: oklch(99% 0 0); --accent-soft: oklch(55% 0.19 280 / 0.12); --ring: oklch(55% 0.19 280 / 0.3);
+  --danger: oklch(52% 0.2 27); --danger-soft: oklch(52% 0.2 27 / 0.1); --success: oklch(50% 0.13 160); --warning: oklch(72% 0.15 65);
+  --hue-home: oklch(72% 0.15 65); --hue-journal: oklch(65% 0.17 32); --hue-todo: oklch(63% 0.12 182); --hue-ai: oklch(60% 0.2 295); --hue-settings: oklch(57% 0.03 260); --hue-sync: oklch(55% 0.16 265);
+  --scrim: oklch(20% 0.02 60 / 0.4);
+  --r1: 8px; --r2: 12px; --r3: 16px;
+  --elev-card: 0 1px 2px oklch(30% 0.03 60 / 0.06);
+  --elev-pop: 0 10px 30px -8px oklch(30% 0.03 60 / 0.22), 0 0 0 1px var(--line);
+  --f-ui: "Inter", ui-sans-serif, system-ui, sans-serif; --f-display: "Fraunces", ui-serif, Georgia, serif; --f-mono: "JetBrains Mono", monospace;
+  --display-weight: 560; --display-track: -0.01em;
+  --dur: 140ms; --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --row: 34px; --pad: 16px;
+  font-family: var(--f-ui); font-size: 15px; color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; line-height: 1.5;
+}
+body[data-mtheme="dark"] .mx {
+  color-scheme: dark;
+  --bg: oklch(16.5% 0.008 60); --side: oklch(14.6% 0.008 60); --surface: oklch(19.8% 0.01 60); --surface-2: oklch(23.5% 0.011 60);
+  --pop: oklch(25% 0.012 60); --ink: oklch(94% 0.009 80); --muted: oklch(68% 0.013 70); --faint: oklch(58% 0.012 65);
+  --line: oklch(26% 0.01 60); --line-strong: oklch(38% 0.012 60); --hover: oklch(100% 0 0 / 0.06); --active: oklch(100% 0 0 / 0.1);
+  --accent: oklch(72% 0.14 280); --on-accent: oklch(18% 0.03 280); --accent-soft: oklch(72% 0.14 280 / 0.16); --ring: oklch(72% 0.14 280 / 0.35);
+  --danger: oklch(70% 0.17 27); --danger-soft: oklch(70% 0.17 27 / 0.14); --success: oklch(75% 0.14 160);
+  /* NEW token value: --hue-ai has no dark value in tokens.css today (a real change the AI Module needs) */
+  --hue-ai: oklch(72% 0.15 295); --hue-todo: oklch(72% 0.11 182); --hue-sync: oklch(74% 0.11 265);
+  --scrim: oklch(0% 0 0 / 0.55);
+  --elev-card: inset 0 1px 0 oklch(100% 0 0 / 0.035); --elev-pop: 0 0 0 1px var(--line);
+}
+:where(.mx) button { font: inherit; color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+.mx iconify-icon { display: inline-block; width: 1em; height: 1em; vertical-align: -0.125em; flex: 0 0 auto; }
+.mx textarea, .mx input { font: inherit; color: var(--ink); }
+.mx .trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx .hue-ai-bg { background: color-mix(in oklch, var(--hue-ai) 14%, transparent); }
+
+/* ---- frames ---- */
+.desk { display: grid; grid-template-columns: 248px 1fr; height: 760px; border-radius: 14px; overflow: hidden; border: 1px solid var(--p-line); box-shadow: 0 20px 50px -20px rgba(0,0,0,.25); position: relative; }
+.desk.rail { grid-template-columns: 60px 1fr; }
+.phone { width: 380px; height: 780px; border-radius: 44px; border: 11px solid #121214; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 20px 50px -20px rgba(0,0,0,.35); position: relative; }
+.phone .status { height: 30px; flex: 0 0 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; font: 600 12px var(--f-ui); background: var(--bg); }
+
+/* ---- sidebar (Sidebar.svelte, NavItem.svelte, TreeRow.svelte) ---- */
+.sb { background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sb .tbs { height: 40px; flex: 0 0 40px; }
+.sb .brand { display: flex; gap: 10px; align-items: center; padding: 0 16px 12px; font: var(--display-weight) 16px var(--f-display); letter-spacing: var(--display-track); }
+.sb .brand i { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, var(--hue-home), var(--hue-journal), var(--hue-ai)); display: block; }
+.sb .list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 8px; overflow: auto; }
+.nav { display: flex; align-items: center; gap: 10px; height: var(--row); min-height: 32px; padding: 0 10px; border-radius: var(--r1); width: 100%; text-align: left; transition: background var(--dur) ease-out; }
+.nav:hover { background: var(--hover); }
+.nav iconify-icon { font-size: 18.4px; color: var(--muted); }
+.nav.on { background: var(--active); font-weight: 600; }
+.nav.cur { font-weight: 600; }
+.nav .lab { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav .kbd { font: 12px var(--f-mono); height: 20px; min-width: 20px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); display: inline-grid; place-items: center; padding: 0 5px; }
+.nav .chev { margin-left: auto; font-size: 14px; color: var(--muted); transform: rotate(90deg); }
+.seclabel { padding: 12px 10px 4px; font-size: 12px; font-weight: 500; color: var(--faint); }
+.subhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 4px 2px 30px; font-size: 12px; font-weight: 500; color: var(--faint); }
+.tree { display: flex; flex-direction: column; gap: 2px; }
+.trow { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px 0 30px; border-radius: var(--r1); font-size: 14px; width: 100%; text-align: left; transition: background var(--dur) ease-out; }
+.trow:hover { background: var(--hover); }
+.trow.on { background: var(--active); font-weight: 600; }
+.trow .glyph { width: 18px; text-align: center; color: var(--muted); font-size: 16px; flex: 0 0 auto; }
+.trow .lab { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trow .n { font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 400; color: var(--muted); }
+.trow.more { color: var(--muted); }
+.sb .foot { padding: 10px 14px; font-size: 12px; color: var(--faint); display: flex; gap: 8px; align-items: center; }
+.sb .spacer { flex: 1; }
+.envb { font-size: 11px; font-weight: 600; padding: 0 6px; border-radius: 99px; background: var(--surface-2); color: var(--muted); }
+
+/* ---- title bar (TitleBar.svelte) and icon buttons ---- */
+.mn { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; background: var(--bg); overflow: hidden; }
+.tbar { height: 50px; flex: 0 0 50px; display: flex; align-items: center; border-bottom: 1px solid var(--line); min-width: 0; }
+.tbar .l { padding-left: 8px; display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+.tbar h1 { margin: 0 0 0 8px; font: var(--display-weight) 18px/1.3 var(--f-display); letter-spacing: var(--display-track); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tbar .ico { margin-left: 8px; font-size: 18px; color: var(--hue-ai); }
+.tbar .sp { flex: 1; }
+.tbar .r { display: flex; align-items: center; gap: 8px; padding-right: 12px; flex: 0 0 auto; }
+.ib { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--r1); color: var(--muted); font-size: 16px; transition: background var(--dur) ease-out; flex: 0 0 auto; }
+.ib:hover { background: var(--hover); color: var(--ink); }
+.ib.sm { width: 28px; height: 28px; }
+.phone .ib { width: 44px; height: 44px; font-size: 20px; }
+.sbtn { height: 28px; display: inline-flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r1); font-size: 14px; color: var(--faint); }
+.sbtn .kbd { font: 12px var(--f-mono); height: 20px; min-width: 20px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--muted); display: inline-grid; place-items: center; padding: 0 5px; }
+
+/* ---- phone page header (PageHeader.svelte phone branch) ---- */
+.phh { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 16px 6px; }
+.phh .lg { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.phh .lg iconify-icon { font-size: 24px; color: var(--hue-ai); }
+.phh h1 { margin: 0; font: var(--display-weight) 24px/1.25 var(--f-display); letter-spacing: var(--display-track); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mx[data-ph="wrap"] .phh h1 { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.phh .ac { display: flex; align-items: center; gap: 0; flex: 0 0 auto; }
+.phsub { padding: 0 16px 6px 48px; font-size: 12px; color: var(--faint); display: none; }
+.mx[data-ph="sub"] .phsub { display: block; }
+.phback { display: none; }
+.mx[data-ph="back"] .phback { display: inline-flex; margin-left: -4px; align-items: center; height: 36px; padding: 0 8px; border-radius: var(--r1); color: var(--muted); gap: 2px; font-size: 14px; }
+.mx[data-ph="back"] .phh .lg > iconify-icon { display: none; }
+.tabbar { display: flex; flex: 0 0 auto; border-top: 1px solid var(--line); background: var(--side); padding-bottom: 6px; }
+.tabbar button { min-height: 56px; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; color: var(--muted); }
+.tabbar button iconify-icon { font-size: 20px; }
+.tabbar button.on { color: var(--ink); font-weight: 600; }
+.tabbar button.on iconify-icon { color: var(--hue-ai); }
+
+/* ---- page body and thread ---- */
+.body { flex: 1; display: flex; min-height: 0; position: relative; }
+.pane { width: 250px; border-right: 1px solid var(--line); background: var(--side); display: none; flex-direction: column; padding: 10px 8px; gap: 2px; overflow: auto; }
+.mx[data-a11="pane"] .pane { display: flex; }
+.phone .pane { display: none !important; }
+.scroll { flex: 1; overflow: auto; padding: 16px; min-width: 0; position: relative; }
+.phone .scroll { padding: 8px 16px 8px; }
+.thread { max-width: 768px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.sidepanel { width: 250px; border-left: 1px solid var(--line); padding: 14px; background: var(--side); display: none; flex-direction: column; gap: 8px; font-size: 13px; overflow: auto; }
+.mx[data-a1="split"] .sidepanel { display: flex; }
+.phone .sidepanel { display: none !important; }
+.run { display: flex; flex-direction: column; gap: 10px; }
+.q { font-size: 15px; }
+.mx[data-a1="doc"] .q, .mx[data-a1="split"] .q, .mx[data-a1="focus"] .q { font: var(--display-weight) 20px/1.3 var(--f-display); letter-spacing: var(--display-track); }
+.mx[data-a1="doc"] .run + .run, .mx[data-a1="split"] .run + .run { padding-top: 20px; border-top: 1px solid var(--line); }
+.mx[data-a1="column"] .q { align-self: flex-end; background: color-mix(in oklch, var(--hue-ai) 14%, transparent); border-radius: var(--r2) var(--r2) 4px var(--r2); padding: 8px 12px; max-width: 85%; }
+.mx[data-a1="column"] .ans { background: var(--surface); border: 1px solid var(--line); border-radius: 4px var(--r2) var(--r2) var(--r2); padding: 10px 14px; box-shadow: var(--elev-card); }
+.mx[data-a1="cards"] .run { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); padding-bottom: 12px; overflow: hidden; }
+.mx[data-a1="cards"] .run > .q { background: var(--surface-2); padding: 10px 14px; font-weight: 600; border-bottom: 1px solid var(--line); }
+.mx[data-a1="cards"] .run > :not(.q) { margin: 0 14px; }
+.mx[data-a1="timeline"] .run { position: relative; padding-left: 26px; }
+.mx[data-a1="timeline"] .run::before { content: ""; position: absolute; left: 6px; top: 10px; bottom: -22px; width: 2px; background: var(--line); }
+.mx[data-a1="timeline"] .run:not(:has(~ .run))::before { bottom: 0; }
+.mx[data-a1="timeline"] .q { font-weight: 600; position: relative; }
+.mx[data-a1="timeline"] .q::before { content: ""; position: absolute; left: -26px; top: 6px; width: 14px; height: 14px; border-radius: 50%; background: var(--hue-ai); box-shadow: 0 0 0 4px var(--bg); }
+.mx[data-a1="focus"] .thread > .run:has(~ .run) { display: none; }
+.pager { display: none; }
+.mx[data-a1="focus"] .pager { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 12px; }
+/* answer typography: Markdown typography (markdown.css) */
+.ans { line-height: 1.65; font-size: 16px; }
+.mx[data-a17="serif"] .ans { font-family: var(--f-display); }
+.mx[data-a17="sans"] .ans { font-family: var(--f-ui); font-size: 15px; }
+.ans p { margin: 0 0 .55em; } .ans ul { margin: 0 0 .55em; padding-left: 1.3em; } .ans li { margin: 2px 0; }
+.ans b { font-weight: 650; }
+.ans .cur { display: inline-block; width: 7px; height: 15px; background: var(--hue-ai); vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.mk { display: inline-grid; place-items: center; min-width: 17px; height: 17px; border-radius: 99px; font: 600 10.5px var(--f-ui); background: color-mix(in oklch, var(--hue-ai) 18%, transparent); color: var(--ink); margin: 0 1px; vertical-align: 2px; cursor: pointer; padding: 0 4px; }
+
+/* ---- activity ("Completed 3 steps") ---- */
+.act { font-size: 12.5px; color: var(--muted); }
+.act .hdr { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface); }
+.act .hdr iconify-icon { font-size: 13px; }
+.act .hdr .ok { color: var(--hue-ai); }
+.act .steps { margin: 8px 0 0 12px; border-left: 2px solid color-mix(in oklch, var(--hue-ai) 22%, transparent); padding-left: 12px; display: flex; flex-direction: column; gap: 5px; }
+.act .steps .s { display: flex; gap: 8px; align-items: center; }
+.act .steps .s small { color: var(--faint); }
+.act .steps .s iconify-icon { color: var(--hue-ai); }
+.act .tick { display: inline-flex; gap: 8px; align-items: center; }
+.act .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.act .chips .c { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 99px; background: var(--surface-2); font-size: 12px; }
+.act .chips .c.run { background: color-mix(in oklch, var(--hue-ai) 14%, transparent); color: var(--ink); }
+.spin { display: inline-block; width: 11px; height: 11px; border: 2px solid color-mix(in oklch, var(--hue-ai) 22%, transparent); border-top-color: var(--hue-ai); border-radius: 50%; animation: sp .8s linear infinite; flex: 0 0 auto; }
+@keyframes sp { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin, .cur { animation: none; } }
+
+/* ---- Sources ---- */
+.srclabel { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--faint); font-weight: 600; margin-bottom: 5px; }
+.src { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface-2); font-size: 12px; font-weight: 600; transition: background var(--dur) ease-out; }
+.chip:hover { background: var(--hover); }
+.chip.j > iconify-icon { color: var(--hue-journal); } .chip.t > iconify-icon { color: var(--hue-todo); }
+.chip.plain { font-weight: 500; }
+.srcrow { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px 0 8px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); font-size: 12.5px; font-weight: 600; }
+.srcrow .stack { display: inline-flex; }
+.srcrow .stack i { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 2px solid var(--surface); margin-left: -6px; font-size: 10px; font-style: normal; }
+.srcrow .stack i:first-child { margin-left: 0; }
+.srclist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); overflow: hidden; }
+.srclist .it { display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.srclist .it:first-child { border-top: 0; }
+.srclist small, .rich small { color: var(--muted); display: block; font-size: 12px; }
+.rich { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.rich .rc { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); padding: 8px 10px; font-size: 13px; border-left: 3px solid var(--hue-journal); }
+.rich .rc.t { border-left-color: var(--hue-todo); }
+.rich .rc b { display: block; font-weight: 600; }
+
+/* ---- footer under answer ---- */
+.foot2 { display: flex; align-items: center; gap: 2px; color: var(--muted); font-size: 12px; flex-wrap: wrap; margin-left: -6px; }
+.foot2 .fb { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border-radius: var(--r1); color: var(--muted); transition: background var(--dur) ease-out; }
+.foot2 .fb:hover { background: var(--hover); color: var(--ink); }
+.foot2 .meta { margin-left: 6px; font-size: 12px; color: var(--faint); }
+.foot2.hov { opacity: 0; transition: opacity var(--dur) ease-out; }
+.run:hover .foot2.hov { opacity: 1; }
+.phone .foot2.hov { opacity: 1; }
+
+/* ---- Buttons / banners / states (Button.svelte, ErrorBanner.svelte, Sync banners) ---- */
+.btn { white-space: nowrap; flex: 0 0 auto; height: 28px; padding: 0 10px; border-radius: var(--r1); border: 1px solid var(--line); background: var(--surface); font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; transition: transform var(--dur), background var(--dur); }
+.btn:hover { background: var(--hover); }
+.btn:active { transform: scale(.96); }
+.btn.pri { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+.btn.hue { background: var(--hue-ai); color: var(--bg); border-color: transparent; }
+.btn.ghost { border-color: transparent; background: none; }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.banner { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; border-radius: var(--r2); padding: 10px 14px; font-size: 14px; border: 1px solid; }
+.banner iconify-icon { margin-top: 3px; font-size: 16px; }
+.banner .bd { flex: 1; min-width: 180px; } .banner .bd b { font-weight: 600; } .banner .bd span { color: var(--muted); }
+.banner.err { border-color: var(--danger); background: var(--danger-soft); } .banner.err iconify-icon { color: var(--danger); }
+.banner.warn { border-color: color-mix(in oklch, var(--warning) 50%, transparent); background: color-mix(in oklch, var(--warning) 16%, transparent); } .banner.warn iconify-icon { color: var(--warning); }
+.errline { font-size: 13px; color: var(--danger); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.linkbtn { color: var(--accent); text-decoration: underline; }
+.pickq { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.pickq .opt { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--r1); background: var(--surface); padding: 6px 10px; font-size: 13px; }
+.queued { display: flex; flex-direction: column; gap: 4px; }
+.qnote { display: flex; align-items: center; gap: 8px; border: 1px dashed var(--line-strong); border-radius: var(--r2); padding: 6px 8px 6px 10px; font-size: 13px; color: var(--muted); }
+.qnote > span { flex: 1; min-width: 0; }
+.empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 36px 24px 8px; text-align: center; }
+.empty .tile { width: 44px; height: 44px; border-radius: 99px; display: grid; place-items: center; background: color-mix(in oklch, var(--hue-ai) 14%, transparent); color: var(--hue-ai); font-size: 20px; }
+.empty b { font-weight: 600; } .empty p { margin: 0; max-width: 360px; color: var(--muted); font-size: 14px; }
+.saved { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 520px; margin-top: 8px; }
+.starters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; max-width: 540px; text-align: left; margin-top: 10px; }
+.starters .st { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); padding: 10px 12px; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.starters .st iconify-icon { font-size: 17px; color: var(--hue-ai); }
+.starters .st small { color: var(--muted); font-size: 12px; }
+.recent { width: 100%; max-width: 540px; text-align: left; border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); overflow: hidden; margin-top: 10px; }
+.recent .rr { padding: 9px 12px; font-size: 14px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+.recent .rr:first-child { border-top: 0; } .recent small { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.jump { position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; height: 30px; padding: 0 12px; border-radius: 99px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 600; display: none; align-items: center; gap: 6px; box-shadow: var(--elev-pop); }
+.pillbtn { align-self: flex-start; }
+
+/* ---- composer = ComposerDock.svelte ---- */
+.dock { flex: 0 0 auto; padding: 0 16px 16px; position: relative; }
+.dock::before { content: ""; position: absolute; left: 0; right: 0; top: -24px; height: 24px; background: linear-gradient(to top, var(--bg), transparent); pointer-events: none; }
+.phone .dock { padding: 0 10px 10px; }
+.cbox { max-width: 768px; margin: 0 auto; display: flex; align-items: flex-end; gap: 8px; border-radius: var(--r2); border: 1px solid var(--line); background: var(--surface); padding: 8px; box-shadow: var(--elev-card); transition: border-color var(--dur); }
+.cbox:focus-within { border-color: var(--accent); }
+.cbox .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cbox textarea { border: 0; outline: 0; resize: none; background: transparent; min-height: 32px; padding: 4px; font-size: 15px; width: 100%; line-height: 1.5; }
+.cbox .tools { display: flex; align-items: center; gap: 4px; padding: 0 2px; }
+.mchip { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface-2); font-size: 12px; font-weight: 600; align-self: flex-start; white-space: nowrap; flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.mchip iconify-icon:last-child { font-size: 12px; }
+.mchip .mn1 { overflow: hidden; text-overflow: ellipsis; }
+.mchip .prov { color: var(--muted); font-weight: 500; }
+.phone .mchip .prov { display: none; }
+.phone .cbox { flex-wrap: wrap; }
+.phone .cbox .col { order: -1; flex: 1 1 100%; }
+.phone .cbox .send { margin-left: auto; }
+.phone .tools .ib.sm { width: 36px; height: 36px; }
+.cbox textarea { overflow: hidden; }
+.send { width: 32px; height: 32px; border-radius: 50%; background: var(--hue-ai); color: var(--bg); display: grid; place-items: center; flex: 0 0 auto; font-size: 16px; transition: transform var(--dur); }
+.send:active { transform: scale(.94); }
+.send.stop { background: var(--ink); }
+.send[disabled] { opacity: .5; }
+.capt { max-width: 768px; margin: 6px auto 0; font-size: 12px; color: var(--faint); text-align: center; }
+.hintr { font-size: 11.5px; color: var(--faint); padding: 2px 6px 0; }
+.mx[data-a5="composer"] .capt, .mx[data-a5="menu"] .capt { display: none; }
+.mx[data-a5="caption"] .mchip { display: none; }
+.mx[data-a5="menu"] .mchip { display: none; }
+.mx:not([data-a5="caption"]) .capt { display: none; }
+
+/* ---- overlays (Sheet.svelte, Popover.svelte, Menu.svelte) ---- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); z-index: 20; animation: fade var(--dur); }
+@keyframes fade { from { opacity: 0; } } @keyframes rise { from { transform: translateY(10px); opacity: 0; } }
+.sheet { position: absolute; z-index: 21; background: var(--pop); box-shadow: var(--elev-pop); display: flex; flex-direction: column; gap: 4px; padding: 12px 12px 12px; animation: rise var(--dur) var(--ease); }
+.desk .sheet { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(576px, 92%); max-height: 80%; border-radius: var(--r3); }
+.phone .sheet { left: 0; right: 0; bottom: 0; max-height: 88%; border-radius: var(--r3) var(--r3) 0 0; padding-bottom: 14px; }
+.sheet .grip { display: none; width: 36px; height: 4px; border-radius: 99px; background: color-mix(in oklch, var(--ink) 20%, transparent); margin: 0 auto 6px; }
+.phone .sheet .grip { display: block; }
+.sheet .st { padding: 2px 8px 6px; font-size: 12px; font-weight: 500; color: var(--faint); display: flex; justify-content: space-between; align-items: center; }
+.sheet .scr { overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.srch { position: relative; margin: 0 0 6px; }
+.srch iconify-icon { position: absolute; left: 12px; top: 11px; color: var(--faint); font-size: 16px; }
+.srch input { width: 100%; height: 38px; border-radius: var(--r1); border: 1px solid var(--line); background: var(--surface); padding: 0 12px 0 36px; font-size: 14px; }
+.pr1 { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 10px; border-radius: var(--r1); font-size: 14px; }
+.pr1:hover { background: var(--hover); }
+.pr1 .lab { flex: 1; min-width: 0; } .pr1 .lab small { display: block; color: var(--faint); font-size: 12px; }
+.pr1 iconify-icon.ck { color: var(--accent); }
+.pgroup { padding: 8px 10px 2px; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); }
+.pop { position: absolute; z-index: 21; background: var(--pop); box-shadow: var(--elev-pop); border-radius: var(--r2); padding: 5px; width: 300px; display: flex; flex-direction: column; gap: 1px; animation: rise var(--dur) var(--ease); }
+.desk .pop.model { bottom: 84px; left: 50%; transform: translateX(-50%); }
+.desk .pop.hist { top: 52px; right: 12px; width: 340px; padding: 8px; }
+.peek { position: absolute; z-index: 21; background: var(--pop); box-shadow: var(--elev-pop); border-radius: var(--r2); padding: 14px; font-size: 14px; width: 320px; left: 50%; top: 38%; transform: translate(-50%, -50%); animation: rise var(--dur) var(--ease); }
+.phone .peek { left: 0; right: 0; top: auto; bottom: 0; width: auto; transform: none; border-radius: var(--r3) var(--r3) 0 0; padding-bottom: 18px; }
+.phone .peek::before { content: ""; display: block; width: 36px; height: 4px; border-radius: 99px; background: color-mix(in oklch, var(--ink) 20%, transparent); margin: -4px auto 10px; }
+.peek small { color: var(--muted); }
+.drawer { position: absolute; z-index: 21; background: var(--pop); box-shadow: var(--elev-pop); padding: 16px; font-size: 14px; display: flex; flex-direction: column; gap: 8px; animation: rise var(--dur) var(--ease); }
+.desk .drawer { top: 50px; right: 0; bottom: 0; width: 320px; border-left: 1px solid var(--line); }
+.phone .drawer { left: 0; right: 0; bottom: 0; height: 54%; border-radius: var(--r3) var(--r3) 0 0; }
+.drawer h5 { margin: 0; font: var(--display-weight) 18px var(--f-display); letter-spacing: var(--display-track); }
+.toast { position: absolute; left: 50%; transform: translateX(-50%); bottom: 96px; background: var(--pop); border: 1px solid var(--line); border-radius: var(--r2); box-shadow: var(--elev-pop); padding: 8px 8px 8px 14px; font-size: 14px; display: flex; gap: 12px; align-items: center; z-index: 22; white-space: nowrap; }
+.toast .btn { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+
+/* Claude-inspired composer: text on top, round tool buttons below */
+.rb { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--muted); font-size: 18px; flex: 0 0 auto; transition: background var(--dur) ease-out; }
+.rb:hover { background: var(--hover); color: var(--ink); }
+.phone .rb { width: 40px; height: 40px; }
+.cbox.two { flex-direction: column; align-items: stretch; border-radius: 22px; padding: 10px 10px 8px 14px; gap: 4px; }
+.cbox.two textarea { padding: 4px 0; }
+.cbox.two .trow { display: flex; align-items: center; gap: 8px; }
+.cbox.two .trow .sp { flex: 1; }
+.cbox.two .mchip { align-self: auto; height: 36px; background: var(--surface-2); border-color: transparent; }
+.phone .cbox.two .send { width: 40px; height: 40px; }
+.under { max-width: 768px; margin: 6px auto 0; display: none; align-items: center; justify-content: space-between; padding: 0 6px; font-size: 13px; color: var(--muted); gap: 8px; }
+.mx[data-a5="under"] .under { display: flex; }
+.mx[data-a5="under"] .mchip { display: none; }
+.under .mt { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: var(--r1); color: var(--ink); }
+.under .mt:hover { background: var(--hover); }
+.under .mt span { color: var(--muted); }
+.under .hl { color: var(--faint); font-size: 12px; }
+/* A15 minimal header, Claude style */
+.phminl { display: none; }
+.mx[data-ph="min"] .phminl { display: grid; }
+.mx[data-ph="min"] .phh { display: grid; grid-template-columns: 44px 1fr 44px; padding: 4px 6px 6px; }
+.mx[data-ph="min"] .phh .lg { justify-content: center; }
+.mx[data-ph="min"] .phh .lg > iconify-icon { display: none; }
+.mx[data-ph="min"] .phh h1 { font: 600 15px/1.3 var(--f-ui); text-align: center; }
+.mx[data-ph="min"] .ac .hist { display: none; }
+.mx[data-ph="min"] .ac { justify-content: flex-end; }
+/* Greeting empty state */
+.greet { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 70px 20px 0; text-align: center; }
+.greet .mark { width: 44px; height: 44px; border-radius: 14px; background: linear-gradient(135deg, var(--hue-home), var(--hue-journal), var(--hue-ai)); display: grid; place-items: center; color: white; font-size: 22px; }
+.greet h2 { margin: 0; border: 0; padding: 0; font: var(--display-weight) 28px/1.2 var(--f-display); letter-spacing: var(--display-track); }
+/* A0 interactive previews */
+.a0prev { border: 1px solid var(--p-line); border-radius: 12px; overflow: hidden; margin: 8px 0 14px; max-width: 980px; }
+.a0bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--p-line); background: var(--p-surface); font-size: 12.5px; color: var(--p-muted); flex-wrap: wrap; }
+.a0bar b { color: var(--p-ink); }
+.mini { display: grid; grid-template-columns: 170px 1fr; height: 330px; position: relative; overflow: hidden; }
+.mini .sb { padding-top: 10px; } .mini .sb .nav { font-size: 14px; }
+.mini .mn { min-height: 0; }
+.mini .pg { padding: 18px 22px; overflow: auto; flex: 1; }
+.mini .pg h3 { margin: 0 0 6px; font: var(--display-weight) 22px var(--f-display); letter-spacing: var(--display-track); }
+.mini .entry { font: 15px/1.65 var(--f-display); color: var(--ink); max-width: 520px; }
+.mini .hero { border-radius: var(--r2); padding: 16px 18px; color: white; background: linear-gradient(120deg, oklch(54% 0.13 58), oklch(54% 0.17 32), oklch(52% 0.2 295)); margin-bottom: 12px; }
+.mini .hero b { font: var(--display-weight) 22px var(--f-display); display: block; }
+.mini .card { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.mini .askbar { height: 40px; border: 1px solid var(--line-strong); border-radius: 99px; display: flex; align-items: center; padding: 0 6px 0 14px; color: var(--faint); gap: 8px; font-size: 14px; }
+.mini .askbar .send { margin-left: auto; width: 28px; height: 28px; }
+.mini .qa { display: flex; flex-direction: column; gap: 10px; max-width: 520px; }
+.mini .drawer2 { width: 250px; border-left: 1px solid var(--line); background: var(--side); padding: 12px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.mini .pal { position: absolute; left: 50%; top: 38px; transform: translateX(-50%); width: min(520px, 88%); background: var(--pop); border-radius: var(--r3); box-shadow: var(--elev-pop); padding: 12px; display: flex; flex-direction: column; gap: 8px; z-index: 5; animation: rise var(--dur) var(--ease); }
+.mini .pal .in { height: 40px; border-radius: var(--r2); border: 1px solid var(--line-strong); display: flex; align-items: center; padding: 0 12px; gap: 8px; font-size: 14px; }
+.mini .pal .res { font-size: 14px; line-height: 1.6; color: var(--ink); }
+.mini .scrimm { position: absolute; inset: 0; background: var(--scrim); z-index: 4; }
+/* ---- Stage 2: AI Settings, first run, menus ---- */
+.snav { width: 208px; border-right: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; }
+.snav .si { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-radius: var(--r1); font-size: 14px; color: var(--muted); }
+.snav .si.on { background: var(--active); color: var(--ink); font-weight: 600; }
+.sw { max-width: 672px; margin: 0 auto; padding: 8px 8px 80px; }
+.sw h2.sh { margin: 22px 0 4px; padding: 0; border: 0; font: var(--display-weight) 18px var(--f-display); letter-spacing: var(--display-track); }
+.sw p.sd { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+.sc { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); margin-bottom: 8px; }
+.srow { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); min-width: 0; }
+.srow:first-child { border-top: 0; }
+.srow b { font-weight: 600; font-size: 14.5px; } .srow small { color: var(--muted); font-size: 13px; display: block; }
+.srow .ctl2 { margin-left: auto; flex: 0 0 auto; }
+.kt { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: color-mix(in oklch, var(--hue-ai) 14%, transparent); color: var(--hue-ai); font-size: 17px; flex: 0 0 auto; }
+.chipx { height: 22px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 99px; font-size: 11.5px; font-weight: 600; border: 1px solid var(--line-strong); white-space: nowrap; }
+.chipx.ok { border-color: color-mix(in oklch, var(--success) 55%, transparent); color: var(--success); }
+.chipx.warn { border-color: color-mix(in oklch, var(--warning) 60%, transparent); color: var(--warning); }
+.addrow { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--accent); font-weight: 600; font-size: 14px; width: 100%; text-align: left; }
+.pcard { border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); box-shadow: var(--elev-card); padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.pcard .ph { display: flex; gap: 12px; align-items: center; } .pcard .ph b { font-weight: 600; } .pcard .ph small { display: block; color: var(--muted); font-size: 13px; }
+.pcard .pm { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); align-items: center; }
+.fl { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.fl > span:first-child { font-weight: 500; color: var(--ink); }
+.fl small { color: var(--faint); font-size: 12px; }
+.fi { min-height: 38px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r1); padding: 0 12px; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+.fi.ro { background: var(--surface-2); color: var(--muted); }
+.fl.row2 { flex-direction: row; justify-content: space-between; align-items: center; gap: 12px; }
+.fl.row2 small { display: block; }
+.swt { width: 36px; height: 20px; border-radius: 99px; background: var(--line-strong); position: relative; flex: 0 0 auto; }
+.swt::after { content: ""; position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); }
+.kinds { display: flex; flex-direction: column; gap: 8px; }
+.kind { display: flex; align-items: center; gap: 12px; text-align: left; border: 1px solid var(--line); border-radius: var(--r2); background: var(--surface); padding: 12px; transition: background var(--dur); }
+.kind:hover { background: var(--hover); }
+.kind b { font-weight: 600; font-size: 14.5px; display: block; } .kind small { color: var(--muted); font-size: 13px; display: block; }
+.kind > iconify-icon:last-child { margin-left: auto; color: var(--faint); }
+.kindtag { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
+.kindtag .linkbtn { font-weight: 400; font-size: 13px; }
+.qrow { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 14px; }
+.qrow:first-child { border-top: 0; } .qrow iconify-icon { color: var(--faint); }
+.pop.plus { }
+.desk .pop.plus { bottom: 96px; left: max(16px, calc(50% - 370px)); width: 290px; }
+.desk .pop.cmenu { top: 52px; right: 12px; width: 240px; }
+.pr1.danger { color: var(--danger); }
+.pr1.dis { opacity: .5; }
+.phone .settop { padding: 4px 16px 0; }
+.phone .backl { display: inline-flex; align-items: center; gap: 2px; height: 36px; margin-left: -8px; padding: 0 8px; border-radius: var(--r1); color: var(--muted); font-size: 14px; }
+.keytab { width: 100%; border-collapse: collapse; font-size: 12px; }
+</style>
+</head>
+<body data-mtheme="light">
+<div class="wrap">
+<header class="top">
+  <h1 class="doc">AI Module: Conversation page</h1>
+  <p class="lead">Stage 1 of the AI prototype, rebuilt from Mnemora's real shell and Components (sizes and tokens copied from <code>Sidebar</code>, <code>TreeRow</code>, <code>TitleBar</code>, <code>PageHeader</code>, <code>ComposerDock</code>, <code>Sheet</code>, <code>Popover</code>) and from research into Claude, ChatGPT, Perplexity, NotebookLM, Zed, Pi and Raycast. Click an option card to <b>preview</b> it live in the mock above (cards tagged <span class="tag wire">wireframe</span> are sketches only). Nothing is picked here; tell me your picks in the session.</p>
+  <div class="note"><b>How to use:</b> choose a state with the buttons, then click option cards. Click the Model chip, the conversation list icon and the Source chips in the mock: they open the real pickers (Popover on desktop, Sheet on phone). Data is made up. Use Dark to check dark.</div>
+  <div class="note"><b>Fixed already:</b> Module is default-off; one Run per Conversation; Providers (Anthropic, OpenRouter, OpenAI-compatible, Local AI Wrapper); the Wrapper shows the answer whole, native Providers stream it; the composer is never focused when the page opens (PR #82); no new raw colours (the only new token value is <code>--hue-ai</code> in dark, which today has none).</div>
+  <nav class="toc">
+    <a href="#stage">Mock</a><a href="#a0">A0 Front door</a><a href="#a15">A15 Phone header</a><a href="#a11">A11 Conversations</a><a href="#a1">A1 Thread</a><a href="#a17">A17 Answer type</a><a href="#a3">A3 Activity</a><a href="#a4">A4 Sources</a><a href="#a5">A5 Model picker</a><a href="#a13">A13 Composer</a><a href="#a6">A6 Stop and queue</a><a href="#a14">A14 @ mentions</a><a href="#a7">A7 Errors</a><a href="#a8">A8 Too long</a><a href="#a9">A9 Footer</a><a href="#a10">A10 Empty</a><a href="#a12">A12 Branching</a><a href="#a2">A2 Keys</a><a href="#s1">S1 Providers</a><a href="#s2">S2 Add</a><a href="#s3">S3 Key</a><a href="#s4">S4 Paid</a><a href="#s5">S5 First run</a><a href="#s6">S6 + menu</a><a href="#s7">S7 Menu</a><a href="#s9">S9 Keys</a>
+  </nav>
+</header>
+
+<div class="controls" id="stage">
+  <div class="row">
+    <div class="ctl"><span>State</span>
+      <div class="seg" id="scen">
+        <button data-s="empty">Empty</button>
+        <button data-s="tools">Gathering</button>
+        <button data-s="stream">Streaming</button>
+        <button data-s="done" aria-pressed="true">Answered</button>
+        <button data-s="steer">Typed while running</button>
+        <button data-s="error">Error</button>
+        <button data-s="offline">Offline</button>
+        <button data-s="long">Too long</button>
+        <button data-s="follow">Follow-up</button>
+      </div>
+    </div>
+    <div class="ctl"><span>Theme</span><div class="seg" id="theme"><button data-t="light" aria-pressed="true">Light</button><button data-t="dark" aria-pressed="false">Dark</button></div></div>
+    <div class="ctl"><span>Sidebar</span><div class="seg" id="rail"><button data-r="0" aria-pressed="true">Full</button><button data-r="1" aria-pressed="false">Rail</button></div></div>
+    <div class="ctl"><span>View</span><div class="seg" id="view"><button data-v="chat" aria-pressed="true">Conversation</button><button data-v="settings" aria-pressed="false">AI Settings</button><button data-v="first" aria-pressed="false">First run</button></div></div>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="desk-wrap"><p class="frame-label">Desktop</p><div id="desk"></div></div>
+  <div class="phone-wrap"><p class="frame-label">Phone</p><div id="phone"></div></div>
+</div>
+<div class="scen-note note" id="scenNote"></div>
+
+<h2 id="decisions">Decisions</h2>
+<div id="cards"></div>
+</div>
+
+<script>
+/* ---------- state ---------- */
+const V = { a0: 'module', a1: 'doc', a2: 'enter', a3: 'summary', a4: 'chips-peek', a5: 'composer', a6: 'swap', a7: 'inline', a8: 'inline', a9: 'standard', a10: 'greeting', a11: 'popover', a12: 'pager', a13: 'two', a14: 'at', a15: 'min', a17: 'serif' };
+let S = 'done', RAIL = false, O = null, OP = null; /* O = open overlay, OP = payload */
+
+const I = (n) => `<iconify-icon icon="lucide:${n}"></iconify-icon>`;
+const QTEXT = 'Summarise my last 7 days';
+const FOLLOW = 'Which of those tasks are still open?';
+const CONVS = [['Summarise my last 7 days', 'Today', 'Today'], ['What is overdue?', 'Yesterday', 'Yesterday'], ['Entries about the move', 'Oct 20', 'Previous 7 days'], ['Plan the November budget with the travel costs and the gifts', 'Oct 18', 'Previous 7 days'], ['Which tasks have I put off longest?', 'Oct 12', 'Earlier']];
+
+/* ---------- activity: plain language, not tool names (research: Perplexity "Completed N steps") ---------- */
+const STEPS = [
+  ['book-open', 'Listed entries', 'Oct 18 to Oct 25 · 7 entries'],
+  ['book-open', 'Read an entry', 'Oct 22 · "Long walk, finally rested"'],
+  ['square-check', 'Listed closed tasks', 'Oct 18 to Oct 25 · 9 tasks'],
+];
+function activityHtml(mode, n = 3) {
+  const rows = STEPS.slice(0, n).map(s => `<div class="s">${I(s[0])}<span>${s[1]}</span><small>${s[2]}</small></div>`).join('');
+  if (mode === 'running') {
+    if (V.a3 === 'hidden') return `<div class="act"><span class="hdr"><span class="spin"></span> Working…</span></div>`;
+    if (V.a3 === 'ticker') return `<div class="act"><span class="tick"><span class="spin"></span> Reading the Oct 22 entry…</span></div>`;
+    if (V.a3 === 'chips') return `<div class="act"><div class="chips"><span class="c">${I('check')} Entries Oct 18–25</span><span class="c">${I('check')} Closed tasks</span><span class="c run"><span class="spin"></span> Entry Oct 22</span></div></div>`;
+    if (V.a3 === 'live') return `<div class="act"><span class="hdr"><span class="spin"></span> Working</span><div class="steps"><div class="s">${I('check')}<span>Listed entries</span><small>7 entries</small></div><div class="s">${I('check')}<span>Listed closed tasks</span><small>9 tasks</small></div><div class="s"><span class="spin"></span><span>Reading an entry</span><small>Oct 22…</small></div></div></div>`;
+    return `<div class="act"><span class="hdr"><span class="spin"></span> Reading your journal and tasks… · 2 steps done</span></div>`;
+  }
+  if (V.a3 === 'hidden') return '';
+  if (V.a3 === 'ticker') return `<div class="act"><span class="hdr">${I('check')} <span>Completed ${n} step${n === 1 ? '' : 's'}</span>${I('chevron-right')}</span></div>`;
+  if (V.a3 === 'chips') return `<div class="act"><div class="chips"><span class="c">${I('check')} Entries Oct 18–25</span><span class="c">${I('check')} Entry Oct 22</span><span class="c">${I('check')} Closed tasks</span></div></div>`;
+  if (V.a3 === 'live') return `<div class="act"><span class="hdr"><iconify-icon class="ok" icon="lucide:check"></iconify-icon> Completed ${n} step${n === 1 ? '' : 's'}${I('chevron-down')}</span><div class="steps">${rows}</div></div>`;
+  return `<div class="act"><span class="hdr"><iconify-icon class="ok" icon="lucide:check"></iconify-icon> Completed ${n} step${n === 1 ? '' : 's'}${I('chevron-right')}</span></div>`;
+}
+
+const ANS = (mk) => `<p>You had a <b>quiet, recovering week</b>.</p>
+<ul><li>You wrote 7 entries, mostly short; the long one on Oct 22 was about finally resting after the move.${mk ? '<span class="mk">1</span>' : ''}</li>
+<li>You closed 9 tasks, 5 of them from <b>Home</b>, including "Book dentist" and "Return drill".${mk ? '<span class="mk">3</span>' : ''}</li>
+<li>Two tasks slipped: "Renew passport" (due Oct 20) and "Call Sam".${mk ? '<span class="mk">4</span>' : ''}</li></ul>`;
+const ANS2 = (mk) => `<p>Three are still open: <b>Renew passport</b> (overdue since Oct 20)${mk ? '<span class="mk">1</span>' : ''}, <b>Call Sam</b>${mk ? '<span class="mk">2</span>' : ''}, and <b>Plan November budget</b> (due Oct 31)${mk ? '<span class="mk">3</span>' : ''}.</p>`;
+const items1 = [['j', 'Oct 22', 'Long walk, finally rested…', 'Long walk along the river, finally rested after the move. The boxes are mostly gone and…', 'Entry · 214 words'], ['j', 'Oct 19', 'Slow start, tea and…', 'Slow start. Tea and the radio, then the long list of small errands…', 'Entry · 96 words'], ['t', 'Book dentist', 'Done Oct 21 · Home', 'Booked for Nov 4, 9:30.', 'Task · Done'], ['t', 'Renew passport', 'Open · Home', 'Passport expires in March. Book the appointment first.', 'Task · Overdue']];
+const items2 = [['t', 'Renew passport', 'Overdue · Home', 'Passport expires in March. Book the appointment first.', 'Task · Overdue'], ['t', 'Call Sam', 'No due date', 'About the flat.', 'Task · Open'], ['t', 'Plan November budget', 'Due Oct 31', 'Rent, travel, gifts.', 'Task · Open']];
+const ic = (k) => I(k === 'j' ? 'book-open' : 'square-check');
+
+function sourcesHtml(which) {
+  const items = which === 2 ? items2 : items1;
+  const pay = (i) => `${i[1]}|${i[3]}|${i[4]}`;
+  if (V.a4 === 'list') return `<div><div class="srclabel">Sources</div><div class="srclist">${items.map(i => `<div class="it"><span style="color:var(--${i[0] === 'j' ? 'hue-journal' : 'hue-todo'})">${ic(i[0])}</span><div><b style="font-weight:600">${i[1]}</b><small>${i[2]}</small></div></div>`).join('')}</div></div>`;
+  if (V.a4 === 'rich') return `<div><div class="srclabel">Sources</div><div class="rich">${items.map(i => `<div class="rc ${i[0]}"><b>${ic(i[0])} ${i[1]}</b><small>${i[3]}</small></div>`).join('')}</div></div>`;
+  if (V.a4 === 'row') return `<button class="srcrow" data-ov="hist-src"><span class="stack"><i style="color:var(--hue-journal)">${I('book-open')}</i><i style="color:var(--hue-journal)">${I('book-open')}</i><i style="color:var(--hue-todo)">${I('square-check')}</i></span> ${items.length} sources ${I('chevron-right')}</button>`;
+  const act = V.a4 === 'chips-peek' ? 'data-peek' : (V.a4 === 'drawer' ? 'data-drawer' : (V.a4 === 'marks' ? 'data-peek' : 'data-open'));
+  const label = V.a4 === 'marks' ? items.map((i, n) => `<button class="chip ${i[0]}" ${act}="${pay(i)}"><span class="mk" style="margin:0">${n + 1}</span> ${i[1]}</button>`).join('') : items.map(i => `<button class="chip ${i[0]}" ${act}="${pay(i)}">${ic(i[0])} ${i[1]}</button>`).join('');
+  return `<div><div class="srclabel">Sources</div><div class="src">${label}</div></div>`;
+}
+
+function footHtml() {
+  const k = V.a9; const model = 'claude-haiku · Wrapper';
+  const copy = `<button class="fb">${I('copy')} Copy</button>`, retry = `<button class="fb">${I('rotate-ccw')} Try again</button>`;
+  if (k === 'minimal') return `<div class="foot2">${copy}</div>`;
+  if (k === 'hover') return `<div class="foot2 hov">${copy}${retry}<button class="fb">${I('git-branch')} Branch</button><span class="meta">${model}</span></div>`;
+  if (k === 'standard') return `<div class="foot2">${copy}${retry}<span class="meta">${model}</span></div>`;
+  return `<div class="foot2">${copy}${retry}<span class="meta">${model} · 3 steps · 4,210 in / 380 out</span></div>`;
+}
+const pillStop = () => (V.a6 === 'pill' ? `<button class="btn pillbtn">${I('square')} Stop</button>` : '');
+const run = (q, ans, x = {}) => `<div class="run"><div class="q">${q}</div>${x.act ?? ''}${x.pill ?? ''}${ans ? `<div class="ans">${ans}</div>` : ''}${x.src ?? ''}${x.foot ?? ''}${x.after ?? ''}</div>`;
+const mk = () => V.a4 === 'marks';
+
+function errHtml() {
+  if (S === 'offline') return `<div class="banner warn">${I('wifi-off')}<div class="bd"><b>You’re offline.</b> <span>Your question is kept. It will send when you tap Try again.</span></div><button class="btn">Try again</button></div>`;
+  if (V.a7 === 'toast' || V.a7 === 'bar') return '';
+  if (V.a7 === 'compact') return `<div class="errline">${I('triangle-alert')} Couldn’t reach the Wrapper. <button class="linkbtn">Try again</button></div>`;
+  return `<div class="banner err" role="alert">${I('circle-alert')}<div class="bd"><b>Couldn’t reach the Wrapper.</b> <span>Nothing answered at 127.0.0.1:8080 after 120 s. Your question and the 2 steps so far are kept.</span></div><div class="acts"><button class="btn">${I('rotate-ccw')} Try again</button><button class="btn">Change Provider</button></div></div>`;
+}
+function longHtml() {
+  if (V.a8 === 'composer') return '';
+  if (V.a8 === 'auto') return `<div class="banner warn">${I('triangle-alert')}<div class="bd"><b>Too long to continue here.</b> <span>I started a new branch from your first question so you can keep going.</span></div><div class="acts"><button class="btn hue">Continue in branch</button><button class="btn">Stay here</button></div></div>`;
+  if (V.a8 === 'picker') return `<div class="banner warn">${I('triangle-alert')}<div class="bd"><b>This Conversation is too long.</b> <span>Pick where to branch from.</span></div><div class="pickq"><div class="opt">${I('circle-dot')} ${QTEXT}</div><div class="opt">${I('circle')} ${FOLLOW}</div></div><div class="acts"><button class="btn hue">${I('git-branch')} Branch from selected</button><button class="btn">${I('plus')} New Conversation</button></div></div>`;
+  return `<div class="banner warn">${I('triangle-alert')}<div class="bd"><b>This Conversation is too long to continue.</b> <span>Branch from an earlier question, or start a new Conversation.</span></div><div class="acts"><button class="btn hue">${I('git-branch')} Branch from earlier…</button><button class="btn">${I('plus')} New Conversation</button></div></div>`;
+}
+function emptyHtml() {
+  let more = '';
+  if (V.a10 === 'saved') more = `<div class="saved"><span class="chip plain">${I('bookmark')} ${QTEXT}</span><span class="chip plain">${I('bookmark')} What is overdue?</span><span class="chip plain">${I('plus')} Save a question…</span></div>`;
+  if (V.a10 === 'hints') more = `<div class="saved"><span class="chip plain">${I('lightbulb')} What did I get done last week?</span><span class="chip plain">${I('lightbulb')} Find entries about the move</span></div>`;
+  if (V.a10 === 'starters') more = `<div class="starters"><div class="st">${I('calendar-days')}<b style="font-weight:600">Review a period</b><small>${QTEXT}</small></div><div class="st">${I('search')}<b style="font-weight:600">Find something</b><small>Entries about the move</small></div><div class="st">${I('triangle-alert')}<b style="font-weight:600">What needs me</b><small>What is overdue?</small></div><div class="st">${I('bookmark-plus')}<b style="font-weight:600">Save a question</b><small>Re-ask it in one tap</small></div></div>`;
+  if (V.a10 === 'recent') more = `<div class="recent">${CONVS.slice(0, 3).map(c => `<div class="rr"><span class="trunc">${c[0]}</span><small>${c[1]}</small></div>`).join('')}</div>`;
+  if (V.a10 === 'greeting') return `<div class="greet"><span class="mark">${I('sparkles')}</span><h2>What should we look at, Hemang?</h2><p style="margin:0;max-width:360px;color:var(--muted);font-size:14px">Answers use your Journal and Tasks and show where they came from.</p></div>`;
+  return `<div class="empty"><span class="tile">${I('sparkles')}</span><b>Ask about your journal and tasks</b><p>Answers use only what is in Mnemora, and show which Entries and Tasks they came from.</p>${more}</div>`;
+}
+function threadHtml() {
+  if (VIEW === 'first') return firstRunHtml();
+  const pager = `<div class="pager"><button class="ib sm">${I('chevron-left')}</button> Question 2 of 2 <button class="ib sm">${I('chevron-right')}</button></div>`;
+  const branch = V.a12 === 'pager' ? ' <span class="chip plain" style="height:22px;font-size:11px;margin-left:6px;vertical-align:2px">‹ 2/3 ›</span>' : (V.a12 === 'menu' ? ' <span class="chip plain" style="height:22px;font-size:11px;margin-left:6px;vertical-align:2px">Versions ▾</span>' : '');
+  const doneRun = (f = true) => run(QTEXT + branch, ANS(mk()), { act: activityHtml('done'), src: sourcesHtml(1), foot: f ? footHtml() : '' });
+  switch (S) {
+    case 'empty': return emptyHtml();
+    case 'tools': return run(QTEXT, '', { act: activityHtml('running'), pill: pillStop() });
+    case 'stream': return run(QTEXT, `<p>You had a <b>quiet, recovering week</b>.</p><ul><li>You wrote 7 entries, mostly short; the long one on Oct 22 was about finally rest<span class="cur"></span></li></ul>`, { act: activityHtml('done'), pill: pillStop() });
+    case 'done': return doneRun();
+    case 'steer': return run(QTEXT, '', { act: activityHtml('running'), pill: pillStop() });
+    case 'error': case 'offline': return run(QTEXT, '', { act: S === 'error' ? activityHtml('done', 2) : '', after: errHtml() });
+    case 'long': return doneRun(false) + run(FOLLOW, '', { after: longHtml() }) + pager;
+    case 'follow': return doneRun(false) + run(FOLLOW, ANS2(mk()), { act: activityHtml('done', 1), src: sourcesHtml(2), foot: footHtml() }) + pager;
+  }
+  return '';
+}
+
+/* ---------- composer (ComposerDock) ---------- */
+function composerHtml(phoneMode) {
+  const running = ['tools', 'steer', 'stream'].includes(S);
+  const tooLong = S === 'long' && V.a8 === 'composer';
+  if (S === 'error' && V.a7 === 'bar') return `<div class="dock"><div class="banner err" style="max-width:768px;margin:0 auto" role="alert">${I('circle-alert')}<div class="bd"><b>Couldn’t reach the Wrapper.</b></div><div class="acts"><button class="btn">${I('rotate-ccw')} Try again</button><button class="btn">Change Provider</button></div></div></div>`;
+  const queued = S === 'steer' && (V.a6 === 'swap' || V.a6 === 'both' || V.a6 === 'pill') ? `<div class="queued" style="max-width:768px;margin:0 auto 8px"><div class="qnote">${I('corner-down-right')}<span class="trunc">Only the work tasks, please</span><button class="btn ghost" style="height:24px">Send now</button><button class="ib sm" aria-label="Remove">${I('x')}</button></div></div>` : '';
+  const chip = `<button class="mchip" data-ov="model">${I('sparkles')} <span class="mn1">claude-haiku</span><span class="prov"> · Wrapper</span>${I('chevron-down')}</button>`;
+  let btn = `<button class="send" aria-label="Ask" ${tooLong ? 'disabled' : ''}>${I('arrow-up')}</button>`;
+  let extra = '';
+  if (running && (V.a6 === 'swap' || V.a6 === 'lock')) btn = `<button class="send stop" aria-label="Stop">${I('square')}</button>`;
+  if (running && V.a6 === 'both') extra = `<button class="btn" style="align-self:center">${I('square')} Stop</button>`;
+  let ph = running ? (V.a6 === 'lock' ? 'Wait for the answer, or stop it…' : 'Add a note for the next step…') : (tooLong ? 'Too long. Branch or start a new one.' : (S === 'empty' ? 'Ask about your journal and tasks…' : 'Ask a follow-up…'));
+  let dis = (running && V.a6 === 'lock') || tooLong ? 'disabled' : '';
+  if (VIEW === 'first') { ph = 'Add a Provider to ask\u2026'; dis = 'disabled'; }
+  const hint = { enter: 'Enter sends · Shift+Enter new line', mod: '⌘Enter sends · Enter new line', button: 'Enter adds a line' }[V.a2];
+  const caption = `<div class="capt">Answering with <b>claude-haiku</b> via Wrapper · <button class="linkbtn" data-ov="model">Change</button></div>`;
+  const atRow = V.a14 === 'at' ? `<div class="tools"><button class="ib sm" title="Mention an Entry or Task">${I('at-sign')}</button><span class="hintr">${phoneMode ? '' : hint}</span></div>` : `<div class="tools"><span class="hintr">${phoneMode ? '' : hint}</span></div>`;
+  if (V.a13 === 'two') {
+    const pl = `<button class="rb" data-ov="plus" aria-label="Add">${I('plus')}</button>`;
+    const under2 = `<div class="under"><span class="hl">${phoneMode ? '' : hint}</span><button class="mt">claude-haiku <span>Wrapper</span> ${I('chevron-down')}</button></div>`;
+    return `<div class="dock">${queued}<div class="cbox two"><textarea rows="1" placeholder="${ph}" ${dis}></textarea><div class="trow">${pl}${chip}<span class="sp"></span>${extra}${btn}</div></div>${under2}${caption}</div>`;
+  }
+  if (V.a13 === 'toolbar') return `<div class="dock">${queued}<div class="cbox" style="flex-direction:column;align-items:stretch"><textarea rows="2" placeholder="${ph}" ${dis}></textarea><div class="tools" style="justify-content:space-between"><div class="tools"><button class="ib sm" title="Saved questions">${I('bookmark')}</button><button class="ib sm" title="Mention">${I('at-sign')}</button>${chip}</div><div class="tools">${extra}${btn}</div></div></div><div class="under"><span class="hl"></span><button class="mt">claude-haiku <span>Wrapper</span> ${I('chevron-down')}</button></div>${caption}</div>`;
+  if (V.a13 === 'pill') return `<div class="dock">${queued}<div class="cbox" style="border-radius:99px;align-items:center;padding:4px 6px 4px 14px"><div class="col"><textarea rows="1" style="min-height:26px;height:26px;padding-top:3px" placeholder="${ph}" ${dis}></textarea></div>${chip}${extra}${btn}</div><div class="under"><span class="hl"></span><button class="mt">claude-haiku <span>Wrapper</span> ${I('chevron-down')}</button></div>${caption}</div>`;
+  const under = `<div class="under"><span class="hl">${phoneMode ? '' : hint}</span><button class="mt">claude-haiku <span>Wrapper</span> ${I('chevron-down')}</button></div>`;
+  return `<div class="dock">${queued}<div class="cbox">${chip}<div class="col"><textarea rows="1" placeholder="${ph}" ${dis}></textarea>${atRow}</div>${extra}${btn}</div>${under}${caption}</div>`;
+}
+
+/* ---------- overlays ---------- */
+function modelPickerHtml(isPhone) {
+  const paidRows = V.s4 === 'hidden' ? `<div class="pr1" style="color:var(--accent)">${I('eye')}<span class="lab">Show paid models\u2026</span></div>` : (V.s4 === 'badge' ? `<div class="pr1">${I('sparkles')}<span class="lab">claude-haiku-5.5<small>OpenRouter \u00b7 $0.001 / 1k tokens</small></span><span class="chipx">$</span></div>` : `<div class="pr1 dis">${I('lock')}<span class="lab">claude-haiku-5.5<small>OpenRouter \u00b7 Paid \u00b7 allow in Provider settings</small></span></div>`);
+  const body = `<div class="srch">${I('search')}<input placeholder="Search models…" aria-label="Search models"></div>
+  <div class="scr"><div class="pgroup">Recent</div>
+  <div class="pr1">${I('sparkles')}<span class="lab">claude-haiku<small>Local AI Wrapper · envelope tools</small></span>${I('check').replace('<iconify-icon', '<iconify-icon class="ck"')}</div>
+  <div class="pr1">${I('sparkles')}<span class="lab">claude-sonnet<small>Local AI Wrapper</small></span></div>
+  <div class="pr1">${I('sparkles')}<span class="lab">deepseek-v3.2:free<small>OpenRouter · free</small></span></div>
+  ${paidRows}<div class="pgroup">Most used</div>
+  <div class="pr1">${I('sparkles')}<span class="lab">claude-haiku-5-5<small>Anthropic</small></span></div>
+  <div class="pr1" style="color:var(--muted)">${I('list')}<span class="lab">Browse all models…<small>Fetches the list from the Provider</small></span></div>
+  <div class="pr1" style="color:var(--muted)">${I('plus')}<span class="lab">Add a Provider…</span></div></div>`;
+  return isPhone ? `<div class="scrim" data-close="1"></div><div class="sheet"><div class="grip"></div><div class="st"><span>Model</span></div>${body}</div>` : `<div class="scrim" style="background:transparent" data-close="1"></div><div class="pop model">${body}</div>`;
+}
+function historyHtml(isPhone) {
+  const groups = ['Today', 'Yesterday', 'Previous 7 days', 'Earlier'];
+  const body = `<div class="srch">${I('search')}<input placeholder="Search Conversations…" aria-label="Search Conversations"></div><div class="scr">${groups.map(g => { const c = CONVS.filter(x => x[2] === g); return c.length ? `<div class="pgroup">${g}</div>${c.map((x, n) => `<div class="pr1">${I('message-square')}<span class="lab trunc">${x[0]}</span><small style="color:var(--faint);font-size:12px">${x[1]}</small></div>`).join('')}` : ''; }).join('')}</div>${isPhone ? `<div class="acts" style="padding:8px 4px 0"><button class="btn hue" style="height:40px;flex:1;justify-content:center">${I('plus')} New Conversation</button></div>` : ''}`;
+  return isPhone ? `<div class="scrim" data-close="1"></div><div class="sheet" style="height:80%"><div class="grip"></div><div class="st"><span>Conversations</span></div>${body}</div>` : `<div class="scrim" style="background:transparent" data-close="1"></div><div class="pop hist">${body}</div>`;
+}
+function overlayHtml(isPhone) {
+  if (O === 'model') return modelPickerHtml(isPhone);
+  if (O === 'hist') return historyHtml(isPhone);
+  if (O === 'plus') return plusHtml(isPhone);
+  if (O === 'cmenu') return cmenuHtml(isPhone);
+  if (O === 'addprov') return addProvHtml(isPhone);
+  if (O === 'peek' && OP) { const [t, body, meta] = OP.split('|'); return `<div class="scrim" data-close="1"></div><div class="peek"><div style="display:flex;gap:8px;align-items:center">${I('book-open')}<b style="font-weight:600">${t}</b></div><small>${meta}</small><p style="margin:6px 0">${body}</p><div class="acts"><button class="btn" data-close="1">Open in its Module</button><button class="btn ghost" data-close="1">Close</button></div></div>`; }
+  if (O === 'drawer' && OP) { const [t, body, meta] = OP.split('|'); return `<div class="scrim" data-close="1"></div><div class="drawer"><small style="color:var(--muted)">${meta}</small><h5>${t}</h5><div>${body}</div><div class="acts" style="margin-top:auto"><button class="btn hue">Open in its Module</button><button class="btn" data-close="1">Close</button></div></div>`; }
+  return '';
+}
+
+/* ---------- shell ---------- */
+const title = () => (S === 'empty' ? 'New Conversation' : QTEXT);
+function sidebar() {
+  if (RAIL) return `<div class="sb"><div class="tbs"></div><div class="list" style="align-items:center"><div class="brand" style="padding:0 0 12px"><i></i></div><button class="nav" style="justify-content:center;width:44px;padding:0">${I('search')}</button><div style="height:1px;background:var(--line);width:24px;margin:6px 0"></div><button class="nav" style="justify-content:center;width:44px;padding:0"><span style="color:var(--hue-home)">${I('house')}</span></button><button class="nav" style="justify-content:center;width:44px;padding:0"><span style="color:var(--hue-journal)">${I('book-open')}</span></button><button class="nav" style="justify-content:center;width:44px;padding:0"><span style="color:var(--hue-todo)">${I('square-check')}</span></button><button class="nav on" style="justify-content:center;width:44px;padding:0"><span style="color:var(--hue-ai)">${I('sparkles')}</span></button></div></div>`;
+  const tree = V.a11 === 'tree' ? `<div class="subhead"><span>Conversations</span><span style="display:flex"><button class="ib sm" aria-label="Sort">${I('ellipsis')}</button><button class="ib sm" aria-label="New Conversation">${I('plus')}</button></span></div><div class="tree">${CONVS.slice(0, 4).map((c, n) => `<button class="trow ${n === 0 && S !== 'empty' ? 'on' : ''}"><span class="glyph">${I('message-square')}</span><span class="lab">${c[0]}</span></button>`).join('')}<button class="trow more"><span class="glyph">${I('ellipsis')}</span><span class="lab">All conversations…</span><span class="n">12</span></button></div>` : '';
+  return `<div class="sb"><div class="tbs"></div><div class="brand"><i></i> Mnemora</div><div class="list">
+    <button class="nav">${I('search')}<span class="lab" style="color:var(--muted)">Search</span><span class="kbd">⌘K</span></button>
+    <div class="seclabel">Modules</div>
+    <button class="nav"><span style="color:var(--hue-home)">${I('house')}</span><span class="lab">Home</span></button>
+    <button class="nav"><span style="color:var(--hue-journal)">${I('book-open')}</span><span class="lab">Journal</span></button>
+    <button class="nav"><span style="color:var(--hue-todo)">${I('square-check')}</span><span class="lab">Todo</span><span style="font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums">3</span></button>
+    <button class="nav ${VIEW === 'settings' ? '' : (V.a11 === 'tree' ? 'cur' : 'on')}"><span style="color:var(--hue-ai)">${I('sparkles')}</span><span class="lab">AI</span>${V.a11 === 'tree' ? `<span class="chev">${I('chevron-right')}</span>` : ''}</button>${tree}
+    <div class="spacer"></div>
+    <button class="nav"><span style="color:var(--hue-sync)">${I('refresh-cw')}</span><span class="lab">Sync</span></button>
+    <button class="nav ${VIEW === 'settings' ? 'on' : ''}"><span style="color:var(--hue-settings)">${I('settings')}</span><span class="lab">Settings</span></button></div>
+    <div class="foot"><span class="envb">Sandbox</span><span>v0.1.6</span></div></div>`;
+}
+function deskPage() {
+  if (VIEW === 'settings') return settingsDesk();
+  const histBtn = V.a11 === 'tree' ? '' : `<button class="ib" data-ov="hist" aria-label="Conversations">${I('messages-square')}</button>`;
+  const hdrModel = V.a5 === 'header' ? `<button class="mchip" data-ov="model" style="height:28px">${I('sparkles')} <span class="mn1">claude-haiku</span><span class="prov"> · Wrapper</span>${I('chevron-down')}</button>` : '';
+  const pane = V.a11 === 'pane' ? `<aside class="pane"><div class="srch">${I('search')}<input placeholder="Search…"></div>${['Today', 'Yesterday', 'Previous 7 days'].map(g => `<div class="pgroup">${g}</div>${CONVS.filter(c => c[2] === g).map((c, n) => `<div class="pr1" style="${g === 'Today' && S !== 'empty' ? 'background:var(--active);font-weight:600' : ''}"><span class="lab trunc">${c[0]}</span></div>`).join('')}`).join('')}</aside>` : '';
+  return `<div class="mn"><div class="tbar"><div class="l"><button class="ib" aria-label="Toggle sidebar">${I('panel-left')}</button><iconify-icon class="ico" icon="lucide:sparkles"></iconify-icon><h1>${title()}</h1></div><span class="sp"></span><div class="r">${hdrModel}${histBtn}<button class="ib" data-ov="cmenu" aria-label="More">${I('ellipsis')}</button><button class="sbtn">${I('search')} Search… <span class="kbd">⌘K</span></button></div></div>
+  <div class="body">${pane}<div class="scroll"><div class="thread">${threadHtml()}</div></div><aside class="sidepanel">${sidePanelHtml()}</aside></div>${composerHtml(false)}${toastHtml()}${overlayHtml(false)}</div>`;
+}
+function phonePage() {
+  if (VIEW === 'settings') return settingsPhone();
+  const hdrModel = V.a5 === 'header' ? `<button class="mchip" data-ov="model" style="height:30px;padding:0 10px">${I('sparkles')}<span class="mn1" style="max-width:60px">haiku</span>${I('chevron-down')}</button>` : '';
+  return `<div class="status"><span>9:41</span><span>${I('signal')} ${I('wifi')} ${I('battery-full')}</span></div>
+  <div class="phh"><button class="ib phminl" data-ov="hist" aria-label="Conversations">${I('menu')}</button><div class="lg"><button class="phback" aria-label="Conversations">${I('chevron-left')}</button>${I('sparkles')}<h1>${title()}</h1></div><div class="ac">${hdrModel}<button class="ib hist" data-ov="hist" aria-label="Conversations">${I('messages-square')}</button><button class="ib" data-ov="cmenu" aria-label="More">${I('ellipsis')}</button></div></div>
+  <div class="phsub">claude-haiku · Local AI Wrapper</div>
+  <div class="mn" style="flex:1"><div class="body"><div class="scroll"><div class="thread">${threadHtml()}</div></div></div>${composerHtml(true)}${toastHtml()}${overlayHtml(true)}</div>
+  <div class="tabbar"><button>${I('house')}Home</button><button>${I('book-open')}Journal</button><button>${I('square-check')}Todo</button><button class="on">${I('sparkles')}AI</button><button>${I('ellipsis')}More</button></div>`;
+}
+function toastHtml() { return (S === 'error' && V.a7 === 'toast') ? `<div class="toast">Couldn’t reach the Wrapper <button class="btn">Try again</button></div>` : ''; }
+function sidePanelHtml() {
+  if (!['done', 'follow', 'long'].includes(S)) return `<div class="srclabel">Sources in this Conversation</div><div class="muted" style="font-size:13px">Nothing cited yet.</div>`;
+  return `<div class="srclabel">Sources in this Conversation</div><div class="srclist">${items1.map(i => `<div class="it"><span style="color:var(--${i[0] === 'j' ? 'hue-journal' : 'hue-todo'})">${ic(i[0])}</span><div><b style="font-weight:600">${i[1]}</b><small>${i[2]}</small></div></div>`).join('')}</div>`;
+}
+
+function render() {
+  const a1phone = V.a1 === 'split' ? 'doc' : V.a1;
+  const attrs = (ph) => `data-a1="${ph ? a1phone : V.a1}" data-a5="${V.a5}" data-a11="${V.a11}" data-a17="${V.a17}" data-ph="${V.a15}"`;
+  document.getElementById('desk').innerHTML = `<div class="desk mx ${RAIL ? 'rail' : ''}" ${attrs(false)}>${sidebar()}${deskPage()}</div>`;
+  document.getElementById('phone').innerHTML = `<div class="phone mx" ${attrs(true)}>${phonePage()}</div>`;
+  bind();
+  document.getElementById('scenNote').innerHTML = NOTES[S];
+}
+const NOTES = {
+  empty: '<b>Empty Conversation.</b> A new Conversation. Nothing is focused. Card A10.',
+  tools: '<b>Gathering.</b> The model has asked for tools. Plain-language steps, not tool names. Cards A3 and A6.',
+  stream: '<b>Streaming (native Provider).</b> The Local AI Wrapper shows the answer whole instead.',
+  done: '<b>Answered.</b> Question, "Completed 3 steps", answer, Sources, footer. Click the Model chip, a Source chip and the conversations icon.',
+  steer: '<b>You typed while it was running.</b> The note waits above the composer, can be sent now or removed (Zed and Pi do the same). Card A6.',
+  error: '<b>Error.</b> The Provider did not answer. What happened so far is kept. Card A7.',
+  offline: '<b>Offline.</b> The device has no connection: the question is kept and nothing is lost.',
+  long: '<b>Too long.</b> The next request would exceed the 100,000-byte budget. Card A8.',
+  follow: '<b>Follow-up.</b> A second question in the same Conversation.'
+};
+function bind() {
+  document.querySelectorAll('[data-peek]').forEach(c => c.onclick = () => { O = 'peek'; OP = c.dataset.peek; render(); });
+  document.querySelectorAll('[data-drawer]').forEach(c => c.onclick = () => { O = 'drawer'; OP = c.dataset.drawer; render(); });
+  document.querySelectorAll('[data-open]').forEach(c => c.onclick = () => alert('Opens "' + c.dataset.open.split('|')[0] + '" in its own Module.'));
+  document.querySelectorAll('.under .mt').forEach(c => c.onclick = () => { O = 'model'; OP = null; render(); });
+  document.querySelectorAll('[data-ov]').forEach(c => c.onclick = () => { O = c.dataset.ov === 'hist-src' ? 'drawer' : c.dataset.ov; OP = c.dataset.ov === 'hist-src' ? 'All sources|Oct 22, Oct 19, Book dentist, Renew passport|4 sources' : null; if (O === 'addprov') AP = { step: 1, kind: null, test: 0 }; render(); });
+  document.querySelectorAll('[data-ap]').forEach(b => b.onclick = (e) => { e.preventDefault(); const a = b.dataset.ap;
+    if (a.startsWith('kind:')) { AP.kind = a.slice(5); AP.step = 2; AP.test = 0; KEYSTATE = 0; }
+    else if (a === 'back') { AP.step = 1; }
+    else if (a === 'test') { AP.test = 1; }
+    else if (a === 'cyclekind') { const i = KINDS.findIndex(k => k.id === (AP.kind || 'wrapper')); AP.kind = KINDS[(i + 1) % KINDS.length].id; AP.test = 0; KEYSTATE = 0; }
+    else if (a === 'save') { const k = kindOf(AP.kind); PROVS.push({ name: k.name, kind: k.id, st: k.key === 'none' ? 'No key needed' : (KEYSTATE ? 'Key saved' : 'Needs a key') }); O = null; AP = { step: 1, kind: null, test: 0 }; KEYSTATE = 0; if (VIEW === 'first') { VIEW = 'chat'; syncView(); } }
+    else if (a === 'pastekey') { KEYSTATE = 1; }
+    else if (a === 'rekey' || a === 'rmkey') { KEYSTATE = 0; }
+    render(); });
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => { O = null; OP = null; render(); });
+}
+
+/* ---------- decision cards (wireframes are theme-aware) ---------- */
+const L = (c = '') => `<div class="ln ${c}"></div>`;
+const wf = (inner, cls = '') => `<div class="wf ${cls}">${inner}</div>`;
+const BUB = `<div class="bub"><div class="ln w80"></div></div><div class="bub2">${L('w80')}${L('w60')}</div>`;
+const DOCQ = `<div class="hd"></div>${L('w80')}${L('w60')}`;
+const SRCP = `<div class="pr"><span class="pill">Oct 22</span><span class="pill">Passport</span></div>`;
+
+const CARDS = [
+  { id: 'a0', wire: true, title: 'A0. Where AI is reached from', ev: 'Evidence: Raycast opens AI from the search bar; Claude and ChatGPT are standalone; Zed keeps it in a side panel next to your work.', why: '<b>Scenario:</b> you are reading a Journal Entry and want to ask something. <b>Pick an option card, then click inside the live preview below it</b> (sidebar items, the Ask button, chips, the sparkles button) to feel how each one behaves.', opts: [
+    { v: 'module', t: 'Its own Module page only', d: 'A sidebar item opens the Conversation page. Nothing else changes in the app.', demo: wf(`<div class="pr"><span class="pill">Home</span><span class="pill">Journal</span><span class="pill ai">AI</span></div>${L('w60')}${L('w80')}`), pro: ['Simplest, consistent with every other Module', 'No change to existing screens'], con: ['You leave what you are reading to ask a question'] },
+    { v: 'palette', t: 'Module page plus quick-ask from anywhere', d: 'A shortcut and a palette action open a floating ask box over any page; "Open as Conversation" keeps it.', demo: wf(`${L('w60')}${L('w80')}<div class="box" style="margin-top:2px"><div class="bar"><span>Ask anything…</span><span class="dot"></span></div>${L('w60 ai')}</div>`), pro: ['Ask without leaving the page', 'Fits the existing command palette'], con: ['A second surface for the same Run'] },
+    { v: 'homecard', t: 'Module page plus an ask bar on Home', d: 'Home gets a card with a one-line ask bar and your Saved questions; submitting opens a running Conversation.', demo: wf(`<div class="hd"></div><div class="box"><div class="bar"><span>Ask about your week…</span><span class="dot"></span></div><div class="pr"><span class="pill">Last 7 days</span><span class="pill">Overdue</span></div></div>`), pro: ['Discoverable; Home is meant to surface what matters'], con: ['Touches Home, an existing screen'] },
+    { v: 'drawer', t: 'A side drawer inside Journal and Todo', d: 'A button slides in an AI panel scoped to the page you are on.', demo: wf(`<div class="wf row" style="border:0;padding:0;background:none"><div style="flex:1;display:flex;flex-direction:column;gap:4px">${L('w80')}${L('w60')}${L('w80')}</div><div class="side">${L('w80 ai')}${L('w60')}${L('w80')}</div></div>`), pro: ['Contextual: "summarise this Entry"'], con: ['Modules would host AI UI, against ADR 0002', 'Largest build'] }
+  ]},
+  { id: 'a15', title: 'A15. Phone header (your screenshot problem)', ev: 'Your Claude Android screenshot: a menu icon on the left that opens the conversation list, one small action on the right, no title and no model in the header. Evidence: the real phone page header is a 24px Fraunces title that truncates, plus action buttons (PageHeader.svelte). Material and Compose guidance: one-line title with ellipsis, at most about 3 icons, 48dp touch targets, and keep pickers out of the header.', why: '<b>Scenario:</b> a long Conversation title on a 360px phone. Switch the state to <b>Answered</b> and look at the phone header while you click these.', opts: [
+    { v: 'min', t: 'Claude-style minimal: menu left, centred small title, More right', d: 'The left icon opens the Conversations Sheet; the title is a small centred line that truncates; one More icon. The Model is in the composer.', demo: wf(`<div class="bar" style="height:22px"><span>\u2630</span><span>Summarise my last\u2026</span><span>\u22EF</span></div>`), pro: ['Most room for the title; closest to your Claude reference', 'Only two icons'], con: ['Different from Todo and Journal headers (large left title)'] },
+    { v: 'one', t: 'One-line title, two icons (Recommended by the research)', d: 'Sparkles icon, title with an ellipsis, then Conversations and More. The Model lives in the composer.', demo: wf(`<div class="bar" style="height:22px"><span>✦ Summarise my last 7 d…</span><span>☰ ⋯</span></div>`), pro: ['Title always readable', 'Same shape as Todo and Journal headers'], con: ['A very long title is cut; full text is in the menu'] },
+    { v: 'wrap', t: 'Title may wrap to two lines', d: 'Same header, but the title clamps to two lines before the ellipsis.', demo: wf(`<div class="bar" style="height:30px"><span>✦ Summarise my last<br>7 days and the…</span><span>☰ ⋯</span></div>`), pro: ['More of the title shows'], con: ['Header height changes with the title'] },
+    { v: 'sub', t: 'Title plus a small line with Model and Provider', d: 'A muted second line under the title: "claude-haiku · Local AI Wrapper".', demo: wf(`<div class="bar" style="height:30px"><span>✦ Summarise my…<br><span style="opacity:.6">claude-haiku · Wrapper</span></span><span>☰ ⋯</span></div>`), pro: ['You always see which Model is answering'], con: ['Taller header; the info is read-only'] },
+    { v: 'back', t: 'Back to list instead of the icon', d: 'The title row gets a "‹ Conversations" back button (like opening a chat in a messaging app).', demo: wf(`<div class="bar" style="height:22px"><span>‹ Conversations</span><span>⋯</span></div><div class="lbl">Summarise my last 7 days</div>`), pro: ['Obvious way back to the list'], con: ['Not how Todo or Journal navigate; uses width'] }
+  ]},
+  { id: 'a11', title: 'A11. Where Conversations live', ev: 'Evidence: Todo Lists use 32px sidebar sub-rows with 30px indent, 14px text, truncation, a count and a "Lists" header with + and ⋯; on a phone they open in a Sheet. Claude and ChatGPT group history by Today, Yesterday, Previous 7 days with search; ChatGPT’s "branch in new chat" is criticised for cluttering the sidebar.', why: '<b>Scenario:</b> you have 30 Conversations and want yesterday’s. The mock above now draws the real Todo-style tree; try each option. On the phone, the conversations icon opens a Sheet with search and date groups in every option.', opts: [
+    { v: 'tree', t: 'Sidebar tree like Todo Lists', d: '4 recent Conversations under AI, "All conversations…" at the bottom, + and ⋯ in the header. Phone: Sheet.', demo: wf(`<div class="wf row" style="border:0;padding:0;background:none"><div style="width:42%;display:flex;flex-direction:column;gap:4px"><div class="pill ai">AI ›</div>${L('w80')}${L('w60')}${L('w80')}${L('w40')}</div><div style="flex:1;display:flex;flex-direction:column;gap:4px">${DOCQ}</div></div>`), pro: ['Exactly how Todo works; one click to switch', 'Titles truncate cleanly'], con: ['Only the 4 most recent are visible; older ones need the popover'] },
+    { v: 'popover', t: 'History popover from the header, no tree', d: 'The conversations icon opens a searchable popover (desktop) or Sheet (phone), grouped by date.', demo: wf(`<div class="bar"><span>Title</span><span class="pill">☰</span></div><div class="box">${L('w80')}${L('w60')}${L('w80')}</div>`), pro: ['Zero permanent chrome; same on desktop and phone', 'Full searchable history'], con: ['Hidden until opened'] },
+    { v: 'pane', t: 'Two-pane inside the page', d: 'A 250px list of Conversations beside the thread (desktop). Phone: the Sheet.', demo: wf(`<div class="wf row" style="border:0;padding:0;background:none"><div class="side" style="border:0;border-right:1px solid var(--p-line2);width:36%;padding-right:6px;padding-left:0">${L('w80')}${L('w60')}${L('w80')}${L('w40')}</div><div style="flex:1;display:flex;flex-direction:column;gap:4px;padding-left:6px">${DOCQ}</div></div>`), pro: ['Whole history visible and searchable'], con: ['Two columns inside a Module that already has a sidebar'] },
+    { v: 'page', t: 'List page you drill into', d: 'AI opens on the list; tapping a Conversation opens it with a back button.', demo: wf(`<div class="hd"></div><div class="box">${L('w80')}</div><div class="box">${L('w60')}</div><div class="box">${L('w80')}</div>`), pro: ['Clear and simple'], con: ['Asking a new question takes two steps from the list'] }
+  ]},
+  { id: 'a1', title: 'A1. Thread layout', ev: 'Evidence: Perplexity and NotebookLM read as answer pages, Claude and ChatGPT as dialogue. Journal Pages and Markdown typography in Mnemora are calm, serif, document-like.', why: '<b>Scenario:</b> two questions in one Conversation. Switch the state to <b>Follow-up</b> and try each layout.', opts: [
+    { v: 'doc', t: 'Document (like a Journal Page)', d: 'Question as a Fraunces heading, answer as page text, full column width, a hairline between Runs.', demo: wf(`${DOCQ}<div class="ln" style="margin-top:4px;background:var(--p-line)"></div>${DOCQ}`), pro: ['Matches the Journal’s calm look', 'Long answers read like a page'], con: ['Less obviously a back-and-forth'] },
+    { v: 'column', t: 'Chat bubbles', d: 'Your question a tinted bubble on the right, the answer a card on the left.', demo: wf(BUB + BUB), pro: ['Instantly reads as a conversation'], con: ['Feels like a generic chat app; wastes width'] },
+    { v: 'cards', t: 'Q&A cards', d: 'Each Run is one card: question as a header strip, answer and Sources inside.', demo: wf(`<div class="box" style="padding:0"><div style="padding:3px 6px;background:var(--p-line)"><div class="hd"></div></div><div style="padding:5px 6px;display:flex;flex-direction:column;gap:4px">${L('w80')}${L('w60')}</div></div><div class="box" style="padding:0"><div style="padding:3px 6px;background:var(--p-line)"><div class="hd"></div></div><div style="padding:5px 6px">${L('w80')}</div></div>`), pro: ['Each Run is a self-contained, scannable unit'], con: ['Boxes inside a page; busier'] },
+    { v: 'timeline', t: 'Timeline rail', d: 'A line down the left with a dot per question; answers hang off it.', demo: wf(`<div class="rail"><div class="pr"><span class="dot"></span><div class="hd"></div></div>${L('w80')}${L('w60')}<div class="pr"><span class="dot"></span><div class="hd"></div></div>${L('w80')}</div>`), pro: ['Shows sequence and where branches attach'], con: ['Indentation costs width on the phone'] },
+    { v: 'focus', t: 'One question at a time', d: 'Only the latest Run fills the page, with ‹ 2 of 2 › to move between them.', demo: wf(`<div class="hd" style="width:75%;height:10px"></div>${L('w80')}${L('w60')}${L('w80')}<div class="lbl" style="text-align:center">‹ Question 2 of 2 ›</div>`), pro: ['Maximum reading space'], con: ['Earlier context is hidden'] },
+    { v: 'split', t: 'Document plus a Sources panel (desktop)', d: 'Same as Document with all cited items in a right panel; phone falls back to Document.', demo: wf(`<div class="wf row" style="border:0;padding:0;background:none"><div style="flex:1;display:flex;flex-direction:column;gap:4px">${DOCQ}</div><div class="side">${L('w60')}${L('w80')}${L('w60')}</div></div>`), pro: ['Evidence always visible'], con: ['Two layouts to build; narrows the thread'] }
+  ]},
+  { id: 'a17', title: 'A17. Answer typeface', ev: 'Evidence: Mnemora’s Markdown typography defaults to the display serif (Fraunces, 16px, line-height 1.65) and offers a sans option.', why: '<b>Scenario:</b> a long answer. Which typeface reads best, and how does it relate to your own Entries?', opts: [
+    { v: 'serif', t: 'Serif, like Journal Entries', d: 'Fraunces 16px: the answer looks like part of your diary.', demo: wf(`<div style="font:500 13px Fraunces,serif">You had a quiet, recovering week.</div>${L('w80')}`), pro: ['Consistent with the Journal; calm'], con: ['Less neutral for task lists and numbers'] },
+    { v: 'sans', t: 'Sans, like the app UI', d: 'Inter 15px.', demo: wf(`<div style="font:500 13px Inter,sans-serif">You had a quiet, recovering week.</div>${L('w80')}`), pro: ['Clearer for lists, dates and numbers', 'Distinct from your own writing'], con: ['A second voice next to Journal'] }
+  ]},
+  { id: 'a3', title: 'A3. Showing tool activity', ev: 'Evidence: Perplexity shows one expandable "Completed N steps" row with plain-language steps; Zed tried expanding while running and collapsing after, and the author called the layout shift jarring; Pi toggles tool output with Ctrl+O.', why: '<b>Scenario:</b> the model reads your journal and tasks in 3 steps. Steps are now plain language ("Listed entries · 7 entries"), not tool names. Switch to <b>Gathering</b> and <b>Answered</b>.', opts: [
+    { v: 'summary', t: 'One live line, then "Completed 3 steps"', d: 'While running: a single line with a counter. Afterwards a collapsed "Completed 3 steps" you can expand. No layout shift.', demo: wf(`<div class="pr"><span class="pill ai">↻ Reading… · 2 done</span></div>${L('w60')}<div class="pr"><span class="pill">✓ Completed 3 steps ›</span></div>`), pro: ['Calm and proven (Perplexity, Zed)', 'Auditable on demand'], con: ['You can’t see which Entry is being read while you wait'] },
+    { v: 'ticker', t: 'Ticker line, then the same collapsed row', d: 'One line shows only the current action ("Reading the Oct 22 entry…") and is replaced by the next.', demo: wf(`<div class="pr"><span class="dot"></span><span class="lbl">Reading the Oct 22 entry…</span></div>`), pro: ['Alive and specific without a growing list'], con: ['Fast steps flicker past'] },
+    { v: 'chips', t: 'Chips per step', d: 'Each step becomes a chip as it completes and stays under the question.', demo: wf(`<div class="pr"><span class="pill">✓ Entries Oct 18–25</span><span class="pill">✓ Closed tasks</span><span class="pill ai">↻ Oct 22</span></div>`), pro: ['Scannable, compact'], con: ['Arguments hidden unless chips expand'] },
+    { v: 'live', t: 'Live step list, left open', d: 'Each step appears as it happens and stays above the answer.', demo: wf(`<div class="rail"><div class="lbl">✓ Listed entries · 7</div><div class="lbl">✓ Listed closed tasks · 9</div><div class="lbl">↻ Reading an entry</div></div>`), pro: ['Most transparent'], con: ['Pushes the answer down; noisy on long Runs'] },
+    { v: 'hidden', t: 'Just "Working…"', d: 'Steps are saved but never shown.', demo: wf(`<div class="pr"><span class="pill ai">↻ Working…</span></div>`), pro: ['Cleanest'], con: ['The only record of what was read is the Sources'] }
+  ]},
+  { id: 'a4', title: 'A4. Sources', ev: 'Evidence: NotebookLM and Perplexity show the quoted passage in a card and link to the source; Perplexity’s three overlapping paths (popover, side panel, Links tab) confuse people, so pick one route to detail. On touch there is no hover, so tap opens a sheet.', why: '<b>Scenario:</b> an answer cites the Oct 22 Entry and the "Renew passport" Task. Switch to <b>Answered</b>, then tap a Source in the mock.', opts: [
+    { v: 'chips-peek', t: 'Chips with a preview first', d: 'Tap a chip for a small card (popover on desktop, sheet on phone) with title, date and first lines plus "Open in its Module".', demo: wf(`${SRCP}<div class="box">${L('w80')}${L('w60')}<div class="btnw" style="width:40px"></div></div>`), pro: ['Check a claim without losing your place'], con: ['One more tap to open the item'] },
+    { v: 'marks', t: 'Numbered markers in the text, with the same cards', d: 'Small numbers sit in the answer where each claim is made ([1]); tapping one, or its chip below, opens the same preview. The model must output markers (a change to the plan).', demo: wf(`<div class="lbl">…resting after the move.<b style="background:var(--p-line2);border-radius:9px;padding:0 4px">1</b></div><div class="pr"><span class="pill">1 Oct 22</span><span class="pill">3 Dentist</span></div>`), pro: ['Shows which claim came from which source (Perplexity, NotebookLM)'], con: ['Needs markers in the output; models can misnumber; validation is harder'] },
+    { v: 'row', t: 'One "4 sources" row opening a panel', d: 'A compact stacked-icon button; tap opens a drawer (desktop) or sheet (phone) listing every source in full.', demo: wf(`<div class="pr"><span class="pill">●●● 4 sources ›</span></div>`), pro: ['Least clutter; one route to detail (Perplexity’s source count)'], con: ['No quick glance at which sources'] },
+    { v: 'chips-open', t: 'Chips that open the item directly', d: 'One tap goes to the Page or Task in its Module; back returns.', demo: wf(`${SRCP}<div class="lbl">→ opens Journal › Oct 22</div>`), pro: ['Fastest to the real item'], con: ['Leaves the Conversation each time'] },
+    { v: 'drawer', t: 'Chips that open a read-only drawer', d: 'A side drawer (bottom sheet on phone) shows the full text with an Open button.', demo: wf(`<div class="wf row" style="border:0;padding:0;background:none"><div style="flex:1">${SRCP}</div><div class="side">${L('w80')}${L('w60')}${L('w80')}</div></div>`), pro: ['Read the whole source in place'], con: ['Largest surface; duplicates Journal and Todo rendering'] },
+    { v: 'rich', t: 'Source cards with an excerpt', d: 'A grid of cards under the answer with a Module colour stripe, title and first line.', demo: wf(`<div class="pr"><div class="box" style="flex:1;border-left:3px solid var(--p-warn)">${L('w60')}${L('w80')}</div><div class="box" style="flex:1;border-left:3px solid var(--p-good)">${L('w60')}${L('w80')}</div></div>`), pro: ['See what each source says without tapping'], con: ['Tall; repeats what the answer summarised'] },
+    { v: 'list', t: 'Plain list with a detail line', d: 'A "Sources" list: title plus date or state on a second line.', demo: wf(`<div class="lbl">Sources</div><div class="box">${L('w60')}${L('w40')}</div><div class="box">${L('w60')}${L('w40')}</div>`), pro: ['Self-explanatory'], con: ['More vertical space on every answer'] }
+  ]},
+  { id: 'a5', title: 'A5. Where the Model is chosen', ev: 'Evidence: Zed and Raycast put the model in or next to the composer, with provider and model together and favourites; Journal’s ComposerDock already holds a Chip inside the composer. Header placement is what clipped your phone title.', why: '<b>Scenario:</b> you want to know which Model will answer and sometimes switch it. Click the chip: desktop opens a Popover, phone opens a Sheet, with Recent, Most used, search and Browse all (nothing loaded up front).', opts: [
+    { v: 'under', t: 'Plain text under the box, right-aligned (Claude desktop)', d: '"claude-haiku Wrapper \u25BE" as quiet text below the composer, with the keys hint on the left. Tap opens the same picker.', demo: wf(`<div class="bar"><span>Ask\u2026</span><span class="btnw" style="width:12px;border-radius:99px"></span></div><div class="pr" style="justify-content:space-between"><span class="lbl">Enter sends</span><span class="lbl" style="color:var(--p-ink)">claude-haiku Wrapper \u25BE</span></div>`), pro: ['Quietest; the box stays clean', 'Proven in Claude on desktop'], con: ['Less prominent on a phone, below the box'] },
+    { v: 'composer', t: 'Chip inside the composer (Journal’s pattern)', d: 'To the left of the text, shortened to the Model name on the phone.', demo: wf(`<div class="bar"><span class="pill">haiku ▾</span><span class="lbl">Ask…</span><span class="dot"></span></div>`), pro: ['Right where you ask; matches ComposerDock', 'Cannot clip the title'], con: ['Takes composer width on a small phone'] },
+    { v: 'caption', t: 'Caption under the composer', d: '"Answering with claude-haiku via Wrapper · Change" in small text.', demo: wf(`<div class="bar"><span>Ask…</span><span class="dot"></span></div><div class="lbl" style="text-align:center">Answering with haiku · Change</div>`), pro: ['Explicit; room for the Provider name'], con: ['Easy to ignore; one more line of chrome'] },
+    { v: 'header', t: 'Chip in the page header', d: 'Where the first mock had it. Look at the phone header to see the cost.', demo: wf(`<div class="bar"><span>Title</span><span class="pill">haiku ▾</span></div>`), pro: ['Always visible'], con: ['Competes with the title on a phone (what you saw)'] },
+    { v: 'menu', t: 'Not on the page; Conversation menu and Settings only', d: 'No Model shown on the page.', demo: wf(`${L('w80')}<div class="lbl">(nothing shown)</div>`), pro: ['Cleanest page'], con: ['Can’t see or switch the Model while using it'] }
+  ]},
+  { id: 'a13', title: 'A13. The composer', ev: 'Your Claude screenshots: on the phone the box is text on top and a row of round buttons below (+, a "Sonnet 5.5 Medium" pill, mic, send); on desktop the box is only the input and a return icon, with the model as plain text under it. Evidence: ComposerDock is a bordered 12px box with a Chip, a bare editor and a round hue submit; Zed and Pi keep it usable while the agent runs.', why: '<b>Scenario:</b> you are about to type. The mock above uses the real ComposerDock structure; compare.', opts: [
+    { v: 'two', t: 'Claude-style: text on top, round tool row below', d: 'Rounded box; text first, then a row: "+" (menu: mention an Entry or Task, Saved questions), the Model pill, a spacer, and the round send. The box grows upward.', demo: wf(`<div class="box" style="border-radius:12px">${L('w80')}<div class="pr" style="justify-content:space-between"><span class="pr"><span class="pill">+</span><span class="pill">haiku \u25BE</span></span><span class="btnw" style="width:12px;border-radius:99px"></span></div></div>`), pro: ['Biggest typing area on a phone; all targets 40px round', 'A natural home for "+" actions'], con: ['Taller than a one-line box'] },
+    { v: 'dock', t: 'Journal-style dock: chip left, editor, round send', d: 'The real ComposerDock layout; grows with your text.', demo: wf(`<div class="bar" style="height:22px"><span class="pill">haiku ▾</span><span class="lbl">Ask…</span><span class="btnw" style="width:12px;border-radius:99px"></span></div>`), pro: ['Native to the app; least new design'], con: ['The chip uses width'] },
+    { v: 'toolbar', t: 'Two rows: editor on top, tool row below', d: 'Bookmark (Saved questions), @ mention and the chip in a row beneath, send at the right.', demo: wf(`<div class="box">${L('w80')}<div class="pr" style="justify-content:space-between"><span class="pr"><span class="pill">★</span><span class="pill">@</span><span class="pill">haiku ▾</span></span><span class="btnw" style="width:12px;border-radius:99px"></span></div></div>`), pro: ['Room for Saved questions and mentions'], con: ['Taller; busier on the phone'] },
+    { v: 'pill', t: 'Slim capsule', d: 'A single-line capsule with chip and send inside.', demo: wf(`<div class="bar" style="height:20px"><span>Ask…</span><span class="pr"><span class="pill">haiku</span><span class="btnw" style="width:12px;border-radius:99px"></span></span></div>`), pro: ['Most of the thread visible'], con: ['Cramped for long questions'] }
+  ]},
+  { id: 'a6', title: 'A6. Stop, and typing while it runs', ev: 'Evidence: Zed queues messages sent while generating by default, lets you edit, remove or "Send now", and offers Steer; Pi sends Enter as steering, Alt+Enter as follow-up, and Esc returns queued text to the editor.', why: '<b>Scenario:</b> the Run is gathering and you remember something. Switch to <b>Typed while running</b>: your note appears as an editable queued row above the composer.', opts: [
+    { v: 'swap', t: 'Send turns into Stop; notes queue as removable rows', d: 'The round button becomes a square Stop. Typed notes wait in a row you can "Send now" or remove.', demo: wf(`<div class="box" style="border-style:dashed"><span class="lbl">Only the work tasks… · Send now ✕</span></div><div class="bar"><span>Add a note…</span><span class="btnw" style="width:12px;background:var(--p-ink);border-radius:99px"></span></div>`), pro: ['Matches Zed and Pi', 'One place for the button'], con: ['Send and Stop share a spot'] },
+    { v: 'both', t: 'Send stays; a separate Stop button appears', d: 'No mis-tap between send and stop; notes queue the same way.', demo: wf(`<div class="bar"><span>Add a note…</span><span class="pr"><span class="pill">■ Stop</span><span class="btnw" style="width:12px;border-radius:99px"></span></span></div>`), pro: ['No mis-tap'], con: ['Two buttons in a small composer'] },
+    { v: 'pill', t: 'Stop sits in the thread under the activity line', d: 'A Stop button appears next to the progress; the composer stays a normal Send.', demo: wf(`<div class="pr"><span class="pill ai">↻ Working</span><span class="pill">■ Stop</span></div><div class="bar"><span>Add a note…</span><span class="btnw" style="width:12px;border-radius:99px"></span></div>`), pro: ['Stop where your eyes are; Send never changes meaning'], con: ['Stop is not in a fixed place'] },
+    { v: 'lock', t: 'Composer locked while running; only Stop', d: 'No notes while it runs.', demo: wf(`<div class="bar" style="opacity:.5"><span>disabled</span><span class="btnw" style="width:12px;background:var(--p-ink);border-radius:99px"></span></div>`), pro: ['Simplest; no steering to build'], con: ['Drops the steering behaviour you asked to keep'] }
+  ]},
+  { id: 'a14', wire: false, title: 'A14. "@" to mention an Entry or Task', ev: 'Evidence: Pi uses "@" for file search in its editor; Perplexity lets you highlight a passage to "Add to follow-up". Not part of the plan yet.', why: '<b>Scenario:</b> you want to ask about one specific Entry ("what did I mean here?"). The @ button shows in the composer when enabled.', opts: [
+    { v: 'at', t: 'Add @ mentions (new feature)', d: 'Type @ or tap the @ button to pick an Entry or Task; the model is told to read exactly that one first.', demo: wf(`<div class="bar"><span>Why did I write @Oct 22…</span></div><div class="box">${L('w60')}${L('w80')}</div>`), pro: ['Precise questions about one item'], con: ['New picker, new tool behaviour, more to test'] },
+    { v: 'none', t: 'No mentions in v1', d: 'The model finds items with search and list tools.', demo: wf(`<div class="bar"><span>Ask…</span></div>`), pro: ['Smaller build'], con: ['No way to point at a specific item'] }
+  ]},
+  { id: 'a7', title: 'A7. How an error appears', ev: 'Evidence: Claude shows plain wording and a reset time, ChatGPT shows a Regenerate button on the failed turn. Mnemora already has ErrorBanner and hand-rolled Sync banners (danger or warning border, tinted fill, Retry button).', why: '<b>Scenario:</b> the Provider does not answer. Switch to <b>Error</b> and <b>Offline</b>. What happened so far is kept.', opts: [
+    { v: 'inline', t: 'Banner in the thread, in the answer’s place', d: 'Danger banner (ErrorBanner look) with what failed, what was kept and Try again / Change Provider.', demo: wf(`<div class="hd"></div><div class="err">${L('w80')}<div class="pr"><div class="btnw"></div><div class="btnw g"></div></div></div>`), pro: ['Stays with the question; survives reopening', 'Room to explain'], con: ['Takes space in the thread'] },
+    { v: 'compact', t: 'One quiet line with a Try again link', d: '"Couldn’t reach the Wrapper. Try again" in small red text.', demo: wf(`<div class="hd"></div><div class="lbl" style="color:var(--p-bad)">⚠ Couldn’t reach the Wrapper. <u>Try again</u></div>`), pro: ['Minimal; survives reopening'], con: ['Little room for causes'] },
+    { v: 'bar', t: 'Replaces the composer with a retry bar', d: 'The send box turns into a red bar with Try again and Change Provider.', demo: wf(`${L('w80')}<div class="err" style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">Couldn’t reach…</span><div class="btnw"></div></div>`), pro: ['The action is where your thumb is'], con: ['Hides the composer'] },
+    { v: 'toast', t: 'A toast', d: 'A short message that disappears; the question is left without an answer.', demo: wf(`<div class="hd"></div><div class="bar" style="width:80%;align-self:center"><span>Couldn’t reach…</span><span>Retry</span></div>`), pro: ['Lightweight'], con: ['Gone after seconds; reopening shows no reason'] }
+  ]},
+  { id: 'a8', title: 'A8. Conversation too long', ev: 'Evidence: Claude says "Your message will exceed the length limit for this chat. Try attaching fewer or smaller files or starting a new conversation." Compaction is deferred, so ours must offer the branch tree as the way out.', why: '<b>Scenario:</b> a long Conversation hits the 100,000-byte budget. Switch to <b>Too long</b>.', opts: [
+    { v: 'inline', t: 'Banner: Branch from earlier / New Conversation', d: 'Warning banner with the two exits.', demo: wf(`${L('w60')}<div class="warn">${L('w80')}<div class="pr"><div class="btnw"></div><div class="btnw g"></div></div></div>`), pro: ['Explicit; uses the tree'], con: ['You must choose'] },
+    { v: 'picker', t: 'Banner with a picker of earlier questions', d: 'Select a question, then "Branch from selected".', demo: wf(`<div class="warn">${L('w80')}<div class="box">${L('w60')}</div><div class="box">${L('w40')}</div><div class="btnw"></div></div>`), pro: ['You see where you are branching from'], con: ['Heavier banner'] },
+    { v: 'auto', t: 'Branch automatically from your first question', d: 'The app creates the branch and offers to continue.', demo: wf(`<div class="warn">${L('w80')}<div class="pr"><div class="btnw"></div></div></div>`), pro: ['One tap to keep going'], con: ['Drops everything after the first question without asking'] },
+    { v: 'composer', t: 'Disable the composer with a message', d: 'The send box greys out.', demo: wf(`${L('w80')}<div class="bar" style="opacity:.5"><span>Too long…</span></div>`), pro: ['Simplest'], con: ['No path forward on screen'] }
+  ]},
+  { id: 'a9', title: 'A9. Under each answer', ev: 'Evidence: Zed shows the model in a quiet footer; Perplexity keeps an action bar. On touch there is no hover, so hidden actions are undiscoverable.', why: '<b>Scenario:</b> a finished answer.', opts: [
+    { v: 'standard', t: 'Copy, Try again, and the Model that answered', d: 'Model in muted text.', demo: wf(`${L('w80')}<div class="pr"><span class="lbl">⧉ Copy</span><span class="lbl">↺ Try again</span><span class="lbl" style="opacity:.6">haiku · Wrapper</span></div>`), pro: ['Quiet and useful; shows which Provider answered (matters across synced devices)'], con: ['A bit busier than Copy only'] },
+    { v: 'minimal', t: 'Copy only', d: 'Just Copy.', demo: wf(`${L('w80')}<div class="pr"><span class="lbl">⧉ Copy</span></div>`), pro: ['Nothing to ignore'], con: ['No retry; no Model shown'] },
+    { v: 'detailed', t: 'Standard plus steps and token counts', d: '"3 steps · 4,210 in / 380 out".', demo: wf(`${L('w80')}<div class="pr"><span class="lbl">Copy · Try again · 3 steps · 4,210 in / 380 out</span></div>`), pro: ['Visible cost signal'], con: ['Technical noise on every answer'] },
+    { v: 'hover', t: 'Actions appear on hover (desktop); always shown on phone', d: 'Copy, Try again, Branch and the Model appear when the pointer is over the answer.', demo: wf(`${L('w80')}<div class="lbl" style="opacity:.4">⧉ ↺ ⑂ (on hover)</div>`), pro: ['Cleanest reading page'], con: ['Undiscoverable; no hover on touch'] }
+  ]},
+  { id: 'a10', title: 'A10. The empty Conversation', ev: 'Evidence: Raycast shows quick-start chips tied to your data; Mnemora’s EmptyState is a hue-washed icon tile, a bold title and a muted line.', why: '<b>Scenario:</b> a new Conversation. Switch to <b>Empty</b>. Nothing is focused.', opts: [
+    { v: 'greeting', t: 'Greeting only, like Claude and Home', d: 'A brand mark and a display-serif greeting ("What should we look at, Hemang?") with the composer below. No chips or cards.', demo: wf(`<div class="hd" style="align-self:center;width:60%;height:10px"></div>${L('w40')}`), pro: ['Calm and spacious; same voice as Home’s greeting'], con: ['Nothing teaches what it can do; Saved questions need another home'] },
+    { v: 'starters', t: 'Starter cards by purpose', d: 'A 2×2 grid: Review a period, Find something, What needs me, Save a question.', demo: wf(`<div class="pr"><div class="box" style="flex:1">${L('w60')}${L('w80')}</div><div class="box" style="flex:1">${L('w60')}${L('w80')}</div></div><div class="pr"><div class="box" style="flex:1">${L('w60')}${L('w80')}</div><div class="box" style="flex:1">${L('w60')}${L('w80')}</div></div>`), pro: ['Teaches what it can do; works on first run'], con: ['Static text; Saved questions live elsewhere'] },
+    { v: 'saved', t: 'Saved questions as chips', d: 'Your Saved questions (one tap starts the Run) plus "Save a question…".', demo: wf(`<div class="pr" style="justify-content:center"><span class="pill">★ Last 7 days</span><span class="pill">★ Overdue</span></div>`), pro: ['The natural home for Saved questions'], con: ['Empty until you save some'] },
+    { v: 'recent', t: 'Recent Conversations', d: 'A short list to jump back into.', demo: wf(`<div class="box">${L('w60')}</div><div class="box">${L('w80')}</div><div class="box">${L('w40')}</div>`), pro: ['Useful once you have history'], con: ['Empty on first run; overlaps the list'] },
+    { v: 'hints', t: 'Example questions', d: 'Two or three suggestions.', demo: wf(`<div class="pr" style="justify-content:center"><span class="pill">\u{1F4A1} What did I get done?</span><span class="pill">\u{1F4A1} Find the move</span></div>`), pro: ['Light'], con: ['Generic; no home for Saved questions'] },
+    { v: 'none', t: 'Only the sentence and the composer', d: 'No chips.', demo: wf(`<div class="hd" style="align-self:center"></div>${L('w60')}`), pro: ['Quietest'], con: ['Saved questions need another home'] }
+  ]},
+  { id: 'a12', wire: true, title: 'A12. Branching: "edit and ask again"', ev: 'Evidence: Claude and ChatGPT use ‹ 2/3 › on the edited message; Pi has a /tree view; ChatGPT’s "branch into a new chat" clutters the sidebar. Branch arrows show on the first question in the mock.', why: '<b>Scenario:</b> your question was vague. You edit it and ask again; the old answer becomes another branch. How do you see and switch?', opts: [
+    { v: 'pager', t: '‹ 2/3 › on the question', d: 'A small pager on a question with alternatives; the thread below swaps.', demo: wf(`<div class="pr"><div class="hd"></div><span class="pill">‹ 2/3 ›</span></div>${L('w80')}${L('w60')}`), pro: ['Compact and familiar'], con: ['Hard to see the whole tree'] },
+    { v: 'tree', t: 'A tree view', d: 'A button opens a diagram of every question and branch.', demo: wf(`<div class="rail"><div class="pr"><span class="dot"></span><span class="lbl">Summarise…</span></div><div class="rail"><div class="pr"><span class="dot"></span><span class="lbl">Only work</span></div><div class="pr"><span class="dot"></span><span class="lbl">Only Home</span></div></div></div>`), pro: ['Full picture; matches Pi’s /tree'], con: ['A whole extra view'] },
+    { v: 'menu', t: 'A "Versions" menu on the question', d: 'A dropdown lists alternative versions with a one-line preview.', demo: wf(`<div class="pr"><div class="hd"></div><span class="pill">Versions ▾</span></div><div class="box">${L('w80')}${L('w60')}</div>`), pro: ['Shows what each branch said before you switch'], con: ['More taps'] },
+    { v: 'none', t: 'No visible branching in v1', d: 'The tree is saved but not reachable.', demo: wf(`${DOCQ}<div class="lbl">(branches stored, no UI)</div>`), pro: ['Least to build'], con: ['"Try again" and "Branch from earlier" (A8) have nowhere to land'] }
+  ]},
+  { id: 'a2', title: 'A2. Composer keys', ev: 'Evidence: Pi and Zed send on Enter and add a line on Shift+Enter; bare keys elsewhere in Mnemora (ADR 0011) require the composer to be unfocused on open.', why: '<b>Scenario:</b> you finish typing. What sends it?', opts: [
+    { v: 'enter', t: 'Enter sends, Shift+Enter adds a line', d: 'Phone: Enter adds a line and the send button sends.', demo: wf(`<div class="lbl">Enter → send</div><div class="lbl">Shift+Enter → new line</div>`), pro: ['Fast, same as Pi and Zed'], con: ['Easy to send a half-written question'] },
+    { v: 'mod', t: '⌘/Ctrl+Enter sends, Enter adds a line', d: 'Same on the phone.', demo: wf(`<div class="lbl">⌘Enter → send</div><div class="lbl">Enter → new line</div>`), pro: ['Safe for multi-line questions'], con: ['Slower for one-liners'] },
+    { v: 'button', t: 'Only the send button', d: 'Enter always adds a line.', demo: wf(`<div class="lbl">Enter → new line</div><div class="lbl">Tap send</div>`), pro: ['Nothing sends by accident'], con: ['Slow on desktop'] }
+  ]}
+];
+
+function cardsHtml() {
+  document.getElementById('cards').innerHTML = CARDS.map(c => `<section class="nu" id="${c.id}"><header><span class="secid">${c.id.toUpperCase()}</span><h4>${c.title.replace(/^A\d+\. /, '')}</h4>${c.wire ? '<span class="tag wire">wireframe</span>' : '<span class="tag ui">live in the mock</span>'}</header><p class="ev">${c.ev}</p><p class="why">${c.why}</p>${c.id === 'a0' ? '<div class="a0prev" id="a0prev"></div>' : ''}<div class="nu-grid">${c.opts.map(o => `<button class="nopt ${V[c.id] === o.v ? 'on' : ''}" data-c="${c.id}" data-v="${o.v}"><div class="demo">${o.demo}</div><div class="meta"><b>${o.t}</b><p>${o.d}</p><ul class="pc">${o.pro.map(x => `<li class="pro">${x}</li>`).join('')}${o.con.map(x => `<li class="con">${x}</li>`).join('')}</ul></div></button>`).join('')}</div></section>`).join('');
+  document.querySelectorAll('.nopt').forEach(b => b.onclick = () => {
+    V[b.dataset.c] = b.dataset.v;
+    const autoState = { a6: 'steer', a7: 'error', a8: 'long', a10: 'empty', a1: 'follow', a4: 'done', a9: 'done', a12: 'done', a3: S === 'tools' ? 'tools' : 'done' }[b.dataset.c];
+    if (autoState) { S = autoState; syncScen(); }
+    O = null; OP = null;
+    if (b.dataset.c === 'a0') A0S = a0Start();
+    if (typeof stageFor === 'function') stageFor(b.dataset.c);
+    cardsHtml(); render();
+    if (!CARDS.find(c => c.id === b.dataset.c).wire) document.getElementById('stage').scrollIntoView({ block: 'start' });
+  });
+}
+function syncScen() { document.querySelectorAll('#scen button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === S)); }
+document.querySelectorAll('#scen button').forEach(b => b.onclick = () => { S = b.dataset.s; O = null; OP = null; syncScen(); render(); });
+document.querySelectorAll('#theme button').forEach(b => b.onclick = () => { document.body.dataset.mtheme = b.dataset.t; document.querySelectorAll('#theme button').forEach(x => x.setAttribute('aria-pressed', x === b)); });
+document.querySelectorAll('#view button').forEach(b => b.onclick = () => { VIEW = b.dataset.v; O = (VIEW === 'first' && V.s5 === 'wizard') ? 'addprov' : null; AP = { step: 1, kind: null, test: 0 }; syncView(); render(); });
+document.querySelectorAll('#rail button').forEach(b => b.onclick = () => { RAIL = b.dataset.r === '1'; document.querySelectorAll('#rail button').forEach(x => x.setAttribute('aria-pressed', x === b)); render(); });
+/* ---------- Stage 2: AI Settings, first run, menus ---------- */
+let VIEW = 'chat', AP = { step: 1, kind: null, test: 0 }, KEYSTATE = 0;
+let PROVS = [{ name: 'Wrapper (this Mac)', kind: 'wrapper', st: 'No key needed' }, { name: 'OpenRouter', kind: 'openrouter', st: 'Key saved' }];
+Object.assign(V, { s1: 'rows', s2: 'wizard', s3: 'masked', s4: 'disabled', s5: 'detect', s6: 'menu', s7: 'basic', s9: 'full' });
+const KINDS = [
+  { id: 'wrapper', icon: 'plug', name: 'Local AI Wrapper', d: 'Your localAIWrapper on this machine or your network. No key. Tools use the JSON envelope.', url: 'http://127.0.0.1:8080/v1', key: 'none' },
+  { id: 'openrouter', icon: 'route', name: 'OpenRouter', d: 'Hundreds of Models. Free Models by default; paid ones need your OK.', url: 'https://openrouter.ai/api/v1', key: 'req' },
+  { id: 'anthropic', icon: 'sparkles', name: 'Anthropic', d: 'Claude through your own API key.', url: 'https://api.anthropic.com', key: 'req' },
+  { id: 'openai', icon: 'server', name: 'OpenAI-compatible', d: 'Any endpoint that speaks the OpenAI chat API: OpenAI, Groq, Ollama, LM Studio.', url: '', key: 'opt' }
+];
+const kindOf = (id) => KINDS.find(k => k.id === id) || KINDS[0];
+const fld = (label, val, o = {}) => `<label class="fl"><span>${label}</span><span class="fi ${o.ro ? 'ro' : ''}">${val}${o.right ?? ''}</span>${o.hint ? `<small>${o.hint}</small>` : ''}</label>`;
+
+function keyField(kind) {
+  if (kind.key === 'none') return fld('API key', '<span style="color:var(--faint)">Not needed for the Wrapper</span>', { ro: true });
+  const opt = kind.key === 'opt' ? ' (optional)' : '';
+  if (KEYSTATE === 1) return `<div class="fl"><span>API key${opt}</span><div class="fi ro" style="justify-content:space-between"><span>${I('key-round')} Key saved</span><span><button class="linkbtn" data-ap="rekey">Replace</button> · <button class="linkbtn" data-ap="rmkey">Remove</button></span></div><small>Stored on this device only. It is never synced and never shown again.</small></div>`;
+  if (V.s3 === 'reveal') return fld('API key' + opt, '<span style="color:var(--ink)">sk-or-v1-9f3a…</span>', { right: `<button class="ib sm" style="margin-left:auto" data-ap="pastekey" title="Save">${I('eye')}</button>`, hint: 'Visible while you type or paste, hidden once saved. Stored on this device only.' });
+  if (V.s3 === 'paste') return `<div class="fl"><span>API key${opt}</span><button class="btn" style="height:38px;justify-content:center" data-ap="pastekey">${I('clipboard-paste')} Paste key from clipboard</button><small>The key is never shown, even while you paste it. Stored on this device only.</small></div>`;
+  return fld('API key' + opt, '••••••••••••', { right: `<button class="linkbtn" style="margin-left:auto;font-size:12px" data-ap="pastekey">Save key</button>`, hint: 'Write-only: hidden as you type and never shown again. Stored on this device only.' });
+}
+
+function addProvHtml(isPhone) {
+  const k = kindOf(AP.kind);
+  let body;
+  if (V.s2 === 'wizard' && AP.step === 1) {
+    body = `<div class="kinds">${KINDS.map(x => `<button class="kind" data-ap="kind:${x.id}"><span class="kt">${I(x.icon)}</span><span><b>${x.name}</b><small>${x.d}</small></span>${I('chevron-right')}</button>`).join('')}</div>`;
+  } else {
+    const kindRow = V.s2 === 'single' ? `<label class="fl"><span>Kind</span><button class="fi" data-ap="cyclekind" style="justify-content:space-between;text-align:left">${k.name}${I('chevron-down')}</button><small>${k.d}</small></label>` : `<div class="kindtag"><span class="kt" style="width:28px;height:28px;font-size:15px">${I(k.icon)}</span> ${k.name} <button class="linkbtn" data-ap="back">Change</button></div>`;
+    const paid = k.id === 'openrouter' ? `<div class="fl row2"><span><b style="font-weight:600;color:var(--ink)">Allow paid models</b><small>Off: only free models can be chosen, and every request sends a zero price cap.</small></span><span class="swt"></span></div>` : '';
+    const tools = `<small style="color:var(--faint)">Tools: ${k.id === 'wrapper' ? 'JSON envelope (the Wrapper does not support native tool calls)' : 'native tool calls'}</small>`;
+    body = `${kindRow}${fld('Name', k.id === 'wrapper' ? 'Wrapper (this Mac)' : k.name)}${fld('Base URL', k.url || '<span style="color:var(--faint)">https://…</span>', { ro: k.id === 'openrouter' || k.id === 'anthropic', hint: k.id === 'wrapper' ? 'http is allowed here: loopback, LAN and Tailscale addresses only.' : (k.id === 'openai' ? 'https required, except for loopback, LAN and Tailscale.' : 'Fixed for this kind.') })}${keyField(k)}${paid}${tools}<div class="acts" style="margin-top:4px;align-items:center"><button class="btn" data-ap="test">${I('plug-zap')} Test connection</button>${AP.test ? `<span class="chipx ok">${I('check')} Connected · ${k.id === 'wrapper' ? '6 models' : 'models available'}</span>` : ''}<span style="flex:1"></span><button class="btn hue" data-ap="save">Add Provider</button></div>`;
+  }
+  return `<div class="scrim" data-close="1"></div><div class="sheet" ${isPhone ? 'style="height:88%"' : ''}><div class="grip"></div><div class="st"><span>Add a Provider</span><button class="ib sm" data-close="1" aria-label="Close">${I('x')}</button></div><div class="scr" style="padding:2px 8px 6px;gap:12px">${body}</div></div>`;
+}
+
+function plusHtml(isPhone) {
+  const rows = ['Summarise my last 7 days', 'What is overdue?', 'What did I finish this month?'].map(t => `<div class="pr1" data-close="1">${I('bookmark')}<span class="lab trunc">${t}</span></div>`).join('');
+  const body = `<div class="pgroup">Saved questions</div>${rows}<div class="pr1" style="color:var(--muted);border-top:1px solid var(--line);margin-top:4px" data-close="1">${I('settings')}<span class="lab">Manage in AI Settings</span></div>`;
+  return (isPhone || V.s6 === 'sheet') ? `<div class="scrim" data-close="1"></div><div class="sheet"><div class="grip"></div><div class="st"><span>Saved questions</span></div><div class="scr">${rows}<div class="pr1" style="color:var(--muted)" data-close="1">${I('settings')}<span class="lab">Manage in AI Settings</span></div></div></div>` : `<div class="scrim" style="background:transparent" data-close="1"></div><div class="pop plus">${body}</div>`;
+}
+function cmenuHtml(isPhone) {
+  const rows = [['pencil', 'Rename', ''], ['git-branch', 'Branch from earlier…', ''], ['copy', 'Copy as Markdown', '']].concat(V.s7 === 'more' ? [['download', 'Export as Markdown file', ''], ['bookmark-plus', 'Save the first question', '']] : []).concat([['trash-2', 'Delete', 'danger']]);
+  if (V.s7 === 'min') rows.splice(1, 2);
+  const html = rows.map(r => `<div class="pr1 ${r[2]}" data-close="1">${I(r[0])}<span class="lab">${r[1]}</span></div>`).join('');
+  return isPhone ? `<div class="scrim" data-close="1"></div><div class="sheet"><div class="grip"></div><div class="st"><span>Conversation</span></div><div class="scr">${html}</div></div>` : `<div class="scrim" style="background:transparent" data-close="1"></div><div class="pop cmenu">${html}</div>`;
+}
+
+function firstRunHtml() {
+  const detect = V.s5 === 'detect' ? `<div class="banner warn" style="max-width:520px;text-align:left">${I('radar')}<div class="bd"><b>Found a Local AI Wrapper</b> <span>It answered at http://127.0.0.1:8080/v1 with 6 models.</span></div><button class="btn hue" data-ov="addprov">Add it</button></div>` : '';
+  return `<div class="empty" style="padding-top:60px"><span class="tile">${I('plug')}</span><b>Add a Provider to start</b><p>A Provider is where answers come from: the Local AI Wrapper, OpenRouter, Anthropic or any OpenAI-compatible endpoint. Your key stays on this device.</p>${detect}<div class="acts" style="margin-top:6px"><button class="btn hue" data-ov="addprov">${I('plus')} Add a Provider</button></div></div>`;
+}
+
+function settingsContent(isPhone) {
+  const stChip = (p) => `<span class="chipx ${p.st.startsWith('Needs') ? 'warn' : 'ok'}">${p.st}</span>`;
+  const urlOf = (k) => k.url || 'custom URL';
+  let prov;
+  if (V.s1 === 'cards') prov = PROVS.map(p => { const k = kindOf(p.kind); return `<div class="pcard"><div class="ph"><span class="kt">${I(k.icon)}</span><div style="flex:1;min-width:0"><b>${p.name}</b><small class="trunc">${k.name} · ${urlOf(k)}</small></div><button class="ib sm" aria-label="More">${I('ellipsis')}</button></div><div class="pm">${stChip(p)}<span>Tools: ${k.id === 'wrapper' ? 'JSON envelope' : 'native'}</span><span>${k.id === 'openrouter' ? 'Free models only' : 'Model: last used'}</span></div><div class="acts"><button class="btn">${I('plug-zap')} Test</button><button class="btn">Edit</button></div></div>`; }).join('') + `<button class="addrow" style="border:1px dashed var(--line-strong);border-radius:var(--r2)" data-ov="addprov">${I('plus')} Add a Provider</button>`;
+  else prov = `<div class="sc">${PROVS.map(p => { const k = kindOf(p.kind); return `<div class="srow"><span class="kt">${I(k.icon)}</span><div style="flex:1;min-width:0"><b>${p.name}</b><small class="trunc">${k.name} · ${urlOf(k)}</small></div>${stChip(p)}<button class="ib sm" aria-label="More">${I('ellipsis')}</button></div>`; }).join('')}<button class="addrow" data-ov="addprov">${I('plus')} Add a Provider</button></div>`;
+  const saved = `<div class="sc">${['Summarise my last 7 days', 'What is overdue?', 'What did I finish this month?'].map(t => `<div class="qrow">${I('grip-vertical')}<span class="trunc" style="flex:1">${t}</span><button class="ib sm" aria-label="Edit">${I('pencil')}</button><button class="ib sm" aria-label="Delete">${I('trash-2')}</button></div>`).join('')}<button class="addrow" data-close="1">${I('plus')} Save a question</button></div>`;
+  return `<h2 class="sh" style="margin-top:6px">Providers</h2><p class="sd">Where answers come from. Keys stay on this device and are never synced.</p>${prov}
+  <h2 class="sh">Models</h2><div class="sc"><div class="srow"><div style="flex:1"><b>New Conversations start with</b><small>Which Model a new Conversation uses.</small></div><span class="fi ctl2" style="min-width:140px;justify-content:space-between">Last used ${I('chevron-down')}</span></div></div>
+  <h2 class="sh">Saved questions</h2><p class="sd">One-tap questions in the composer’s + menu. They run only when you tap them.</p>${saved}
+  <h2 class="sh">What the AI can read</h2><div class="sc"><div class="srow"><div style="flex:1"><b>Journal and Todo</b><small>Only Modules that are turned on. The AI reads, never changes.</small></div><span class="chipx ok">2 Modules</span></div></div>`;
+}
+function settingsDesk() {
+  return `<div class="mn"><div class="tbar"><div class="l"><button class="ib" aria-label="Toggle sidebar">${I('panel-left')}</button><iconify-icon class="ico" icon="lucide:settings" style="color:var(--hue-settings)"></iconify-icon><h1>Settings</h1></div><span class="sp"></span><div class="r"><button class="sbtn">${I('search')} Search… <span class="kbd">⌘K</span></button></div></div><div class="body"><nav class="snav">${['Appearance', 'Data', 'Shortcuts', 'Journal', 'Todo'].map(x => `<div class="si">${x}</div>`).join('')}<div class="si on">AI</div><div class="si">Sync</div></nav><div class="scroll"><div class="sw">${settingsContent(false)}</div></div></div>${overlayHtml(false)}</div>`;
+}
+function settingsPhone() {
+  return `<div class="status"><span>9:41</span><span>${I('signal')} ${I('wifi')} ${I('battery-full')}</span></div><div class="mn" style="flex:1"><div class="scroll" style="padding:4px 16px 24px"><button class="backl">${I('chevron-left')} Settings</button><h1 style="margin:2px 0 8px;font:var(--display-weight) 24px/1.25 var(--f-display);letter-spacing:var(--display-track)">AI</h1>${settingsContent(true)}</div>${overlayHtml(true)}</div><div class="tabbar"><button>${I('house')}Home</button><button>${I('book-open')}Journal</button><button>${I('square-check')}Todo</button><button>${I('sparkles')}AI</button><button class="on">${I('ellipsis')}More</button></div>`;
+}
+
+/* where each stage-2 card shows its effect */
+function stageFor(id) {
+  const set = (view, ov, s) => { VIEW = view; O = ov; if (s) S = s; syncScen(); syncView(); };
+  if (id === 's1') set('settings', null);
+  if (id === 's2') { set('settings', 'addprov'); AP = { step: 1, kind: null, test: 0 }; }
+  if (id === 's3') { set('settings', 'addprov'); AP = { step: 2, kind: 'openrouter', test: 0 }; KEYSTATE = 0; }
+  if (id === 's4') set('chat', 'model', 'done');
+  if (id === 's5') { set('first', V.s5 === 'wizard' ? 'addprov' : null); AP = { step: 1, kind: null, test: 0 }; }
+  if (id === 's6') set('chat', 'plus', 'done');
+  if (id === 's7') set('chat', 'cmenu', 'done');
+}
+function syncView() { document.querySelectorAll('#view button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === VIEW)); }
+
+CARDS.push(
+  { id: 's1', title: 'S1. Providers list in AI Settings', ev: 'Mnemora Settings use SettingSection and SettingRow in a Card with hairline dividers (settings sections appear only while the Module is on). Zed shows provider and model together; Sync’s Devices list is the closest existing pattern (rows with a status chip).', why: '<b>Scenario:</b> you have a Wrapper and OpenRouter and want to see what works. The mock switches to AI Settings; the phone shows the same page after Settings › AI.', opts: [
+    { v: 'rows', t: 'Compact rows in one Card (Recommended)', d: 'Icon tile, name, kind and URL on one line, a status chip (Key saved / No key needed / Needs a key) and a ⋯ menu. Last row: + Add a Provider.', demo: wf(`<div class="box"><div class="pr" style="justify-content:space-between"><span class="lbl">Wrapper (this Mac)</span><span class="pill">No key needed</span></div></div><div class="box"><div class="pr" style="justify-content:space-between"><span class="lbl">OpenRouter</span><span class="pill">Key saved</span></div></div><div class="lbl" style="color:var(--p-accent)">+ Add a Provider</div>`), pro: ['Scannable; matches the Sync Devices list', 'Short on a phone'], con: ['No room for Test or details in the row'] },
+    { v: 'cards', t: 'A Card per Provider with details and actions', d: 'Each Provider shows its status, tool mode, model default and Test / Edit buttons.', demo: wf(`<div class="box">${L('w60')}<div class="pr"><span class="pill">Key saved</span><span class="pill">Native tools</span></div><div class="pr"><div class="btnw g"></div><div class="btnw g"></div></div></div>`), pro: ['Everything about a Provider visible', 'Test is one tap'], con: ['Tall with 3 or more Providers'] }
+  ]},
+  { id: 's2', title: 'S2. Adding a Provider', ev: 'Sphinx offers presets and an interactive guided install; Zed and Raycast let you pick a provider and then fill in its fields. Each of our kinds has fixed behaviour (URL, key rules, tool mode), so the kind should come first.', why: '<b>Scenario:</b> you tap + Add a Provider. The mock opens the Sheet (centred on desktop, bottom sheet on the phone). Try the cards and click through.', opts: [
+    { v: 'wizard', t: 'Pick a kind, then fill the form (Recommended)', d: 'Step 1: four kind cards with a sentence each. Step 2: only the fields that kind needs, a Test connection button and Add Provider.', demo: wf(`<div class="box">${L('w60')}${L('w80')}</div><div class="box">${L('w60')}${L('w80')}</div><div class="lbl" style="text-align:center">then → form</div>`), pro: ['You only see fields that apply', 'Explains each kind where you choose'], con: ['Two steps'] },
+    { v: 'single', t: 'One form with a Kind menu at the top', d: 'A single page; picking the kind changes the fields below it.', demo: wf(`<div class="box"><div class="pr" style="justify-content:space-between"><span class="lbl">Kind</span><span class="pill">OpenRouter ▾</span></div>${L('w80')}${L('w60')}</div>`), pro: ['One screen; quick for people who know what they want'], con: ['Fields jump around; the kind is explained less'] }
+  ]},
+  { id: 's3', title: 'S3. Entering an API key', ev: 'Sphinx reads keys from a hidden prompt and never shows them again. Your decision: keys are write-only, stored on this device in an owner-only file, never synced. The screen must make that visible.', why: '<b>Scenario:</b> you paste an OpenRouter key. The mock opens the Add Provider form for OpenRouter. Click the key field’s button to see the saved state.', opts: [
+    { v: 'masked', t: 'Masked field, write-only (Recommended)', d: 'Dots as you type; after saving: "Key saved · Replace · Remove". The key is never shown again.', demo: wf(`<div class="box">${L('w60')}<div class="lbl">••••••••</div></div><div class="lbl">Key saved · Replace · Remove</div>`), pro: ['Safest on shared screens', 'Matches Sphinx and your "like a password" intent'], con: ['A typo is hard to spot'] },
+    { v: 'reveal', t: 'Visible while typing, hidden once saved', d: 'An eye button shows the key as you paste so you can check it, then it is masked for good.', demo: wf(`<div class="box"><div class="lbl">sk-or-v1-9f3a… \u{1F441}</div></div><div class="lbl">hidden after save</div>`), pro: ['Easy to verify a paste'], con: ['Key is on screen for a moment'] },
+    { v: 'paste', t: 'Paste-only button, never shown', d: 'A "Paste key from clipboard" button fills the field without ever displaying it.', demo: wf(`<div class="box" style="align-items:center"><div class="lbl">⧉ Paste key from clipboard</div></div>`), pro: ['Never on screen'], con: ['Can’t type a key by hand; clipboard access prompts on Android 13+'] }
+  ]},
+  { id: 's4', title: 'S4. Paid models on OpenRouter', ev: 'Sphinx: free by default, paid models disabled until an explicit opt-in, enforced at pick time and again at send time. Zed flags models that cannot use tools.', why: '<b>Scenario:</b> you open the Model picker with an OpenRouter Provider that has paid models off. The mock opens the picker; see the OpenRouter rows.', opts: [
+    { v: 'disabled', t: 'Paid models shown but disabled, with the reason (Recommended)', d: 'A lock and "Paid · allow in Provider settings". You see they exist and how to unlock them.', demo: wf(`<div class="box"><div class="lbl">deepseek-v3.2:free</div></div><div class="box" style="opacity:.55"><div class="lbl">\u{1F512} claude-haiku-5.5 · Paid</div></div>`), pro: ['Explicit; nothing is hidden'], con: ['Clutter if most are paid'] },
+    { v: 'hidden', t: 'Paid models hidden until allowed', d: 'The picker lists free models only; "Show paid models" appears at the bottom.', demo: wf(`<div class="box"><div class="lbl">deepseek-v3.2:free</div></div><div class="lbl" style="color:var(--p-accent)">Show paid models…</div>`), pro: ['Cleanest list'], con: ['Easy not to realise paid models exist'] },
+    { v: 'badge', t: 'No guard, paid models marked with a $ badge', d: 'Everything selectable; paid rows carry a small price badge.', demo: wf(`<div class="box"><div class="lbl">claude-haiku-5.5 · $0.001/1k</div></div>`), pro: ['Least friction'], con: ['A mis-tap can spend money (you chose a guard earlier; this reverses it)'] }
+  ]},
+  { id: 's5', title: 'S5. First run: no Provider yet', ev: 'The AI Module is default-off. Turning it on lands on this page. Home’s approach is a short explanation and one clear action.', why: '<b>Scenario:</b> you just turned the AI Module on. The mock shows the AI page with no Provider.', opts: [
+    { v: 'detect', t: 'Explain and offer a detected Wrapper (Recommended)', d: 'A short explanation and "Add a Provider". If a Local AI Wrapper answers at 127.0.0.1:8080 you get "Found a Local AI Wrapper · Add it". The probe is one local request and runs only on this page.', demo: wf(`<div class="lbl" style="text-align:center">Add a Provider to start</div><div class="warn"><div class="lbl">Found a Local AI Wrapper · Add it</div></div>`), pro: ['Zero typing for your setup'], con: ['A probe to localhost when the page opens'] },
+    { v: 'plain', t: 'Explain and one button', d: 'The same page without detection.', demo: wf(`<div class="lbl" style="text-align:center">Add a Provider to start</div><div class="btnw" style="align-self:center;width:70px"></div>`), pro: ['No background probing'], con: ['More typing to start'] },
+    { v: 'wizard', t: 'Open the Add Provider Sheet immediately', d: 'Turning the Module on takes you straight into step 1.', demo: wf(`<div class="box">${L('w60')}${L('w80')}</div><div class="box">${L('w60')}${L('w80')}</div>`), pro: ['Fewest taps'], con: ['A Sheet before you have seen the page; surprising if you only wanted a look'] }
+  ]},
+  { id: 's6', title: 'S6. The "+" menu in the composer', ev: 'Claude’s + opens a menu of things to add; here it holds Saved questions (a decision made earlier). On the phone it must be a Sheet; on desktop a Popover anchored above the + button.', why: '<b>Scenario:</b> you tap + to run a Saved question. The mock opens it.', opts: [
+    { v: 'menu', t: 'Popover on desktop, Sheet on phone (Recommended)', d: 'The app’s normal pattern for pickers: Saved questions then "Manage in AI Settings".', demo: wf(`<div class="box">${L('w60')}${L('w80')}${L('w60')}</div><div class="pill" style="align-self:flex-start">+</div>`), pro: ['Native to Mnemora; keyboard-friendly on desktop'], con: ['Two surfaces'] },
+    { v: 'sheet', t: 'A Sheet on both', d: 'The same Sheet everywhere, centred on desktop.', demo: wf(`<div class="box" style="align-self:center;width:70%">${L('w60')}${L('w80')}</div>`), pro: ['One surface'], con: ['Heavier for a quick pick on desktop'] }
+  ]},
+  { id: 's7', title: 'S7. Conversation menu (the More button)', ev: 'Claude puts Rename and Delete in the header menu; Mnemora deletes at once with an Undo toast and keeps dialogs for real choices.', why: '<b>Scenario:</b> you want to rename or remove this Conversation. The mock opens the menu (a Popover on desktop, a Sheet on phone).', opts: [
+    { v: 'basic', t: 'Rename, Branch from earlier, Copy as Markdown, Delete (Recommended)', d: 'Delete is immediate with an Undo toast.', demo: wf(`<div class="box">${L('w60')}${L('w80')}${L('w60')}${L('w40')}</div>`), pro: ['Everything you need, nothing more'], con: ['No export'] },
+    { v: 'more', t: 'Add export as file and "Save the first question"', d: 'Two extra items.', demo: wf(`<div class="box">${L('w60')}${L('w80')}${L('w60')}${L('w40')}${L('w60')}${L('w80')}</div>`), pro: ['Export for backup or sharing'], con: ['Longer menu; export is a new feature'] },
+    { v: 'min', t: 'Rename and Delete only', d: 'Smallest menu.', demo: wf(`<div class="box">${L('w60')}${L('w40')}</div>`), pro: ['Simplest'], con: ['"Branch from earlier" is then only reachable from the too-long banner and the answer footer'] }
+  ]}
+);
+
+
+CARDS.push({ id: 's9', wire: true, title: 'S9. Keyboard and palette', ev: 'Mnemora already uses bare single keys (ADR 0011): Q, N, H, J, T, I, S, / and ?. They only fire when no field is focused, which is why the AI page must not autofocus its composer. The command palette (\u2318K) is fed from each Module\u2019s paletteActions.', why: '<b>Scenario:</b> you are on Home and want to ask something, or you are on the AI page with nothing focused and want to type.', opts: [
+  { v: 'full', t: 'A opens AI, C new Conversation, / focuses the composer, plus palette actions (Recommended)', d: 'Palette: "Ask AI\u2026", "New Conversation", "Open Conversation\u2026" (search). The bare keys are claimed only by the AI Module and don\u2019t clash with existing ones.', demo: wf(`<div class="lbl">A \u2192 AI \u00b7 C \u2192 new \u00b7 / \u2192 composer</div><div class="lbl">\u2318K \u2192 Ask AI\u2026, New Conversation</div>`), pro: ['Keyboard-first like the rest of the app', '/ gives a way to focus without autofocus'], con: ['Two more bare keys to remember'] },
+  { v: 'palette', t: 'Palette actions only', d: 'No new bare keys. Focus the composer by clicking or tabbing.', demo: wf(`<div class="lbl">\u2318K \u2192 Ask AI\u2026, New Conversation</div>`), pro: ['Smallest; no key conflicts'], con: ['Slower to reach and to focus'] },
+  { v: 'a-slash', t: 'A opens AI and / focuses the composer', d: 'No C key and no palette actions beyond opening the page.', demo: wf(`<div class="lbl">A \u2192 AI \u00b7 / \u2192 composer</div>`), pro: ['Two keys only'], con: ['New Conversation needs the mouse or the header'] }
+]});
+
+/* ---------- A0: interactive front-door preview ---------- */
+const a0Start = () => ({ screen: { module: 'journal', palette: 'journal', homecard: 'home', drawer: 'journal' }[V.a0], pal: 0, drw: 0 });
+let A0S = a0Start();
+function a0Html() {
+  const v = V.a0, sc = A0S.screen;
+  const navBtn = (id, icon, label, hue) => `<button class="nav ${sc === id ? 'on' : ''}" data-a0nav="${id}"><span style="color:var(--${hue})">${I(icon)}</span><span class="lab">${label}</span></button>`;
+  const sb = `<div class="sb"><div class="brand" style="padding:6px 14px 10px"><i></i> Mnemora</div><div class="list">${navBtn('home', 'house', 'Home', 'hue-home')}${navBtn('journal', 'book-open', 'Journal', 'hue-journal')}${navBtn('todo', 'square-check', 'Todo', 'hue-todo')}${navBtn('ai', 'sparkles', 'AI', 'hue-ai')}</div></div>`;
+  const titles = { home: 'Home', journal: 'Journal', todo: 'Todo', ai: 'AI' };
+  const icons = { home: 'house', journal: 'book-open', todo: 'square-check', ai: 'sparkles' };
+  const hue = { home: 'hue-home', journal: 'hue-journal', todo: 'hue-todo', ai: 'hue-ai' }[sc];
+  let right = '';
+  if (v === 'palette') right += `<button class="sbtn" data-a0act="pal">${I('sparkles')} Ask AI <span class="kbd">\u2318J</span></button>`;
+  if (v === 'drawer' && sc === 'journal') right += `<button class="ib" data-a0act="drw" aria-label="Ask about this Entry" style="${A0S.drw ? 'background:var(--active);color:var(--ink)' : ''}">${I('sparkles')}</button>`;
+  const bar = `<div class="tbar" style="height:46px;flex-basis:46px"><div class="l"><iconify-icon class="ico" icon="lucide:${icons[sc]}" style="color:var(--${hue})"></iconify-icon><h1>${titles[sc]}</h1></div><span class="sp"></span><div class="r">${right}</div></div>`;
+  let page = '';
+  if (sc === 'journal') {
+    page = `<div class="pg"><h3>Oct 22</h3><div style="color:var(--faint);font-size:12px;margin-bottom:10px">Entry \u00b7 214 words</div><div class="entry">Long walk along the river, finally rested after the move. The boxes are mostly gone and the flat starts to feel like somewhere I live. I should call Sam about the keys, and renew the passport before it gets urgent.</div></div>`;
+    if (v === 'drawer' && A0S.drw) page = `<div style="display:flex;flex:1;min-height:0">${page}<div class="drawer2"><b style="font-weight:600">Ask about this Entry</b><button class="chip plain" data-a0act="drwAsk">${I('sparkles')} Summarise this Entry</button><button class="chip plain">${I('sparkles')} What tasks does it mention?</button>${A0S.drw === 2 ? `<div style="font-size:13px;line-height:1.55;border-top:1px solid var(--line);padding-top:8px">A restful day after the move. Two loose ends: calling Sam about the keys and renewing the passport.<div class="srclabel" style="margin-top:8px">Sources</div><span class="chip j">${I('book-open')} This Entry</span></div>` : ''}<span style="flex:1"></span><div class="askbar" style="height:34px;font-size:13px">Ask about this Entry\u2026<span class="send">${I('arrow-up')}</span></div><a href="#" data-a0act="drwOpen" style="font-size:12px;color:var(--accent)">Open as Conversation</a></div></div>`;
+  }
+  if (sc === 'home') {
+    page = `<div class="pg"><div class="hero"><b>Good evening, Hemang</b><span style="opacity:.9;font-size:13px">Wednesday, Oct 22</span></div>${v === 'homecard' ? `<div class="card"><div style="display:flex;gap:8px;align-items:center;font-weight:600"><span style="width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:color-mix(in oklch,var(--hue-ai) 16%,transparent);color:var(--hue-ai)">${I('sparkles')}</span> Ask about your week</div><div class="askbar" data-a0act="ask">Ask about your journal and tasks\u2026<span class="send">${I('arrow-up')}</span></div><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="chip plain" data-a0act="ask">${I('bookmark')} Summarise my last 7 days</button><button class="chip plain" data-a0act="ask">${I('bookmark')} What is overdue?</button></div></div>` : `<div class="card" style="color:var(--muted);font-size:14px">Today: 3 open tasks, 1 Entry written.</div>`}</div>`;
+  }
+  if (sc === 'todo') page = `<div class="pg"><h3>Today</h3><div style="font-size:14px;color:var(--muted)">Renew passport \u00b7 Call Sam \u00b7 Plan November budget</div></div>`;
+  if (sc === 'ai') page = `<div class="pg"><div class="qa"><div style="font:var(--display-weight) 19px/1.3 var(--f-display)">${QTEXT}</div><div class="act"><span class="hdr"><iconify-icon class="ok" icon="lucide:check"></iconify-icon> Completed 3 steps${I('chevron-right')}</span></div><div style="font-size:14.5px;line-height:1.6">You had a <b>quiet, recovering week</b>: 7 entries and 9 closed tasks. Two tasks slipped.</div><div class="src"><span class="chip j">${I('book-open')} Oct 22</span><span class="chip t">${I('square-check')} Renew passport</span></div></div></div>`;
+  let ov = '';
+  if (v === 'palette' && A0S.pal) {
+    ov = `<div class="scrimm" data-a0act="palclose"></div><div class="pal"><div class="in">${I('sparkles')}<span style="flex:1">${QTEXT}</span><span class="send" style="width:26px;height:26px;display:grid;place-items:center">${I(A0S.pal === 2 ? 'check' : 'arrow-up')}</span></div>${A0S.pal === 2 ? `<div class="res">You had a <b>quiet, recovering week</b>: 7 entries and 9 closed tasks. Two tasks slipped.<div class="src" style="margin-top:6px"><span class="chip j">${I('book-open')} Oct 22</span><span class="chip t">${I('square-check')} Renew passport</span></div></div><div class="acts"><button class="btn hue" data-a0act="palOpen">Open as Conversation</button><button class="btn" data-a0act="palclose">Close</button></div>` : `<div class="act"><span class="tick"><span class="spin"></span> Reading your journal and tasks\u2026</span></div>`}</div>`;
+  }
+  const hint = { module: 'Click <b>AI</b> in the sidebar to open the page. Nothing else on the screen changes.', palette: 'Click <b>Ask AI \u2318J</b> in the title bar (or press it) to open the floating ask box over any page.', homecard: 'Click a chip or the ask bar on the Home card to start a Conversation.', drawer: 'Click the <b>\u2726 button</b> in the Journal title bar to open the side drawer scoped to this Entry.' }[v];
+  return `<div class="a0bar"><b>Live preview</b> \u00b7 ${hint}<span style="flex:1"></span><button class="btn" data-a0act="reset" style="height:24px">Reset</button></div><div class="mini mx" data-a1="doc" data-a17="serif" data-ph="one" data-a5="under">${sb}<div class="mn">${bar}${page}</div>${ov}</div>`;
+}
+function renderA0() {
+  const el = document.getElementById('a0prev'); if (!el) return;
+  el.innerHTML = a0Html();
+  el.querySelectorAll('[data-a0nav]').forEach(b => b.onclick = () => { A0S.screen = b.dataset.a0nav; renderA0(); });
+  el.querySelectorAll('[data-a0act]').forEach(b => b.onclick = (e) => {
+    e.preventDefault();
+    const a = b.dataset.a0act;
+    if (a === 'reset') A0S = a0Start();
+    if (a === 'pal') { A0S.pal = 1; renderA0(); setTimeout(() => { if (A0S.pal === 1) { A0S.pal = 2; renderA0(); } }, 900); return; }
+    if (a === 'palclose') A0S.pal = 0;
+    if (a === 'palOpen' || a === 'ask' || a === 'drwOpen') { A0S.screen = 'ai'; A0S.pal = 0; }
+    if (a === 'drw') A0S.drw = A0S.drw ? 0 : 1;
+    if (a === 'drwAsk') A0S.drw = 2;
+    renderA0();
+  });
+}
+const _cardsHtml = cardsHtml;
+cardsHtml = function () { _cardsHtml(); renderA0(); };
+cardsHtml(); render();
+</script>
+</body>
+</html>
