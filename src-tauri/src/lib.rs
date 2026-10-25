@@ -28,6 +28,8 @@ macro_rules! specta_builder_for {
                 journal::journal_entry_create,
                 journal::journal_entry_update,
                 journal::journal_entry_toggle_task,
+                ai::ai_run_start::<$runtime>,
+                ai::ai_conversation_get,
                 journal::journal_entry_delete,
                 journal::journal_entry_restore,
                 journal::journal_entry_move,
@@ -122,11 +124,15 @@ macro_rules! specta_builder_for {
                 SyncNewConflictsEvent,
                 TodoListsMergedEvent,
                 TodoTaskDeletedEvent,
-                JournalEntryDeletedEvent
+                JournalEntryDeletedEvent,
+                AiRunEvent
             ])
     };
 }
 
+mod ai;
+#[cfg(test)]
+mod ai_tracer_tests;
 mod commands;
 mod editing;
 mod env_guard;
@@ -191,6 +197,7 @@ mod window_state;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
 
+use mnemora_ai::AiModule;
 use mnemora_core::db;
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::env::Environment;
@@ -305,6 +312,17 @@ pub struct SyncNewConflictsEvent {
     pub device: Option<String>,
 }
 
+/// One step of an AI Run, with the Run and its Conversation: the page follows it live.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct AiRunEvent {
+    /// The Run.
+    pub run_id: String,
+    /// The Conversation it answers in.
+    pub conversation_id: String,
+    /// What happened.
+    pub event: mnemora_ai::RunEvent,
+}
+
 /// A link opened the app while it was running (the Todo widget's taps): `app_take_links` has it.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct LinkOpenedEvent;
@@ -315,6 +333,7 @@ fn modules() -> Vec<Box<dyn Module>> {
         Box::new(CoreModule),
         Box::new(JournalModule),
         Box::new(TodoModule),
+        Box::new(AiModule),
         Box::new(SyncModule),
     ]
 }
@@ -543,6 +562,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         live_network: true,
         modules,
         bus,
+        ai: ai::AiRuntime::default(),
     };
     app.manage(state);
     // With Sync on, open the port and start announcing; with it off nothing is started.
@@ -662,6 +682,9 @@ mod tests {
             "journalPages",
             "journalSearch",
             "journalToday",
+            "aiRunStart",
+            "aiConversationGet",
+            "aiRunEvent",
             "todoInbox",
             "todoTaskCreate",
             "todoParse",
