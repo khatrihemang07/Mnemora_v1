@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AiRunEvent, RunRequest } from './bindings';
-import rules from './fixtures/ai-title.json';
 import addresses from './fixtures/ai-addresses.json';
 import failures from './fixtures/ai-failures.json';
+import rules from './fixtures/ai-title.json';
 import { addressProblem, createAiMock, failureSentence, titleOf } from './mock-ai';
 
 /** What a rejected command threw (the mock throws its error object, as the IPC rejects). */
@@ -15,7 +15,11 @@ function caught(fn: () => unknown): unknown {
   throw new Error('the call did not throw');
 }
 
-function request(text: string, conversationId: string | null = null, providerId = 'provider-x'): RunRequest {
+function request(
+  text: string,
+  conversationId: string | null = null,
+  providerId = 'provider-x',
+): RunRequest {
   return {
     conversation_id: conversationId,
     text,
@@ -125,7 +129,13 @@ describe('the AI browser mock', () => {
 
 describe('the shared rules fixtures (the same cases as the Rust tests)', () => {
   it.each(addresses)('checks the address $address', ({ address, ok, reason }) => {
-    const expected = ok ? null : reason === 'plain_http' ? 'plain_http' : reason === 'scheme' ? 'scheme' : 'invalid';
+    const expected = ok
+      ? null
+      : reason === 'plain_http'
+        ? 'plain_http'
+        : reason === 'scheme'
+          ? 'scheme'
+          : 'invalid';
     expect(addressProblem(address)).toBe(expected);
   });
 

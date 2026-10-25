@@ -36,7 +36,12 @@ describe('applyRunEvent', () => {
     ]);
     expect(answeringIn(runs, 'c1')).toEqual([]);
     expect(failedIn(runs, 'c1')).toEqual([
-      { runId: 'r1', conversationId: 'c1', text: '', failure: 'Could not reach it.' },
+      {
+        runId: 'r1',
+        conversationId: 'c1',
+        text: '',
+        failure: { kind: 'unreachable', message: 'Could not reach it.' },
+      },
     ]);
   });
 

@@ -28,7 +28,6 @@ import type {
   RunRequest,
   RunStarted,
 } from './bindings';
-import addresses from './fixtures/ai-addresses.json';
 import failures from './fixtures/ai-failures.json';
 
 /** Longest title from a first question, in characters. */
@@ -42,7 +41,10 @@ export function titleOf(question: string): string {
 
 /** The approved sentence for each failure, from the shared fixture. */
 export function failureSentence(kind: Failure): string {
-  return failures.find((f) => f.kind === kind)?.message ?? 'Something went wrong while answering. Try again.';
+  return (
+    failures.find((f) => f.kind === kind)?.message ??
+    'Something went wrong while answering. Try again.'
+  );
 }
 
 /** The mock's answer to an address: `null` when it is allowed, else the Rust rule's refusal. */
@@ -74,7 +76,13 @@ function isLocalHost(host: string): boolean {
       (a === 100 && b >= 64 && b <= 127)
     );
   }
-  return lower.includes(':') && (lower.startsWith('fc') || lower.startsWith('fd') || lower === '::1' || lower.startsWith('fe80'));
+  return (
+    lower.includes(':') &&
+    (lower.startsWith('fc') ||
+      lower.startsWith('fd') ||
+      lower === '::1' ||
+      lower.startsWith('fe80'))
+  );
 }
 
 /** Delay before each streamed word, so the answer visibly arrives. */
@@ -135,7 +143,10 @@ export function createAiMock({
 }: AiMockOptions) {
   const conversations = new Map<string, StoredConversation>();
   const providers: StoredProvider[] = [];
-  const usage = new Map<string, { provider_id: string; model: string; uses: number; last: number }>();
+  const usage = new Map<
+    string,
+    { provider_id: string; model: string; uses: number; last: number }
+  >();
   const answering = new Set<string>();
   let counter = 0;
   const nextId = (prefix: string) => `${prefix}-${++counter}`;
@@ -151,7 +162,8 @@ export function createAiMock({
   function checkName(raw: string): string {
     const name = raw.trim();
     if (name === '') throw aiError('validation', 'Give this Provider a name.');
-    if (Array.from(name).length > 40) throw aiError('validation', 'Keep the name to 40 characters.');
+    if (Array.from(name).length > 40)
+      throw aiError('validation', 'Keep the name to 40 characters.');
     return name;
   }
 
@@ -189,11 +201,14 @@ export function createAiMock({
     // As in Rust, the Model change and the question are written here, before the Run's own steps.
     const now = Date.now();
     const conversation = existing ?? startConversation(conversationId, request.text, now);
-    const same =
-      conversation.provider_id === provider.id && conversation.model === model;
+    const same = conversation.provider_id === provider.id && conversation.model === model;
     let parent: string | undefined;
     if (!same) {
-      const change = addEntry(conversation, { kind: 'model_change', provider_name: provider.name, model }, now);
+      const change = addEntry(
+        conversation,
+        { kind: 'model_change', provider_name: provider.name, model },
+        now,
+      );
       conversation.provider_id = provider.id;
       conversation.provider_name = provider.name;
       conversation.model = model;
@@ -320,7 +335,9 @@ export function createAiMock({
       last_used_at: u.last,
     });
     const recent = [...live].sort((a, b) => b.last - a.last || a.model.localeCompare(b.model));
-    const most = [...live].sort((a, b) => b.uses - a.uses || b.last - a.last || a.model.localeCompare(b.model));
+    const most = [...live].sort(
+      (a, b) => b.uses - a.uses || b.last - a.last || a.model.localeCompare(b.model),
+    );
     return {
       recent: recent.slice(0, USAGE_LIMIT).map(toUse),
       most_used: most.slice(0, USAGE_LIMIT).map(toUse),
@@ -342,7 +359,8 @@ export function createAiMock({
         return providers.map((p) => ({ ...p }));
       case 'ai_provider_create': {
         const request = args.request as NewProvider;
-        if (request.kind !== 'wrapper') throw aiError('validation', 'Choose a kind of Provider first.');
+        if (request.kind !== 'wrapper')
+          throw aiError('validation', 'Choose a kind of Provider first.');
         const now = Date.now();
         const created: StoredProvider = {
           id: nextId('provider'),
@@ -400,7 +418,9 @@ export function createAiMock({
         const list: ModelList = result.failure
           ? { models: [], failure: result.failure, message: failureSentence(result.failure) }
           : {
-              models: result.models.filter((m) => needle === '' || m.toLowerCase().includes(needle)),
+              models: result.models.filter(
+                (m) => needle === '' || m.toLowerCase().includes(needle),
+              ),
               failure: null,
               message: '',
             };

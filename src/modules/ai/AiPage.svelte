@@ -2,6 +2,7 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { onMount } from 'svelte';
+  import Plug from '~icons/lucide/plug';
   import Sparkles from '~icons/lucide/sparkles';
   import SquarePen from '~icons/lucide/square-pen';
   import { commands, events } from '../../lib/ipc/bindings';
@@ -10,6 +11,7 @@
   import { urlParam } from '../../lib/router/url-param';
   import { readCore } from '../../lib/settings/core';
   import { appInfoQuery, settingsQuery } from '../../lib/settings/queries';
+  import Button from '../../lib/ui/Button.svelte';
   import EmptyState from '../../lib/ui/EmptyState.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
@@ -17,10 +19,13 @@
   import { notifyError } from '../../lib/ui/toast';
   import AiComposer from './AiComposer.svelte';
   import AiThread from './AiThread.svelte';
+  import { type Choice, effectiveChoice } from './choice';
+  import type { BannerAction } from './failure-banner';
   import { liveRuns } from './live.svelte';
   import { localContext } from './local-context';
-  import { aiKeys, conversationOptions } from './queries';
-  import { answeringIn, failedIn } from './run-state';
+  import ProviderSheet from './ProviderSheet.svelte';
+  import { aiKeys, conversationOptions, providersOptions, usageOptions } from './queries';
+  import { answeringIn, failedIn, type LiveRun } from './run-state';
 
   /** The open Conversation, in the URL so a reload and Back keep it. None is a new one. */
   const conversationId = $derived(urlParam.get('conversation'));
@@ -28,6 +33,8 @@
     ...conversationOptions(conversationId ?? ''),
     enabled: conversationId !== null,
   }));
+  const providers = createQuery(() => providersOptions);
+  const usage = createQuery(() => usageOptions);
   const settings = createQuery(() => settingsQuery);
   const weekStart = $derived(readCore(settings.data?.values).weekStart);
   const info = createQuery(() => appInfoQuery);
@@ -37,11 +44,30 @@
       : 'What should we look at?',
   );
 
+  /** The Model picked on this page since it opened. */
+  let picked = $state<Choice | null>(null);
+  let pickerOpen = $state(false);
+  let addingProvider = $state(false);
+
+  const choice = $derived(
+    effectiveChoice({
+      picked,
+      conversation: conversation.data
+        ? { providerId: conversation.data.provider_id, model: conversation.data.model }
+        : null,
+      usage: usage.data ?? null,
+      providers: providers.data ?? [],
+    }),
+  );
+  const modelName = $derived(choice?.model ?? null);
+
   const answering = $derived(conversationId ? answeringIn(liveRuns.runs, conversationId) : []);
   const failed = $derived(conversationId ? failedIn(liveRuns.runs, conversationId) : []);
   const busy = $derived((conversation.data?.running ?? false) || answering.length > 0);
   const entries = $derived(conversation.data?.entries ?? []);
   const blank = $derived(entries.length === 0 && answering.length === 0 && failed.length === 0);
+  /** No Provider yet and nothing said: the page explains and offers one button. */
+  const firstRun = $derived(providers.isSuccess && (providers.data?.length ?? 0) === 0);
 
   onMount(() => {
     // Runs seen before this page opened are not in the saved Conversation's live state any more.
@@ -51,6 +77,9 @@
     void events.aiRunEvent
       .listen(({ payload }) => {
         liveRuns.apply(payload);
+        if (payload.event.type === 'runStarted') {
+          void queryClient.invalidateQueries({ queryKey: aiKeys.usage });
+        }
         if (payload.event.type === 'entrySaved' || payload.event.type === 'runEnded') {
           void queryClient.invalidateQueries({
             queryKey: aiKeys.conversation(payload.conversation_id),
@@ -67,16 +96,36 @@
     };
   });
 
-  /** Starts a Run. Resolves false when it was refused, and says why. */
-  async function send(text: string): Promise<boolean> {
+  /**
+   * Starts a Run with the Model in use (or the one given, for "Try again"). Resolves false when it
+   * was refused, and says why.
+   */
+  async function send(
+    text: string,
+    target: { conversationId: string | null; choice: Choice } | null = null,
+  ): Promise<boolean> {
+    const asked = target?.choice ?? choice;
+    if (!asked) {
+      notifyError('Choose a Model first.');
+      return false;
+    }
+    const inConversation = target ? target.conversationId : conversationId;
     try {
       const started = await unwrap(
         commands.aiRunStart({
-          conversation_id: conversationId,
+          conversation_id: inConversation,
           text,
+          provider_id: asked.providerId,
+          model: asked.model,
           local: localContext(new Date(), weekStart, Intl.DateTimeFormat().resolvedOptions().timeZone),
         }),
       );
+      liveRuns.remember(started.run_id, {
+        text,
+        providerId: asked.providerId,
+        model: asked.model,
+        conversationId: started.conversation_id,
+      });
       if (started.conversation_id !== conversationId) {
         urlParam.set('conversation', started.conversation_id, true);
       }
@@ -85,6 +134,29 @@
       notifyError(error instanceof Error ? error.message : 'Could not send the question.');
       return false;
     }
+  }
+
+  /** Asks the failed question again, with the Provider and Model it was sent with. */
+  async function tryAgain(run: LiveRun) {
+    const sent = liveRuns.sent[run.runId];
+    if (!sent) {
+      notifyError('Ask the question again to retry it.');
+      return;
+    }
+    const started = await send(sent.text, {
+      conversationId: sent.conversationId,
+      choice: { providerId: sent.providerId, model: sent.model },
+    });
+    if (started) liveRuns.dismiss(run.runId);
+  }
+
+  function handlersFor(run: LiveRun): Partial<Record<BannerAction, () => void>> {
+    return {
+      retry: () => void tryAgain(run),
+      change_model: () => (pickerOpen = true),
+      change_provider: () => (pickerOpen = true),
+      new_conversation: newConversation,
+    };
   }
 
   function newConversation() {
@@ -104,6 +176,17 @@
   <div class="min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-10">
     {#if conversation.isError && conversationId}
       <ErrorBanner error={conversation.error} onretry={() => void conversation.refetch()} />
+    {:else if firstRun && blank}
+      <EmptyState
+        icon={Plug}
+        title="Add a Provider to start"
+        description="A Provider is where answers come from: the Local AI Wrapper on this machine, or another service you choose. Your key stays on this device."
+        hue="--hue-ai"
+      >
+        {#snippet action()}
+          <Button variant="primary" onclick={() => (addingProvider = true)}>Add a Provider</Button>
+        {/snippet}
+      </EmptyState>
     {:else if blank}
       <EmptyState
         icon={Sparkles}
@@ -112,14 +195,23 @@
         hue="--hue-ai"
       />
     {:else}
-      <AiThread {entries} {answering} {failed} />
+      <AiThread {entries} {answering} {failed} {handlersFor} />
     {/if}
   </div>
   <div class="px-4 pb-4">
     <AiComposer
       {busy}
       placeholder={entries.length === 0 ? 'Ask about your journal and tasks…' : 'Ask a follow-up…'}
-      onsend={send}
+      choice={choice}
+      {modelName}
+      bind:pickerOpen
+      onpick={(next) => {
+        picked = next;
+        pickerOpen = false;
+      }}
+      onsend={(text) => send(text)}
     />
   </div>
 </div>
+
+<ProviderSheet open={addingProvider} provider={null} onclose={() => (addingProvider = false)} />
