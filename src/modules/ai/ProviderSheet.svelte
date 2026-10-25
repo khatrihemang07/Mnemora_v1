@@ -2,14 +2,16 @@
   ProviderSheet: adds a Provider (kind first, then only that kind's fields) or edits one (name,
   address, a Test connection button and, for a kind that takes one, a write-only key). Deleting asks
   first. Adding a Provider tests its connection straight after it is saved, since the address is
-  only then known to the device. Centred on a desktop, a bottom sheet on a phone.
+  only then known to the device; the result is a toast, and the sheet closes either way. Saving an
+  edit closes the sheet too. A validation error is shown once, under the field, with no Copy details.
+  Centred on a desktop, a bottom sheet on a phone.
 -->
 <script lang="ts">
   import Plug from '~icons/lucide/plug';
   import Trash2 from '~icons/lucide/trash-2';
   import { type ConnectionTest, commands, type ProviderKind, type ProviderView } from '../../lib/ipc/bindings';
   import { queryClient } from '../../lib/ipc/query-client';
-  import { unwrap } from '../../lib/ipc/unwrap';
+  import { IpcError, unwrap } from '../../lib/ipc/unwrap';
   import Button from '../../lib/ui/Button.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
@@ -37,7 +39,7 @@
     },
   ];
 
-  /** The Provider as saved: set after an add, so the sheet carries on editing it. */
+  /** The Provider as last changed here (a key set or cleared), so the key state shown is current. */
   let saved = $state<ProviderView | null>(null);
   const current = $derived(saved ?? provider);
   let step = $state<'kind' | 'form'>('form');
@@ -46,6 +48,9 @@
   let keyDraft = $state('');
   let working = $state(false);
   let error = $state<unknown>(null);
+  /** A validation message for the address or the key, shown once under its field. */
+  let addressIssue = $state<string | null>(null);
+  let keyIssue = $state<string | null>(null);
   let test = $state<ConnectionTest | null>(null);
   let confirmDelete = $state(false);
 
@@ -54,6 +59,8 @@
     if (!open) return;
     saved = null;
     error = null;
+    addressIssue = null;
+    keyIssue = null;
     test = null;
     keyDraft = '';
     step = provider ? 'form' : 'kind';
@@ -77,23 +84,40 @@
     await queryClient.invalidateQueries({ queryKey: aiKeys.usage });
   }
 
-  /** Saves the form: adds the Provider and tests it, or updates the one being edited. */
+  function isValidation(caught: unknown): caught is IpcError {
+    return caught instanceof IpcError && caught.code === 'validation';
+  }
+
+  /** Tests a Provider just added, and says the outcome in one line for the toast. */
+  async function testAfterAdd(added: ProviderView): Promise<string> {
+    try {
+      const result = await unwrap(commands.aiProviderTest(added.id));
+      return `Added ${added.name}. ${result.message}`;
+    } catch {
+      return `Added ${added.name}, but its connection could not be tested.`;
+    }
+  }
+
+  /** Saves the form: adds the Provider and tests it, or updates the one being edited. Then closes. */
   async function save() {
     working = true;
     error = null;
+    addressIssue = null;
     try {
       if (current) {
-        saved = await unwrap(commands.aiProviderUpdate(current.id, { name, address }));
+        await unwrap(commands.aiProviderUpdate(current.id, { name, address }));
+        await refresh();
         notify('Provider saved');
       } else {
-        saved = await unwrap(commands.aiProviderCreate({ kind: 'wrapper', name, address }));
-        notify(`Added ${saved.name}`);
-        test = await unwrap(commands.aiProviderTest(saved.id));
+        const added = await unwrap(commands.aiProviderCreate({ kind: 'wrapper', name, address }));
+        await refresh();
+        await queryClient.invalidateQueries({ queryKey: aiKeys.models(added.id) });
+        notify(await testAfterAdd(added));
       }
-      await refresh();
-      await queryClient.invalidateQueries({ queryKey: aiKeys.models(saved.id) });
+      onclose();
     } catch (caught) {
-      error = caught;
+      if (isValidation(caught)) addressIssue = caught.message;
+      else error = caught;
     } finally {
       working = false;
     }
@@ -117,12 +141,14 @@
     if (!current || keyDraft.trim() === '') return;
     working = true;
     error = null;
+    keyIssue = null;
     try {
       saved = await unwrap(commands.aiProviderKeySet(current.id, keyDraft));
       keyDraft = '';
       await refresh();
     } catch (caught) {
-      error = caught;
+      if (isValidation(caught)) keyIssue = caught.message;
+      else error = caught;
     } finally {
       working = false;
     }
@@ -194,9 +220,13 @@
       <label class="flex flex-col gap-1.5">
         <span class="text-sm font-medium text-ink">Address</span>
         <Input bind:value={address} label="Address" autocapitalize="off" autocomplete="off" spellcheck="false" />
-        <span class="text-xs text-faint">
-          Plain http works only on this machine, your local network and Tailscale. Other addresses use https.
-        </span>
+        {#if addressIssue}
+          <span class="text-xs text-danger" role="alert">{addressIssue}</span>
+        {:else}
+          <span class="text-xs text-faint">
+            Plain http works only on this machine, your local network and Tailscale. Other addresses use https.
+          </span>
+        {/if}
       </label>
 
       {#if current && current.key_state !== 'not_needed'}
@@ -224,7 +254,11 @@
               Save key
             </Button>
           </div>
-          <span class="text-xs text-faint">Write-only: hidden as you type and never shown again. Stored on this device only.</span>
+          {#if keyIssue}
+            <span class="text-xs text-danger" role="alert">{keyIssue}</span>
+          {:else}
+            <span class="text-xs text-faint">Write-only: hidden as you type and never shown again. Stored on this device only.</span>
+          {/if}
         </div>
       {:else if current}
         <p class="text-sm text-muted">No key needed for this kind.</p>
@@ -254,7 +288,7 @@
           <span></span>
         {/if}
         <div class="flex gap-2">
-          {#if step === 'form' && !provider}
+          {#if step === 'form' && !current}
             <Button variant="ghost" onclick={() => (step = 'kind')}>Back</Button>
           {/if}
           <Button type="submit" variant="primary" disabled={working || name.trim() === '' || address.trim() === ''}>

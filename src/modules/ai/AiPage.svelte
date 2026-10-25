@@ -69,6 +69,28 @@
   /** No Provider yet and nothing said: the page explains and offers one button. */
   const firstRun = $derived(providers.isSuccess && (providers.data?.length ?? 0) === 0);
 
+  /** How close to the end, in pixels, the thread must be for new content to keep it there. */
+  const END_PX = 96;
+  /** The scrolling thread. It follows the newest content while it is at its end, and a new banner. */
+  let scroller = $state<HTMLElement | null>(null);
+  const streamed = $derived(answering.reduce((total, run) => total + run.text.length, 0));
+  /** Whether the thread was at its end before the last change (measured before the DOM updates). */
+  let atEnd = true;
+  let failuresSeen = 0;
+  $effect.pre(() => {
+    void entries.length;
+    void streamed;
+    void failed.length;
+    if (scroller) atEnd = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < END_PX;
+  });
+  $effect(() => {
+    void entries.length;
+    void streamed;
+    const bannerShown = failed.length > failuresSeen;
+    failuresSeen = failed.length;
+    if (scroller && (atEnd || bannerShown)) scroller.scrollTo({ top: scroller.scrollHeight });
+  });
+
   onMount(() => {
     // Runs seen before this page opened are not in the saved Conversation's live state any more.
     liveRuns.clear();
@@ -173,7 +195,7 @@
       {/snippet}
     </PageHeader>
   </div>
-  <div class="min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-10">
+  <div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-4 pt-6 pb-10">
     {#if conversation.isError && conversationId}
       <ErrorBanner error={conversation.error} onretry={() => void conversation.refetch()} />
     {:else if firstRun && blank}

@@ -74,7 +74,7 @@
 </script>
 
 {#snippet body()}
-  <div class="flex max-h-[min(70dvh,30rem)] flex-col gap-3 overflow-y-auto p-3">
+  <div class="flex max-h-[min(70dvh,30rem)] flex-col gap-3 overflow-y-auto p-3 {viewport.isPhone ? '' : 'w-80 max-w-[calc(100vw-2rem)]'}">
     {#if list.length > 1 && providerId !== null}
       <SegmentedControl
         label="Provider"
@@ -113,7 +113,7 @@
           <p class="px-2 text-sm text-muted">No Models used yet. Browse this Provider’s list or type an id.</p>
         {/if}
         <Button variant="ghost" onclick={() => (browsing = true)}>
-          <ListFilter class="size-4" /> Browse all models
+          <ListFilter class="size-4" /> Browse all models…
         </Button>
       {:else}
         {#if typed !== null}

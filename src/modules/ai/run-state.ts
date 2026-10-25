@@ -10,6 +10,8 @@ export interface RunFailure {
 export interface LiveRun {
   readonly runId: string;
   readonly conversationId: string;
+  /** The entry id of the question this Run answers, once it is saved. Places the Run in the thread. */
+  readonly questionId: string | null;
   /** The answer as streamed so far. */
   readonly text: string;
   /** Set when the Run failed: shown in the answer's place. */
@@ -29,6 +31,7 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
   const current: LiveRun = runs[runId] ?? {
     runId,
     conversationId,
+    questionId: null,
     text: '',
     failure: null,
   };
@@ -49,6 +52,8 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
       };
     }
     case 'entrySaved':
+      if (step.kind !== 'user') return runs;
+      return { ...runs, [runId]: { ...current, questionId: step.entry_id } };
     case 'stepStarted':
       return runs;
   }
@@ -66,6 +71,16 @@ export function failedIn(runs: LiveRuns, conversationId: string): LiveRun[] {
   return Object.values(runs).filter(
     (run) => run.conversationId === conversationId && run.failure !== null,
   );
+}
+
+/** The Runs (answering or failed) that answer one question of the thread. */
+export function runsUnder(runs: LiveRun[], questionId: string): LiveRun[] {
+  return runs.filter((run) => run.questionId === questionId);
+}
+
+/** The Runs whose question is not among the thread's entries (not saved yet, or not loaded). */
+export function unplacedRuns(runs: LiveRun[], entryIds: ReadonlySet<string>): LiveRun[] {
+  return runs.filter((run) => run.questionId === null || !entryIds.has(run.questionId));
 }
 
 function withoutRun(runs: LiveRuns, runId: string): LiveRuns {

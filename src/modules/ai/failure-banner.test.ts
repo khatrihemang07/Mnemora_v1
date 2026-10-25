@@ -23,4 +23,11 @@ describe('the failure banners', () => {
     expect(failureBanner('model_unavailable').actions).toEqual(['change_model']);
     expect(failureBanner('unreachable').actions).toEqual(['retry', 'change_provider']);
   });
+
+  it('never repeats the title in the sentence under it', () => {
+    for (const { kind, message } of failures) {
+      const title = failureBanner(kind as Failure).title.toLowerCase();
+      expect(message.toLowerCase().startsWith(title), kind).toBe(false);
+    }
+  });
 });

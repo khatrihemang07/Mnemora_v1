@@ -1,4 +1,4 @@
-<!-- ErrorBanner (N8-A): inline error with Retry and Copy details. -->
+<!-- ErrorBanner (N8-A): inline error with Retry and Copy details. A validation error has no Copy details. -->
 <script lang="ts">
   import AlertCircle from '~icons/lucide/circle-alert';
   import { IpcError } from '../ipc/unwrap';
@@ -16,6 +16,8 @@
   const message = $derived(
     override ?? (error instanceof Error ? error.message : 'Something went wrong.'),
   );
+  /** A plain validation error says what to fix in its sentence; there are no details to copy. */
+  const copyable = $derived(!(error instanceof IpcError && error.code === 'validation'));
   const details = $derived(
     error instanceof IpcError
       ? JSON.stringify({ code: error.code, message: error.message, details: error.details }, null, 2)
@@ -42,6 +44,6 @@
   <span class="min-w-0 flex-1">{message}</span>
   <span class="flex gap-2">
     {#if onretry}<Button size="sm" onclick={onretry}>Retry</Button>{/if}
-    <Button size="sm" variant="ghost" onclick={copy}>Copy details</Button>
+    {#if copyable}<Button size="sm" variant="ghost" onclick={copy}>Copy details</Button>{/if}
   </span>
 </div>
