@@ -1,8 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <title>Mnemora</title>
-  <!-- macOS/Linux/iOS master: 824px tile on the 1024 grid (100px margin) per Apple's icon template. -->
+  <!-- Dark tile with the orange spiral, so macOS's Dark icon style has no light tile to recolour. macOS/Linux/iOS master: 824px tile on the 1024 grid (100px margin) per Apple's icon template. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#1b1310"/>
+      <stop offset="1" stop-color="#3d2a20"/>
+    </linearGradient>
+    <linearGradient id="ink" gradientUnits="userSpaceOnUse" x1="18" y1="85" x2="82" y2="21">
       <stop offset="0" stop-color="#ff7a59"/>
       <stop offset="1" stop-color="#ffc94d"/>
     </linearGradient>
@@ -17,6 +21,6 @@
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)" filter="url(#shadow)"/>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#sheen)"/>
   <!-- Spiral: semicircles growing by 7 units per half-turn, drawn on a 100-unit grid. -->
-  <path transform="translate(142 142) scale(7.4)" fill="none" stroke="#2a1608" stroke-width="6.5" stroke-linecap="round"
+  <path transform="translate(142 142) scale(7.4)" fill="none" stroke="url(#ink)" stroke-width="6.5" stroke-linecap="round"
         d="M46 53.5A11 11 0 0 0 68 53.5A18 18 0 0 0 32 53.5A25 25 0 0 0 82 53.5A32 32 0 0 0 18 53.5"/>
 </svg>
