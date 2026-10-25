@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 and newer: AI Provider keys never leave the device (ADR 0020), neither to the cloud
+     nor in a device-to-device transfer. Paths are relative to the app's root directory. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="com.hemang.mnemora/config/ai-keys/" />
+        <exclude domain="root" path="com.hemang.mnemora.sandbox/config/ai-keys/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="com.hemang.mnemora/config/ai-keys/" />
+        <exclude domain="root" path="com.hemang.mnemora.sandbox/config/ai-keys/" />
+    </device-transfer>
+</data-extraction-rules>

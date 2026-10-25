@@ -407,3 +407,23 @@ fn a_blank_model_id_is_refused_and_nothing_is_saved() {
     });
     assert_eq!(count, 0);
 }
+
+#[test]
+fn the_android_backup_rules_exclude_the_key_folder_of_both_environments() {
+    use mnemora_core::env::Environment;
+    const FULL: &str = include_str!("../gen/android/app/src/main/res/xml/backup_rules.xml");
+    const EXTRACTION: &str =
+        include_str!("../gen/android/app/src/main/res/xml/data_extraction_rules.xml");
+    for env in [Environment::Production, Environment::Sandbox] {
+        let path = format!("{}/config/{}/", env.app_identifier(), crate::AI_KEYS_DIR);
+        let exclude = format!("<exclude domain=\"root\" path=\"{path}\" />");
+        assert!(FULL.contains(&exclude), "backup_rules.xml lacks {path}");
+        assert!(
+            EXTRACTION.contains(&exclude),
+            "data_extraction_rules.xml lacks {path}"
+        );
+    }
+    let manifest = include_str!("../gen/android/app/src/main/AndroidManifest.xml");
+    assert!(manifest.contains("android:fullBackupContent=\"@xml/backup_rules\""));
+    assert!(manifest.contains("android:dataExtractionRules=\"@xml/data_extraction_rules\""));
+}
