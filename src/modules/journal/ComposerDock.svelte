@@ -91,7 +91,6 @@
   $effect(() => composer.setPageDate(nav.composerDate));
 
   onMount(() => {
-    if (!viewport.isPhone) editor?.focus();
     nav.focusComposer = () => editor?.focus();
     nav.compose = () => {
       // Text already written keeps its date; an empty box starts on Today.
