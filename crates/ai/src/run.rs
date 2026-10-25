@@ -9,9 +9,21 @@ use mnemora_core::util::new_id;
 use mnemora_harness::{Failure, Provider, Request, StopReason, run_step};
 
 use crate::prompt;
+use crate::provider_store;
 use crate::store::{self, NewRow};
 use crate::title::title_of;
 use crate::types::{EntryKind, EntryPayload, LocalContext, RunEvent, RunOutcome};
+
+/// The Provider and Model a question is asked with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Choice {
+    /// The Provider's id.
+    pub provider_id: String,
+    /// The Provider's name, kept as text in the Conversation.
+    pub provider_name: String,
+    /// The Model id.
+    pub model: String,
+}
 
 /// What the person asked, and where.
 #[derive(Debug, Clone)]
@@ -24,6 +36,8 @@ pub struct Ask {
     pub text: String,
     /// The person's calendar, for the system prompt.
     pub local: LocalContext,
+    /// The Provider and Model that answer it.
+    pub choice: Choice,
 }
 
 /// The one sentence the person reads for each failure. The Provider's own text is never used.
@@ -122,7 +136,37 @@ fn save_question(db: &Mutex<Connection>, ask: &Ask) -> AppResult<String> {
     if !ask.continues {
         store::insert_conversation(&tx, &ask.conversation_id, &title_of(&ask.text), now)?;
     }
-    let parent = store::leaf(&tx, &ask.conversation_id)?;
+    let mut parent = store::leaf(&tx, &ask.conversation_id)?;
+    let header = store::live_conversation(&tx, &ask.conversation_id)?
+        .ok_or(crate::error::AiError::NotFound)?;
+    let same_model = header.provider_id.as_deref() == Some(ask.choice.provider_id.as_str())
+        && header.model.as_deref() == Some(ask.choice.model.as_str());
+    if !same_model {
+        // A Model change is an entry of its own, so the branch shows which Model answered after it.
+        let change = new_id();
+        store::insert_entry(
+            &tx,
+            NewRow {
+                id: &change,
+                conversation: &ask.conversation_id,
+                parent: parent.as_deref(),
+                kind: EntryKind::ModelChange,
+                now,
+            },
+            &EntryPayload::ModelChange {
+                provider_name: ask.choice.provider_name.clone(),
+                model: ask.choice.model.clone(),
+            },
+        )?;
+        store::set_model(
+            &tx,
+            &ask.conversation_id,
+            &ask.choice.provider_id,
+            &ask.choice.provider_name,
+            &ask.choice.model,
+        )?;
+        parent = Some(change);
+    }
     let id = new_id();
     store::insert_entry(
         &tx,
@@ -138,6 +182,7 @@ fn save_question(db: &Mutex<Connection>, ask: &Ask) -> AppResult<String> {
         },
     )?;
     store::touch_conversation(&tx, &ask.conversation_id, now)?;
+    provider_store::record_use(&tx, &ask.choice.provider_id, &ask.choice.model, now)?;
     tx.commit()?;
     Ok(id)
 }

@@ -15,6 +15,8 @@ use crate::AiRunEvent;
 use crate::test_support::TestApp;
 
 const TODAY: &str = "2026-10-25";
+/// Where the scripted Provider's record points. Never contacted: the scripted adapter answers.
+const ADDRESS: &str = "http://127.0.0.1:9/v1";
 const TITLE_RULES: &str = include_str!("../../src/lib/ipc/fixtures/ai-title.json");
 
 fn local() -> Value {
@@ -30,15 +32,39 @@ fn scripted(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
     Arc::new(ScriptedProvider::new("Scripted", "scripted-model", replies))
 }
 
+/// Installs the scripted Provider as the one every Run uses, and adds a Provider record for it
+/// (the command checks the record, the scripted adapter does the answering).
 fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
     let provider: Arc<dyn Provider> = provider.clone();
     app.set_ai_provider(provider);
+    app.invoke::<Value>(
+        "ai_provider_create",
+        json!({ "request": { "kind": "wrapper", "name": "Scripted", "address": ADDRESS } }),
+    )
+    .unwrap();
+}
+
+/// The first Provider on the device, or a missing id when there is none.
+fn provider_id(app: &TestApp) -> String {
+    let list: Value = app.invoke("ai_provider_list", json!({})).unwrap();
+    list.as_array()
+        .and_then(|providers| providers.first())
+        .map_or_else(
+            || "missing-provider".to_owned(),
+            |p| p["id"].as_str().unwrap().to_owned(),
+        )
 }
 
 fn ask(app: &TestApp, conversation: Option<&str>, text: &str) -> Result<Value, Value> {
     app.invoke(
         "ai_run_start",
-        json!({ "request": { "conversation_id": conversation, "text": text, "local": local() } }),
+        json!({ "request": {
+            "conversation_id": conversation,
+            "text": text,
+            "provider_id": provider_id(app),
+            "model": "scripted-model",
+            "local": local(),
+        } }),
     )
 }
 
@@ -48,7 +74,7 @@ fn get(app: &TestApp, conversation: &str) -> Value {
 }
 
 /// Every event of the Run that was just started, up to and including its end.
-fn until_end(events: &Receiver<AiRunEvent>) -> Vec<AiRunEvent> {
+pub(crate) fn until_end(events: &Receiver<AiRunEvent>) -> Vec<AiRunEvent> {
     let mut seen = Vec::new();
     loop {
         let event = events
@@ -63,7 +89,7 @@ fn until_end(events: &Receiver<AiRunEvent>) -> Vec<AiRunEvent> {
 }
 
 /// The event's type, with the kind of an entry written: `entrySaved:user`.
-fn label(event: &AiRunEvent) -> String {
+pub(crate) fn label(event: &AiRunEvent) -> String {
     let value = serde_json::to_value(&event.event).unwrap();
     let kind = value["type"].as_str().unwrap().to_owned();
     match value.get("kind").and_then(Value::as_str) {
@@ -72,7 +98,7 @@ fn label(event: &AiRunEvent) -> String {
     }
 }
 
-fn ended_outcome(run: &[AiRunEvent]) -> RunOutcome {
+pub(crate) fn ended_outcome(run: &[AiRunEvent]) -> RunOutcome {
     match &run.last().expect("a Run has events").event {
         RunEvent::RunEnded { outcome } => outcome.clone(),
         other => panic!("the last event was not the end: {other:?}"),
@@ -120,16 +146,24 @@ fn a_question_is_answered_and_saved_as_one_conversation_with_its_events_in_order
     let conversation = get(&app, started["conversation_id"].as_str().unwrap());
     assert_eq!(conversation["title"], "What did I write about the move?");
     assert_eq!(conversation["running"], false);
+    // The Model is recorded first, as its own entry, then the question and the answer.
     let entries = conversation["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 2);
+    assert_eq!(entries.len(), 3);
     assert_eq!(
         entries[0]["payload"],
-        json!({ "kind": "user", "text": "What did I write about the move?" })
+        json!({ "kind": "model_change", "provider_name": "Scripted", "model": "scripted-model" })
     );
     assert_eq!(entries[0]["parent_id"], Value::Null);
-    assert_eq!(entries[1]["parent_id"], entries[0]["id"]);
+    assert_eq!(conversation["provider_name"], "Scripted");
+    assert_eq!(conversation["model"], "scripted-model");
     assert_eq!(
         entries[1]["payload"],
+        json!({ "kind": "user", "text": "What did I write about the move?" })
+    );
+    assert_eq!(entries[1]["parent_id"], entries[0]["id"]);
+    assert_eq!(entries[2]["parent_id"], entries[1]["id"]);
+    assert_eq!(
+        entries[2]["payload"],
         json!({
             "kind": "assistant",
             "text": "Hello there",
@@ -178,10 +212,11 @@ fn a_second_question_continues_the_branch_and_the_model_is_sent_all_of_it() {
         .as_array()
         .unwrap()
         .clone();
-    assert_eq!(entries.len(), 4);
-    assert_eq!(entries[2]["parent_id"], entries[1]["id"]);
+    // One Model change, then two questions and their answers; the second question keeps the Model.
+    assert_eq!(entries.len(), 5);
+    assert_eq!(entries[3]["parent_id"], entries[2]["id"]);
     assert_eq!(
-        entries[2]["payload"],
+        entries[3]["payload"],
         json!({ "kind": "user", "text": "Second question" })
     );
     assert_eq!(
@@ -243,25 +278,16 @@ fn a_failed_step_keeps_the_question_and_says_why_in_one_plain_sentence() {
         }
     );
     let conversation = get(&app, started["conversation_id"].as_str().unwrap());
-    assert_eq!(conversation["entries"].as_array().unwrap().len(), 1);
+    assert_eq!(conversation["entries"].as_array().unwrap().len(), 2);
     assert_eq!(conversation["running"], false);
 }
 
 #[test]
-fn without_a_provider_the_run_says_no_service_is_set_up() {
+fn a_question_without_a_provider_is_refused_and_nothing_is_saved() {
     let app = TestApp::new();
-    let events = app.ai_events();
-
-    ask(&app, None, "Hello?").unwrap();
-    let run = until_end(&events);
-
-    assert_eq!(
-        ended_outcome(&run),
-        RunOutcome::Failed {
-            kind: Failure::NoProvider,
-            message: failure_message(Failure::NoProvider).to_owned(),
-        }
-    );
+    let error = ask(&app, None, "Hello?").unwrap_err();
+    assert_eq!(error["code"], "not_found");
+    assert_eq!(conversation_count(&app), 0);
 }
 
 #[test]

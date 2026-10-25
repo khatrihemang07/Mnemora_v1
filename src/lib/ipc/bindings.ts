@@ -52,6 +52,27 @@ export const commands = {
 	aiRunStart: (request: RunRequest) => typedError<RunStarted, AppError>(__TAURI_INVOKE("ai_run_start", { request })),
 	/**  A Conversation with every entry, oldest first. */
 	aiConversationGet: (id: string) => typedError<ConversationView, AppError>(__TAURI_INVOKE("ai_conversation_get", { id })),
+	/**  Every Provider on this device, oldest first. Never carries a key. */
+	aiProviderList: () => typedError<ProviderView[], AppError>(__TAURI_INVOKE("ai_provider_list")),
+	/**  Adds a Provider of the kind chosen first. */
+	aiProviderCreate: (request: NewProvider) => typedError<ProviderView, AppError>(__TAURI_INVOKE("ai_provider_create", { request })),
+	/**  Changes a Provider's name and address. A new address clears its key. */
+	aiProviderUpdate: (id: string, request: ProviderUpdate) => typedError<ProviderView, AppError>(__TAURI_INVOKE("ai_provider_update", { id, request })),
+	/**  Deletes a Provider and its key at once; the screen asks the person first. */
+	aiProviderDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_provider_delete", { id })),
+	/**  Saves a Provider's key. Write-only: the key is never returned or logged. */
+	aiProviderKeySet: (id: string, key: string) => typedError<ProviderView, AppError>(__TAURI_INVOKE("ai_provider_key_set", { id, key })),
+	/**  Removes a Provider's key. */
+	aiProviderKeyClear: (id: string) => typedError<ProviderView, AppError>(__TAURI_INVOKE("ai_provider_key_clear", { id })),
+	/**  Asks a Provider whether it answers, and how many Models it offers. */
+	aiProviderTest: (id: string) => typedError<ConnectionTest, AppError>(__TAURI_INVOKE("ai_provider_test", { id })),
+	/**
+	 *  The Model ids a Provider offers that contain `query`. Asked only when the person browses or
+	 *  searches; the screen keeps the answer for the session.
+	 */
+	aiModelsSearch: (providerId: string, query: string) => typedError<ModelList, AppError>(__TAURI_INVOKE("ai_models_search", { providerId, query })),
+	/**  The Models this device has used most recently and most often. */
+	aiModelsUsage: () => typedError<ModelUsage, AppError>(__TAURI_INVOKE("ai_models_usage")),
 	/**  Deletes an Entry. It can be restored at any time. */
 	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
 	/**  Brings a deleted Entry back to its place on its Page. */
@@ -712,6 +733,18 @@ export type ConflictView = {
 	pieces: ClashPiece[],
 };
 
+/**  A Provider's connection test: what the Provider said, in one sentence the person can read. */
+export type ConnectionTest = {
+	/**  Whether the Provider answered. */
+	connected: boolean,
+	/**  How many Models it offers, when it answered. */
+	models: number,
+	/**  Why it did not answer, when it did not. */
+	failure: Failure | null,
+	/**  What to show the person. */
+	message: string,
+};
+
 /**  A Conversation and its entries. */
 export type ConversationView = {
 	/**  The Conversation's id. */
@@ -722,6 +755,10 @@ export type ConversationView = {
 	created_at: number | null,
 	/**  When it last changed, in milliseconds. */
 	updated_at: number | null,
+	/**  The Provider the Conversation last used, by name, as text (other devices may not have it). */
+	provider_name: string | null,
+	/**  The Model the Conversation last used. */
+	model: string | null,
 	/**  Whether a Run is answering in it on this device right now. */
 	running: boolean,
 	/**  Every entry, oldest first. */
@@ -912,7 +949,9 @@ export type EntryKind =
 /**  The person's question. */
 "user" | 
 /**  The Model's answer. */
-"assistant";
+"assistant" | 
+/**  The Provider and Model the following questions use. */
+"model_change";
 
 /**  What an entry holds. The tag is the entry's kind. */
 export type EntryPayload = 
@@ -932,6 +971,12 @@ stop: StopReason;
 /**  The name of the Provider that answered. */
 provider: string; 
 /**  The Model id that answered. */
+model: string } | 
+/**  The Conversation switched to another Provider and Model. Carries no text for the Model. */
+{ kind: "model_change"; 
+/**  The name of the Provider chosen. */
+provider_name: string; 
+/**  The Model id chosen. */
 model: string };
 
 /**  One entry of a Conversation's tree. */
@@ -1103,6 +1148,15 @@ export type JournalEntryDeletedEvent = {
  */
 export type JsonValue = null | boolean | number | null | string | JsonValue[] | { [key in string]: JsonValue };
 
+/**  What the screen may learn about a key: only whether one is needed and whether one is saved. */
+export type KeyState = 
+/**  The kind does not use a key. */
+"not_needed" | 
+/**  A key is saved on this device. */
+"saved" | 
+/**  The kind needs a key and none is saved. */
+"missing";
+
 /**  An address that was remembered for the device. */
 export type KnownAddress = {
 	/**  `ip:port`. */
@@ -1221,6 +1275,38 @@ export type LookAndFeel = {
 	phone_tabs_edited?: boolean | null,
 };
 
+/**  The Models a Provider offers that match a search, or why it could not be asked. */
+export type ModelList = {
+	/**  The matching Model ids, in the Provider's order. */
+	models: string[],
+	/**  Why the Provider could not be asked, if it could not. */
+	failure: Failure | null,
+	/**  What to show the person when there is a failure. */
+	message: string,
+};
+
+/**  The Models a device has used: the most recent first, and the most used first. */
+export type ModelUsage = {
+	/**  The latest uses, newest first. */
+	recent: ModelUse[],
+	/**  The most used Models, most uses first. */
+	most_used: ModelUse[],
+};
+
+/**  One Model a person has used, with the Provider it went through. */
+export type ModelUse = {
+	/**  The Provider's id. */
+	provider_id: string,
+	/**  The Provider's name, as it is now. */
+	provider_name: string,
+	/**  The Model id. */
+	model: string,
+	/**  How many questions were asked with it on this device. */
+	uses: number,
+	/**  When it was last used, in milliseconds. */
+	last_used_at: number | null,
+};
+
 /**  One Module's data version on the device. */
 export type ModuleVersion = {
 	/**  The Module's id, e.g. `todo`. */
@@ -1241,6 +1327,16 @@ export type NewEntry = {
 	written_offset_min: number,
 	/**  The composer session writing this Entry; groups its autosaves in the change log. */
 	session_id: string,
+};
+
+/**  The fields a new Provider is made from. */
+export type NewProvider = {
+	/**  Its kind, chosen first. */
+	kind: ProviderKind,
+	/**  The name the person gave it. */
+	name: string,
+	/**  Its address. */
+	address: string,
 };
 
 /**  What a captured Task carries besides its title, List and When. */
@@ -1595,6 +1691,40 @@ export type Progress = {
 };
 
 /**
+ *  The kinds of Provider. Each has fixed behaviour; the rest of the kinds arrive with their own
+ *  adapters.
+ */
+export type ProviderKind = 
+/**  The Local AI Wrapper: on this machine or the person's network, no key. */
+"wrapper";
+
+/**  The fields a Provider's details may change to. */
+export type ProviderUpdate = {
+	/**  The new name. */
+	name: string,
+	/**  The new address. */
+	address: string,
+};
+
+/**  A Provider as the screen sees it. Never carries the key. */
+export type ProviderView = {
+	/**  The Provider's id. */
+	id: string,
+	/**  The name the person gave it. */
+	name: string,
+	/**  Its kind. */
+	kind: ProviderKind,
+	/**  Its address. */
+	address: string,
+	/**  Whether a key is needed and saved. */
+	key_state: KeyState,
+	/**  When it was added, in milliseconds. */
+	created_at: number | null,
+	/**  When it last changed, in milliseconds. */
+	updated_at: number | null,
+};
+
+/**
  *  Everything Quick edit can change, as the Task should be afterwards. What the box left alone is
  *  passed back as it was.
  */
@@ -1730,12 +1860,16 @@ kind: Failure;
 /**  What the person should read. */
 message: string };
 
-/**  A question, and the Conversation it goes into (none starts a new one). */
+/**  A question, the Provider and Model it goes to, and the Conversation (none starts one). */
 export type RunRequest = {
 	/**  The Conversation to continue, or none to start one. */
 	conversation_id: string | null,
 	/**  The question as typed. */
 	text: string,
+	/**  The Provider that answers. */
+	provider_id: string,
+	/**  The Model id it is asked for. */
+	model: string,
 	/**  The person's calendar, for the Model. */
 	local: LocalContext,
 };

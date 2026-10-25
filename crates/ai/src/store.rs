@@ -12,6 +12,7 @@ fn kind_text(kind: EntryKind) -> &'static str {
     match kind {
         EntryKind::User => "user",
         EntryKind::Assistant => "assistant",
+        EntryKind::ModelChange => "model_change",
     }
 }
 
@@ -37,16 +38,56 @@ pub fn touch_conversation(conn: &Connection, id: &str, now: i64) -> AppResult<()
     Ok(())
 }
 
-/// The title, created and updated times of a live Conversation, if there is one.
-pub fn live_conversation(conn: &Connection, id: &str) -> AppResult<Option<(String, i64, i64)>> {
+/// The header of a live Conversation.
+pub struct Header {
+    /// Its title.
+    pub title: String,
+    /// When it was started, in milliseconds.
+    pub created_at: i64,
+    /// When it last changed, in milliseconds.
+    pub updated_at: i64,
+    /// The Provider id it last used.
+    pub provider_id: Option<String>,
+    /// The Provider name it last used.
+    pub provider_name: Option<String>,
+    /// The Model id it last used.
+    pub model: Option<String>,
+}
+
+/// The header of a live Conversation, if there is one.
+pub fn live_conversation(conn: &Connection, id: &str) -> AppResult<Option<Header>> {
     Ok(conn
         .query_row(
-            "SELECT title, created_at, updated_at FROM ai_conversations
-             WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT title, created_at, updated_at, provider_id, provider_name, model
+             FROM ai_conversations WHERE id = ?1 AND deleted_at IS NULL",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| {
+                Ok(Header {
+                    title: r.get(0)?,
+                    created_at: r.get(1)?,
+                    updated_at: r.get(2)?,
+                    provider_id: r.get(3)?,
+                    provider_name: r.get(4)?,
+                    model: r.get(5)?,
+                })
+            },
         )
         .optional()?)
+}
+
+/// Records the Provider and Model a Conversation now uses.
+pub fn set_model(
+    conn: &Connection,
+    id: &str,
+    provider_id: &str,
+    provider_name: &str,
+    model: &str,
+) -> AppResult<()> {
+    conn.execute(
+        "UPDATE ai_conversations SET provider_id = ?2, provider_name = ?3, model = ?4 WHERE id = ?1",
+        rusqlite::params![id, provider_id, provider_name, model],
+    )?;
+    Ok(())
 }
 
 /// The newest entry of a Conversation: what a new entry follows.
@@ -101,10 +142,11 @@ pub fn branch_messages(conn: &Connection, leaf: &str) -> AppResult<Vec<Message>>
     while let Some(id) = current {
         let (parent, payload): (Option<String>, String) =
             stmt.query_row([&id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-        messages.push(match parse(&payload)? {
-            EntryPayload::User { text } => Message::User(text),
-            EntryPayload::Assistant { text, .. } => Message::Assistant(text),
-        });
+        match parse(&payload)? {
+            EntryPayload::User { text } => messages.push(Message::User(text)),
+            EntryPayload::Assistant { text, .. } => messages.push(Message::Assistant(text)),
+            EntryPayload::ModelChange { .. } => {}
+        }
         current = parent;
     }
     messages.reverse();

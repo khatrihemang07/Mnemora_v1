@@ -42,6 +42,8 @@ jni.workspace = true
 [dev-dependencies]
 # `test` adds the mock runtime used by the command-layer test harness; tests only, never in a release build.
 tauri = { workspace = true, features = ["test"] }
+# The in-process fake Wrapper the AI command tests point a real adapter at.
+mnemora-providers = { workspace = true, features = ["testing"] }
 tempfile.workspace = true
 # Pairing tests run real loopback sockets on a Tokio runtime.
 tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }

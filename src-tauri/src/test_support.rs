@@ -148,6 +148,7 @@ impl TestApp {
         let sync = SyncRuntime::new();
         let changes = sync.local_changes();
         db::on_change_log_write(&conn, move || changes.notify_one()).unwrap();
+        let ai = crate::ai::AiRuntime::new(paths.config_dir.join(crate::AI_KEYS_DIR));
         let state = AppState {
             env: Environment::Production,
             db: Mutex::new(conn),
@@ -161,7 +162,7 @@ impl TestApp {
             live_network: false,
             modules,
             bus: bus.clone(),
-            ai: crate::ai::AiRuntime::default(),
+            ai,
         };
         // As at app start: services run only if the device file says Sync is on.
         state.sync.reconcile(state.device.get().sync.enabled);
@@ -271,7 +272,7 @@ impl TestApp {
         self.app.state::<AppState>().sync.probe()
     }
 
-    fn state(&self) -> tauri::State<'_, AppState> {
+    pub(crate) fn state(&self) -> tauri::State<'_, AppState> {
         self.app.state::<AppState>()
     }
 

@@ -2299,11 +2299,13 @@ version = "0.1.6"
 dependencies = [
  "mnemora-core",
  "mnemora-harness",
+ "mnemora-providers",
  "rusqlite",
  "rusqlite_migration",
  "serde",
  "serde_json",
  "specta",
+ "tempfile",
  "thiserror 2.0.21",
  "tracing",
 ]
@@ -2317,6 +2319,7 @@ dependencies = [
  "mnemora-core",
  "mnemora-harness",
  "mnemora-journal",
+ "mnemora-providers",
  "mnemora-sync",
  "mnemora-todo",
  "serde",
