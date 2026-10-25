@@ -1,0 +1,25 @@
+[package]
+name = "mnemora-providers"
+description = "Wire adapters for the AI Module's Providers: OpenAI-compatible requests, replies and errors over HTTP(S). Real Providers are never called from tests (ADR 0018)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# The in-process fake HTTP server the command-layer tests point a real adapter at.
+testing = []
+
+[dependencies]
+mnemora-harness.workspace = true
+serde_json.workspace = true
+ureq.workspace = true
+
+[dev-dependencies]
+rcgen.workspace = true
+rustls.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

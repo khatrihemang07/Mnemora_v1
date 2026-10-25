@@ -1,0 +1,1 @@
+{"id":"chatcmpl-2","object":"chat.completion","model":"claude-haiku","choices":[{"index":0,"message":{"role":"assistant","content":"The answer was cut"},"finish_reason":"length"}],"usage":{"prompt_tokens":2,"completion_tokens":4096,"total_tokens":4098}}

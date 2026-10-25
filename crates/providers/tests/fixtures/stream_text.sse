@@ -1,0 +1,10 @@
+data: {"id":"chatcmpl-0813","object":"chat.completion.chunk","model":"claude-haiku","choices":[{"index":0,"delta":{"content":"1","role":"assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-0813","object":"chat.completion.chunk","model":"claude-haiku","choices":[{"index":0,"delta":{"content":"\n2\n3"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-0813","object":"chat.completion.chunk","model":"claude-haiku","choices":[],"usage":{"prompt_tokens":2,"completion_tokens":7,"total_tokens":9}}
+
+data: {"id":"chatcmpl-0813","object":"chat.completion.chunk","model":"claude-haiku","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
