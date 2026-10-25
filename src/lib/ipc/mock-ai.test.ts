@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AiRunEvent, RunRequest } from './bindings';
 import rules from './fixtures/ai-title.json';
-import { createAiMock, titleOf } from './mock-ai';
+import addresses from './fixtures/ai-addresses.json';
+import failures from './fixtures/ai-failures.json';
+import { addressProblem, createAiMock, failureSentence, titleOf } from './mock-ai';
 
 /** What a rejected command threw (the mock throws its error object, as the IPC rejects). */
 function caught(fn: () => unknown): unknown {
@@ -13,10 +15,12 @@ function caught(fn: () => unknown): unknown {
   throw new Error('the call did not throw');
 }
 
-function request(text: string, conversationId: string | null = null): RunRequest {
+function request(text: string, conversationId: string | null = null, providerId = 'provider-x'): RunRequest {
   return {
     conversation_id: conversationId,
     text,
+    provider_id: providerId,
+    model: 'claude-haiku',
     local: {
       today: '2026-10-25',
       weekday: 'Sunday',
@@ -35,11 +39,17 @@ describe('titleOf (the same cases as the Rust tests)', () => {
 describe('the AI browser mock', () => {
   let heard: AiRunEvent[];
   let mock: ReturnType<typeof createAiMock>;
+  let providerId: string;
 
   beforeEach(() => {
     vi.useFakeTimers();
     heard = [];
     mock = createAiMock({ emit: (event) => heard.push(event) });
+    providerId = (
+      mock.handle('ai_provider_create', {
+        request: { kind: 'wrapper', name: 'Scripted', address: 'http://127.0.0.1:9/v1' },
+      }) as { id: string }
+    ).id;
   });
 
   afterEach(() => {
@@ -47,7 +57,7 @@ describe('the AI browser mock', () => {
   });
 
   function ask(text: string, conversationId: string | null = null) {
-    return mock.handle('ai_run_start', { request: request(text, conversationId) }) as {
+    return mock.handle('ai_run_start', { request: request(text, conversationId, providerId) }) as {
       run_id: string;
       conversation_id: string;
     };
@@ -73,12 +83,17 @@ describe('the AI browser mock', () => {
     };
     expect(conversation.title).toBe('What did I write about the move?');
     expect(conversation.running).toBe(false);
-    expect(conversation.entries.map((e) => e.payload.kind)).toEqual(['user', 'assistant']);
+    // The Model is recorded first, as its own entry, then the question and the answer.
+    expect(conversation.entries.map((e) => e.payload.kind)).toEqual([
+      'model_change',
+      'user',
+      'assistant',
+    ]);
     const streamed = heard
       .filter((e) => e.event.type === 'textDelta')
       .map((e) => (e.event.type === 'textDelta' ? e.event.text : ''))
       .join('');
-    expect(conversation.entries[1]?.payload.text).toBe(streamed);
+    expect(conversation.entries[2]?.payload.text).toBe(streamed);
   });
 
   it('refuses a blank question and a question into a Conversation that is answering', () => {
@@ -104,6 +119,17 @@ describe('the AI browser mock', () => {
     const conversation = mock.handle('ai_conversation_get', { id: started.conversation_id }) as {
       entries: unknown[];
     };
-    expect(conversation.entries).toHaveLength(1);
+    expect(conversation.entries).toHaveLength(2);
+  });
+});
+
+describe('the shared rules fixtures (the same cases as the Rust tests)', () => {
+  it.each(addresses)('checks the address $address', ({ address, ok, reason }) => {
+    const expected = ok ? null : reason === 'plain_http' ? 'plain_http' : reason === 'scheme' ? 'scheme' : 'invalid';
+    expect(addressProblem(address)).toBe(expected);
+  });
+
+  it.each(failures)('words the $kind failure as the fixture does', ({ kind, message }) => {
+    expect(failureSentence(kind as never)).toBe(message);
   });
 });

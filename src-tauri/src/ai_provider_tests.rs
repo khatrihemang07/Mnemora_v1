@@ -428,3 +428,35 @@ fn the_android_backup_rules_exclude_the_key_folder_of_both_environments() {
     assert!(manifest.contains("android:fullBackupContent=\"@xml/backup_rules\""));
     assert!(manifest.contains("android:dataExtractionRules=\"@xml/data_extraction_rules\""));
 }
+
+#[test]
+fn failure_wording_matches_the_shared_fixture_the_browser_mock_uses() {
+    use mnemora_harness::Failure;
+    const FIXTURE: &str = include_str!("../../src/lib/ipc/fixtures/ai-failures.json");
+    let cases: Vec<Value> = serde_json::from_str(FIXTURE).unwrap();
+    for case in cases {
+        let kind: Failure = serde_json::from_value(case["kind"].clone()).unwrap();
+        assert_eq!(failure_message(kind), case["message"].as_str().unwrap());
+    }
+}
+
+#[test]
+fn address_rules_match_the_shared_fixture_the_browser_mock_uses() {
+    use mnemora_providers::address::{AddressError, check};
+    const FIXTURE: &str = include_str!("../../src/lib/ipc/fixtures/ai-addresses.json");
+    let cases: Vec<Value> = serde_json::from_str(FIXTURE).unwrap();
+    for case in cases {
+        let address = case["address"].as_str().unwrap();
+        let result = check(address);
+        if case["ok"].as_bool().unwrap() {
+            assert!(result.is_ok(), "{address} should be accepted");
+        } else {
+            let expected = match case["reason"].as_str().unwrap() {
+                "plain_http" => AddressError::PlainHttpNotAllowed,
+                "scheme" => AddressError::UnsupportedScheme,
+                _ => AddressError::Invalid,
+            };
+            assert_eq!(result, Err(expected), "{address}");
+        }
+    }
+}
