@@ -755,6 +755,8 @@ export type ConversationView = {
 	created_at: number | null,
 	/**  When it last changed, in milliseconds. */
 	updated_at: number | null,
+	/**  The Provider the Conversation last used, on this device. */
+	provider_id: string | null,
 	/**  The Provider the Conversation last used, by name, as text (other devices may not have it). */
 	provider_name: string | null,
 	/**  The Model the Conversation last used. */

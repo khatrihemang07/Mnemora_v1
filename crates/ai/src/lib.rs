@@ -76,6 +76,7 @@ pub fn conversation(conn: &Connection, id: &str, running: bool) -> AppResult<Con
         title: header.title,
         created_at: header.created_at,
         updated_at: header.updated_at,
+        provider_id: header.provider_id,
         provider_name: header.provider_name,
         model: header.model,
         running,

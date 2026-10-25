@@ -246,6 +246,7 @@ fn a_question_goes_through_the_wrapper_and_the_answer_is_saved_with_its_provider
         })
     );
     assert_eq!(conversation["provider_name"], "Mac");
+    assert_eq!(conversation["provider_id"], id);
 }
 
 #[test]

@@ -87,6 +87,8 @@ pub struct ConversationView {
     /// When it last changed, in milliseconds.
     #[specta(type = f64)]
     pub updated_at: i64,
+    /// The Provider the Conversation last used, on this device.
+    pub provider_id: Option<String>,
     /// The Provider the Conversation last used, by name, as text (other devices may not have it).
     pub provider_name: Option<String>,
     /// The Model the Conversation last used.
