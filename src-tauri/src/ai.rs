@@ -12,6 +12,7 @@ use mnemora_ai::{
 };
 use mnemora_core::db::physical_now;
 use mnemora_core::error::{AppError, ErrorCode};
+use mnemora_core::tool::{Tool, is_enabled};
 use mnemora_core::util::new_id;
 use mnemora_harness::Provider;
 use serde::{Deserialize, Serialize};
@@ -151,6 +152,7 @@ pub fn ai_run_start<R: Runtime>(
         conversation_id: conversation_id.clone(),
     };
     let provider = state.ai.provider_for(&prepared);
+    let (tools, off) = offered_tools(&state)?;
     let ask = mnemora_ai::Ask {
         conversation_id,
         continues,
@@ -169,6 +171,8 @@ pub fn ai_run_start<R: Runtime>(
             provider.as_ref(),
             &ask,
             &question_id,
+            tools,
+            &off,
             &mut |event| {
                 // Released before the end is announced, so a read that follows it finds the
                 // Conversation idle.
@@ -293,6 +297,45 @@ pub async fn ai_models_search(
 #[specta::specta]
 pub fn ai_models_usage(state: State<'_, AppState>) -> Result<ModelUsage, AppError> {
     mnemora_ai::model_usage(&lock(&state.db))
+}
+
+/// The Tools of every Module that is turned on, and the names of the Modules that are off and
+/// would have offered some, for the prompt. Read from the Preferences that list the exceptions.
+/// The Tools a Run may call, and the names of the Modules that are off and would have offered some.
+type Offer = (Vec<Box<dyn Tool>>, Vec<String>);
+
+fn offered_tools(state: &AppState) -> Result<Offer, AppError> {
+    let conn = lock(&state.db);
+    let disabled = preference_list(&conn, "disabled_modules")?;
+    let opted_in = preference_list(&conn, "enabled_optional_modules")?;
+    let mut tools = Vec::new();
+    let mut off = Vec::new();
+    for module in state.modules.iter() {
+        if is_enabled(module.as_ref(), &disabled, &opted_in) {
+            tools.extend(module.tools());
+        } else if !module.tools().is_empty() {
+            off.push(capitalised(module.id()));
+        }
+    }
+    Ok((tools, off))
+}
+
+fn preference_list(
+    conn: &mnemora_core::db::Connection,
+    key: &str,
+) -> Result<Vec<String>, AppError> {
+    let stored = mnemora_core::settings::stored(conn, "core", key)?;
+    Ok(stored
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default())
+}
+
+/// A Module's name as the person reads it: "journal" becomes "Journal".
+fn capitalised(id: &str) -> String {
+    let mut chars = id.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 fn join_error(error: tauri::Error) -> AppError {

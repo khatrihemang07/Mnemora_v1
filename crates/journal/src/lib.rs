@@ -12,6 +12,7 @@ mod service;
 mod snippet;
 mod sync;
 mod today;
+mod tools;
 mod upgrade;
 
 use mnemora_core::db::migrate::MigrationReport;
@@ -20,6 +21,7 @@ use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
 use mnemora_core::syncable::{Applied, Holdings, RemoteChange, SyncEntity};
+use mnemora_core::tool::Tool;
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -83,6 +85,10 @@ impl Module for JournalModule {
 
     fn backfill_log(&self, conn: &Connection, _settings: &SettingsRegistry) -> AppResult<()> {
         sync::backfill(conn)
+    }
+
+    fn tools(&self) -> Vec<Box<dyn Tool>> {
+        tools::all()
     }
 
     fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {

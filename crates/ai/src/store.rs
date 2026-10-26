@@ -2,7 +2,7 @@
 //! only moves rows.
 
 use mnemora_core::error::AppResult;
-use mnemora_harness::Message;
+use mnemora_harness::{Call, Message};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::error::AiError;
@@ -12,6 +12,8 @@ fn kind_text(kind: EntryKind) -> &'static str {
     match kind {
         EntryKind::User => "user",
         EntryKind::Assistant => "assistant",
+        EntryKind::ToolResult => "tool_result",
+        EntryKind::Correction => "correction",
         EntryKind::ModelChange => "model_change",
     }
 }
@@ -134,7 +136,8 @@ pub struct NewRow<'a> {
     pub now: i64,
 }
 
-/// The branch that ends at `leaf`, as messages for the Model, oldest first.
+/// The branch that ends at `leaf`, as messages for the Model, oldest first: the question, each
+/// Step's text and the Tool calls it made, the results read back, and any corrections.
 pub fn branch_messages(conn: &Connection, leaf: &str) -> AppResult<Vec<Message>> {
     let mut stmt = conn.prepare("SELECT parent_id, payload FROM ai_entries WHERE id = ?1")?;
     let mut messages = Vec::new();
@@ -144,7 +147,30 @@ pub fn branch_messages(conn: &Connection, leaf: &str) -> AppResult<Vec<Message>>
             stmt.query_row([&id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         match parse(&payload)? {
             EntryPayload::User { text } => messages.push(Message::User(text)),
-            EntryPayload::Assistant { text, .. } => messages.push(Message::Assistant(text)),
+            EntryPayload::Assistant { text, calls, .. } => messages.push(Message::Assistant {
+                text,
+                calls: calls
+                    .into_iter()
+                    .map(|c| Call {
+                        id: c.id,
+                        name: c.name,
+                        arguments: c.arguments,
+                    })
+                    .collect(),
+            }),
+            EntryPayload::ToolResult {
+                call_id,
+                name,
+                result,
+                is_error,
+                ..
+            } => messages.push(Message::Tool {
+                call_id,
+                name,
+                text: result,
+                is_error,
+            }),
+            EntryPayload::Correction { text } => messages.push(Message::Correction(text)),
             EntryPayload::ModelChange { .. } => {}
         }
         current = parent;

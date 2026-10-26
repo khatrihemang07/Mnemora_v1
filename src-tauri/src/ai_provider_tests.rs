@@ -243,6 +243,9 @@ fn a_question_goes_through_the_wrapper_and_the_answer_is_saved_with_its_provider
             "stop": "stop",
             "provider": "Mac",
             "model": "claude-haiku",
+            "calls": [],
+            "sources": [],
+            "budget_note": null,
         })
     );
     assert_eq!(conversation["provider_name"], "Mac");

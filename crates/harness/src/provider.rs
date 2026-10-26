@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
-use crate::message::Message;
+use crate::message::{Call, Message};
 
 /// Why a Step failed. The AI Module words it for the person; the raw text is never kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -46,15 +46,28 @@ pub enum StopReason {
     Length,
 }
 
+/// A Tool as the Model is offered it: its name, what it is for and its JSON Schema as text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolDef {
+    /// The name the Model calls it by.
+    pub name: String,
+    /// What it is for.
+    pub about: String,
+    /// The JSON Schema of its arguments, as JSON text.
+    pub schema: String,
+}
+
 /// Everything one Step sends.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     /// The system prompt for this Run.
     pub system: String,
-    /// The branch, oldest first, ending with the question being answered.
+    /// The branch, oldest first, ending with the message the Model answers.
     pub messages: Vec<Message>,
     /// The Model id the Provider sends.
     pub model: String,
+    /// The Tools the Model may call this Step. Empty when none are offered.
+    pub tools: Vec<ToolDef>,
 }
 
 /// One event of a Step's stream.
@@ -62,6 +75,8 @@ pub struct Request {
 pub enum StreamEvent {
     /// A piece of the reply's text, in order.
     TextDelta(String),
+    /// A complete Tool call the Model made.
+    Call(Call),
     /// The reply is complete.
     Done(StopReason),
     /// The Step failed; nothing after this is expected.
@@ -76,6 +91,11 @@ pub trait Provider: Send + Sync {
 
     /// The Model id this Provider sends.
     fn model(&self) -> &str;
+
+    /// Whether this Provider can make native Tool calls. One that cannot is sent no Tools.
+    fn native_tools(&self) -> bool {
+        false
+    }
 
     /// Streams one Step, calling `emit` for each event in order. Must end with `Done` or `Failed`.
     fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent));

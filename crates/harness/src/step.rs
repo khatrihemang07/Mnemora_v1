@@ -1,5 +1,6 @@
 //! One Step of the loop: ask the Provider once and collect the reply.
 
+use crate::message::Call;
 use crate::provider::{Failure, Provider, Request, StopReason, StreamEvent};
 
 /// A finished Step's reply.
@@ -9,6 +10,8 @@ pub struct Answer {
     pub text: String,
     /// How the reply ended.
     pub stop: StopReason,
+    /// The Tool calls the reply made, in order.
+    pub calls: Vec<Call>,
 }
 
 /// Runs one Step. `on_text` sees each delta as it arrives. A stream that ends without `Done` is a
@@ -19,17 +22,19 @@ pub fn run_step(
     on_text: &mut dyn FnMut(&str),
 ) -> Result<Answer, Failure> {
     let mut text = String::new();
+    let mut calls = Vec::new();
     let mut end: Option<Result<StopReason, Failure>> = None;
     provider.stream(request, &mut |event| match event {
         StreamEvent::TextDelta(delta) => {
             on_text(&delta);
             text.push_str(&delta);
         }
+        StreamEvent::Call(call) => calls.push(call),
         StreamEvent::Done(stop) => end = Some(Ok(stop)),
         StreamEvent::Failed(failure) => end = Some(Err(failure)),
     });
     match end {
-        Some(Ok(stop)) => Ok(Answer { text, stop }),
+        Some(Ok(stop)) => Ok(Answer { text, stop, calls }),
         Some(Err(failure)) => Err(failure),
         None => Err(Failure::BadResponse),
     }
@@ -45,6 +50,7 @@ mod tests {
             system: String::new(),
             messages: Vec::new(),
             model: "m".into(),
+            tools: Vec::new(),
         }
     }
 
@@ -55,6 +61,7 @@ mod tests {
         let answer = run_step(&provider, &request(), &mut |d| seen.push(d.to_owned())).unwrap();
         assert_eq!(answer.text, "Hello");
         assert_eq!(answer.stop, StopReason::Stop);
+        assert!(answer.calls.is_empty());
         assert_eq!(seen, ["Hel", "lo"]);
     }
 

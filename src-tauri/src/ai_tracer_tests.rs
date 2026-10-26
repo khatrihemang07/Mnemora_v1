@@ -170,6 +170,9 @@ fn a_question_is_answered_and_saved_as_one_conversation_with_its_events_in_order
             "stop": "stop",
             "provider": "Scripted",
             "model": "scripted-model",
+            "calls": [],
+            "sources": [],
+            "budget_note": null,
         })
     );
 }
@@ -223,7 +226,10 @@ fn a_second_question_continues_the_branch_and_the_model_is_sent_all_of_it() {
         provider.requests()[1].messages,
         vec![
             Message::User("First question".into()),
-            Message::Assistant("First answer".into()),
+            Message::Assistant {
+                text: "First answer".into(),
+                calls: Vec::new(),
+            },
             Message::User("Second question".into()),
         ]
     );

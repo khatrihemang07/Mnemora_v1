@@ -19,4 +19,5 @@ pub mod search;
 pub mod settings;
 pub mod syncable;
 pub mod text;
+pub mod tool;
 pub mod util;

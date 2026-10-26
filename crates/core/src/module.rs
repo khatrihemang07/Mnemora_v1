@@ -9,6 +9,7 @@ use crate::device::DeviceStore;
 use crate::error::{AppError, AppResult, ErrorCode};
 use crate::settings::{SettingsRegistry, validate};
 use crate::syncable::{Applied, Holdings, RemoteChange, Settled, SyncEntity};
+use crate::tool::Tool;
 
 /// A self-contained area of the app. Registered in one place by the app crate.
 /// Modules never import each other; they share only core contracts and the event bus.
@@ -63,6 +64,12 @@ pub trait Module: Send + Sync {
     /// things are not counted. Nothing by default.
     fn holdings(&self, _conn: &Connection) -> AppResult<Holdings> {
         Ok(Holdings::default())
+    }
+
+    /// Read-only Tools this Module offers the AI, so it can answer from the Module's data. None by
+    /// default; the AI Module offers them only while this Module is on (ADR 0002 amendment).
+    fn tools(&self) -> Vec<Box<dyn Tool>> {
+        Vec::new()
     }
 
     /// Adds to the change log whatever this Module holds that the log does not (fully) describe:

@@ -84,6 +84,13 @@ fn step_box(line: &str) -> Option<(usize, bool)> {
     }
 }
 
+/// The Checklist items of a Task's notes in order, each as its line and whether it is ticked.
+pub(crate) fn checklist_items(notes: &str) -> Vec<(String, bool)> {
+    checklist_lines(notes)
+        .filter_map(|(line, item)| item.map(|(_, ticked)| (line.trim().to_owned(), ticked)))
+        .collect()
+}
+
 /// How many Checklist items are still unticked.
 pub fn open_steps(notes: &str) -> usize {
     checklist_lines(notes)

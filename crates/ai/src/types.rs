@@ -23,10 +23,39 @@ pub struct LocalContext {
 pub enum EntryKind {
     /// The person's question.
     User,
-    /// The Model's answer.
+    /// The Model's answer, or a Step that asked for Tools.
     Assistant,
+    /// What a Tool returned for one call.
+    ToolResult,
+    /// A correction turn the Model was sent.
+    Correction,
     /// The Provider and Model the following questions use.
     ModelChange,
+}
+
+/// A Tool call the Model made, as it was sent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct CallRecord {
+    /// The call's id.
+    pub id: String,
+    /// The Tool's name.
+    pub name: String,
+    /// The arguments, as the Model sent them (JSON text).
+    pub arguments: String,
+}
+
+/// An Entry or Task an answer cites, with what the person needs to find it again. Kept in the
+/// answer so another device can show it without the Tool results.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Source {
+    /// The Entry's or Task's id.
+    pub id: String,
+    /// The Module it belongs to, `journal` or `todo`.
+    pub module: String,
+    /// A label the person recognises it by.
+    pub title: String,
+    /// Its date (a Page date or a due date), when it has one.
+    pub date: Option<String>,
 }
 
 /// What an entry holds. The tag is the entry's kind.
@@ -38,10 +67,10 @@ pub enum EntryPayload {
         /// The question as typed.
         text: String,
     },
-    /// The Model's answer, with the Provider and Model that gave it, kept as text so another
-    /// device can show them.
+    /// The Model's reply in one Step: the answer when it asks for no Tools, or the Tools it asked
+    /// for. The answer carries the Provider and Model as text, so another device can show them.
     Assistant {
-        /// The answer's Markdown.
+        /// The reply's Markdown.
         text: String,
         /// How the reply ended.
         stop: StopReason,
@@ -49,6 +78,34 @@ pub enum EntryPayload {
         provider: String,
         /// The Model id that answered.
         model: String,
+        /// The Tool calls this Step made, in order.
+        calls: Vec<CallRecord>,
+        /// The Entries and Tasks the answer cites, which a Tool returned in this Run.
+        sources: Vec<Source>,
+        /// Why the answer may be incomplete, when the Run ran out of steps.
+        budget_note: Option<String>,
+    },
+    /// What a Tool returned for one call.
+    ToolResult {
+        /// The call it answers.
+        call_id: String,
+        /// The Tool's name.
+        name: String,
+        /// The arguments the Model sent (JSON text).
+        arguments: String,
+        /// What the Model read back, labelled with its observation id.
+        result: String,
+        /// Whether the call was refused.
+        is_error: bool,
+        /// The observation id this result is known by in the Run ("e1").
+        observation_id: String,
+        /// The plain line the activity shows for it.
+        summary: String,
+    },
+    /// A correction the Model was sent, such as a citation no Tool returned.
+    Correction {
+        /// What the Model was told.
+        text: String,
     },
     /// The Conversation switched to another Provider and Model. Carries no text for the Model.
     ModelChange {
@@ -133,6 +190,24 @@ pub enum RunEvent {
     TextDelta {
         /// The text, as streamed.
         text: String,
+    },
+    /// A Tool call is running.
+    ToolStarted {
+        /// The call's id.
+        call_id: String,
+        /// The Tool's name.
+        name: String,
+    },
+    /// A Tool call finished.
+    ToolEnded {
+        /// The call's id.
+        call_id: String,
+        /// The Tool's name.
+        name: String,
+        /// The plain line the activity shows.
+        summary: String,
+        /// Whether the call was refused.
+        is_error: bool,
     },
     /// The Run is over.
     RunEnded {
