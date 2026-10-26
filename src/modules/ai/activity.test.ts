@@ -43,6 +43,8 @@ describe('stepsByQuestion', () => {
     parent_id: null,
     created_at: 0,
     payload,
+    sibling_count: 1,
+    sibling_index: 1,
   });
 
   it('gives each question the tool results saved after it and before the next question', () => {

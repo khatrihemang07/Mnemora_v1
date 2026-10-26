@@ -1,7 +1,12 @@
 import type { Failure } from '../../lib/ipc/bindings';
 
 /** What a failure banner can offer besides reading the sentence. */
-export type BannerAction = 'retry' | 'change_model' | 'change_provider' | 'new_conversation';
+export type BannerAction =
+  | 'retry'
+  | 'change_model'
+  | 'change_provider'
+  | 'branch_from_earlier'
+  | 'new_conversation';
 
 /** How a failed Run is shown in the answer's place. */
 export interface FailureBanner {
@@ -22,7 +27,11 @@ export function failureBanner(kind: Failure): FailureBanner {
     case 'offline':
       return { tone: 'warning', title: 'No connection', actions: ['retry'] };
     case 'too_long':
-      return { tone: 'warning', title: 'Conversation is full', actions: ['new_conversation'] };
+      return {
+        tone: 'warning',
+        title: 'Conversation is full',
+        actions: ['branch_from_earlier', 'new_conversation'],
+      };
     case 'no_provider':
       return { tone: 'danger', title: 'No Provider yet', actions: ['change_provider'] };
     case 'unreachable':

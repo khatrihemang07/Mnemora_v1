@@ -1,19 +1,29 @@
 <!-- The Conversation as a document: each question a serif heading, each answer serif Markdown, with
      the Provider and Model that answered under it. A Run in progress or failed sits under the
-     question it answers, so a failed Run's banner stays in order with the rest of the thread. -->
+     question it answers, so a failed Run's banner stays in order with the rest of the thread.
+     A question with siblings shows its pager; Edit is a pencil on the heading (on a phone, a long
+     press on the question shows it). Try again sits under each answer. -->
 <script lang="ts">
   import Bookmark from '~icons/lucide/bookmark';
+  import ChevronLeft from '~icons/lucide/chevron-left';
+  import ChevronRight from '~icons/lucide/chevron-right';
   import Copy from '~icons/lucide/copy';
+  import Pencil from '~icons/lucide/pencil';
+  import RotateCcw from '~icons/lucide/rotate-ccw';
+  import { onDestroy } from 'svelte';
   import type { EntryView } from '../../lib/ipc/bindings';
+  import { viewport } from '../../lib/viewport.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import MarkdownView from '../../lib/ui/MarkdownView.svelte';
   import { notifyError, notify } from '../../lib/ui/toast';
   import Activity from './Activity.svelte';
-  import { questionsByAnswer } from './answers';
+  import { questionOfAnswers } from './answers';
+  import { pagerLabel, pagerStep } from './branch-pager';
   import { copyAsMarkdown } from './copy';
   import { stepsByQuestion, withoutCitations } from './activity';
   import type { BannerAction } from './failure-banner';
   import FailureBanner from './FailureBanner.svelte';
+  import { LONG_PRESS_MS, type Point, pressMovedTooFar } from './long-press';
   import { type LiveRun, runsUnder, unplacedRuns } from './run-state';
   import { saveQuestion } from './saved-actions';
   import Sources from './Sources.svelte';
@@ -28,11 +38,20 @@
     handlersFor: (run: LiveRun) => Partial<Record<BannerAction, () => void>>;
     /** The Conversation the entries belong to (copies name it). */
     conversationId: string;
+    /** A Run is answering or a Branch is being changed: the Branch tools are off. */
+    busy: boolean;
+    /** Edit: the question's entry id and text, for the question box. */
+    onedit: (question: { id: string; text: string }) => void;
+    /** Try again on an answer: its question's entry id. */
+    onretry: (questionId: string) => void;
+    /** The pager: the question shown beside `questionId` moves to `position` (from 1). */
+    onshow: (questionId: string, position: number) => void;
   }
 
-  let { entries, answering, failed, handlersFor, conversationId }: Props = $props();
-  /** The question each answer sits under, for "Save this question". */
-  const questions = $derived(questionsByAnswer(entries));
+  let { entries, answering, failed, handlersFor, conversationId, busy, onedit, onretry, onshow }: Props =
+    $props();
+  /** Each answer's question (id and text): for Save this question and Try again. */
+  const questions = $derived(questionOfAnswers(entries));
 
   async function saveAsQuestion(text: string) {
     try {
@@ -42,6 +61,36 @@
       notifyError(failure instanceof Error ? failure.message : 'Could not save the question.');
     }
   }
+
+  /** The question whose Edit control a long press revealed on a phone, until the page changes. */
+  let revealed = $state<string | null>(null);
+  let hold: { id: string; start: Point; timer: ReturnType<typeof setTimeout> } | null = null;
+
+  function cancelHold() {
+    if (hold) clearTimeout(hold.timer);
+    hold = null;
+  }
+
+  /** A phone's long press on a question reveals its Edit control. Desktop shows it on hover instead. */
+  function startHold(id: string, event: PointerEvent) {
+    if (!viewport.isPhone) return;
+    cancelHold();
+    const start = { x: event.clientX, y: event.clientY };
+    hold = {
+      id,
+      start,
+      timer: setTimeout(() => {
+        revealed = id;
+        hold = null;
+      }, LONG_PRESS_MS),
+    };
+  }
+
+  function moveHold(event: PointerEvent) {
+    if (hold && pressMovedTooFar(hold.start, { x: event.clientX, y: event.clientY })) cancelHold();
+  }
+
+  onDestroy(cancelHold);
 
   const entryIds = $derived(new Set(entries.map((entry) => entry.id)));
   /** The Tool steps each saved question made, shown once its Run has no live copy. */
@@ -73,8 +122,65 @@
   {#each entries as entry (entry.id)}
     {#if entry.payload.kind === 'user'}
       {@const liveHere = runsUnder(answering, entry.id).length + runsUnder(failed, entry.id).length}
+      {@const previous = pagerStep(entry.sibling_index, entry.sibling_count, 'previous')}
+      {@const next = pagerStep(entry.sibling_index, entry.sibling_count, 'next')}
+      {@const questionText = entry.payload.text}
       <div class="flex flex-col gap-4">
-        <h2 class="font-display text-xl whitespace-pre-wrap text-ink">{entry.payload.text}</h2>
+        <div
+          role="group"
+          aria-label="Question"
+          class="group flex flex-wrap items-center gap-x-2 gap-y-1"
+          onpointerdown={(event) => startHold(entry.id, event)}
+          onpointermove={moveHold}
+          onpointerup={cancelHold}
+          onpointercancel={cancelHold}
+          onpointerleave={cancelHold}
+        >
+          <h2 class="min-w-0 font-display text-xl break-words whitespace-pre-wrap text-ink">{entry.payload.text}</h2>
+          <div class="flex items-center gap-0.5">
+            {#if entry.sibling_count > 1}
+              <IconButton
+                icon={ChevronLeft}
+                label="Previous branch"
+                size="sm"
+                variant="ghost"
+                disabled={busy || previous === null}
+                onclick={() => {
+                  if (previous !== null) onshow(entry.id, previous);
+                }}
+              />
+              <span class="px-0.5 text-xs whitespace-nowrap text-muted">
+                {pagerLabel(entry.sibling_index, entry.sibling_count)}
+              </span>
+              <IconButton
+                icon={ChevronRight}
+                label="Next branch"
+                size="sm"
+                variant="ghost"
+                disabled={busy || next === null}
+                onclick={() => {
+                  if (next !== null) onshow(entry.id, next);
+                }}
+              />
+            {/if}
+            {#if !viewport.isPhone || revealed === entry.id}
+              <span
+                class="flex transition-opacity duration-(--dur) ease-out {viewport.isPhone
+                  ? ''
+                  : 'opacity-0 group-focus-within:opacity-100 desktop:group-hover:opacity-100'}"
+              >
+                <IconButton
+                  icon={Pencil}
+                  label="Edit question"
+                  size="sm"
+                  variant="ghost"
+                  disabled={busy}
+                  onclick={() => onedit({ id: entry.id, text: questionText })}
+                />
+              </span>
+            {/if}
+          </div>
+        </div>
         {#if liveHere === 0 && (steps.get(entry.id)?.length ?? 0) > 0}
           <Activity steps={steps.get(entry.id) ?? []} running={false} />
         {/if}
@@ -93,8 +199,9 @@
         <div class="flex flex-wrap items-center gap-1">
           <IconButton icon={Copy} label="Copy answer as Markdown" size="sm" variant="ghost" onclick={() => void copyAsMarkdown(conversationId, entry.id)} />
           {#if questions.get(entry.id)}
-            {@const question = questions.get(entry.id) ?? ''}
-            <IconButton icon={Bookmark} label="Save this question" size="sm" variant="ghost" onclick={() => void saveAsQuestion(question)} />
+            {@const question = questions.get(entry.id)}
+            <IconButton icon={Bookmark} label="Save this question" size="sm" variant="ghost" onclick={() => void saveAsQuestion(question?.text ?? '')} />
+            <IconButton icon={RotateCcw} label="Try again" size="sm" variant="ghost" disabled={busy} onclick={() => onretry(question?.id ?? '')} />
           {/if}
           <span class="ml-1 text-xs text-muted">{entry.payload.model} · {entry.payload.provider}</span>
         </div>

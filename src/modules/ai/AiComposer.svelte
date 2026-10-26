@@ -14,6 +14,7 @@
   import Square from '~icons/lucide/square';
   import type { SavedQuestion } from '../../lib/ipc/bindings';
   import AutoTextarea from '../../lib/ui/AutoTextarea.svelte';
+  import Button from '../../lib/ui/Button.svelte';
   import Chip from '../../lib/ui/Chip.svelte';
   import IconButton from '../../lib/ui/IconButton.svelte';
   import type { MenuItem } from '../../lib/ui/Menu.svelte';
@@ -42,6 +43,10 @@
     onrunsaved: (text: string) => void;
     /** Opens the AI Settings where Saved questions are kept. */
     onmanage: () => void;
+    /** Edit: the question being changed. Its text fills the box, and sending makes an edited sibling. */
+    editing: { text: string } | null;
+    /** Cancel Edit: the box goes back to asking a new question. */
+    oncancelEdit: () => void;
     onpick: (choice: Choice) => void;
     /** Whether the Model picker is open; the page can open it (e.g. from a failure banner). */
     pickerOpen?: boolean;
@@ -59,11 +64,17 @@
     onstop,
     onrunsaved,
     onmanage,
+    editing,
+    oncancelEdit,
     onpick,
     pickerOpen = $bindable(false),
     ref = $bindable(null),
   }: Props = $props();
   let draft = $state('');
+  /** Each Edit fills the box with its question's text (a new object each time, so the effect runs). */
+  $effect(() => {
+    if (editing) draft = editing.text;
+  });
   let pill = $state<HTMLButtonElement | null>(null);
   let plus = $state<HTMLButtonElement | null>(null);
   let plusOpen = $state(false);
@@ -88,6 +99,11 @@
     },
   ]);
 
+  function cancelEdit() {
+    draft = '';
+    oncancelEdit();
+  }
+
   async function send() {
     if (!canSend) return;
     const text = draft;
@@ -101,6 +117,12 @@
   }
 </script>
 
+{#if editing}
+  <div class="mx-auto flex w-full max-w-[42.5rem] items-center justify-between gap-2 px-2 pb-1">
+    <span class="text-xs text-muted">Editing a question</span>
+    <Button size="sm" variant="ghost" onclick={cancelEdit}>Cancel</Button>
+  </div>
+{/if}
 <form
   class="mx-auto flex w-full max-w-[42.5rem] flex-col gap-2 rounded-md border border-line bg-surface p-2
     transition-colors duration-(--dur) ease-out focus-within:border-accent"
