@@ -223,7 +223,7 @@
         {#if addressIssue}
           <span class="text-xs text-danger" role="alert">{addressIssue}</span>
         {:else}
-          <span class="text-xs text-faint">
+          <span class="text-xs text-muted">
             Plain http works only on this machine, your local network and Tailscale. Other addresses use https.
           </span>
         {/if}
@@ -257,7 +257,7 @@
           {#if keyIssue}
             <span class="text-xs text-danger" role="alert">{keyIssue}</span>
           {:else}
-            <span class="text-xs text-faint">Write-only: hidden as you type and never shown again. Stored on this device only.</span>
+            <span class="text-xs text-muted">Write-only: hidden as you type and never shown again. Stored on this device only.</span>
           {/if}
         </div>
       {:else if current}

@@ -125,6 +125,24 @@ describe('the AI browser mock', () => {
     };
     expect(conversation.entries).toHaveLength(2);
   });
+
+  it.each([
+    ['walk', ['01990000-0000-7000-8000-0000000000e1', '01990000-0000-7000-8000-0000000000e2']],
+    ['overdue', ['01990000-0000-7000-8000-0000000000a1', '01990000-0000-7000-8000-0000000000a2']],
+    ['week', ['01990000-0000-7000-8000-0000000000e1', '01990000-0000-7000-8000-0000000000e2']],
+  ])('cites the items its Tools returned for a "%s" question', (word, ids) => {
+    const started = ask(`What about my ${word}?`);
+    vi.runAllTimers();
+
+    const conversation = mock.handle('ai_conversation_get', { id: started.conversation_id }) as {
+      entries: { payload: { kind: string; text?: string; sources?: { id: string }[] } }[];
+    };
+    const answer = conversation.entries.at(-1)?.payload;
+    expect(answer?.kind).toBe('assistant');
+    expect(answer?.sources?.map((source) => source.id)).toEqual(ids);
+    expect(answer?.text).not.toContain('Nothing in your Journal or Tasks');
+    expect(answer?.text).toContain(ids[0]);
+  });
 });
 
 describe('the shared rules fixtures (the same cases as the Rust tests)', () => {

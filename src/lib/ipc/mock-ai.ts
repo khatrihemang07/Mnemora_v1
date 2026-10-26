@@ -402,7 +402,9 @@ export function createAiMock({
     model: string,
   ) {
     const queue: Array<() => void> = [];
-    const cited: Source[] = [];
+    // Every item a Tool returns in this Run, once each: the answer cites these and nothing else.
+    const returned = plan.flat().flatMap((call) => call.returns);
+    const sources = [...new Map(returned.map((source) => [source.id, source])).values()];
     let parent = questionId;
     plan.forEach((step, stepIndex) => {
       if (stepIndex > 0) queue.push(() => say({ type: 'stepStarted' }));
@@ -451,7 +453,6 @@ export function createAiMock({
             parent,
           );
           parent = entry.id;
-          cited.push(...call.returns);
           say({ type: 'entrySaved', entry_id: entry.id, kind: 'tool_result' });
           say({
             type: 'toolEnded',
@@ -464,7 +465,6 @@ export function createAiMock({
       });
     });
     queue.push(() => say({ type: 'stepStarted' }));
-    const sources = [...new Map(cited.map((source) => [source.id, source])).values()];
     const answer = sources.length
       ? `I found ${sources.length} matching ${sources.length === 1 ? 'item' : 'items'}: ${sources
           .map((source) => `${source.title} [${source.id}]`)

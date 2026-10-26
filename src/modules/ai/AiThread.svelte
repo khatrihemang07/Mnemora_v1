@@ -67,10 +67,10 @@
         {#if entry.payload.budget_note}
           <p class="text-sm text-muted">{entry.payload.budget_note}</p>
         {/if}
-        <p class="text-xs text-faint">{entry.payload.model} · {entry.payload.provider}</p>
+        <p class="text-xs text-muted">{entry.payload.model} · {entry.payload.provider}</p>
       </div>
     {:else if entry.payload.kind === 'model_change'}
-      <p class="text-xs text-faint">Using {entry.payload.model} · {entry.payload.provider_name}</p>
+      <p class="text-xs text-muted">Using {entry.payload.model} · {entry.payload.provider_name}</p>
     {/if}
   {/each}
   {@render runsView(loose.answering, loose.failed)}

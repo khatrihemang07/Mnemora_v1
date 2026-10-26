@@ -33,7 +33,7 @@
 
 {#if sources.length > 0}
   <div class="flex flex-col gap-2">
-    <p class="text-xs font-semibold tracking-wide text-faint uppercase">Sources</p>
+    <p class="text-xs font-semibold tracking-wide text-muted uppercase">Sources</p>
     <div class="flex flex-wrap gap-2">
       {#each sources as source (source.id)}
         <Chip
@@ -51,11 +51,21 @@
 
 {#snippet preview(source: Source)}
   <div class="flex flex-col gap-3 p-4">
-    <div>
+    <div class="flex flex-col gap-1">
+      <p class="flex items-center gap-2 text-sm font-semibold text-ink">
+        {#if source.module === 'todo'}
+          <SquareCheck class="size-4 shrink-0" style="color: var(--hue-todo)" />
+        {:else}
+          <BookOpen class="size-4 shrink-0" style="color: var(--hue-journal)" />
+        {/if}
+        <span class="truncate">{source.title || sourceModule(source)}</span>
+      </p>
       <p class="text-xs text-muted">{sourceModule(source)}{source.date ? ` · ${source.date}` : ''}</p>
-      <p class="font-display text-base text-ink">{source.title || sourceModule(source)}</p>
     </div>
-    <Button href={openHref(source)} variant="secondary" size="sm">Open in its Module</Button>
+    <div class="flex flex-wrap gap-2">
+      <Button href={openHref(source)} variant="secondary" size="sm">Open in its Module</Button>
+      <Button variant="ghost" size="sm" onclick={close}>Close</Button>
+    </div>
   </div>
 {/snippet}
 
