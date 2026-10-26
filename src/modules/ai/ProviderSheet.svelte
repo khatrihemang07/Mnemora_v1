@@ -77,7 +77,6 @@
   let confirmDelete = $state(false);
   /** The step-two form: focus moves here when the kind is picked, so it is never lost to the body. */
   let form = $state<HTMLFormElement | null>(null);
-  /** Whether the address on the form is not the one saved: Test connection tests the saved one only. */
   /** The Delete button that asked for the confirmation: focus returns to it if the sheet is still open. */
   let deleteOpener = $state<HTMLElement | null>(null);
 
@@ -106,6 +105,7 @@
 
   const title = $derived(current ? 'Provider' : 'Add a Provider');
   const effectiveAddress = $derived(addressFor(info, address));
+  /** Whether the address on the form is not the one saved: Test connection tests the saved one only. */
   const addressChanged = $derived(current !== null && effectiveAddress !== current.address);
   // A connection result describes the saved Provider as it was: a changed address or key clears it.
   $effect(() => {

@@ -98,11 +98,19 @@ describe('token contrast (WCAG)', () => {
   );
 
   it.each(THEMES)(
-    'muted text reads at 4.5:1 or more on the popover and sheet surface (%s)',
+    'muted text, which placeholders use, reads at 4.5:1 or more on every surface (%s)',
     (theme) => {
-      expect(contrast(theme, 'muted', 'pop')).toBeGreaterThanOrEqual(4.5);
+      for (const surface of ['pop', 'surface', 'surface-2', 'bg']) {
+        expect(contrast(theme, 'muted', surface), `on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
     },
   );
+
+  it.each(THEMES)('the warning icon reads at 3:1 or more on every surface (%s)', (theme) => {
+    for (const surface of ['pop', 'surface', 'surface-2', 'bg']) {
+      expect(contrast(theme, 'warning-ink', surface), `on ${surface}`).toBeGreaterThanOrEqual(3);
+    }
+  });
 
   it.each(['light', 'dark', 'oled'] as const)(
     'the Switch off track is at least 3:1 on every surface (%s)',

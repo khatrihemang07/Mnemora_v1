@@ -153,6 +153,8 @@ fn stopping_in_the_middle_of_the_calls_keeps_the_ones_not_run_as_stopped_results
     let started = ask(&app, None, "What did I write?").unwrap();
     let conversation = started["conversation_id"].as_str().unwrap().to_owned();
     until_label(&events, "stepStarted");
+    // Stop only once the first call has streamed in: the Step keeps the calls it has at Stop.
+    std::thread::sleep(Duration::from_millis(100));
     stop(&app, &conversation);
     release.send(()).unwrap();
     let run = until_end(&events);
