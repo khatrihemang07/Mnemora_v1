@@ -26,7 +26,14 @@ describe('applyRunEvent', () => {
       step({ type: 'textDelta', text: 'lo' }),
     ]);
     expect(answeringIn(mid, 'c1')).toEqual([
-      { runId: 'r1', conversationId: 'c1', questionId: null, text: 'Hello', failure: null },
+      {
+        runId: 'r1',
+        conversationId: 'c1',
+        questionId: null,
+        text: 'Hello',
+        steps: [],
+        failure: null,
+      },
     ]);
 
     const done = applyRunEvent(mid, step({ type: 'runEnded', outcome: { type: 'answered' } }));
@@ -47,6 +54,7 @@ describe('applyRunEvent', () => {
         runId: 'r1',
         conversationId: 'c1',
         questionId: null,
+        steps: [],
         text: '',
         failure: { kind: 'unreachable', message: 'Could not reach it.' },
       },
@@ -90,6 +98,41 @@ describe('applyRunEvent', () => {
     ]);
     expect(runsUnder(failedIn(runs, 'c1'), 'q1').map((r) => r.runId)).toEqual(['r1']);
     expect(runsUnder(failedIn(runs, 'c1'), 'q2')).toEqual([]);
+  });
+});
+
+describe('applyRunEvent with Tool steps', () => {
+  it('lists each Tool call while it runs and gives it its summary when it ends', () => {
+    const runs = [
+      step({ type: 'runStarted' }),
+      step({ type: 'stepStarted' }),
+      step({ type: 'toolStarted', call_id: 'c1', name: 'journal_list' }),
+      step({
+        type: 'toolEnded',
+        call_id: 'c1',
+        name: 'journal_list',
+        summary: 'Listed entries, 7 entries',
+        is_error: false,
+      }),
+      step({ type: 'stepStarted' }),
+      step({ type: 'toolStarted', call_id: 'c2', name: 'todo_list' }),
+    ].reduce<LiveRuns>(applyRunEvent, {});
+    expect(answeringIn(runs, 'c1')[0]?.steps).toEqual([
+      { callId: 'c1', name: 'journal_list', summary: 'Listed entries, 7 entries', isError: false },
+      { callId: 'c2', name: 'todo_list', summary: null, isError: false },
+    ]);
+  });
+
+  it('clears the text of a Step when the next Step starts, keeping the steps', () => {
+    const runs = [
+      step({ type: 'runStarted' }),
+      step({ type: 'textDelta', text: 'Let me look.' }),
+      step({ type: 'toolStarted', call_id: 'c1', name: 'journal_list' }),
+      step({ type: 'stepStarted' }),
+    ].reduce<LiveRuns>(applyRunEvent, {});
+    const run = answeringIn(runs, 'c1')[0];
+    expect(run?.text).toBe('');
+    expect(run?.steps).toHaveLength(1);
   });
 });
 
