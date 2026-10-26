@@ -89,12 +89,13 @@
   {@const row = rowOf(model)}
   <button
     type="button"
-    class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+    class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover disabled:cursor-not-allowed disabled:hover:bg-transparent"
     disabled={row.disabled}
     onclick={() => pick(model)}
   >
     <span class="min-w-0">
-      <span class="block truncate">{model}</span>
+      <!-- The dimming sits on the name only: the reason beside it must keep text-muted's contrast. -->
+      <span class="block truncate {row.disabled ? 'opacity-60' : ''}">{model}</span>
       {#if row.reason}<span class="block text-xs text-muted">{row.reason}</span>{/if}
     </span>
     {#if isCurrent(model)}<Check class="size-4 shrink-0" />{/if}
@@ -108,6 +109,7 @@
         label="Provider"
         value={providerId}
         options={providerOptions}
+        twoRows
         onchange={(value) => {
           providerId = value;
           browsing = false;

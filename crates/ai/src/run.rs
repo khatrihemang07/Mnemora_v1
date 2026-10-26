@@ -55,7 +55,7 @@ pub fn failure_message(failure: Failure) -> &'static str {
             "Could not reach the AI service. Check its address and that it is running."
         }
         Failure::Timeout => "The AI service took too long to answer.",
-        Failure::KeyRejected => "The AI service rejected the key. Check it in AI settings.",
+        Failure::KeyRejected => "The AI service rejected the key. Check the key and try again.",
         Failure::RateLimited => "The AI service is busy or has reached a limit. Try again soon.",
         Failure::ModelUnavailable => "The chosen Model is not available from this service.",
         Failure::ModelCannotUseTools => "The chosen Model cannot use Tools. Pick another Model.",

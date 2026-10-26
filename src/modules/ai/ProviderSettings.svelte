@@ -58,7 +58,7 @@
             {#if note}<span class="block truncate text-xs text-muted">{note}</span>{/if}
           </span>
           {#if chip}
-            <span class="inline-flex shrink-0 items-center rounded-full border border-line-strong bg-surface-2 px-2.5 py-1 text-xs font-semibold whitespace-nowrap {chip.tone === 'warn' ? 'text-warning' : 'text-success'}">
+            <span class="inline-flex shrink-0 items-center rounded-full border border-line-strong bg-surface-2 px-2.5 py-1 text-xs font-semibold whitespace-nowrap {chip.tone === 'warn' ? 'text-warning-ink' : 'text-success'}">
               {chip.label}
             </span>
           {/if}

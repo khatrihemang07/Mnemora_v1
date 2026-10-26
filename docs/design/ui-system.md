@@ -105,7 +105,7 @@ All three durations become 0ms under the Reduce motion Setting or the OS prefere
 | `Tabs` | Underline tabs for the pages of one Module (Sync: Devices, Conflicts, Activity), built on Bits UI Tabs. `fill` makes the panel take the height left, for a page that scrolls inside itself (Activity's `VirtualList`). A tab is a route, so Back returns to the previous tab. The active tab has a 2px underline in the Module `hue`; tokens, focus ring and motion as the other Components. Use `SegmentedControl` for choosing a value and `Tabs` for choosing a page |
 | `ProgressBar` | A hairline bar for how far something has got: `value` (0 to 1), `label`, `visible` (fades in and out; the caller decides when, Sync shows it only if a sync outlasts 600ms), `hue` (a Module hue token name). The fill moves with `--dur`, so it jumps under Reduce motion |
 | `CodeInput` | The boxes for a Pairing code: one box per digit with auto-advance, paste filling every box, Backspace stepping back and a numeric keyboard on a phone. `value` and `oncomplete`, `length` (8), `disabled`, `invalid` |
-| `SegmentedControl` | Pick one of 2-5 short options. Equal-width segments; a 2x2 grid below 360px for four or more |
+| `SegmentedControl` | Pick one of 2-5 short options. Equal-width segments; a 2x2 grid below 360px for four or more. `twoRows` makes that 2x2 at any width (the Model picker's Provider switch, in its popover) |
 | `Switch` | An on/off Setting |
 | `Select` | Pick one of many options |
 | `Input` | A single-line text field. `bare` drops the frame (border, fill, height, focus ring) for a field inside a frame that shows focus itself, such as Todo's inline "New task" field; `bind:ref` focuses it |

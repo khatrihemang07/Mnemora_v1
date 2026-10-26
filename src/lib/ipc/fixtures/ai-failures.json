@@ -7,7 +7,7 @@
   { "kind": "timeout", "message": "The AI service took too long to answer." },
   {
     "kind": "key_rejected",
-    "message": "The AI service rejected the key. Check it in AI settings."
+    "message": "The AI service rejected the key. Check the key and try again."
   },
   {
     "kind": "rate_limited",

@@ -193,6 +193,16 @@
     }
   }
 
+  /**
+   * Enter in the key field saves the key alone. The field sits inside the form, so without this the
+   * form's submit runs and saves the Provider's details and closes the sheet with no feedback.
+   */
+  function onKeyEnter(event: KeyboardEvent) {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    void saveKey();
+  }
+
   function startReplace() {
     replacing = true;
     keyDraft = '';
@@ -316,6 +326,7 @@
                 bind:value={keyDraft}
                 label="API key"
                 placeholder={replacing ? 'Paste a new key' : 'Paste the key'}
+                onkeydown={onKeyEnter}
                 autocomplete="off"
                 spellcheck={false}
                 invalid={keyIssue !== null}

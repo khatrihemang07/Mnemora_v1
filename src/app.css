@@ -38,7 +38,9 @@
   --color-on-danger: var(--on-danger);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-warning-ink: var(--warning-ink);
   --color-on-warning: var(--on-warning);
+  --color-switch-off: var(--switch-off);
   --color-scrim: var(--scrim);
   --color-hue-home: var(--hue-home);
   --color-hue-journal: var(--hue-journal);

@@ -16,6 +16,8 @@
   --muted: oklch(50% 0.016 60);
   --faint: oklch(62% 0.014 65);
   --line: oklch(91% 0.011 70);
+  /* The Switch's off track: as --line in light; dark themes need a track that reads on the surfaces. */
+  --switch-off: var(--line);
   --line-strong: oklch(
     83% 0.013 70
   ); /* outlines that must read on their own: chips, floating panels */
@@ -33,6 +35,8 @@
   --success: oklch(50% 0.13 160);
   --warning: oklch(72% 0.15 65);
   --on-warning: oklch(20% 0.03 60);
+  /* Warning as text on a light surface (a chip): the fill colour is too pale to read there. */
+  --warning-ink: oklch(46% 0.1 65);
 
   /* C1 Jewel: Module hues */
   --hue-home: oklch(72% 0.15 65);
@@ -104,6 +108,7 @@
   --faint: oklch(58% 0.012 65);
   --line: oklch(26% 0.01 60);
   --line-strong: oklch(38% 0.012 60);
+  --switch-off: oklch(55% 0.012 60);
   --hover: oklch(100% 0 0 / 0.06);
   --active: oklch(100% 0 0 / 0.1);
 
@@ -115,6 +120,7 @@
   --danger-soft: oklch(70% 0.17 27 / 0.14);
   --on-danger: oklch(18% 0.03 27);
   --success: oklch(75% 0.14 160);
+  --warning-ink: oklch(72% 0.15 65);
   --day-today: oklch(80% 0.17 158);
   --day-yesterday: oklch(74% 0.2 328);
 
