@@ -8,6 +8,8 @@
   padding (a list of rows) and `bare` none at all (a picker that lays itself out edge to edge);
   `autofocus={false}` leaves focus where it was on open (a panel opened by hover). `guardEscape`
   returns true when Esc belongs to something inside (a floating panel), so the popover stays open.
+  `capHeight` stops the panel at the room the window leaves beside its anchor (Bits' available
+  height); the body then has to be a `min-h-0` flex child with `overflow-y-auto`, so its header stays put.
 -->
 <script lang="ts">
   import { Popover } from 'bits-ui';
@@ -26,6 +28,7 @@
     restoreFocus?: () => void;
     flush?: boolean;
     bare?: boolean;
+    capHeight?: boolean;
     autofocus?: boolean;
     guardEscape?: () => boolean;
     children: Snippet;
@@ -40,6 +43,7 @@
     restoreFocus,
     flush = false,
     bare = false,
+    capHeight = false,
     autofocus = true,
     guardEscape,
     children,
@@ -85,7 +89,7 @@
       onInteractOutside={(e) => {
         if (e.target instanceof Node && anchor?.contains(e.target)) e.preventDefault();
       }}
-      class="z-50 rounded-md bg-pop {bare ? 'overflow-hidden p-0' : flush ? 'p-1.25' : 'p-3'} text-sm leading-normal shadow-pop outline-none"
+      class="z-50 rounded-md bg-pop {bare ? 'overflow-hidden p-0' : flush ? 'p-1.25' : 'p-3'} {capHeight ? 'flex max-h-(--bits-popover-content-available-height) flex-col' : ''} text-sm leading-normal shadow-pop outline-none"
     >
       {@render children()}
     </Popover.Content>

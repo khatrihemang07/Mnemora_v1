@@ -1,6 +1,7 @@
 <!-- Adds or edits one Saved question. Saving closes it; a failure stays on screen with its reason. -->
 <script lang="ts">
   import type { SavedQuestion } from '../../lib/ipc/bindings';
+  import { IpcError } from '../../lib/ipc/unwrap';
   import Button from '../../lib/ui/Button.svelte';
   import Dialog from '../../lib/ui/Dialog.svelte';
   import Input from '../../lib/ui/Input.svelte';
@@ -27,6 +28,8 @@
     }
   });
 
+  // Rust checks the text (blank, over 500 characters) and its reason shows under the field; only
+  // a failure that is not about the text gets a toast.
   async function save() {
     busy = true;
     error = null;
@@ -36,7 +39,7 @@
       onclose();
     } catch (failure) {
       error = failure instanceof Error ? failure.message : 'Could not save the question.';
-      notifyError(error);
+      if (!(failure instanceof IpcError && failure.code === 'validation')) notifyError(error);
     } finally {
       busy = false;
     }
@@ -53,15 +56,15 @@
     class="flex flex-col gap-2"
     onsubmit={(event) => {
       event.preventDefault();
-      if (text.trim() !== '') void save();
+      void save();
     }}
   >
     <Input bind:value={text} label="Question" placeholder="Summarise my last 7 days" invalid={error !== null} />
-    {#if error}<p class="text-sm text-danger">{error}</p>{/if}
+    {#if error}<p role="alert" class="text-sm text-danger">{error}</p>{/if}
   </form>
   {#snippet actions()}
     <Button variant="secondary" onclick={onclose}>Cancel</Button>
-    <Button variant="primary" disabled={text.trim() === '' || busy} onclick={() => void save()}>
+    <Button variant="primary" disabled={busy} onclick={() => void save()}>
       {saved ? 'Save' : 'Save a question'}
     </Button>
   {/snippet}

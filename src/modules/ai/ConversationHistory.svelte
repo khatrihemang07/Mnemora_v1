@@ -34,7 +34,7 @@
 </script>
 
 <div class="flex min-h-0 flex-col gap-3">
-  <Input bind:value={query} bind:ref={searchRef} label="Search Conversations" placeholder="Search Conversations…" />
+  <Input class="shrink-0" bind:value={query} bind:ref={searchRef} label="Search Conversations" placeholder="Search Conversations…" />
 
   <div class="flex min-h-0 flex-col gap-3 overflow-y-auto">
     {#if history.isError}

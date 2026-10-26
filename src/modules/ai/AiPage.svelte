@@ -16,7 +16,7 @@
   import Trash2 from '~icons/lucide/trash-2';
   import { commands, events } from '../../lib/ipc/bindings';
   import { queryClient } from '../../lib/ipc/query-client';
-  import { unwrap } from '../../lib/ipc/unwrap';
+  import { IpcError, unwrap } from '../../lib/ipc/unwrap';
   import { urlParam } from '../../lib/router/url-param';
   import { readCore } from '../../lib/settings/core';
   import { appInfoQuery, settingsQuery } from '../../lib/settings/queries';
@@ -78,6 +78,7 @@
   let menuOpen = $state(false);
   let renameOpen = $state(false);
   let renameText = $state('');
+  let renameProblem = $state<string | null>(null);
 
   const choice = $derived(
     effectiveChoice({
@@ -239,6 +240,7 @@
 
   function openRename() {
     renameText = conversation.data?.title ?? '';
+    renameProblem = null;
     renameOpen = true;
   }
 
@@ -251,7 +253,8 @@
       void queryClient.invalidateQueries({ queryKey: aiKeys.conversation(id) });
       void queryClient.invalidateQueries({ queryKey: aiKeys.history });
     } catch (error) {
-      notifyError(error instanceof Error ? error.message : 'Could not rename the Conversation.');
+      if (error instanceof IpcError && error.code === 'validation') renameProblem = error.message;
+      else notifyError(error instanceof Error ? error.message : 'Could not rename the Conversation.');
     }
   }
 
@@ -289,6 +292,7 @@
             icon: Trash2,
             danger: true,
             separatorBefore: true,
+            disabled: busy,
             onselect: () => void removeConversation(),
           },
         ]
@@ -375,8 +379,8 @@
     </div>
   </Sheet>
 {:else}
-  <Popover open={historyOpen} anchor={historyButton} label="Conversations" align="end" side="bottom">
-    <div class="w-[22rem] p-2">
+  <Popover open={historyOpen} anchor={historyButton} label="Conversations" align="end" side="bottom" capHeight>
+    <div class="flex min-h-0 w-[22rem] flex-col p-2">
       <ConversationHistory currentId={conversationId} onpick={openConversation} />
     </div>
   </Popover>
@@ -389,14 +393,15 @@
     class="flex flex-col gap-2"
     onsubmit={(event) => {
       event.preventDefault();
-      if (renameText.trim() !== '') void rename();
+      void rename();
     }}
   >
-    <Input bind:value={renameText} label="Title" />
+    <Input bind:value={renameText} label="Title" invalid={renameProblem !== null} />
+    {#if renameProblem}<p role="alert" class="text-sm text-danger">{renameProblem}</p>{/if}
   </form>
   {#snippet actions()}
     <Button variant="secondary" onclick={() => (renameOpen = false)}>Cancel</Button>
-    <Button variant="primary" disabled={renameText.trim() === ''} onclick={() => void rename()}>Save</Button>
+    <Button variant="primary" onclick={() => void rename()}>Save</Button>
   {/snippet}
 </Dialog>
 
