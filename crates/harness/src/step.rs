@@ -125,7 +125,12 @@ mod tests {
 
     fn blocking() -> (Sender<()>, Arc<dyn Provider>) {
         let (release, gate) = channel();
-        (release, Arc::new(Blocking { gate: Mutex::new(gate) }))
+        (
+            release,
+            Arc::new(Blocking {
+                gate: Mutex::new(gate),
+            }),
+        )
     }
 
     fn request() -> Request {
@@ -141,7 +146,13 @@ mod tests {
     fn a_correction_and_sources_are_carried_with_the_step() {
         let provider =
             ScriptedProvider::new("Scripted", "m", vec![Reply::corrected("Send one object.")]);
-        let answer = run_step(Arc::new(provider), request(), Arc::new(|| false), &mut |_| {}).unwrap();
+        let answer = run_step(
+            Arc::new(provider),
+            request(),
+            Arc::new(|| false),
+            &mut |_| {},
+        )
+        .unwrap();
         assert_eq!(answer.correction.as_deref(), Some("Send one object."));
         assert!(answer.sources.is_empty());
     }
@@ -150,9 +161,14 @@ mod tests {
     fn collects_the_deltas_in_order_into_the_answer() {
         let provider = ScriptedProvider::new("Scripted", "m", vec![Reply::text(&["Hel", "lo"])]);
         let mut seen = Vec::new();
-        let answer = run_step(Arc::new(provider), request(), Arc::new(|| false), &mut |d| {
-            seen.push(d.to_owned());
-        })
+        let answer = run_step(
+            Arc::new(provider),
+            request(),
+            Arc::new(|| false),
+            &mut |d| {
+                seen.push(d.to_owned());
+            },
+        )
         .unwrap();
         assert_eq!(answer.text, "Hello");
         assert_eq!(answer.stop, StopReason::Stop);
@@ -167,7 +183,12 @@ mod tests {
             "m",
             vec![Reply::text_then_fail(&["half"], Failure::Timeout)],
         );
-        let result = run_step(Arc::new(provider), request(), Arc::new(|| false), &mut |_| {});
+        let result = run_step(
+            Arc::new(provider),
+            request(),
+            Arc::new(|| false),
+            &mut |_| {},
+        );
         assert_eq!(result, Err(Failure::Timeout));
     }
 
@@ -190,10 +211,16 @@ mod tests {
             &mut |d| seen.push(d.to_owned()),
         )
         .unwrap();
-        assert!(started.elapsed() < Duration::from_secs(2), "the Step ends at once");
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the Step ends at once"
+        );
         assert_eq!(answer.stop, StopReason::Aborted);
         assert!(answer.text.is_empty());
-        assert!(seen.is_empty(), "nothing the late reply says reaches the caller");
+        assert!(
+            seen.is_empty(),
+            "nothing the late reply says reaches the caller"
+        );
         // The blocked provider answers now; its reply goes nowhere.
         let _ = release.send(());
     }
@@ -202,7 +229,12 @@ mod tests {
     fn a_stream_that_ends_without_done_is_a_bad_response() {
         let provider =
             ScriptedProvider::new("Scripted", "m", vec![Reply::text_without_end(&["partial"])]);
-        let result = run_step(Arc::new(provider), request(), Arc::new(|| false), &mut |_| {});
+        let result = run_step(
+            Arc::new(provider),
+            request(),
+            Arc::new(|| false),
+            &mut |_| {},
+        );
         assert_eq!(result, Err(Failure::BadResponse));
     }
 }
