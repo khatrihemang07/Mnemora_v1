@@ -842,6 +842,97 @@ fn random_action(
     }
 }
 
+/// What the AI actions of a run have made, by id: the Conversations and Saved questions any device
+/// may act on.
+#[derive(Default)]
+struct AiIds {
+    conversations: Vec<String>,
+    saved: Vec<String>,
+}
+
+/// One AI action on device `d`: a question asked in a new Conversation or in one the device shows,
+/// a Conversation renamed, deleted or restored, a Saved question made, changed, deleted, restored
+/// or moved. A refused action (a Conversation another device deleted, say) changes nothing, and
+/// the devices must still agree.
+fn random_ai_action(c: &Cluster, rng: &mut Rng, d: usize, step: usize, ai: &mut AiIds) {
+    let pick = |ids: &[String], rng: &mut Rng| ids.get(rng.below(ids.len().max(1))).cloned();
+    match rng.below(9) {
+        0 | 1 => {
+            let conversation = if rng.below(3) == 0 {
+                None
+            } else {
+                pick(&ai.conversations, rng)
+            };
+            let events = c[d].ai_events();
+            if let Ok(started) = crate::ai_tracer_tests::ask(
+                &c[d],
+                conversation.as_deref(),
+                &format!("question {step}"),
+            ) {
+                crate::ai_tracer_tests::until_end(&events);
+                let id = started["conversation_id"].as_str().unwrap().to_owned();
+                if !ai.conversations.contains(&id) {
+                    ai.conversations.push(id);
+                }
+            }
+        }
+        2 => {
+            if let Some(id) = pick(&ai.conversations, rng) {
+                let _ = c[d].invoke::<()>(
+                    "ai_conversation_rename",
+                    json!({ "id": id, "title": format!("title {}", rng.below(6)) }),
+                );
+            }
+        }
+        3 => {
+            if let Some(id) = pick(&ai.conversations, rng) {
+                let _ = c[d].invoke::<()>("ai_conversation_delete", json!({ "id": id }));
+            }
+        }
+        4 => {
+            if let Some(id) = pick(&ai.conversations, rng) {
+                let _ = c[d].invoke::<()>("ai_conversation_restore", json!({ "id": id }));
+            }
+        }
+        5 => {
+            if let Ok(made) = c[d].invoke::<Value>(
+                "ai_saved_create",
+                json!({ "text": format!("saved {step}") }),
+            ) {
+                ai.saved.push(made["id"].as_str().unwrap().to_owned());
+            }
+        }
+        6 => {
+            if let Some(id) = pick(&ai.saved, rng) {
+                match rng.below(3) {
+                    0 => {
+                        let _ = c[d].invoke::<Value>(
+                            "ai_saved_update",
+                            json!({ "id": id, "text": format!("edited {}", rng.below(4)) }),
+                        );
+                    }
+                    1 => {
+                        let _ = c[d].invoke::<()>("ai_saved_delete", json!({ "id": id }));
+                    }
+                    _ => {
+                        let _ = c[d].invoke::<()>("ai_saved_restore", json!({ "id": id }));
+                    }
+                }
+            }
+        }
+        _ => {
+            if let Some(id) = pick(&ai.saved, rng) {
+                let after = pick(&ai.saved, rng);
+                let before = pick(&ai.saved, rng);
+                let _ = c[d].invoke::<()>(
+                    "ai_saved_reorder",
+                    json!({ "id": id, "afterId": after, "beforeId": before }),
+                );
+            }
+        }
+    }
+}
+
 /// A Task dragged between two neighbours of the manual order (any of them may be gone, done or
 /// in another List: the command then refuses or places it, and devices must agree either way).
 fn random_reorder(c: &Cluster, rng: &mut Rng, d: usize, ids: &[Value]) {
@@ -1108,11 +1199,21 @@ fn converge(seed: u64) {
     let mut ids: Vec<Value> = Vec::new();
     let mut list_ids: Vec<Value> = Vec::new();
     let mut journal = Journal::default();
+    let mut ai = AiIds::default();
+    for d in 0..3 {
+        crate::ai_sync_tests::answering(&c[d]);
+    }
     for step in 0..160 {
         let d = rng.below(3);
         c[d].clock()
             .advance(1 + i64::try_from(rng.below(40)).unwrap());
-        random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids, &mut journal);
+        // About one step in six is an AI action (a Conversation or a Saved question); the rest are
+        // the Todo, Journal and Sync mix.
+        if rng.below(6) == 0 {
+            random_ai_action(&c, &mut rng, d, step, &mut ai);
+        } else {
+            random_action(&c, &mut rng, d, step, &mut ids, &mut list_ids, &mut journal);
+        }
         // Now and then a member types, changes or clears the Address of another device.
         if rng.below(12) == 0 {
             let target = (d + 1 + rng.below(2)) % 3;
@@ -1212,7 +1313,16 @@ fn assert_devices_agree(c: &Cluster, seed: u64, ids: &[Value]) {
     for d in 1..3 {
         let other = crate::sync_lists_tests::world(&c[d]);
         if other != lists_first {
-            for section in ["lists", "tasks", "comments", "settings", "entries"] {
+            for section in [
+                "lists",
+                "tasks",
+                "comments",
+                "settings",
+                "entries",
+                "conversations",
+                "ai_entries",
+                "saved",
+            ] {
                 let (a, b) = (
                     lists_first[section].as_array().unwrap(),
                     other[section].as_array().unwrap(),
@@ -1368,9 +1478,12 @@ fn converge_reporting(seed: u64) -> bool {
 /// 2, 5, 7, 8 and 42 each found a divergence that was fixed (Resolved automatically lines, the
 /// History of a Task whose author sent a whole When, a clash only the author could see); 137
 /// (an author's own text never replayed after a session rewrote in place), 88, 133 and 326 (a text
-/// replay carried on from a rewritten record) and 173, 263 and 293 (a used line taken back).
-const FIXED_SEEDS: [u64; 20] = [
-    1, 2, 5, 7, 8, 15, 17, 25, 42, 88, 113, 133, 137, 173, 263, 293, 326, 2026, 99_991, 31_337,
+/// replay carried on from a rewritten record) and 173, 263 and 293 (a used line taken back). 33 (a
+/// received answer did not move its Conversation to the top on the other device) and 51 (two sides
+/// rewrote the same words, and the word diff gave overlapping changes).
+const FIXED_SEEDS: [u64; 22] = [
+    1, 2, 5, 7, 8, 15, 17, 25, 33, 42, 51, 88, 113, 133, 137, 173, 263, 293, 326, 2026, 99_991,
+    31_337,
 ];
 
 fn env_number(name: &str) -> Option<u64> {
