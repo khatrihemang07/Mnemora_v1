@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { ConflictRow } from '../../lib/ipc/bindings';
-import { conflictIdOf, groupByDay, pageLabel, rowTitle, sidesText, timeText } from './conflicts';
+import {
+  conflictIdOf,
+  groupByDay,
+  pageLabel,
+  rowTitle,
+  shownIn,
+  sidesText,
+  timeText,
+} from './conflicts';
 
 const row = (id: string, raised_at: number): ConflictRow => ({
   id,
@@ -17,6 +25,15 @@ const row = (id: string, raised_at: number): ConflictRow => ({
 });
 
 describe('conflict rows', () => {
+  it('says where the showing text lives, per subject', () => {
+    expect(
+      shownIn({ kind: 'entry', page_date: '2026-10-21', written_at: 0, written_offset_min: 0 }),
+    ).toBe('Journal');
+    expect(shownIn({ kind: 'task', title: 'Hike', field: 'title' })).toBe('Task');
+    expect(shownIn({ kind: 'comment', task_title: 'Hike' })).toBe('Task');
+    expect(shownIn({ kind: 'conversation', title: 'Plan the hike' })).toBe('Conversation');
+    expect(shownIn({ kind: 'saved_question', text: 'Coffee shops' })).toBe('Saved question');
+  });
   it('names an AI title or Saved question that clashed', () => {
     expect(rowTitle({ kind: 'conversation', title: 'Plan the hike' }, '24h')).toBe(
       '‘Plan the hike’ · conversation title',

@@ -2,7 +2,7 @@
 //! in `mnemora-sync`; what is written to an Entry, Task or Comment goes through that Module's own
 //! service, as any edit does, so it validates, records an ordinary change and syncs like one.
 
-use mnemora_core::db::Connection;
+use mnemora_core::db::{Connection, physical_now};
 use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::util::{new_id, now_ms};
 use mnemora_sync::{
@@ -102,6 +102,12 @@ fn write_text(conn: &mut Connection, write: &ConflictWrite) -> Result<(), AppErr
         }
         "todo_comment" => {
             mnemora_todo::edit_comment(conn, id, &write.text)?;
+        }
+        "ai_conversation" => {
+            mnemora_ai::rename_conversation(conn, id, &write.text)?;
+        }
+        "ai_saved_question" => {
+            mnemora_ai::update_saved(conn, id, &write.text, physical_now(conn))?;
         }
         _ => {
             return Err(AppError::new(

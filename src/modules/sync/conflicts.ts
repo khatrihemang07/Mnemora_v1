@@ -29,6 +29,21 @@ export function rowTitle(subject: ConflictSubject, format: TimeFormat): string {
   }
 }
 
+/** The screen a Conflict's showing text is on, for Compare's sentence. */
+export function shownIn(subject: ConflictSubject): string {
+  switch (subject.kind) {
+    case 'entry':
+      return 'Journal';
+    case 'task':
+    case 'comment':
+      return 'Task';
+    case 'conversation':
+      return 'Conversation';
+    case 'saved_question':
+      return 'Saved question';
+  }
+}
+
 /** When an Entry was written, as the time of day in the zone it was written in. */
 function entryTime(writtenAt: number, offsetMin: number, format: TimeFormat): string {
   const shifted = new Date(writtenAt + offsetMin * 60_000);

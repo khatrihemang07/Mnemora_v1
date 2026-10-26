@@ -24,7 +24,7 @@
   import { notify, notifyError } from '../../lib/ui/toast';
   import { moduleContext } from '../../shell/module-context';
   import { router } from '../../shell/router';
-  import { conflictIdOf, rowTitle, timeText, usePossessive } from './conflicts';
+  import { conflictIdOf, rowTitle, shownIn, timeText, usePossessive } from './conflicts';
   import { compareFlow, discardEdit, draftIsCurrent, escapeCancels, forgetCompareFlow, stepBack } from './compare-flow.svelte';
   import { conflictQuery, watchConflicts } from './queries';
   import SyncFrame from './SyncFrame.svelte';
@@ -163,9 +163,7 @@
       <h1 class="font-display text-xl font-semibold">{step === 'compare' ? rowTitle(view.row.subject, timeFormat) : 'Edit merged'}</h1>
       {#if step === 'compare'}
         <p class="mb-3 text-sm text-muted">
-          Both devices rewrote the same sentence. {showingName}’s version shows in the {view.row.module === 'journal'
-            ? 'Journal'
-            : 'Task'} for now.
+          Both devices rewrote the same sentence. {showingName}’s version shows in the {shownIn(view.row.subject)} for now.
         </p>
         {#if !view.open}
           <p class="mb-3 rounded-md bg-hue-sync-soft px-3 py-2 text-sm" data-resolved>This conflict is settled.</p>
