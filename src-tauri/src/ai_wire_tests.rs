@@ -13,7 +13,7 @@ use crate::test_support::TestApp;
 use mnemora_ai::RunOutcome;
 
 /// A chat reply whose content is one envelope object.
-fn reply(envelope: Value) -> String {
+pub(crate) fn reply(envelope: Value) -> String {
     json!({
         "choices": [{
             "index": 0,
@@ -32,7 +32,7 @@ fn tools(calls: &[(&str, &str)]) -> Value {
     json!({ "action": "tools", "calls": calls, "answer": "", "sources": [] })
 }
 
-fn finish(answer: &str, sources: &[&str]) -> Value {
+pub(crate) fn finish(answer: &str, sources: &[&str]) -> Value {
     json!({ "action": "finish", "calls": [], "answer": answer, "sources": sources })
 }
 
@@ -54,7 +54,7 @@ fn local() -> Value {
     })
 }
 
-fn add_wrapper(app: &TestApp, address: &str) -> String {
+pub(crate) fn add_wrapper(app: &TestApp, address: &str) -> String {
     let created: Value = app
         .invoke(
             "ai_provider_create",
