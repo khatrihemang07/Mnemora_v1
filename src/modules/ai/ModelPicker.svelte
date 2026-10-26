@@ -111,6 +111,7 @@
         value={providerId}
         options={providerOptions}
         twoRows
+        wrap
         onchange={(value) => {
           providerId = value;
           browsing = false;
