@@ -49,7 +49,7 @@
   import ProviderSheet from './ProviderSheet.svelte';
 import QueuedNotes from './QueuedNotes.svelte';
   import { aiKeys, conversationOptions, providersOptions, savedOptions, usageOptions } from './queries';
-  import { answeringIn, failedIn, type LiveRun } from './run-state';
+  import { answeringIn, bannerRuns, failedIn, lastQuestionId, type LiveRun } from './run-state';
 
   /** The open Conversation, in the URL so a reload and Back keep it. None is a new one. */
   const conversationId = $derived(urlParam.get('conversation'));
@@ -100,13 +100,16 @@ import QueuedNotes from './QueuedNotes.svelte';
   const modelName = $derived(choice?.model ?? null);
 
   const answering = $derived(conversationId ? answeringIn(liveRuns.runs, conversationId) : []);
-  const failed = $derived(conversationId ? failedIn(liveRuns.runs, conversationId) : []);
   const busy = $derived((conversation.data?.running ?? false) || answering.length > 0);
   /** Edit ends when a Run starts or the Conversation changes. */
   const editingNow = $derived(
     busy || editing?.conversationId !== conversationId ? null : editing,
   );
   const entries = $derived(conversation.data?.entries ?? []);
+  /** A failed Run keeps its banner only while its question is the last on the Branch shown. */
+  const failed = $derived(
+    conversationId ? bannerRuns(failedIn(liveRuns.runs, conversationId), lastQuestionId(entries)) : [],
+  );
   /**
    * Notes waiting for this Conversation's Run, or left over when it ended. The live list wins once
    * this page has heard from the Run; before that (a page opened during a Run) the Conversation
@@ -581,7 +584,7 @@ import QueuedNotes from './QueuedNotes.svelte';
   {conversationId}
   {entries}
   onclose={() => (branchOpen = false)}
-  onbranched={() => composerRef?.focus()}
+  restoreFocus={() => composerRef?.focus()}
 />
 
 <ProviderSheet open={addingProvider} provider={null} onclose={() => (addingProvider = false)} />

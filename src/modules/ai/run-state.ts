@@ -1,4 +1,4 @@
-import type { AiRunEvent, Failure } from '../../lib/ipc/bindings';
+import type { AiRunEvent, EntryView, Failure } from '../../lib/ipc/bindings';
 
 /** Why a Run failed: the kind picks the banner, the message is the one sentence shown. */
 export interface RunFailure {
@@ -53,7 +53,8 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
       // The notes waiting are kept by the Conversation, not by the Run (see queue-state).
       return runs;
     case 'runStarted':
-      return { ...runs, [runId]: current };
+      // A new Run in this Conversation makes its earlier failures stale, so their banners go.
+      return { ...withoutFailedIn(runs, conversationId), [runId]: current };
     case 'textDelta':
       return { ...runs, [runId]: { ...current, text: current.text + step.text } };
     case 'stepStarted':
@@ -115,6 +116,24 @@ export function failedIn(runs: LiveRuns, conversationId: string): LiveRun[] {
   );
 }
 
+/**
+ * The failed Runs whose banner is still shown: only one answering the last question of the Branch
+ * shown. Once the Branch moves on (another question, or an earlier Branch), the banner is gone.
+ */
+export function bannerRuns(failed: LiveRun[], lastQuestion: string | null): LiveRun[] {
+  if (lastQuestion === null) return [];
+  return failed.filter((run) => run.questionId === lastQuestion);
+}
+
+/** The newest question on the Branch shown, or null when it has none. */
+export function lastQuestionId(entries: readonly EntryView[]): string | null {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.payload.kind === 'user') return entry.id;
+  }
+  return null;
+}
+
 /** The Runs (answering or failed) that answer one question of the thread. */
 export function runsUnder(runs: LiveRun[], questionId: string): LiveRun[] {
   return runs.filter((run) => run.questionId === questionId);
@@ -123,6 +142,14 @@ export function runsUnder(runs: LiveRun[], questionId: string): LiveRun[] {
 /** The Runs whose question is not among the thread's entries (not saved yet, or not loaded). */
 export function unplacedRuns(runs: LiveRun[], entryIds: ReadonlySet<string>): LiveRun[] {
   return runs.filter((run) => run.questionId === null || !entryIds.has(run.questionId));
+}
+
+function withoutFailedIn(runs: LiveRuns, conversationId: string): LiveRuns {
+  return Object.fromEntries(
+    Object.entries(runs).filter(
+      ([, run]) => run.conversationId !== conversationId || run.failure === null,
+    ),
+  );
 }
 
 function withoutRun(runs: LiveRuns, runId: string): LiveRuns {

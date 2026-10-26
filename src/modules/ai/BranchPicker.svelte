@@ -17,11 +17,11 @@
     /** The Branch on screen, oldest first. */
     entries: EntryView[];
     onclose: () => void;
-    /** Called once the Branch is chosen, so the page can ready the box for the next question. */
-    onbranched: () => void;
+    /** Where focus goes when the picker closes: the question box, so the next question can follow. */
+    restoreFocus: () => void;
   }
 
-  let { open, conversationId, entries, onclose, onbranched }: Props = $props();
+  let { open, conversationId, entries, onclose, restoreFocus }: Props = $props();
   let picked = $state<string | null>(null);
   let working = $state(false);
   const rows = $derived(earlierAnswers(entries));
@@ -36,7 +36,6 @@
     working = true;
     try {
       await branchFromEarlier(conversationId, picked);
-      onbranched();
       onclose();
     } catch (error) {
       notifyError(error instanceof Error ? error.message : 'Could not branch from there.');
@@ -51,6 +50,7 @@
   title="Branch from earlier"
   description="The next question continues from the answer you pick. The rest of this Conversation stays as it is."
   {onclose}
+  {restoreFocus}
 >
   {#if rows.length === 0}
     <p class="text-sm text-muted">No answers in this Conversation yet.</p>

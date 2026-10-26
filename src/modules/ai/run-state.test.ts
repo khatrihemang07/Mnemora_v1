@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { AiRunEvent, RunEvent } from '../../lib/ipc/bindings';
+import type { AiRunEvent, EntryView, RunEvent } from '../../lib/ipc/bindings';
 import {
   answeringIn,
   applyRunEvent,
+  bannerRuns,
   failedIn,
   type LiveRuns,
+  lastQuestionId,
   runsUnder,
   unplacedRuns,
 } from './run-state';
@@ -162,5 +164,80 @@ describe('stopping and the queue', () => {
   it('a queue change is not a Run of its own', () => {
     const runs = fold([step({ type: 'queueChanged', notes: [{ id: 'n1', text: 'later' }] })]);
     expect(runs).toEqual({});
+  });
+});
+
+function failedRun(run: string, question: string | null, conversation = 'c1'): AiRunEvent[] {
+  return [
+    step({ type: 'runStarted' }, run, conversation),
+    ...(question === null
+      ? []
+      : [step({ type: 'entrySaved', entry_id: question, kind: 'user' }, run, conversation)]),
+    step(
+      {
+        type: 'runEnded',
+        outcome: { type: 'failed', kind: 'too_long', message: 'Too long.' },
+      },
+      run,
+      conversation,
+    ),
+  ];
+}
+
+describe('the banner of a failed Run', () => {
+  it("a new Run in a Conversation drops that Conversation's failed Runs, and no other", () => {
+    const runs = fold([
+      ...failedRun('r1', 'q1', 'c1'),
+      ...failedRun('r2', 'q9', 'c2'),
+      step({ type: 'runStarted' }, 'r3', 'c1'),
+    ]);
+    expect(failedIn(runs, 'c1')).toEqual([]);
+    expect(failedIn(runs, 'c2').map((run) => run.runId)).toEqual(['r2']);
+  });
+
+  it('is shown only while its question is the last question of the Branch', () => {
+    const failed = failedIn(fold(failedRun('r1', 'q1')), 'c1');
+    expect(bannerRuns(failed, 'q1').map((run) => run.runId)).toEqual(['r1']);
+    expect(bannerRuns(failed, 'q2')).toEqual([]);
+    expect(bannerRuns(failed, null)).toEqual([]);
+  });
+});
+
+describe('lastQuestionId', () => {
+  const entry = (id: string, kind: 'user' | 'assistant'): EntryView =>
+    ({
+      id,
+      parent_id: null,
+      created_at: 0,
+      payload:
+        kind === 'user'
+          ? { kind, text: id }
+          : {
+              kind,
+              text: id,
+              stop: 'stop',
+              provider: 'P',
+              model: 'm',
+              calls: [],
+              sources: [],
+              budget_note: null,
+            },
+      sibling_count: 1,
+      sibling_index: 1,
+    }) as EntryView;
+
+  it('is the newest question on the Branch, even when answers or Steps follow it', () => {
+    expect(
+      lastQuestionId([
+        entry('q1', 'user'),
+        entry('a1', 'assistant'),
+        entry('q2', 'user'),
+        entry('a2', 'assistant'),
+      ]),
+    ).toBe('q2');
+  });
+
+  it('is null when the Branch has no question', () => {
+    expect(lastQuestionId([])).toBeNull();
   });
 });

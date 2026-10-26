@@ -18,8 +18,20 @@
     actions: Snippet;
     overSheet?: boolean;
     locked?: boolean;
+    /** Where focus goes on close, instead of back to what had it. For a Dialog whose opener is gone. */
+    restoreFocus?: () => void;
   }
-  let { open, title, description, onclose, children, actions, overSheet = false, locked = false }: Props = $props();
+  let {
+    open,
+    title,
+    description,
+    onclose,
+    children,
+    actions,
+    overSheet = false,
+    locked = false,
+    restoreFocus,
+  }: Props = $props();
 
   closeOnBack(() => open, () => !locked && onclose());
 </script>
@@ -30,6 +42,11 @@
     <Dialog.Content
       escapeKeydownBehavior={locked ? 'ignore' : 'close'}
       interactOutsideBehavior={locked ? 'ignore' : 'close'}
+      onCloseAutoFocus={(event) => {
+        if (!restoreFocus) return;
+        event.preventDefault();
+        restoreFocus();
+      }}
       class="fixed top-1/2 left-1/2 {overSheet ? 'z-70' : 'z-50'} w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-md bg-pop p-5 shadow-pop"
     >
       <Dialog.Title class="text-base font-semibold text-ink">{title}</Dialog.Title>

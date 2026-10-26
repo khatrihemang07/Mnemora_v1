@@ -18,7 +18,7 @@
   import { notifyError, notify } from '../../lib/ui/toast';
   import Activity from './Activity.svelte';
   import { questionOfAnswers } from './answers';
-  import { pagerLabel, pagerStep } from './branch-pager';
+  import { pagerFocusAfterShow, pagerLabel, pagerStep } from './branch-pager';
   import { copyAsMarkdown } from './copy';
   import { stepsByQuestion, withoutCitations } from './activity';
   import type { BannerAction } from './failure-banner';
@@ -92,6 +92,29 @@
 
   onDestroy(cancelHold);
 
+  /**
+   * A pager press waiting for the Branch it switches to. Showing a sibling swaps the question's
+   * element, so focus is put back on the equivalent arrow once the thread has re-rendered.
+   */
+  let pendingPager: { position: number; pressed: 'previous' | 'next' } | null = null;
+  let thread = $state<HTMLElement | null>(null);
+
+  $effect(() => {
+    void entries;
+    const pending = pendingPager;
+    if (!pending || !thread) return;
+    pendingPager = null;
+    const group = thread.querySelector<HTMLElement>(`[data-question-at="${pending.position}"]`);
+    const previous = group?.querySelector<HTMLButtonElement>('button[aria-label="Previous branch"]');
+    const next = group?.querySelector<HTMLButtonElement>('button[aria-label="Next branch"]');
+    const target = pagerFocusAfterShow(pending.pressed, {
+      previous: previous?.disabled === false,
+      next: next?.disabled === false,
+    });
+    if (target === 'previous') previous?.focus();
+    else if (target === 'next') next?.focus();
+  });
+
   const entryIds = $derived(new Set(entries.map((entry) => entry.id)));
   /** The Tool steps each saved question made, shown once its Run has no live copy. */
   const steps = $derived(stepsByQuestion(entries));
@@ -118,14 +141,14 @@
   {/each}
 {/snippet}
 
-<div class="mx-auto flex w-full max-w-[42.5rem] flex-col gap-8">
-  {#each entries as entry (entry.id)}
+<div bind:this={thread} class="mx-auto flex w-full max-w-[42.5rem] flex-col gap-8">
+  {#each entries as entry, index (entry.id)}
     {#if entry.payload.kind === 'user'}
       {@const liveHere = runsUnder(answering, entry.id).length + runsUnder(failed, entry.id).length}
       {@const previous = pagerStep(entry.sibling_index, entry.sibling_count, 'previous')}
       {@const next = pagerStep(entry.sibling_index, entry.sibling_count, 'next')}
       {@const questionText = entry.payload.text}
-      <div class="flex flex-col gap-4">
+      <div class="flex flex-col gap-4" data-question-at={index}>
         <div
           role="group"
           aria-label="Question"
@@ -146,7 +169,9 @@
                 variant="ghost"
                 disabled={busy || previous === null}
                 onclick={() => {
-                  if (previous !== null) onshow(entry.id, previous);
+                  if (previous === null) return;
+                  pendingPager = { position: index, pressed: 'previous' };
+                  onshow(entry.id, previous);
                 }}
               />
               <span class="px-0.5 text-xs whitespace-nowrap text-muted">
@@ -159,7 +184,9 @@
                 variant="ghost"
                 disabled={busy || next === null}
                 onclick={() => {
-                  if (next !== null) onshow(entry.id, next);
+                  if (next === null) return;
+                  pendingPager = { position: index, pressed: 'next' };
+                  onshow(entry.id, next);
                 }}
               />
             {/if}

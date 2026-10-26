@@ -15,3 +15,17 @@ export function pagerStep(
   const target = direction === 'previous' ? index - 1 : index + 1;
   return target >= 1 && target <= count ? target : null;
 }
+
+/**
+ * Where focus goes after the pager moved: the arrow pressed while it is still on, otherwise the other
+ * arrow, or nowhere when both are off.
+ */
+export function pagerFocusAfterShow(
+  pressed: 'previous' | 'next',
+  enabled: { previous: boolean; next: boolean },
+): 'previous' | 'next' | null {
+  const other = pressed === 'next' ? 'previous' : 'next';
+  if (enabled[pressed]) return pressed;
+  if (enabled[other]) return other;
+  return null;
+}
