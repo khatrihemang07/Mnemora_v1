@@ -10,6 +10,7 @@ const provider = (id: string): ProviderView => ({
   key_state: 'not_needed',
   created_at: 0,
   updated_at: 0,
+  allow_paid: false,
 });
 
 const usage = (providerId: string, model: string): ModelUsage => ({

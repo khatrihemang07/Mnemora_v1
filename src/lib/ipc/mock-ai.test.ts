@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AiRunEvent, RunRequest } from './bindings';
+import type { AiRunEvent, ConnectionTest, ModelList, ProviderView, RunRequest } from './bindings';
 import addresses from './fixtures/ai-addresses.json';
 import failures from './fixtures/ai-failures.json';
 import historyRules from './fixtures/ai-history.json';
@@ -254,5 +254,149 @@ describe('the mock Conversation and Saved question commands', () => {
       'What did I finish this month?',
       'What is overdue?',
     ]);
+  });
+});
+
+describe('the mock Provider kinds, key states and paid Models', () => {
+  let mock: ReturnType<typeof createAiMock>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mock = createAiMock({ emit: () => undefined });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const add = (kind: string, name: string, address = '') =>
+    mock.handle('ai_provider_create', {
+      request: { kind, name, address },
+    }) as ProviderView;
+  const update = (id: string, name: string, address: string, allowPaid?: boolean) =>
+    mock.handle('ai_provider_update', {
+      id,
+      request: { name, address, allow_paid: allowPaid },
+    }) as ProviderView;
+  const keySet = (id: string, key: string) =>
+    mock.handle('ai_provider_key_set', { id, key }) as ProviderView;
+  const keyClear = (id: string) => mock.handle('ai_provider_key_clear', { id }) as ProviderView;
+  const test = (id: string) => mock.handle('ai_provider_test', { id }) as ConnectionTest;
+  const models = (providerId: string, query = '') =>
+    mock.handle('ai_models_search', { providerId, query }) as ModelList;
+  const askWith = (providerId: string, model: string) =>
+    mock.handle('ai_run_start', {
+      request: { ...request('A question', null, providerId), model },
+    });
+
+  it('adds each of the four kinds and lists them as the kind they were made as', () => {
+    add('wrapper', 'Wrapper', 'http://127.0.0.1:8080/v1');
+    add('openai_compatible', 'Groq', 'https://api.groq.example/v1');
+    add('anthropic', 'Claude');
+    add('openrouter', 'Router');
+    const listed = mock.handle('ai_provider_list', {}) as ProviderView[];
+    expect(listed.map((p) => p.kind)).toEqual([
+      'wrapper',
+      'openai_compatible',
+      'anthropic',
+      'openrouter',
+    ]);
+    expect(listed[2]?.address).toBe('https://api.anthropic.com/v1');
+    expect(listed[3]?.address).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('refuses another address for a fixed kind, and a kind it does not know', () => {
+    expect(caught(() => add('anthropic', 'A', 'https://example.com/v1'))).toMatchObject({
+      code: 'validation',
+      message: 'This kind of Provider uses its own fixed address.',
+    });
+    expect(caught(() => add('nonsense', 'N', 'http://127.0.0.1:8080/v1'))).toMatchObject({
+      message: 'Choose a kind of Provider first.',
+    });
+  });
+
+  it('moves a required key from missing to saved and back, and never returns the key', () => {
+    const anthropic = add('anthropic', 'Claude');
+    expect(anthropic.key_state).toBe('missing');
+    const saved = keySet(anthropic.id, '  sk-test-123  ');
+    expect(saved.key_state).toBe('saved');
+    expect(JSON.stringify(saved)).not.toContain('sk-test-123');
+    expect(JSON.stringify(mock.handle('ai_provider_list', {}))).not.toContain('sk-test-123');
+    expect(keyClear(anthropic.id).key_state).toBe('missing');
+  });
+
+  it('moves an optional key between not needed and saved', () => {
+    const groq = add('openai_compatible', 'Groq', 'https://api.groq.example/v1');
+    expect(groq.key_state).toBe('not_needed');
+    expect(keySet(groq.id, 'gsk-1').key_state).toBe('saved');
+    expect(keyClear(groq.id).key_state).toBe('not_needed');
+  });
+
+  it('refuses a key for the Wrapper, and an empty key', () => {
+    const wrapper = add('wrapper', 'Wrapper', 'http://127.0.0.1:8080/v1');
+    expect(caught(() => keySet(wrapper.id, 'k'))).toMatchObject({
+      message: 'This kind of Provider does not use a key.',
+    });
+    const anthropic = add('anthropic', 'Claude');
+    expect(caught(() => keySet(anthropic.id, '   '))).toMatchObject({
+      message: 'Paste the key first.',
+    });
+  });
+
+  it('fails a connection test and a send for a required key until the key is saved', () => {
+    const anthropic = add('anthropic', 'Claude');
+    expect(test(anthropic.id)).toMatchObject({ connected: false, failure: 'key_rejected' });
+    expect(caught(() => askWith(anthropic.id, 'claude-haiku-5.5'))).toMatchObject({
+      message: "Add this Provider's key first.",
+    });
+    keySet(anthropic.id, 'sk-ant-1');
+    expect(test(anthropic.id)).toMatchObject({ connected: true });
+    expect(askWith(anthropic.id, 'claude-haiku-5.5')).toMatchObject({
+      conversation_id: expect.any(String),
+    });
+  });
+
+  it('lists free and paid OpenRouter Models, and marks the paid ones', () => {
+    const router = add('openrouter', 'Router');
+    keySet(router.id, 'sk-or-1');
+    const list = models(router.id);
+    expect(list.models).toEqual([
+      'deepseek-v3.2:free',
+      'llama-3.3-70b:free',
+      'claude-haiku-5.5',
+      'gpt-5-mini',
+    ]);
+    expect(list.paid_models).toEqual(['claude-haiku-5.5', 'gpt-5-mini']);
+    expect(models(router.id, 'gpt').paid_models).toEqual(['gpt-5-mini']);
+  });
+
+  it('refuses a paid Model until the paid switch is on, and a free one always runs', () => {
+    const router = add('openrouter', 'Router');
+    keySet(router.id, 'sk-or-1');
+    expect(caught(() => askWith(router.id, 'gpt-5-mini'))).toMatchObject({
+      code: 'validation',
+      message: 'This is a paid Model. Turn on paid Models for this Provider to use it.',
+    });
+    expect(askWith(router.id, 'deepseek-v3.2:free')).toMatchObject({
+      conversation_id: expect.any(String),
+    });
+    expect(update(router.id, 'Router', '', true).allow_paid).toBe(true);
+    expect(askWith(router.id, 'gpt-5-mini')).toMatchObject({ conversation_id: expect.any(String) });
+    expect(update(router.id, 'Router', '', false).allow_paid).toBe(false);
+    expect(caught(() => askWith(router.id, 'gpt-5-mini'))).toMatchObject({
+      message: 'This is a paid Model. Turn on paid Models for this Provider to use it.',
+    });
+  });
+
+  it('keeps the paid switch off for kinds without paid Models', () => {
+    const wrapper = add('wrapper', 'Wrapper', 'http://127.0.0.1:8080/v1');
+    expect(update(wrapper.id, 'Wrapper', 'http://127.0.0.1:8080/v1', true).allow_paid).toBe(false);
+  });
+
+  it('removes the key of an OpenAI-compatible Provider when its address changes, and keeps it otherwise', () => {
+    const groq = add('openai_compatible', 'Groq', 'https://api.groq.example/v1');
+    keySet(groq.id, 'gsk-1');
+    expect(update(groq.id, 'Groq renamed', 'https://api.groq.example/v1').key_state).toBe('saved');
+    expect(update(groq.id, 'Groq', 'https://other.example/v1').key_state).toBe('not_needed');
   });
 });
