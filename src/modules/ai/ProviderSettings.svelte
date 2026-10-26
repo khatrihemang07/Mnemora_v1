@@ -23,6 +23,8 @@
   let editing = $state<ProviderView | null>(null);
   /** The row or button that opened the sheet: focus goes back to it when the sheet closes. */
   let opener = $state<HTMLElement | null>(null);
+  /** The row of the Add a Provider button: where focus goes when the row that opened the sheet is gone. */
+  let addRow = $state<HTMLElement | null>(null);
 
   function add(event: MouseEvent) {
     opener = event.currentTarget as HTMLElement;
@@ -71,7 +73,7 @@
       {:else}
         <p class="px-(--pad) py-3 text-sm text-muted">No Providers yet. Add one to start asking questions.</p>
       {/each}
-      <div class="flex justify-start p-(--pad)">
+      <div bind:this={addRow} class="flex justify-start p-(--pad)">
         <Button variant="secondary" onclick={(event: MouseEvent) => add(event)}><Plus class="size-4" /> Add a Provider</Button>
       </div>
     </Card>
@@ -87,5 +89,5 @@
   open={sheetOpen}
   provider={editing}
   onclose={() => (sheetOpen = false)}
-  restoreFocus={() => returnFocus(opener)}
+  restoreFocus={() => returnFocus(opener, addRow?.querySelector('button'))}
 />

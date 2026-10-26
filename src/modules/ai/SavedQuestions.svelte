@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
+  import { tick } from 'svelte';
   import ArrowDown from '~icons/lucide/arrow-down';
   import ArrowUp from '~icons/lucide/arrow-up';
   import Pencil from '~icons/lucide/pencil';
@@ -40,20 +41,40 @@
     dialogOpen = true;
   }
 
+  /** The list's rows, so focus can be put back on a control of a row that is still there. */
+  let listEl = $state<HTMLElement | null>(null);
+
+  /** A control of the question's row, found by its label; null when the row or control is not there. */
+  function controlOf(id: string, label: string): HTMLButtonElement | null {
+    return listEl?.querySelector<HTMLButtonElement>(`[data-question="${id}"] [aria-label="${label}"]`) ?? null;
+  }
+
   async function move(question: SavedQuestion, direction: 'up' | 'down') {
     try {
       await moveSaved(list, question.id, direction);
     } catch (failure) {
       notifyError(failure instanceof Error ? failure.message : 'Could not move the question.');
+      return;
     }
+    // The row moved in the DOM and its control may have lost focus: keep it on the moved row's control.
+    await tick();
+    const moved = controlOf(question.id, direction === 'up' ? 'Move up' : 'Move down');
+    const other = controlOf(question.id, direction === 'up' ? 'Move down' : 'Move up');
+    (moved && !moved.disabled ? moved : other && !other.disabled ? other : null)?.focus();
   }
 
   async function remove(question: SavedQuestion) {
+    const index = list.findIndex((candidate) => candidate.id === question.id);
     try {
       await deleteSaved(question);
     } catch (failure) {
       notifyError(failure instanceof Error ? failure.message : 'Could not delete the question.');
+      return;
     }
+    // The row is gone: focus the Delete of the question that now sits in its place, else the one above.
+    await tick();
+    const next = list[index] ?? list[index - 1];
+    (next ? controlOf(next.id, 'Delete') : null)?.focus();
   }
 </script>
 
@@ -65,8 +86,9 @@
     <ErrorBanner error={saved.error} onretry={() => void saved.refetch()} />
   {:else}
     <Card padded={false}>
+      <div bind:this={listEl} class="contents">
       {#each list as question, index (question.id)}
-        <div class="flex items-center gap-2 border-b border-line py-2 pr-2 pl-(--pad) first:rounded-t-md">
+        <div data-question={question.id} class="flex items-center gap-2 border-b border-line py-2 pr-2 pl-(--pad) first:rounded-t-md">
           <span class="min-w-0 flex-1 truncate text-ink">{question.text}</span>
           <IconButton icon={ArrowUp} label="Move up" size="sm" variant="ghost" disabled={index === 0} onclick={() => void move(question, 'up')} />
           <IconButton icon={ArrowDown} label="Move down" size="sm" variant="ghost" disabled={index === list.length - 1} onclick={() => void move(question, 'down')} />
@@ -76,6 +98,7 @@
       {:else}
         <p class="px-(--pad) py-3 text-sm text-muted">No Saved questions yet. Save one here, or from an answer.</p>
       {/each}
+      </div>
       <div class="flex justify-start p-(--pad)">
         <Button variant="secondary" onclick={(event: MouseEvent) => add(event)}><Plus class="size-4" /> Save a question</Button>
       </div>

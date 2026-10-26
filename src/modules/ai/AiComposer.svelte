@@ -110,7 +110,10 @@
   async function send() {
     if (!canSend) return;
     const text = draft;
-    if (await onsend(text)) draft = '';
+    if (!(await onsend(text))) return;
+    draft = '';
+    // The round Send button becomes Stop while the Run answers; focus stays in the question box, not on the body.
+    ref?.focus();
   }
 
   /**

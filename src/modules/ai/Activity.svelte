@@ -19,7 +19,8 @@
 </script>
 
 {#if running}
-  <p class="flex items-center gap-2 text-sm text-muted" role="status">
+  <!-- Not a live region: the Run's end is announced once, by AiPage (announce.ts); this line is visual. -->
+  <p class="flex items-center gap-2 text-sm text-muted">
     <LoaderCircle class="size-4 motion-safe:animate-spin" aria-hidden="true" />
     <span>{runningLabel(steps.length)}</span>
   </p>
