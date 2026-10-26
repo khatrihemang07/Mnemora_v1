@@ -1,10 +1,16 @@
-import { queryOptions } from '@tanstack/svelte-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/svelte-query';
 import { commands } from '../../lib/ipc/bindings';
 import { unwrap } from '../../lib/ipc/unwrap';
 
 /** Every AI query starts with `ai`, so a change can refresh them all at once. */
+/** Conversations per history page. */
+export const HISTORY_PAGE = 30;
+
 export const aiKeys = {
   all: ['ai'] as const,
+  /** Every history query (any search), refreshed together. */
+  history: ['ai', 'conversations'] as const,
+  saved: ['ai', 'saved'] as const,
   conversation: (id: string) => ['ai', 'conversation', id] as const,
   providers: ['ai', 'providers'] as const,
   usage: ['ai', 'usage'] as const,
@@ -48,3 +54,20 @@ export function modelsOptions(providerId: string) {
     retry: false,
   });
 }
+
+/** The history, a page at a time, newest first, filtered by title. */
+export function historyOptions(query: string) {
+  return infiniteQueryOptions({
+    queryKey: [...aiKeys.history, query] as const,
+    queryFn: ({ pageParam }) => unwrap(commands.aiConversationList(query, pageParam, HISTORY_PAGE)),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) =>
+      last.more ? pages.reduce((total, page) => total + page.items.length, 0) : undefined,
+  });
+}
+
+/** The Saved questions in their order. */
+export const savedOptions = queryOptions({
+  queryKey: aiKeys.saved,
+  queryFn: () => unwrap(commands.aiSavedList()),
+});
