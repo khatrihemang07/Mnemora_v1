@@ -137,14 +137,11 @@ pub fn newest_under(conn: &Connection, entry: &str) -> AppResult<String> {
     Ok(current)
 }
 
-/// Every question of a Conversation with its place among the questions it sits beside: `(index,
-/// count)`, from 1. Questions are siblings when they follow the same answer or the same start.
-/// A Model change between a question and what it follows does not separate them. Reads ids,
-/// parents and kinds only: no payloads, so other Branches are not loaded.
-pub fn question_places(
-    conn: &Connection,
-    conversation: &str,
-) -> AppResult<HashMap<String, (u32, u32)>> {
+/// The questions a question sits beside, oldest first, including itself. Questions are siblings
+/// when they follow the same answer or the same start; a Model change between a question and what
+/// it follows does not separate them. Reads ids, parents and kinds only: no payloads, so other
+/// Branches are not loaded.
+pub fn question_groups(conn: &Connection, conversation: &str) -> AppResult<Vec<Vec<String>>> {
     let mut stmt = conn.prepare(
         "SELECT id, parent_id, kind FROM ai_entries WHERE conversation_id = ?1 ORDER BY created_at, rowid",
     )?;
@@ -170,21 +167,43 @@ pub fn question_places(
         }
         None
     };
-    let mut groups: HashMap<Option<String>, Vec<&str>> = HashMap::new();
+    let mut groups: HashMap<Option<String>, Vec<String>> = HashMap::new();
     for (id, _, entry_kind) in &rows {
         if entry_kind == "user" {
-            groups.entry(anchor(id)).or_default().push(id.as_str());
+            groups.entry(anchor(id)).or_default().push(id.clone());
         }
     }
+    Ok(groups.into_values().collect())
+}
+
+/// Every question of a Conversation with its place among the questions it sits beside: `(index,
+/// count)`, from 1.
+pub fn question_places(
+    conn: &Connection,
+    conversation: &str,
+) -> AppResult<HashMap<String, (u32, u32)>> {
     let mut places = HashMap::new();
-    for members in groups.values() {
+    for members in question_groups(conn, conversation)? {
         let count = u32::try_from(members.len()).unwrap_or(u32::MAX);
-        for (index, id) in members.iter().enumerate() {
+        for (index, id) in members.into_iter().enumerate() {
             let index = u32::try_from(index + 1).unwrap_or(u32::MAX);
-            places.insert((*id).to_owned(), (index, count));
+            places.insert(id, (index, count));
         }
     }
     Ok(places)
+}
+
+/// The questions that sit beside `question` (itself included), oldest first, or none when it is
+/// not a question of this Conversation.
+pub fn siblings_of(
+    conn: &Connection,
+    conversation: &str,
+    question: &str,
+) -> AppResult<Vec<String>> {
+    Ok(question_groups(conn, conversation)?
+        .into_iter()
+        .find(|members| members.iter().any(|id| id == question))
+        .unwrap_or_default())
 }
 
 /// The newest entry of a Conversation: what a new entry follows.

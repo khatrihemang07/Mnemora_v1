@@ -64,12 +64,28 @@ pub fn set_leaf(conn: &Connection, id: &str, entry: &str, now: i64) -> AppResult
     store::show(conn, id, entry, now)
 }
 
-/// Shows the Branch that continues from `entry` (a question with siblings, from the pager): the
-/// newest way on from it. The entry must be in this Conversation.
-pub fn show_branch(conn: &Connection, id: &str, entry: &str, now: i64) -> AppResult<()> {
+/// Shows the Branch that continues from the question at `position` (from 1, oldest first) among
+/// the questions beside `question`, which is itself a question of this Conversation: the newest
+/// way on from that one. This is the pager: the screen names the question it shows and where the
+/// person moved to, not the sibling's id.
+pub fn show_branch(
+    conn: &Connection,
+    id: &str,
+    question: &str,
+    position: u32,
+    now: i64,
+) -> AppResult<()> {
     live(conn, id)?;
-    store::entry_in(conn, id, entry)?.ok_or(AiError::NotFound)?;
-    let shown = store::newest_under(conn, entry)?;
+    let siblings = store::siblings_of(conn, id, question)?;
+    if siblings.is_empty() {
+        return Err(AiError::Validation("Only a question can be switched.").into());
+    }
+    let chosen = usize::try_from(position)
+        .ok()
+        .and_then(|position| position.checked_sub(1))
+        .and_then(|index| siblings.get(index))
+        .ok_or(AiError::NotFound)?;
+    let shown = store::newest_under(conn, chosen)?;
     store::show(conn, id, &shown, now)
 }
 

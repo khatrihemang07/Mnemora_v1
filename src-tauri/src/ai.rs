@@ -223,17 +223,19 @@ pub fn ai_conversation_set_leaf(
     mnemora_ai::set_leaf(&conn, &id, &entry_id, now)
 }
 
-/// Shows the Branch that continues from a question the pager picked, on this device.
+/// Shows another question of the same place on this device (the pager): `position` counts from 1,
+/// oldest first, among the questions beside `entry_id`.
 #[tauri::command]
 #[specta::specta]
 pub fn ai_conversation_show_branch(
     state: State<'_, AppState>,
     id: String,
     entry_id: String,
+    position: u32,
 ) -> Result<(), AppError> {
     let conn = lock(&state.db);
     let now = physical_now(&conn);
-    mnemora_ai::show_branch(&conn, &id, &entry_id, now)
+    mnemora_ai::show_branch(&conn, &id, &entry_id, position, now)
 }
 
 /// Starts a Run for a question: checks it, claims the Conversation, saves the question and answers

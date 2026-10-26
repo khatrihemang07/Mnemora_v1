@@ -74,8 +74,11 @@ export const commands = {
 	 *  it (Branch from earlier). The Branch after it stays in the Conversation.
 	 */
 	aiConversationSetLeaf: (id: string, entryId: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_set_leaf", { id, entryId })),
-	/**  Shows the Branch that continues from a question the pager picked, on this device. */
-	aiConversationShowBranch: (id: string, entryId: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_show_branch", { id, entryId })),
+	/**
+	 *  Shows another question of the same place on this device (the pager): `position` counts from 1,
+	 *  oldest first, among the questions beside `entry_id`.
+	 */
+	aiConversationShowBranch: (id: string, entryId: string, position: number) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_show_branch", { id, entryId, position })),
 	/**  A Conversation with every entry, oldest first. */
 	aiConversationGet: (id: string) => typedError<ConversationView, AppError>(__TAURI_INVOKE("ai_conversation_get", { id })),
 	/**  Every Provider on this device, oldest first. Never carries a key. */

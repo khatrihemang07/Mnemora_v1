@@ -62,11 +62,12 @@ fn set_leaf(app: &TestApp, conversation: &str, entry: &str) -> Result<Value, Val
     )
 }
 
-/// Shows the Branch that continues from `entry`, and returns the Conversation as it now reads.
-fn show_branch(app: &TestApp, conversation: &str, entry: &str) -> Value {
+/// The pager: shows the question at `position` among those beside `question`, and returns the
+/// Conversation as it now reads.
+fn show_branch(app: &TestApp, conversation: &str, question: &str, position: u32) -> Value {
     app.invoke::<Value>(
         "ai_conversation_show_branch",
-        json!({ "id": conversation, "entryId": entry }),
+        json!({ "id": conversation, "entryId": question, "position": position }),
     )
     .unwrap();
     get(app, conversation)
@@ -162,7 +163,7 @@ fn try_again_adds_a_sibling_question_and_runs_it_and_the_pager_keeps_both() {
     );
     assert_eq!(pager(&visible, 0), (2, 2));
 
-    let kept = show_branch(&app, &conversation, &original);
+    let kept = show_branch(&app, &conversation, &question_ids(&visible)[0], 1);
     assert_eq!(
         thread(&kept),
         vec!["Tell me about the move", "First answer"]
@@ -241,7 +242,6 @@ fn branch_from_earlier_continues_after_the_chosen_answer_with_only_the_context_u
     until_end(&events);
     let before = get(&app, &conversation);
     let first_answer = id_of(&before, "A1");
-    let second_question = question_ids(&before)[1].clone();
 
     set_leaf(&app, &conversation, &first_answer).unwrap();
     ask(&app, Some(&conversation), "Q4 from A1").unwrap();
@@ -262,13 +262,26 @@ fn branch_from_earlier_continues_after_the_chosen_answer_with_only_the_context_u
     let visible = get(&app, &conversation);
     assert_eq!(thread(&visible), vec!["Q1", "A1", "Q4 from A1", "A4"]);
 
-    let original = show_branch(&app, &conversation, &second_question);
+    let beside = question_ids(&visible)[1].clone();
+    assert!(
+        app.invoke::<Value>(
+            "ai_conversation_show_branch",
+            json!({ "id": conversation, "entryId": beside, "position": 3 }),
+        )
+        .is_err(),
+        "there are two questions here, so position 3 is refused"
+    );
+    let original = show_branch(&app, &conversation, &beside, 1);
     assert_eq!(
         thread(&original),
         vec!["Q1", "A1", "Q2", "A2", "Q3", "A3"],
         "the original Branch stays reachable"
     );
     assert_eq!(pager(&original, 1), (1, 2));
+    assert_eq!(
+        pager(&show_branch(&app, &conversation, &beside, 2), 1),
+        (2, 2)
+    );
 }
 
 #[test]
