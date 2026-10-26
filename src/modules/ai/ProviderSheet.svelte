@@ -26,6 +26,7 @@
   import { notify } from '../../lib/ui/toast';
   import { returnFocus } from './focus';
   import { aiKeys } from './queries';
+  import { PLAIN_ENTRY } from './text-entry';
   import {
     addressFor,
     createRequest,
@@ -312,9 +313,7 @@
             bind:value={address}
             label="Address"
             placeholder={info.id === 'openai_compatible' ? 'https://api.example.com/v1' : undefined}
-            autocapitalize="off"
-            autocomplete="off"
-            spellcheck="false"
+            {...PLAIN_ENTRY}
             invalid={addressIssue !== null}
           />
         {/if}
@@ -351,8 +350,7 @@
                 label="API key"
                 placeholder={replacing ? 'Paste a new key' : 'Paste the key'}
                 onkeydown={onKeyEnter}
-                autocomplete="off"
-                spellcheck={false}
+                {...PLAIN_ENTRY}
                 invalid={keyIssue !== null}
               />
               <Button size="sm" variant="secondary" onclick={() => void saveKey()} disabled={keyDraft.trim() === '' || working}>

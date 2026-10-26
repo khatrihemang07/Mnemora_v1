@@ -6,6 +6,11 @@ export function typedModelId(query: string): string | null {
   return id === '' ? null : id;
 }
 
+/** The id Enter chooses in the search box: the typed id, as the "Use" row chooses it. `null` for any other key or nothing typed. */
+export function choiceOnEnter(key: string, query: string): string | null {
+  return key === 'Enter' ? typedModelId(query) : null;
+}
+
 /** The Models whose id contains the text (every Model when the text is empty), in the Provider's order. */
 export function matchingModels(models: readonly string[], query: string): string[] {
   const needle = query.trim().toLowerCase();
