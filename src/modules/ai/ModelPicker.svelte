@@ -2,7 +2,8 @@
   ModelPicker: the Model a question is asked with. A popover next to the Model pill on a desktop, a
   bottom sheet on a phone. Recent and Most used come first from this device's usage. The full list of
   a Provider is fetched only when the person chooses Browse all or types in the search box, and is
-  kept for the session. A typed id is accepted even when the Provider does not list it.
+  kept for the session. A paid Model is listed but cannot be chosen while the Provider's paid switch
+  is off, and says why. A typed id is accepted even when the Provider does not list it.
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
@@ -17,7 +18,8 @@
   import Sheet from '../../lib/ui/Sheet.svelte';
   import { viewport } from '../../lib/viewport.svelte';
   import type { Choice } from './choice';
-  import { matchingModels, typedModelId, usesOf } from './model-picker';
+  import { matchingModels, modelRowState, typedModelId, usesOf } from './model-picker';
+  import { kindOf } from './provider-kinds';
   import { modelsOptions, providersOptions, usageOptions } from './queries';
 
   interface Props {
@@ -56,9 +58,19 @@
     ...modelsOptions(active?.id ?? ''),
     enabled: searching && active !== undefined && open,
   }));
-  const shown = $derived(matchingModels(models.data ?? [], query));
+  const shown = $derived(matchingModels(models.data?.models ?? [], query));
   const recent = $derived(usesOf(usage.data?.recent ?? [], active?.id ?? ''));
   const mostUsed = $derived(usesOf(usage.data?.most_used ?? [], active?.id ?? ''));
+  const paidIds = $derived(new Set(models.data?.paid ?? []));
+
+  /** Whether a row can be chosen, and the reason it cannot, for the Provider in view. */
+  function rowOf(model: string) {
+    return modelRowState(model, {
+      paidKind: active !== undefined && kindOf(active.kind).paid,
+      paidIds,
+      allowPaid: active?.allow_paid ?? false,
+    });
+  }
 
   function pick(model: string) {
     if (!active) return;
@@ -72,6 +84,22 @@
 
   const providerOptions = $derived(list.map((p) => ({ value: p.id, label: p.name })));
 </script>
+
+{#snippet modelRow(model: string)}
+  {@const row = rowOf(model)}
+  <button
+    type="button"
+    class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+    disabled={row.disabled}
+    onclick={() => pick(model)}
+  >
+    <span class="min-w-0">
+      <span class="block truncate">{model}</span>
+      {#if row.reason}<span class="block text-xs text-muted">{row.reason}</span>{/if}
+    </span>
+    {#if isCurrent(model)}<Check class="size-4 shrink-0" />{/if}
+  </button>
+{/snippet}
 
 {#snippet body()}
   <div class="flex max-h-[min(70dvh,30rem)] flex-col gap-3 overflow-y-auto p-3 {viewport.isPhone ? '' : 'w-80 max-w-[calc(100vw-2rem)]'}">
@@ -94,19 +122,13 @@
         {#if recent.length > 0}
           <div class="text-xs font-semibold text-muted">Recent</div>
           {#each recent as use (use.model)}
-            <button type="button" class="flex items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover" onclick={() => pick(use.model)}>
-              <span class="truncate">{use.model}</span>
-              {#if isCurrent(use.model)}<Check class="size-4 shrink-0" />{/if}
-            </button>
+            {@render modelRow(use.model)}
           {/each}
         {/if}
         {#if mostUsed.length > 0}
           <div class="text-xs font-semibold text-muted">Most used</div>
           {#each mostUsed as use (use.model)}
-            <button type="button" class="flex items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover" onclick={() => pick(use.model)}>
-              <span class="truncate">{use.model}</span>
-              {#if isCurrent(use.model)}<Check class="size-4 shrink-0" />{/if}
-            </button>
+            {@render modelRow(use.model)}
           {/each}
         {/if}
         {#if recent.length === 0 && mostUsed.length === 0}
@@ -127,10 +149,7 @@
           <p class="px-2 text-sm text-muted">Loading the list from {active.name}…</p>
         {:else}
           {#each shown ?? [] as model (model)}
-            <button type="button" class="flex items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover" onclick={() => pick(model)}>
-              <span class="truncate">{model}</span>
-              {#if isCurrent(model)}<Check class="size-4 shrink-0" />{/if}
-            </button>
+            {@render modelRow(model)}
           {:else}
             <p class="px-2 text-sm text-muted">No Model matches. Type its id to use it anyway.</p>
           {/each}
