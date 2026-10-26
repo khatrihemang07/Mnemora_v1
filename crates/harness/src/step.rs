@@ -103,11 +103,11 @@ mod tests {
     }
 
     impl Provider for Blocking {
-        fn name(&self) -> &str {
+        fn name(&self) -> &'static str {
             "Blocking"
         }
 
-        fn model(&self) -> &str {
+        fn model(&self) -> &'static str {
             "m"
         }
 

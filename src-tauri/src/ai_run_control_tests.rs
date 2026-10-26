@@ -451,7 +451,7 @@ fn stopping_a_run_waiting_on_a_blocked_reply_ends_it_at_once_and_the_late_reply_
     stop(&app, &conversation);
     assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Stopped);
     assert!(
-        pressed.elapsed() < Duration::from_millis(1000),
+        pressed.elapsed() < Duration::from_secs(1),
         "the Run ends at once, not when the blocked reply arrives"
     );
 
