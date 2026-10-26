@@ -1,13 +1,18 @@
 <!--
-  ProviderSheet: adds a Provider (kind first, then only that kind's fields) or edits one (name,
-  address, a Test connection button and, for a kind that takes one, a write-only key). Deleting asks
-  first. Adding a Provider tests its connection straight after it is saved, since the address is
-  only then known to the device; the result is a toast, and the sheet closes either way. Saving an
-  edit closes the sheet too. A validation error is shown once, under the field, with no Copy details.
-  Centred on a desktop, a bottom sheet on a phone.
+  ProviderSheet: adds a Provider (the kind first, then only that kind's fields) or edits one (name,
+  address, a Test connection button, the paid switch for OpenRouter and, for a kind that takes one, a
+  write-only key). Deleting asks first. A keyless kind is tested straight after it is added, the result
+  is a toast and the sheet closes. A kind that takes a key stays open after it is added, on its key
+  section, because a key can only be saved once the Provider exists and a test would fail without one.
+  Saving an edit closes the sheet too. A validation error is shown once, under the field, with no Copy
+  details. Centred on a desktop, a bottom sheet on a phone.
 -->
 <script lang="ts">
+  import type { Component } from 'svelte';
   import Plug from '~icons/lucide/plug';
+  import Route from '~icons/lucide/route';
+  import Server from '~icons/lucide/server';
+  import Sparkles from '~icons/lucide/sparkles';
   import Trash2 from '~icons/lucide/trash-2';
   import { type ConnectionTest, commands, type ProviderKind, type ProviderView } from '../../lib/ipc/bindings';
   import { queryClient } from '../../lib/ipc/query-client';
@@ -17,8 +22,19 @@
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import Input from '../../lib/ui/Input.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
+  import Switch from '../../lib/ui/Switch.svelte';
   import { notify } from '../../lib/ui/toast';
   import { aiKeys } from './queries';
+  import {
+    addressFor,
+    createRequest,
+    KINDS,
+    type KindInfo,
+    keyHint,
+    kindOf,
+    PAID_SWITCH,
+    updateRequest,
+  } from './provider-kinds';
 
   interface Props {
     open: boolean;
@@ -29,23 +45,26 @@
 
   let { open, provider, onclose }: Props = $props();
 
-  /** The kinds a Provider can be added as. Each kind has fixed behaviour; more arrive with their adapters. */
-  const KINDS: { id: ProviderKind; name: string; description: string; address: string }[] = [
-    {
-      id: 'wrapper',
-      name: 'Local AI Wrapper',
-      description: 'Your localAIWrapper on this machine or your network. No key.',
-      address: 'http://127.0.0.1:8080/v1',
-    },
-  ];
+  const ICONS: Record<ProviderKind, Component<{ class?: string }>> = {
+    wrapper: Plug,
+    openai_compatible: Server,
+    anthropic: Sparkles,
+    openrouter: Route,
+  };
 
-  /** The Provider as last changed here (a key set or cleared), so the key state shown is current. */
+  /** The Provider as last changed here (a key set or cleared, or just added), so what is shown is current. */
   let saved = $state<ProviderView | null>(null);
   const current = $derived(saved ?? provider);
+  /** The kind picked on the kind step for a new Provider. */
+  let chosen = $state<ProviderKind>('wrapper');
+  const info = $derived<KindInfo>(kindOf(current?.kind ?? chosen));
   let step = $state<'kind' | 'form'>('form');
   let name = $state('');
   let address = $state('');
+  let allowPaid = $state(false);
   let keyDraft = $state('');
+  /** A saved key being replaced: the masked field is open again. */
+  let replacing = $state(false);
   let working = $state(false);
   let error = $state<unknown>(null);
   /** A validation message for the address or the key, shown once under its field. */
@@ -63,19 +82,23 @@
     keyIssue = null;
     test = null;
     keyDraft = '';
+    replacing = false;
     step = provider ? 'form' : 'kind';
+    chosen = 'wrapper';
     name = provider?.name ?? '';
-    address = provider?.address ?? KINDS[0]?.address ?? '';
+    address = provider?.address ?? kindOf('wrapper').address;
+    allowPaid = provider?.allow_paid ?? false;
   });
 
   const title = $derived(current ? 'Provider' : 'Add a Provider');
-  const kindName = $derived(
-    KINDS.find((kind) => kind.id === (current?.kind ?? 'wrapper'))?.name ?? 'Provider',
-  );
+  const effectiveAddress = $derived(addressFor(info, address));
+  const canSave = $derived(!working && name.trim() !== '' && effectiveAddress !== '');
 
-  function chooseKind(kind: (typeof KINDS)[number]) {
+  function chooseKind(kind: KindInfo) {
+    chosen = kind.id;
     name = kind.name;
     address = kind.address;
+    allowPaid = false;
     step = 'form';
   }
 
@@ -88,7 +111,7 @@
     return caught instanceof IpcError && caught.code === 'validation';
   }
 
-  /** Tests a Provider just added, and says the outcome in one line for the toast. */
+  /** Tests a keyless Provider just added, and says the outcome in one line for the toast. */
   async function testAfterAdd(added: ProviderView): Promise<string> {
     try {
       const result = await unwrap(commands.aiProviderTest(added.id));
@@ -98,22 +121,37 @@
     }
   }
 
-  /** Saves the form: adds the Provider and tests it, or updates the one being edited. Then closes. */
+  /** Saves the form: adds the Provider or updates the one being edited. */
   async function save() {
     working = true;
     error = null;
     addressIssue = null;
     try {
       if (current) {
-        await unwrap(commands.aiProviderUpdate(current.id, { name, address }));
+        await unwrap(commands.aiProviderUpdate(current.id, updateRequest(info, name, address, allowPaid)));
         await refresh();
         notify('Provider saved');
-      } else {
-        const added = await unwrap(commands.aiProviderCreate({ kind: 'wrapper', name, address }));
-        await refresh();
-        await queryClient.invalidateQueries({ queryKey: aiKeys.models(added.id) });
-        notify(await testAfterAdd(added));
+        onclose();
+        return;
       }
+      const added = await unwrap(commands.aiProviderCreate(createRequest(info, name, address)));
+      // Saved already, so a failure below leaves the sheet on this Provider rather than a second add.
+      saved = added;
+      if (info.paid && allowPaid) {
+        // Create ignores the switch, so it is sent as an update straight after.
+        saved = await unwrap(commands.aiProviderUpdate(added.id, updateRequest(info, name, address, true)));
+      }
+      await refresh();
+      await queryClient.invalidateQueries({ queryKey: aiKeys.models(added.id) });
+      if (info.key !== 'none') {
+        notify(
+          info.key === 'required'
+            ? `Added ${added.name}. Save its key to start asking.`
+            : `Added ${added.name}. Save its key below if it needs one.`,
+        );
+        return;
+      }
+      notify(await testAfterAdd(added));
       onclose();
     } catch (caught) {
       if (isValidation(caught)) addressIssue = caught.message;
@@ -145,6 +183,7 @@
     try {
       saved = await unwrap(commands.aiProviderKeySet(current.id, keyDraft));
       keyDraft = '';
+      replacing = false;
       await refresh();
     } catch (caught) {
       if (isValidation(caught)) keyIssue = caught.message;
@@ -154,12 +193,25 @@
     }
   }
 
+  function startReplace() {
+    replacing = true;
+    keyDraft = '';
+    keyIssue = null;
+  }
+
+  function cancelReplace() {
+    replacing = false;
+    keyDraft = '';
+    keyIssue = null;
+  }
+
   async function clearKey() {
     if (!current) return;
     working = true;
     error = null;
     try {
       saved = await unwrap(commands.aiProviderKeyClear(current.id));
+      replacing = false;
       await refresh();
     } catch (caught) {
       error = caught;
@@ -183,7 +235,6 @@
       working = false;
     }
   }
-
 </script>
 
 <Sheet {open} {title} {onclose} centered closable>
@@ -191,12 +242,13 @@
     <div class="flex flex-col gap-3">
       <p class="text-sm text-muted">Choose the kind first. Each kind asks only for what it needs.</p>
       {#each KINDS as kind (kind.id)}
+        {@const Icon = ICONS[kind.id]}
         <button
           type="button"
           class="flex w-full cursor-pointer items-start gap-3 rounded-md border border-line bg-surface p-(--pad) text-left transition-colors duration-(--dur) ease-out hover:border-faint"
           onclick={() => chooseKind(kind)}
         >
-          <span class="mt-0.5" style="color: var(--hue-ai)"><Plug class="size-5" /></span>
+          <span class="mt-0.5" style="color: var(--hue-ai)"><Icon class="size-5" /></span>
           <span class="min-w-0">
             <span class="block font-medium text-ink">{kind.name}</span>
             <span class="block text-sm text-muted">{kind.description}</span>
@@ -209,59 +261,89 @@
       class="flex flex-col gap-4"
       onsubmit={(event) => {
         event.preventDefault();
-        if (!working) void save();
+        if (canSave) void save();
       }}
     >
-      <p class="text-sm text-muted">{kindName}</p>
+      <p class="text-sm text-muted">{info.name}</p>
       <label class="flex flex-col gap-1.5">
         <span class="text-sm font-medium text-ink">Name</span>
         <Input bind:value={name} label="Name" maxlength={40} autocomplete="off" />
       </label>
       <label class="flex flex-col gap-1.5">
         <span class="text-sm font-medium text-ink">Address</span>
-        <Input bind:value={address} label="Address" autocapitalize="off" autocomplete="off" spellcheck="false" />
+        {#if info.fixedAddress}
+          <Input value={info.address} label="Address" readonly />
+        {:else}
+          <Input
+            bind:value={address}
+            label="Address"
+            placeholder={info.id === 'openai_compatible' ? 'https://api.example.com/v1' : undefined}
+            autocapitalize="off"
+            autocomplete="off"
+            spellcheck="false"
+            invalid={addressIssue !== null}
+          />
+        {/if}
         {#if addressIssue}
           <span class="text-xs text-danger" role="alert">{addressIssue}</span>
+        {:else if info.fixedAddress}
+          <span class="text-xs text-muted">Fixed for this kind.</span>
         {:else}
           <span class="text-xs text-muted">
             Plain http works only on this machine, your local network and Tailscale. Other addresses use https.
+            {#if current?.key_state === 'saved' && info.key === 'optional'}
+              Changing the address removes the saved key.
+            {/if}
           </span>
         {/if}
       </label>
 
-      {#if current && current.key_state !== 'not_needed'}
+      {#if current && info.key !== 'none'}
         <div class="flex flex-col gap-2 rounded-md border border-line p-(--pad)">
-          <span class="text-sm font-medium text-ink">API key</span>
-          {#if current.key_state === 'saved'}
+          <span class="text-sm font-medium text-ink">API key{info.key === 'optional' ? ' (optional)' : ''}</span>
+          {#if current.key_state === 'saved' && !replacing}
             <div class="flex items-center justify-between gap-2 text-sm">
-              <span class="text-ink">Key saved on this device</span>
+              <span class="text-ink">Key saved</span>
               <span class="flex gap-2">
-                <Button size="sm" variant="ghost" onclick={() => void saveKey()} disabled={keyDraft.trim() === ''}>Replace</Button>
-                <Button size="sm" variant="ghost" onclick={() => void clearKey()}>Remove</Button>
+                <Button size="sm" variant="ghost" onclick={startReplace} disabled={working}>Replace</Button>
+                <Button size="sm" variant="ghost" onclick={() => void clearKey()} disabled={working}>Remove</Button>
               </span>
             </div>
+          {:else}
+            <div class="flex items-center gap-2">
+              <Input
+                type="password"
+                bind:value={keyDraft}
+                label="API key"
+                placeholder={replacing ? 'Paste a new key' : 'Paste the key'}
+                autocomplete="off"
+                spellcheck={false}
+                invalid={keyIssue !== null}
+              />
+              <Button size="sm" variant="secondary" onclick={() => void saveKey()} disabled={keyDraft.trim() === '' || working}>
+                Save key
+              </Button>
+              {#if replacing}
+                <Button size="sm" variant="ghost" onclick={cancelReplace} disabled={working}>Cancel</Button>
+              {/if}
+            </div>
           {/if}
-          <div class="flex items-center gap-2">
-            <Input
-              type="password"
-              bind:value={keyDraft}
-              label={current.key_state === 'saved' ? 'New key' : 'API key'}
-              placeholder={current.key_state === 'saved' ? 'Paste a new key to replace it' : 'Paste the key'}
-              autocomplete="off"
-              spellcheck={false}
-            />
-            <Button size="sm" variant="secondary" onclick={() => void saveKey()} disabled={keyDraft.trim() === '' || working}>
-              Save key
-            </Button>
-          </div>
           {#if keyIssue}
             <span class="text-xs text-danger" role="alert">{keyIssue}</span>
-          {:else}
-            <span class="text-xs text-muted">Write-only: hidden as you type and never shown again. Stored on this device only.</span>
+          {:else if current.key_state !== 'saved' || replacing}
+            <span class="text-xs text-muted">{keyHint(info.key)}</span>
           {/if}
         </div>
-      {:else if current}
-        <p class="text-sm text-muted">No key needed for this kind.</p>
+      {/if}
+
+      {#if info.paid}
+        <div class="flex items-start justify-between gap-3">
+          <span class="flex min-w-0 flex-col gap-0.5">
+            <span class="text-sm font-medium text-ink">{PAID_SWITCH.label}</span>
+            <span class="text-xs text-muted">{PAID_SWITCH.hint}</span>
+          </span>
+          <Switch checked={allowPaid} label={PAID_SWITCH.label} disabled={working} onchange={(next) => (allowPaid = next)} />
+        </div>
       {/if}
 
       {#if current}
@@ -291,7 +373,7 @@
           {#if step === 'form' && !current}
             <Button variant="ghost" onclick={() => (step = 'kind')}>Back</Button>
           {/if}
-          <Button type="submit" variant="primary" disabled={working || name.trim() === '' || address.trim() === ''}>
+          <Button type="submit" variant="primary" disabled={!canSave}>
             {current ? 'Save changes' : 'Add Provider'}
           </Button>
         </div>
