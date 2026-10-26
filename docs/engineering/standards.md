@@ -183,6 +183,73 @@ Setup: Mac `make sandbox` (press `z`), phone `make android-sandbox`; Tailscale r
 31. Mac, Local Network denied (D13, D14). Press Don't Allow (or switch Mnemora off in the Local Network list). For about 30 seconds nothing shows (the probe retries while the prompt could still be unanswered); then Devices and the Pair sheet show the banner, paired rows read "Blocked by Local Network setting", the sidebar badge is an amber "!", Home has the card and Activity has one line. "Open Settings" opens the Local Network pane (macOS 15+), or Privacy & Security if the link is not understood. A phone that already knows the Mac (a remembered or typed Address, or Tailscale) still connects to it and the row turns Up to date; with the Mac on Tailscale, `Pair by address…` on the phone using the address under the Mac's code pairs it for the first time. Switch Mnemora back on in System Settings: within a minute the banner, badge, Home card and row wording all clear by themselves and no second Activity line is added.
 32. Android 17 local network permission (D15; needs a device on Android 17, or the Kotlin and mock only elsewhere). The manifest declares `ACCESS_LOCAL_NETWORK`. With Sync off the app never asks. Turn Sync on: the system dialog appears then (on Android 16 and older nothing is asked and the app behaves as before). Allow: no banner. Deny: Devices and the Pair sheet show "This phone can't reach devices on your network." with Open Settings; the button asks again once and after "Don't ask again" opens the app's settings page. Grant it there and return: the banner clears without a restart. Turning Sync off clears the banner, and no prompt or banner appears while it is off.
 
+### AI Module
+
+Two setups: the browser mock (`make dev`, press `w`; its scripted fake Provider answers, so checks 1 to 9 need no network) and the real devices (Sandbox Mac with the real Local AI Wrapper, plus one native Provider such as Anthropic or OpenRouter, and the Sandbox phone). Real Providers are used by hand only, never in automated tests, and their keys are never pasted into a log or a screenshot.
+
+#### First run and look (mock, built-in display; Light, Dark and True black; 360px and desktop)
+
+A. The AI Module is off by default: a fresh install has no AI in the sidebar, the tab bar or ⌘K. Settings ▸ Modules switches it on and it appears at once, with no restart; switching it off hides it again.
+B. First run with no Provider: the page says "Add a Provider to start" with one button. Once a Provider exists, the empty Conversation greets you ("What should we look at…") with the composer below.
+C. The Conversation page is serif answers, the AI accent, and comfortable and compact density, in every theme; the phone header keeps the title clear of its two icons and the history is a Sheet.
+D. ⌘K offers "Ask AI", "New Conversation" and "Open Conversation"; A, C and / work from the page.
+E. An answer that cites nothing says it cannot find the answer in the Journal and Tasks rather than inventing Entries or dates (ask about something you never wrote).
+
+#### Accessibility (mock, built-in display; then VoiceOver on the Mac and TalkBack on the phone)
+
+1. Streamed text is never read token by token: with a screen reader on, ask a question and let it stream. Nothing is spoken while text arrives; once it finishes, "Response complete" is spoken exactly once. A Stop gives "Response stopped" once; a failure gives "Response failed:" and its one sentence once.
+2. The Stop button is named "Stop" for the whole Run and is reached by Tab from the question box while a Run answers. Pressing it with the keyboard (Space or Return) keeps focus in the question box (never on the page body), and the Run ends as stopped.
+3. When a Run ends while focus is on Stop (the round button turns back into Send), focus lands in the question box.
+4. Escape in the empty question box during a Run takes the waiting notes back into the box, one per line, and they leave the queue. With text typed, Escape does nothing.
+5. Focus returns to the control that opened each overlay when it closes, with Escape and with its own buttons: the history (Popover on the Mac, Sheet on the phone), the + menu, the Conversation menu, the Model picker (Popover or Sheet), a Source preview, the Provider sheet (from a Provider row and from "Add a Provider"), the Delete confirmation, the Saved question dialog, Rename, and Branch from earlier (from the menu; from a banner it returns to the question box). Nothing is left on the body.
+6. Reduced motion: with Settings ▸ General ▸ Reduce motion on, the Activity spinner and the streaming cursor stop, with the macOS setting off. Then the reverse: the macOS Reduce motion setting on (set it by hand; agents never change system settings) with the app setting off stops them too.
+7. Light theme: the Switch's off track reads against the white card (3:1 or more, as a non-text control edge). Dark and True black read the same way.
+8. Small text in the AI sheets (the sheet titles) is muted, not faint, and reads in light, dark and True black at 360px.
+9. Phone (360px): the Enter key adds a line, the round send button sends, and the composer is never focused on open. On the Mac, Enter sends and Shift+Enter adds a line; the box is not focused when the page opens, so A, C and / work at once.
+
+#### Providers (keys in every state)
+
+10. Add a Provider with no Provider set: "Add a Provider to start" with one button. Pick the kind first; each kind then shows only its own fields.
+11. Local AI Wrapper: its address (on this machine) is confirmed; Test connection succeeds with the real Wrapper and, with a wrong port, says it cannot be reached in one sentence.
+12. Key states: "Needs a key" on a Provider that takes one and has none; the key field hides what is typed; after saving the row reads "Key saved" and the sheet shows "Key saved" with Replace and Remove, and never the key itself; Replace asks for a new key, Remove returns to "Needs a key". A key the Provider rejects gives one sentence on the test, never its raw error. The Wrapper takes no key and shows none.
+13. OpenRouter: a key alone is enough; paid Models are listed disabled with the reason; the paid switch on the Provider enables them, and a paid question is refused again at send time when the switch is off.
+14. OpenAI-compatible: the key is optional; a plain `http` address is accepted for this machine, the local network and Tailscale and refused for any other address.
+15. Delete asks first ("Delete this Provider?"); a Provider's conversations keep their text.
+
+#### Ask (real Local AI Wrapper and one native Provider)
+
+16. A question about Journal and Tasks (for example "What did I write last week?") with the Wrapper: the live activity line runs, then "Completed N steps" expands to plain steps ("Listed entries, 7 entries"), and the answer appears whole (the Wrapper does not stream).
+17. The same question with the native Provider streams: text appears while it is written and the activity line ends with the answer.
+18. Sources: every cited Entry or Task is a chip; tapping one shows a preview with "Open in its Module", which opens the item. A Source appears only for an item the AI read in that Run.
+19. Copy on an answer copies it as Markdown with no citation markers; Copy as Markdown on the Conversation menu copies the whole Conversation.
+
+#### Stop, queued notes and failures
+
+20. Stop during a Run: the text written so far stays, marked "Stopped"; the Run is not cancelled by leaving the page (open another page, come back: it is still answering or has been answered).
+21. Type while a Run answers: the note appears as a removable row; "Send now" ends the Step in progress and the note goes next; the Step that Send now ended is not labelled "Stopped".
+22. Each failure kind gives one sentence and the right action: an unreachable address, a wrong key, a busy or unavailable Model, a Model that cannot use tools, and a question that is too long. The raw Provider error is never on screen or in the logs (`Settings ▸ Data & storage ▸ open the log folder`).
+23. Offline (turn Wi-Fi off, then ask): "You're offline, your question is kept" as a warning banner; the question stays in the box.
+
+#### Branching and Conversations
+
+24. Try again on an answer: a sibling question appears with the pager "1 of 2"; the pager moves between them and keeps each answer.
+25. Edit a question (pencil on hover on the Mac, long press on the phone) and send: an edited sibling is made; the original stays.
+26. Branch from earlier (menu, or the banner on a too-long Conversation) continues after the answer chosen, carrying only the context up to it; New Conversation is the other way forward.
+27. History: Today, Yesterday, Previous 7 days and Earlier groups; 30 load at a time; search finds titles only. Rename, and Delete with Undo (the Conversation comes back whole).
+28. Saved questions: add one in AI Settings, rename, reorder, delete; run one from the composer's + menu (it runs only when tapped); the list is the same after a restart.
+
+#### Sync between two devices (Sandbox Mac and Sandbox phone)
+
+29. A Conversation asked on the Mac is on the phone after a sync, with its answers, Sources and the Model and Provider names under each answer.
+30. Continue that Conversation on the phone, which has no such Provider: it asks you to choose one of the phone's own Providers; nothing is blocked.
+31. Providers and keys stay on their device (the other device has none of them, and the key is never shown there). Saved question order and Conversation renames and deletes follow the other device.
+32. With one device on a newer build (a data-version change), both pause with "Update Mnemora on …" until both are updated.
+
+#### Android foreground interruption (Sandbox phone)
+
+33. Start a Run on the phone and press Home or switch apps while it answers: when the app comes back, the Run that was cut off shows "Interrupted" with Try again, and nothing is left guessing. A Run started on the Mac carries on while the phone is away.
+34. Stop, Send now and Try again still work after returning to the app, with no restart.
+
 ## Performance budgets
 
 - First-load JS stays small: lazy-load route components (the registry already does) and heavy libraries (state machines, charts, CodeMirror: `MarkdownEditor` imports it dynamically).

@@ -17,6 +17,7 @@
   import SettingSection from '../../lib/ui/SettingSection.svelte';
   import { notifyError } from '../../lib/ui/toast';
   import SavedQuestionDialog from './SavedQuestionDialog.svelte';
+  import { returnFocus } from './focus';
   import { deleteSaved, moveSaved } from './saved-actions';
   import { savedOptions } from './queries';
 
@@ -24,13 +25,17 @@
   const list = $derived<SavedQuestion[]>(saved.data ?? []);
   let dialogOpen = $state(false);
   let editing = $state<SavedQuestion | null>(null);
+  /** The button that opened the dialog: focus goes back to it when the dialog closes. */
+  let opener = $state<HTMLElement | null>(null);
 
-  function add() {
+  function add(event: MouseEvent) {
+    opener = event.currentTarget as HTMLElement;
     editing = null;
     dialogOpen = true;
   }
 
-  function edit(question: SavedQuestion) {
+  function edit(question: SavedQuestion, event: MouseEvent) {
+    opener = event.currentTarget as HTMLElement;
     editing = question;
     dialogOpen = true;
   }
@@ -65,17 +70,22 @@
           <span class="min-w-0 flex-1 truncate text-ink">{question.text}</span>
           <IconButton icon={ArrowUp} label="Move up" size="sm" variant="ghost" disabled={index === 0} onclick={() => void move(question, 'up')} />
           <IconButton icon={ArrowDown} label="Move down" size="sm" variant="ghost" disabled={index === list.length - 1} onclick={() => void move(question, 'down')} />
-          <IconButton icon={Pencil} label="Edit" size="sm" variant="ghost" onclick={() => edit(question)} />
+          <IconButton icon={Pencil} label="Edit" size="sm" variant="ghost" onclick={(event) => edit(question, event)} />
           <IconButton icon={Trash2} label="Delete" size="sm" variant="ghost" onclick={() => void remove(question)} />
         </div>
       {:else}
         <p class="px-(--pad) py-3 text-sm text-muted">No Saved questions yet. Save one here, or from an answer.</p>
       {/each}
       <div class="flex justify-start p-(--pad)">
-        <Button variant="secondary" onclick={add}><Plus class="size-4" /> Save a question</Button>
+        <Button variant="secondary" onclick={(event: MouseEvent) => add(event)}><Plus class="size-4" /> Save a question</Button>
       </div>
     </Card>
   {/if}
 </SettingSection>
 
-<SavedQuestionDialog open={dialogOpen} saved={editing} onclose={() => (dialogOpen = false)} />
+<SavedQuestionDialog
+  open={dialogOpen}
+  saved={editing}
+  onclose={() => (dialogOpen = false)}
+  restoreFocus={() => returnFocus(opener)}
+/>

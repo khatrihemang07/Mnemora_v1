@@ -14,19 +14,24 @@
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import ProviderSheet from './ProviderSheet.svelte';
   import SavedQuestions from './SavedQuestions.svelte';
+  import { returnFocus } from './focus';
   import { providersOptions } from './queries';
   import { freeOnlyNote, keyChip } from './provider-kinds';
 
   const providers = createQuery(() => providersOptions);
   let sheetOpen = $state(false);
   let editing = $state<ProviderView | null>(null);
+  /** The row or button that opened the sheet: focus goes back to it when the sheet closes. */
+  let opener = $state<HTMLElement | null>(null);
 
-  function add() {
+  function add(event: MouseEvent) {
+    opener = event.currentTarget as HTMLElement;
     editing = null;
     sheetOpen = true;
   }
 
-  function edit(provider: ProviderView) {
+  function edit(provider: ProviderView, event: MouseEvent) {
+    opener = event.currentTarget as HTMLElement;
     editing = provider;
     sheetOpen = true;
   }
@@ -47,7 +52,7 @@
         <button
           type="button"
           class="flex w-full cursor-pointer items-center gap-3 border-b border-line px-(--pad) py-3 text-left transition-colors duration-(--dur) ease-out first:rounded-t-md hover:bg-hover"
-          onclick={() => edit(provider)}
+          onclick={(event: MouseEvent) => edit(provider, event)}
         >
           <span class="flex size-8 shrink-0 items-center justify-center rounded-sm" style="background: color-mix(in oklch, var(--hue-ai) 16%, transparent); color: var(--hue-ai)">
             <Plug class="size-4" />
@@ -67,7 +72,7 @@
         <p class="px-(--pad) py-3 text-sm text-muted">No Providers yet. Add one to start asking questions.</p>
       {/each}
       <div class="flex justify-start p-(--pad)">
-        <Button variant="secondary" onclick={add}><Plus class="size-4" /> Add a Provider</Button>
+        <Button variant="secondary" onclick={(event: MouseEvent) => add(event)}><Plus class="size-4" /> Add a Provider</Button>
       </div>
     </Card>
   {/if}
@@ -78,4 +83,9 @@
 
 <div class="mt-8"><SavedQuestions /></div>
 
-<ProviderSheet open={sheetOpen} provider={editing} onclose={() => (sheetOpen = false)} />
+<ProviderSheet
+  open={sheetOpen}
+  provider={editing}
+  onclose={() => (sheetOpen = false)}
+  restoreFocus={() => returnFocus(opener)}
+/>

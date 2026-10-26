@@ -28,7 +28,6 @@
 </script>
 
 <div
-  role="alert"
   class="flex flex-wrap items-start gap-3 rounded-md border px-(--pad) py-3 text-sm"
   style={banner.tone === 'danger'
     ? 'border-color: var(--danger); background: var(--danger-soft)'

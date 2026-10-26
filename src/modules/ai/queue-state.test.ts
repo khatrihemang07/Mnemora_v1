@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { QueuedNote } from '../../lib/ipc/bindings';
-import { dropQueued, type QueuedNotes, setQueued } from './queue-state';
+import { dropQueued, type QueuedNotes, recalledText, setQueued } from './queue-state';
 
 const note = (id: string, text: string): QueuedNote => ({ id, text });
 
@@ -18,5 +18,15 @@ describe('queued notes', () => {
     const after = dropQueued(queued, 'c1', 'n2');
     expect(after.c1?.map((n) => n.id)).toEqual(['n1', 'n3']);
     expect(dropQueued(after, 'c9', 'n1').c9).toEqual([]);
+  });
+});
+
+describe('recalled notes', () => {
+  it('puts the taken-back notes in the box one per line, in waiting order', () => {
+    expect(recalledText([note('n1', 'first'), note('n2', 'second')])).toBe('first\nsecond');
+  });
+
+  it('is empty when nothing was waiting', () => {
+    expect(recalledText([])).toBe('');
   });
 });

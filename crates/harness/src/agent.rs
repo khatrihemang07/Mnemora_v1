@@ -295,11 +295,16 @@ fn keep_halted(
 ) -> bool {
     let ended = control.ended();
     if ended || !answer.text.is_empty() || !answer.calls.is_empty() {
-        // A stopped Step is saved even when empty, so the thread can say it was stopped.
+        // A stopped Step is saved even when empty, so the thread can say it was stopped. A skipped
+        // one (Send now) was not stopped by the person: it is saved as an ordinary finished Step.
         emit(Event::StepEnded(StepRecord {
             text: answer.text.clone(),
             calls: answer.calls.clone(),
-            stop: StopReason::Aborted,
+            stop: if ended {
+                StopReason::Aborted
+            } else {
+                StopReason::Stop
+            },
             budget_forced: false,
             sources: Vec::new(),
         }));

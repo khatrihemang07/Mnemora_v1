@@ -104,7 +104,7 @@ describe('token contrast (WCAG)', () => {
     },
   );
 
-  it.each(['dark', 'oled'] as const)(
+  it.each(['light', 'dark', 'oled'] as const)(
     'the Switch off track is at least 3:1 on every surface (%s)',
     (theme) => {
       for (const surface of ['pop', 'surface', 'surface-2', 'bg']) {

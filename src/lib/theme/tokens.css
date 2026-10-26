@@ -16,8 +16,8 @@
   --muted: oklch(50% 0.016 60);
   --faint: oklch(62% 0.014 65);
   --line: oklch(91% 0.011 70);
-  /* The Switch's off track: as --line in light; dark themes need a track that reads on the surfaces. */
-  --switch-off: var(--line);
+  /* The Switch's off track: 3:1 or more on every light surface (WCAG non-text contrast), so it reads. */
+  --switch-off: oklch(60% 0.012 60);
   --line-strong: oklch(
     83% 0.013 70
   ); /* outlines that must read on their own: chips, floating panels */

@@ -282,6 +282,14 @@ fn send_now_ends_the_step_being_written_and_sends_the_note_next() {
         entry_texts(&view, "assistant"),
         vec!["First part", "Answer to the note"]
     );
+    // Send now is not a stop: the step it ended is not shown as "Stopped".
+    let first = view["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["payload"]["kind"] == "assistant")
+        .expect("the step ended by Send now is saved");
+    assert_eq!(first["payload"]["stop"], "stop");
 }
 
 #[test]

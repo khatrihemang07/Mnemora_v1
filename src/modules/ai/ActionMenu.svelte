@@ -7,6 +7,7 @@
   import Menu from '../../lib/ui/Menu.svelte';
   import Sheet from '../../lib/ui/Sheet.svelte';
   import { viewport } from '../../lib/viewport.svelte';
+  import { returnFocus } from './focus';
 
   interface Props {
     open: boolean;
@@ -27,7 +28,7 @@
 </script>
 
 {#if viewport.isPhone}
-  <Sheet {open} title={label} onclose={() => (open = false)}>
+  <Sheet {open} title={label} onclose={() => (open = false)} restoreFocus={() => returnFocus(anchor)}>
     <div class="flex flex-col gap-0.5 pb-2">
       {#each items as item (item.label)}
         {#if item.separatorBefore}

@@ -21,3 +21,8 @@ export function dropQueued(
   const kept = (queued[conversationId] ?? []).filter((note) => note.id !== noteId);
   return { ...queued, [conversationId]: kept };
 }
+
+/** The text of notes taken back, one per line, in the order they were waiting. */
+export function recalledText(notes: readonly QueuedNote[]): string {
+  return notes.map((note) => note.text).join('\n');
+}

@@ -24,6 +24,7 @@
   import Sheet from '../../lib/ui/Sheet.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import { notify } from '../../lib/ui/toast';
+  import { returnFocus } from './focus';
   import { aiKeys } from './queries';
   import {
     addressFor,
@@ -41,9 +42,11 @@
     /** The Provider to edit, or none to add one. */
     provider: ProviderView | null;
     onclose: () => void;
+    /** Where focus goes when the sheet closes: the control that opened it. */
+    restoreFocus?: () => void;
   }
 
-  let { open, provider, onclose }: Props = $props();
+  let { open, provider, onclose, restoreFocus }: Props = $props();
 
   const ICONS: Record<ProviderKind, Component<{ class?: string }>> = {
     wrapper: Plug,
@@ -72,6 +75,14 @@
   let keyIssue = $state<string | null>(null);
   let test = $state<ConnectionTest | null>(null);
   let confirmDelete = $state(false);
+  /** The Delete button that asked for the confirmation: focus returns to it if the sheet is still open. */
+  let deleteOpener = $state<HTMLElement | null>(null);
+
+  /** After a delete the sheet has closed, so focus goes to what opened the sheet instead. */
+  function restoreAfterConfirm() {
+    if (deleteOpener?.isConnected) deleteOpener.focus();
+    else restoreFocus?.();
+  }
 
   // Each opening starts afresh: a new Provider from the kind step, an existing one from its details.
   $effect(() => {
@@ -247,7 +258,7 @@
   }
 </script>
 
-<Sheet {open} {title} {onclose} centered closable>
+<Sheet {open} {title} {onclose} centered closable restoreFocus={restoreFocus}>
   {#if step === 'kind'}
     <div class="flex flex-col gap-3">
       <p class="text-sm text-muted">Choose the kind first. Each kind asks only for what it needs.</p>
@@ -374,7 +385,14 @@
 
       <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
         {#if current}
-          <Button variant="danger" onclick={() => (confirmDelete = true)} disabled={working}>
+          <Button
+            variant="danger"
+            onclick={(event: MouseEvent) => {
+              deleteOpener = event.currentTarget as HTMLElement;
+              confirmDelete = true;
+            }}
+            disabled={working}
+          >
             <Trash2 class="size-4" /> Delete
           </Button>
         {:else}
@@ -398,6 +416,7 @@
   title="Delete this Provider?"
   description="Conversations that used it keep their text. Its key is removed from this device."
   onclose={() => (confirmDelete = false)}
+  restoreFocus={restoreAfterConfirm}
   overSheet
 >
   {#snippet actions()}

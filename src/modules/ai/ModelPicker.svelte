@@ -19,6 +19,7 @@
   import { viewport } from '../../lib/viewport.svelte';
   import type { Choice } from './choice';
   import { matchingModels, modelRowState, typedModelId, usesOf } from './model-picker';
+  import { returnFocus } from './focus';
   import { kindOf } from './provider-kinds';
   import { modelsOptions, providersOptions, usageOptions } from './queries';
 
@@ -167,11 +168,11 @@
 {/snippet}
 
 {#if viewport.isPhone}
-  <Sheet {open} title="Choose a Model" onclose={() => (open = false)} closable>
+  <Sheet {open} title="Choose a Model" onclose={() => (open = false)} closable restoreFocus={() => returnFocus(anchor)}>
     {@render body()}
   </Sheet>
 {:else}
-  <Popover bind:open {anchor} label="Choose a Model" flush>
+  <Popover bind:open {anchor} label="Choose a Model" flush restoreFocus={() => returnFocus(anchor)}>
     {@render body()}
   </Popover>
 {/if}

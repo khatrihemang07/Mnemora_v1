@@ -140,7 +140,7 @@
       {:else}
         <div aria-hidden="true" class="mx-auto -mt-2 mb-1.5 h-1 w-9 rounded-full bg-[color-mix(in_oklch,var(--ink)_20%,transparent)] desktop:hidden"></div>
         <div class="flex items-center justify-between gap-2 pb-2">
-          <Dialog.Title class="px-2 pt-1 text-xs font-medium text-faint">{title}</Dialog.Title>
+          <Dialog.Title class="px-2 pt-1 text-xs font-medium text-muted">{title}</Dialog.Title>
           {#if closable}
             <IconButton icon={X} label="Close" class="phone:size-11" onclick={onclose} />
           {/if}

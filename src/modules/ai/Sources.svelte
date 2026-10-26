@@ -10,6 +10,7 @@
   import Sheet from '../../lib/ui/Sheet.svelte';
   import { viewport } from '../../lib/viewport.svelte';
   import { openHref, sourceModule } from './activity';
+  import { returnFocus } from './focus';
 
   interface Props {
     sources: readonly Source[];
@@ -69,13 +70,13 @@
   </div>
 {/snippet}
 
-{#if picked && previewOpen}
+{#if picked}
   {#if viewport.isPhone}
-    <Sheet open title="Source" onclose={close} closable>
+    <Sheet open={previewOpen} title="Source" onclose={close} closable restoreFocus={() => returnFocus(anchor)}>
       {@render preview(picked)}
     </Sheet>
   {:else}
-    <Popover bind:open={previewOpen} {anchor} label="Source">
+    <Popover bind:open={previewOpen} {anchor} label="Source" restoreFocus={() => returnFocus(anchor)}>
       {@render preview(picked)}
     </Popover>
   {/if}

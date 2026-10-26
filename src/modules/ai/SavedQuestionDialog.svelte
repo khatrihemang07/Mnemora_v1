@@ -13,9 +13,11 @@
     /** The question being edited, or none to add one. */
     saved: SavedQuestion | null;
     onclose: () => void;
+    /** Where focus goes when the dialog closes: the control that opened it. */
+    restoreFocus?: () => void;
   }
 
-  let { open, saved, onclose }: Props = $props();
+  let { open, saved, onclose, restoreFocus }: Props = $props();
   let text = $state('');
   let busy = $state(false);
   let error = $state<string | null>(null);
@@ -51,6 +53,7 @@
   title={saved ? 'Edit Saved question' : 'Save a question'}
   description="It runs with one tap from the + menu, and only then."
   {onclose}
+  {restoreFocus}
 >
   <form
     class="flex flex-col gap-2"
