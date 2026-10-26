@@ -36,7 +36,7 @@ fn request() -> Request {
 /// Every event of one Step, collected.
 fn run(provider: &dyn Provider) -> Vec<StreamEvent> {
     let mut events = Vec::new();
-    provider.stream(&request(), &mut |event| events.push(event));
+    provider.stream(&request(), &|| false, &mut |event| events.push(event));
     events
 }
 
@@ -221,7 +221,7 @@ fn with_tools() -> Request {
 
 fn run_with(provider: &dyn Provider, request: &Request) -> Vec<StreamEvent> {
     let mut events = Vec::new();
-    provider.stream(request, &mut |event| events.push(event));
+    provider.stream(request, &|| false, &mut |event| events.push(event));
     events
 }
 

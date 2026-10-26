@@ -38,7 +38,7 @@ fn with_tools() -> Request {
 
 fn run(provider: &dyn Provider, request: &Request) -> Vec<StreamEvent> {
     let mut events = Vec::new();
-    provider.stream(request, &mut |event| events.push(event));
+    provider.stream(request, &|| false, &mut |event| events.push(event));
     events
 }
 

@@ -3,6 +3,7 @@
 //! answer. The limits, the stop-reason gate and the correction turns are the approved ones: a
 //! mistake the Model can fix is sent back to it, never shown to the person as a failure.
 
+use crate::control::Control;
 use crate::message::{Call, Message};
 use crate::provider::{Failure, Provider, Request, StopReason, ToolDef};
 use crate::step::{Answer, run_step};
@@ -27,6 +28,10 @@ pub const CLOSE_NOTE: &str = "Stop looking things up. Answer now from what the T
 /// The result of a call the Model made in a reply that was cut off. It did not run.
 pub const CUT_OFF: &str =
     "The reply was cut off before these calls ran. Send them again, one at a time.";
+/// The result of a call that did not run because the Run was stopped first.
+pub const NOT_RUN_STOPPED: &str = "The Run was stopped before this call ran.";
+/// The result of a call that did not run because the person sent a note first.
+pub const NOT_RUN_SKIPPED: &str = "A note from the person came before this call, so it did not run. Ask again if you still need it.";
 /// The result of a call beyond the eighth in one Step.
 pub const TOO_MANY: &str =
     "Too many calls at once. Send at most eight per step; send the rest next time.";
@@ -134,6 +139,8 @@ pub enum Event {
     },
     /// A correction turn was sent to the Model.
     Correction(String),
+    /// A note the person sent during the Run is now part of the branch, as a question.
+    Steered(String),
 }
 
 /// How the loop ended. The final answer's `StepEnded` has been reported when it is `Answered`.
@@ -141,17 +148,35 @@ pub enum Event {
 pub enum Outcome {
     /// The Model gave its answer.
     Answered,
+    /// The person stopped the Run. What was written before is kept.
+    Stopped,
     /// The Run ended without an answer.
     Failed(Failure),
 }
 
+/// Where a Step's answer went once it asked for no Tools.
+enum Finished {
+    /// The answer is the Run's answer.
+    Answered,
+    /// The answer could not be accepted and a correction was sent.
+    Corrected,
+    /// The answer was kept as a Step, and the person's notes were sent to the Model next.
+    Steered,
+    /// The Run cannot go on.
+    Failed(Failure),
+}
+
 /// Runs the loop from `messages` (the branch so far, ending with the question) until the Model
-/// answers or the Run fails. `emit` sees every event in order.
+/// answers, the person stops the Run, or the Run fails. `emit` sees every event in order.
+/// `steer` hands over the next note the person queued, if any; notes are sent to the Model after
+/// the Step's Tools finish, or after a Step that asked for none but is not the answer.
 pub fn run(
     provider: &dyn Provider,
     system: &str,
     mut messages: Vec<Message>,
     host: &mut dyn ToolHost,
+    control: &Control,
+    steer: &mut dyn FnMut() -> Option<String>,
     emit: &mut dyn FnMut(Event),
 ) -> Outcome {
     let mut requests = 0;
@@ -160,6 +185,9 @@ pub fn run(
     let mut invalid_streak = 0;
     let mut closing = false;
     loop {
+        if control.ended() {
+            return Outcome::Stopped;
+        }
         let last = requests + 1 == MAX_REQUESTS;
         let withheld = last || closing;
         let request = Request {
@@ -176,13 +204,25 @@ pub fn run(
             return Outcome::Failed(Failure::TooLong);
         }
         requests += 1;
+        control.begin_step();
         emit(Event::StepStarted);
-        let answer = match run_step(provider, &request, &mut |text| {
+        let answer = match run_step(provider, &request, &|| control.halts_step(), &mut |text| {
             emit(Event::TextDelta(text.to_owned()));
         }) {
             Ok(answer) => answer,
+            Err(_) if control.ended() => return Outcome::Stopped,
             Err(failure) => return Outcome::Failed(failure),
         };
+
+        // A Step the person stopped or skipped: what it wrote is kept, and its calls do not run.
+        if answer.stop == StopReason::Aborted || control.ended() {
+            // On the answer-only request there is no request left for a note, so the Run ends too.
+            if keep_halted(answer, host, &mut messages, &mut ran, control, emit) || last {
+                return Outcome::Stopped;
+            }
+            deliver(steer, &mut messages, emit);
+            continue;
+        }
 
         // A reply the protocol could not read: the Model is told why and answers again. It is not
         // kept in the branch, and it fails the Run only when it keeps happening.
@@ -197,39 +237,40 @@ pub fn run(
         }
 
         if answer.calls.is_empty() || (last && !answer.text.is_empty()) {
-            if let Some(outcome) = finish(answer, last, host, &mut messages, emit) {
-                return outcome;
+            match finish(answer, last, host, &mut messages, steer, emit) {
+                Finished::Answered => return Outcome::Answered,
+                Finished::Failed(failure) => return Outcome::Failed(failure),
+                Finished::Steered => continue,
+                // The answer cited or listed something this Run did not return: a correction was sent.
+                Finished::Corrected => {
+                    invalid_streak += 1;
+                    if invalid_streak >= MAX_INVALID_STEPS {
+                        return Outcome::Failed(Failure::BadResponse);
+                    }
+                    continue;
+                }
             }
-            // The answer cited or listed something this Run did not return: a correction was sent.
-            invalid_streak += 1;
-            if invalid_streak >= MAX_INVALID_STEPS {
-                return Outcome::Failed(Failure::BadResponse);
-            }
-            continue;
         }
 
-        // Calls that do not run: the reply was cut off, or no Tools are offered now.
-        let not_run = if answer.stop == StopReason::Length {
-            Some(CUT_OFF)
-        } else if withheld {
-            Some(NO_TOOLS_NOW)
-        } else {
-            None
-        };
-        emit(Event::StepEnded(StepRecord {
-            text: answer.text.clone(),
-            calls: answer.calls.clone(),
-            stop: answer.stop,
-            budget_forced: false,
-            sources: Vec::new(),
-        }));
-        messages.push(Message::Assistant {
-            text: answer.text,
-            calls: answer.calls.clone(),
-        });
-        let tally = run_calls(&answer.calls, not_run, host, &mut ran, &mut messages, emit);
+        // The answer-only request asked for Tools and wrote no answer: there is no request left.
+        if last {
+            return Outcome::Failed(Failure::BadResponse);
+        }
+        let calls_made = answer.calls.len();
+        let tally = run_step_calls(
+            answer,
+            withheld,
+            host,
+            &mut ran,
+            &mut messages,
+            control,
+            emit,
+        );
+        if !control.ended() {
+            deliver(steer, &mut messages, emit);
+        }
 
-        repeat_streak = if tally.repeats == answer.calls.len() {
+        repeat_streak = if tally.repeats == calls_made {
             repeat_streak + 1
         } else {
             0
@@ -242,21 +283,108 @@ pub fn run(
     }
 }
 
-/// Ends the Run on a Step that asked for no Tools. `Some` ends the loop; `None` means a correction
-/// was sent and the Model answers again.
+/// Keeps a Step the person stopped or skipped: what it wrote is saved, and each of its calls is
+/// answered without running. Returns whether the Run ended, which a stop does and a skip does not.
+fn keep_halted(
+    answer: Answer,
+    host: &mut dyn ToolHost,
+    messages: &mut Vec<Message>,
+    ran: &mut Vec<(String, String, String)>,
+    control: &Control,
+    emit: &mut dyn FnMut(Event),
+) -> bool {
+    let ended = control.ended();
+    if ended || !answer.text.is_empty() || !answer.calls.is_empty() {
+        // A stopped Step is saved even when empty, so the thread can say it was stopped.
+        emit(Event::StepEnded(StepRecord {
+            text: answer.text.clone(),
+            calls: answer.calls.clone(),
+            stop: StopReason::Aborted,
+            budget_forced: false,
+            sources: Vec::new(),
+        }));
+        messages.push(Message::Assistant {
+            text: answer.text,
+            calls: answer.calls.clone(),
+        });
+        let reason = if ended {
+            NOT_RUN_STOPPED
+        } else {
+            NOT_RUN_SKIPPED
+        };
+        run_calls(
+            &answer.calls,
+            Some(reason),
+            host,
+            ran,
+            messages,
+            control,
+            emit,
+        );
+    }
+    ended
+}
+
+/// Saves a Step that asked for Tools and runs its calls. Returns what the calls came to.
+fn run_step_calls(
+    answer: Answer,
+    withheld: bool,
+    host: &mut dyn ToolHost,
+    ran: &mut Vec<(String, String, String)>,
+    messages: &mut Vec<Message>,
+    control: &Control,
+    emit: &mut dyn FnMut(Event),
+) -> Tally {
+    // Calls that do not run: the reply was cut off, or no Tools are offered now.
+    let not_run = if answer.stop == StopReason::Length {
+        Some(CUT_OFF)
+    } else if withheld {
+        Some(NO_TOOLS_NOW)
+    } else {
+        None
+    };
+    emit(Event::StepEnded(StepRecord {
+        text: answer.text.clone(),
+        calls: answer.calls.clone(),
+        stop: answer.stop,
+        budget_forced: false,
+        sources: Vec::new(),
+    }));
+    messages.push(Message::Assistant {
+        text: answer.text,
+        calls: answer.calls.clone(),
+    });
+    run_calls(&answer.calls, not_run, host, ran, messages, control, emit)
+}
+
+/// Sends every queued note to the Model, in order, as questions of the branch.
+fn deliver(
+    steer: &mut dyn FnMut() -> Option<String>,
+    messages: &mut Vec<Message>,
+    emit: &mut dyn FnMut(Event),
+) {
+    while let Some(note) = steer() {
+        messages.push(Message::User(note.clone()));
+        emit(Event::Steered(note));
+    }
+}
+
+/// Ends the Run on a Step that asked for no Tools. A note queued before the answer is saved turns
+/// the Step into one of the branch, and the Model is asked again with the note.
 fn finish(
     answer: Answer,
     last: bool,
     host: &dyn ToolHost,
     messages: &mut Vec<Message>,
+    steer: &mut dyn FnMut() -> Option<String>,
     emit: &mut dyn FnMut(Event),
-) -> Option<Outcome> {
+) -> Finished {
     if answer.text.trim().is_empty() {
-        return Some(Outcome::Failed(Failure::BadResponse));
+        return Finished::Failed(Failure::BadResponse);
     }
     if let Err(correction) = host.check_answer(&answer.text, &answer.sources) {
         if last {
-            return Some(Outcome::Failed(Failure::BadResponse));
+            return Finished::Failed(Failure::BadResponse);
         }
         emit(Event::StepEnded(StepRecord {
             text: answer.text.clone(),
@@ -271,7 +399,24 @@ fn finish(
         });
         emit(Event::Correction(correction.clone()));
         messages.push(Message::Correction(correction));
-        return None;
+        return Finished::Corrected;
+    }
+    if !last && let Some(note) = steer() {
+        emit(Event::StepEnded(StepRecord {
+            text: answer.text.clone(),
+            calls: Vec::new(),
+            stop: answer.stop,
+            budget_forced: false,
+            sources: answer.sources.clone(),
+        }));
+        messages.push(Message::Assistant {
+            text: answer.text,
+            calls: Vec::new(),
+        });
+        messages.push(Message::User(note.clone()));
+        emit(Event::Steered(note));
+        deliver(steer, messages, emit);
+        return Finished::Steered;
     }
     emit(Event::StepEnded(StepRecord {
         text: answer.text,
@@ -280,7 +425,7 @@ fn finish(
         budget_forced: last,
         sources: answer.sources,
     }));
-    Some(Outcome::Answered)
+    Finished::Answered
 }
 
 /// What one Step's calls came to: whether any was unknown or badly formed, and how many repeated
@@ -290,13 +435,15 @@ struct Tally {
     repeats: usize,
 }
 
-/// Runs a Step's calls one by one, in order. A call that cannot run is answered with its reason.
+/// Runs a Step's calls one by one, in order. A call that cannot run is answered with its reason,
+/// and once the Run is stopped or the Step skipped, the rest are answered without running.
 fn run_calls(
     calls: &[Call],
     not_run: Option<&str>,
     host: &mut dyn ToolHost,
     ran: &mut Vec<(String, String, String)>,
     messages: &mut Vec<Message>,
+    control: &Control,
     emit: &mut dyn FnMut(Event),
 ) -> Tally {
     let mut tally = Tally {
@@ -308,7 +455,16 @@ fn run_calls(
             call_id: call.id.clone(),
             name: call.name.clone(),
         });
-        let reply = if let Some(text) = not_run {
+        let blocked = not_run.or_else(|| {
+            if control.ended() {
+                Some(NOT_RUN_STOPPED)
+            } else if control.skipped() {
+                Some(NOT_RUN_SKIPPED)
+            } else {
+                None
+            }
+        });
+        let reply = if let Some(text) = blocked {
             Reply::refused(text)
         } else if index >= MAX_CALLS_PER_STEP {
             Reply::refused(TOO_MANY)

@@ -34,7 +34,7 @@ fn with_tools() -> Request {
 
 fn run(provider: &dyn Provider, request: &Request) -> Vec<StreamEvent> {
     let mut events = Vec::new();
-    provider.stream(request, &mut |event| events.push(event));
+    provider.stream(request, &|| false, &mut |event| events.push(event));
     events
 }
 
@@ -224,4 +224,33 @@ fn the_model_list_comes_from_models() {
             "codex-luna".into()
         ])
     );
+}
+
+#[test]
+fn a_stop_mid_stream_keeps_the_text_so_far_and_reads_no_further() {
+    let server = FakeServer::start(|_| Canned::sse(TEXT));
+    let stopped = std::cell::Cell::new(false);
+    let mut events = Vec::new();
+    provider(&server.address()).stream(&request(), &|| stopped.get(), &mut |event| {
+        if matches!(event, StreamEvent::TextDelta(_)) {
+            stopped.set(true);
+        }
+        events.push(event);
+    });
+    assert_eq!(
+        events,
+        vec![
+            StreamEvent::TextDelta("1".into()),
+            StreamEvent::Done(StopReason::Aborted),
+        ]
+    );
+}
+
+#[test]
+fn a_stop_before_the_request_sends_nothing() {
+    let server = FakeServer::start(|_| Canned::sse(TEXT));
+    let mut events = Vec::new();
+    provider(&server.address()).stream(&request(), &|| true, &mut |event| events.push(event));
+    assert_eq!(events, vec![StreamEvent::Done(StopReason::Aborted)]);
+    assert!(server.requests().is_empty(), "no request leaves the device");
 }
