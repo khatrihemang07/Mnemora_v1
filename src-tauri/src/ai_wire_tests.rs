@@ -1,5 +1,5 @@
 //! Command-layer tests for the wire adapters (#88): the real Wrapper (JSON envelope) and the
-//! OpenAI-compatible adapter (native Tool calls) ask a fake loopback server, so a Run reads Journal
+//! `OpenAI`-compatible adapter (native Tool calls) ask a fake loopback server, so a Run reads Journal
 //! data through the Tools, cites what it read and is corrected when it does not. No network and no
 //! Model.
 
@@ -465,7 +465,7 @@ fn an_anthropic_run_makes_tool_use_calls_with_its_headers_and_the_fixed_limit() 
     assert_eq!(results["content"][0]["tool_use_id"], "toolu_1");
 }
 
-/// An OpenRouter record aimed at a loopback server. The app's fixed address is checked by the
+/// An `OpenRouter` record aimed at a loopback server. The app's fixed address is checked by the
 /// create test; the wire by the adapter's tests and the requests below.
 fn openrouter_at(app: &TestApp, address: &str) -> String {
     app.with_db(|conn| {

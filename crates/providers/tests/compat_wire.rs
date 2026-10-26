@@ -1,4 +1,4 @@
-//! The OpenAI-compatible adapter against recorded wire fixtures: a fake loopback server replies
+//! The `OpenAI`-compatible adapter against recorded wire fixtures: a fake loopback server replies
 //! with streamed chunks or errors, so text, Tool calls, stops, keys and failures run with no network.
 
 use mnemora_harness::{

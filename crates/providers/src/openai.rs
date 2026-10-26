@@ -1,4 +1,4 @@
-//! The OpenAI-compatible wire format: the chat request, whole and streamed replies, the model
+//! The `OpenAI`-compatible wire format: the chat request, whole and streamed replies, the model
 //! list and the error envelope. Pure functions over text, so the fixtures test them directly.
 
 use mnemora_harness::{Failure, Message, Request, StopReason, ToolDef};
@@ -155,7 +155,11 @@ pub fn sse_events(line: &str) -> Result<Vec<SseEvent>, Failure> {
         .flatten()
     {
         events.push(SseEvent::ToolDelta {
-            index: piece.get("index").and_then(Value::as_u64).unwrap_or(0) as usize,
+            index: piece
+                .get("index")
+                .and_then(Value::as_u64)
+                .and_then(|index| usize::try_from(index).ok())
+                .unwrap_or(0),
             id: piece.get("id").and_then(Value::as_str).map(str::to_owned),
             name: piece
                 .pointer("/function/name")

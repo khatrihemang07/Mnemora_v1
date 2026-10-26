@@ -25,21 +25,21 @@ pub enum ProviderKind {
     /// The Local AI Wrapper: on this machine or the person's network, no key. Answers in the
     /// JSON envelope.
     Wrapper,
-    /// Any endpoint that speaks the OpenAI chat format with native Tool calls, at an address the
+    /// Any endpoint that speaks the `OpenAI` chat format with native Tool calls, at an address the
     /// person gives. A key is optional.
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible,
     /// Anthropic's Messages API: a fixed address and a key that is required.
     Anthropic,
-    /// OpenRouter: a fixed address and a key that is required. Free Models are the default; paid
+    /// `OpenRouter`: a fixed address and a key that is required. Free Models are the default; paid
     /// ones need the Provider's own switch.
     #[serde(rename = "openrouter")]
     OpenRouter,
 }
 
-/// OpenRouter's address. It is not editable.
+/// `OpenRouter`'s address. It is not editable.
 pub const OPENROUTER_ADDRESS: &str = "https://openrouter.ai/api/v1";
-/// The suffix OpenRouter gives its free routes of a Model.
+/// The suffix `OpenRouter` gives its free routes of a Model.
 pub const FREE_SUFFIX: &str = ":free";
 
 /// Whether a kind takes a key.
@@ -131,7 +131,7 @@ pub struct ProviderRecord {
     pub created_at: i64,
     /// When it last changed, in milliseconds.
     pub updated_at: i64,
-    /// Whether paid Models may be chosen and sent (OpenRouter only; always false elsewhere).
+    /// Whether paid Models may be chosen and sent (`OpenRouter` only; always false elsewhere).
     pub allow_paid: bool,
 }
 
@@ -186,7 +186,7 @@ pub struct ProviderUpdate {
 pub struct ModelList {
     /// The matching Model ids, in the Provider's order.
     pub models: Vec<String>,
-    /// The ids among `models` that are paid routes (OpenRouter only). They can be chosen only
+    /// The ids among `models` that are paid routes (`OpenRouter` only). They can be chosen only
     /// while the Provider's paid switch is on.
     pub paid_models: Vec<String>,
     /// Why the Provider could not be asked, if it could not.
@@ -281,7 +281,7 @@ pub fn validate_model(raw: &str) -> Result<String, AiError> {
     Ok(model.to_owned())
 }
 
-/// Whether a Model id is a free route. OpenRouter marks its free routes with `:free`.
+/// Whether a Model id is a free route. `OpenRouter` marks its free routes with `:free`.
 pub fn is_free(model: &str) -> bool {
     model.ends_with(FREE_SUFFIX)
 }

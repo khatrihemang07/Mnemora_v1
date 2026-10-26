@@ -1,4 +1,4 @@
-//! The Local AI Wrapper: an OpenAI-compatible chat endpoint that rejects native Tool calls. Its
+//! The Local AI Wrapper: an `OpenAI`-compatible chat endpoint that rejects native Tool calls. Its
 //! Steps are written in the JSON envelope (`envelope.rs`), and its answer comes whole when it is
 //! ready. Neither the reply's raw text nor the service's error text is kept: errors are mapped to a
 //! `Failure` and dropped.
@@ -63,7 +63,7 @@ impl WrapperProvider {
     /// One Step: the envelope is sent as the response format, and the reply is read as one.
     fn step(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) -> Result<(), Failure> {
         let finish_only = request.tools.is_empty();
-        let body = self.body(request, finish_only);
+        let body = Self::body(request, finish_only);
         let response = self.client.post_json(
             &format!("{}/chat/completions", self.address),
             &body,
@@ -97,7 +97,7 @@ impl WrapperProvider {
     /// The chat body: the system prompt with the envelope's instructions, the branch as turns,
     /// and the envelope as the response format. No native `tools` are sent (the Wrapper refuses
     /// them), and no output limit.
-    fn body(&self, request: &Request, finish_only: bool) -> Value {
+    fn body(request: &Request, finish_only: bool) -> Value {
         let instructions = envelope::instructions(&request.tools);
         let system = if request.system.is_empty() {
             instructions

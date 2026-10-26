@@ -75,7 +75,7 @@ pub struct Request {
 pub enum ToolProtocol {
     /// No Tools: the Provider is sent none and its Model answers from the prompt alone.
     None,
-    /// The service's own Tool calls (OpenAI-compatible, Anthropic, OpenRouter).
+    /// The service's own Tool calls (`OpenAI`-compatible, Anthropic, `OpenRouter`).
     Native,
     /// The JSON envelope every reply is written in (the Local AI Wrapper, as Sphinx does it).
     Envelope,

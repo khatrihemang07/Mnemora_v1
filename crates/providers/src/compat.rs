@@ -1,5 +1,5 @@
-//! Providers that speak the OpenAI chat format with native Tool calls: an OpenAI-compatible
-//! endpoint (a custom address, a key optional) and OpenRouter (its fixed address, a key, and its
+//! Providers that speak the `OpenAI` chat format with native Tool calls: an `OpenAI`-compatible
+//! endpoint (a custom address, a key optional) and `OpenRouter` (its fixed address, a key, and its
 //! price cap as an extra). Replies stream: text arrives as it is written, and each Tool call is
 //! complete when the stream ends. Neither the raw reply nor the service's error text is kept.
 
@@ -19,7 +19,7 @@ pub struct CompatProvider {
     address: String,
     key: Option<String>,
     client: Client,
-    /// Fields merged into every chat request (OpenRouter's price cap, for one).
+    /// Fields merged into every chat request (`OpenRouter`'s price cap, for one).
     extra: Option<Value>,
 }
 

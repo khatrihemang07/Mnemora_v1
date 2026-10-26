@@ -1,4 +1,4 @@
-//! Adapters that turn a Step into an OpenAI-compatible request and the reply back into a Step.
+//! Adapters that turn a Step into an `OpenAI`-compatible request and the reply back into a Step.
 //! Every failure becomes a `Failure`; the service's own error text is read, mapped and dropped.
 
 #![forbid(unsafe_code)]

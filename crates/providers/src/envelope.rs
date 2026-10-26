@@ -4,6 +4,8 @@
 //! Its schema is sent as a strict `response_format`. A reply that breaks the protocol is not an
 //! error: it comes back as a correction the Model reads, and the Run goes on.
 
+use std::fmt::Write;
+
 use mnemora_harness::{Call, Message, ToolDef};
 use serde_json::{Map, Value, json};
 
@@ -116,10 +118,11 @@ pub fn instructions(tools: &[ToolDef]) -> String {
          sources the ids of the Entries and Tasks the answer rests on. Tools:",
     );
     for tool in tools {
-        text.push_str(&format!(
+        let _ = write!(
+            text,
             "\n- {}: {} Arguments: {}",
             tool.name, tool.about, tool.schema
-        ));
+        );
     }
     text
 }
@@ -130,7 +133,9 @@ pub fn turns(messages: &[Message]) -> Vec<Value> {
     messages
         .iter()
         .map(|message| match message {
-            Message::User(text) => json!({ "role": "user", "content": text }),
+            Message::User(text) | Message::Correction(text) => {
+                json!({ "role": "user", "content": text })
+            }
             Message::Assistant { text, calls } if calls.is_empty() => {
                 json!({ "role": "assistant", "content": text })
             }
@@ -159,7 +164,6 @@ pub fn turns(messages: &[Message]) -> Vec<Value> {
                     "content": format!("Result of {name}{note}:\n{text}"),
                 })
             }
-            Message::Correction(text) => json!({ "role": "user", "content": text }),
         })
         .collect()
 }
@@ -278,14 +282,13 @@ fn call_of(call: &Map<String, Value>, next_id: &mut impl FnMut() -> String) -> O
     })
 }
 
-/// The reply without a byte-order mark and without a ```json fence around it.
+/// The reply without a byte-order mark and without a code fence (three backticks, with an
+/// optional `json` tag) around it.
 fn strip(content: &str) -> &str {
     let text = content.trim_start_matches('\u{feff}').trim();
-    let text = text
-        .strip_prefix("```json")
+    text.strip_prefix("```json")
         .or_else(|| text.strip_prefix("```"))
         .map(str::trim_start)
         .and_then(|rest| rest.strip_suffix("```"))
-        .map_or(text, str::trim);
-    text
+        .map_or(text, str::trim)
 }
