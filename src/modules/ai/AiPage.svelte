@@ -41,6 +41,7 @@
   import { showBranch } from './branch-actions';
   import BranchPicker from './BranchPicker.svelte';
   import ConversationHistory from './ConversationHistory.svelte';
+  import { phoneBottom } from '../../lib/ui/sheet-open.svelte';
   import { announcementFor } from './announce';
   import { copyAsMarkdown } from './copy';
   import type { BannerAction } from './failure-banner';
@@ -133,6 +134,22 @@
 
   /** The question box, for focusing it on request. */
   let composerRef = $state<HTMLTextAreaElement | null>(null);
+  /** The phone tab bar's height, under the dock (the Toaster's own count for it). */
+  const PHONE_TAB_BAR = 72;
+  /** The bottom dock (queued notes and the composer): on a phone, toasts sit above it. */
+  let dock = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (!viewport.isPhone || !dock) return;
+    const element = dock;
+    const update = () => (phoneBottom.px = element.offsetHeight + PHONE_TAB_BAR);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      phoneBottom.px = 0;
+    };
+  });
 
   /** How close to the end, in pixels, the thread must be for new content to keep it there. */
   const END_PX = 96;
@@ -559,7 +576,7 @@
       {/key}
     {/if}
   </div>
-  <div class="px-4 pb-4">
+  <div bind:this={dock} class="px-4 pb-4">
     <QueuedNotes notes={queued} onsendnow={(note) => void sendNow(note)} onremove={(note) => void takeBack(note)} />
     <AiComposer
       {busy}
