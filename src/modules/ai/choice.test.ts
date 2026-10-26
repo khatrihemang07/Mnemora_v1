@@ -56,6 +56,25 @@ describe('the Model a question starts with', () => {
     expect(effectiveChoice(base)).toBeNull();
   });
 
+  it('asks the person when the open Conversation names a Provider this device lacks', () => {
+    const choice = effectiveChoice({
+      ...base,
+      conversation: { providerId: 'phone', model: 'claude-haiku' },
+      usage: usage('mac', 'claude-sonnet'),
+    });
+    expect(choice).toBeNull();
+  });
+
+  it('still uses a Model picked on the page when the Conversation names a Provider this device lacks', () => {
+    const choice = effectiveChoice({
+      ...base,
+      picked: { providerId: 'server', model: 'codex-luna' },
+      conversation: { providerId: 'phone', model: 'claude-haiku' },
+      usage: usage('mac', 'claude-sonnet'),
+    });
+    expect(choice).toEqual({ providerId: 'server', model: 'codex-luna' });
+  });
+
   it('skips a choice that names a Provider this device no longer has', () => {
     const choice = effectiveChoice({
       ...base,

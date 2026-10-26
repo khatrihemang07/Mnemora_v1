@@ -22,6 +22,10 @@ export function rowTitle(subject: ConflictSubject, format: TimeFormat): string {
       return `‘${subject.title}’ · ${subject.field}`;
     case 'comment':
       return `‘${subject.task_title}’ · comment`;
+    case 'conversation':
+      return `‘${subject.title}’ · conversation title`;
+    case 'saved_question':
+      return `‘${subject.text}’ · saved question`;
   }
 }
 

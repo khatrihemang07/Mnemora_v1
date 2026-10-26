@@ -18,6 +18,8 @@ mod saved_store;
 mod service;
 mod steering;
 mod store;
+mod sync;
+mod sync_apply;
 mod title;
 mod tools;
 mod types;
@@ -26,6 +28,7 @@ use mnemora_core::db::Connection;
 use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::SettingsRegistry;
+use mnemora_core::syncable::{Applied, RemoteChange, SyncEntity};
 use rusqlite_migration::Migrations;
 
 pub use conversations::{
@@ -77,6 +80,24 @@ impl Module for AiModule {
     }
 
     fn register_settings(&self, _reg: &mut SettingsRegistry) {}
+
+    /// Conversations, their entries and Saved questions (ADR 0019). Providers, keys, usage and the
+    /// visible Branch are never listed: they stay on the device.
+    fn sync_entities(&self) -> &'static [SyncEntity] {
+        &[
+            sync::CONVERSATION_SCHEMA,
+            sync::ENTRY_SCHEMA,
+            sync::SAVED_SCHEMA,
+        ]
+    }
+
+    fn apply_remote(&self, conn: &Connection, change: &RemoteChange<'_>) -> AppResult<Applied> {
+        sync_apply::apply(conn, change)
+    }
+
+    fn backfill_log(&self, conn: &Connection, _settings: &SettingsRegistry) -> AppResult<()> {
+        sync::backfill(conn)
+    }
 }
 
 /// Fails with "not found" unless the Conversation exists and is not deleted.

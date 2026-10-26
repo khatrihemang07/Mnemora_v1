@@ -17,6 +17,15 @@ const row = (id: string, raised_at: number): ConflictRow => ({
 });
 
 describe('conflict rows', () => {
+  it('names an AI title or Saved question that clashed', () => {
+    expect(rowTitle({ kind: 'conversation', title: 'Plan the hike' }, '24h')).toBe(
+      '‘Plan the hike’ · conversation title',
+    );
+    expect(rowTitle({ kind: 'saved_question', text: 'Coffee shops' }, '24h')).toBe(
+      '‘Coffee shops’ · saved question',
+    );
+  });
+
   it('names what clashed and where', () => {
     expect(rowTitle(row('a', 0).subject, '24h')).toBe('Wed 21 Oct · 09:12 Entry');
     expect(rowTitle(row('a', 0).subject, '12h')).toBe('Wed 21 Oct · 9:12 AM Entry');

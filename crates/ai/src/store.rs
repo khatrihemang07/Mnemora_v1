@@ -3,11 +3,13 @@
 
 use std::collections::HashMap;
 
+use mnemora_core::changelog::ChangeOp;
 use mnemora_core::error::AppResult;
 use mnemora_harness::{Call, Message};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::error::AiError;
+use crate::sync;
 use crate::types::{ConversationSummary, EntryKind, EntryPayload, EntryView};
 
 fn kind_text(kind: EntryKind) -> &'static str {
@@ -30,13 +32,14 @@ pub fn insert_conversation(conn: &Connection, id: &str, title: &str, now: i64) -
         "INSERT INTO ai_conversations(id, title, created_at, updated_at) VALUES(?1, ?2, ?3, ?3)",
         rusqlite::params![id, title, now],
     )?;
-    Ok(())
+    sync::log_conversation(conn, id, ChangeOp::Create)
 }
 
-/// Marks a Conversation as changed at `now`.
+/// Marks a Conversation as changed at `now`. Never moves it back: an entry another device wrote
+/// later than this device's clock can already have moved it forward.
 pub fn touch_conversation(conn: &Connection, id: &str, now: i64) -> AppResult<()> {
     conn.execute(
-        "UPDATE ai_conversations SET updated_at = ?2 WHERE id = ?1",
+        "UPDATE ai_conversations SET updated_at = MAX(updated_at, ?2) WHERE id = ?1",
         rusqlite::params![id, now],
     )?;
     Ok(())
@@ -91,7 +94,7 @@ pub fn set_model(
         "UPDATE ai_conversations SET provider_id = ?2, provider_name = ?3, model = ?4 WHERE id = ?1",
         rusqlite::params![id, provider_id, provider_name, model],
     )?;
-    Ok(())
+    sync::log_conversation(conn, id, ChangeOp::Update)
 }
 
 /// The entry a Conversation shows on this device: the one set, else its newest entry.
@@ -143,7 +146,7 @@ pub fn newest_under(conn: &Connection, entry: &str) -> AppResult<String> {
 /// Branches are not loaded.
 pub fn question_groups(conn: &Connection, conversation: &str) -> AppResult<Vec<Vec<String>>> {
     let mut stmt = conn.prepare(
-        "SELECT id, parent_id, kind FROM ai_entries WHERE conversation_id = ?1 ORDER BY created_at, rowid",
+        "SELECT id, parent_id, kind FROM ai_entries WHERE conversation_id = ?1 ORDER BY created_at, id",
     )?;
     let rows: Vec<(String, Option<String>, String)> = stmt
         .query_map([conversation], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
@@ -233,7 +236,7 @@ pub fn insert_entry(conn: &Connection, entry: NewRow<'_>, payload: &EntryPayload
             entry.now
         ],
     )?;
-    Ok(())
+    sync::log_entry(conn, entry.id)
 }
 
 /// The fields of one new entry, bundled so the write stays readable.
@@ -318,7 +321,7 @@ pub fn set_title(conn: &Connection, id: &str, title: &str) -> AppResult<()> {
         "UPDATE ai_conversations SET title = ?2 WHERE id = ?1",
         rusqlite::params![id, title],
     )?;
-    Ok(())
+    sync::log_conversation(conn, id, ChangeOp::Update)
 }
 
 /// Whether a Conversation exists and is deleted (so that Undo can bring it back).
@@ -339,7 +342,12 @@ pub fn set_deleted(conn: &Connection, id: &str, at: Option<i64>) -> AppResult<()
         "UPDATE ai_conversations SET deleted_at = ?2 WHERE id = ?1",
         rusqlite::params![id, at],
     )?;
-    Ok(())
+    let op = if at.is_some() {
+        ChangeOp::Delete
+    } else {
+        ChangeOp::Restore
+    };
+    sync::log_conversation(conn, id, op)
 }
 
 /// The branch that ends at `leaf`, as entries, oldest first (what a copy of the Conversation shows).

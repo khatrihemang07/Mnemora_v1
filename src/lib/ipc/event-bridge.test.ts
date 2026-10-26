@@ -16,6 +16,7 @@ vi.mock('./bindings', () => {
       settingsChangedEvent: event('settings'),
       todoChangedEvent: event('todo'),
       journalChangedEvent: event('journal'),
+      aiChangedEvent: event('ai'),
     },
   };
 });
@@ -111,6 +112,29 @@ describe('startEventBridge, the Todo widget', () => {
     stop = await startEventBridge(client);
     handlers.get('journal')?.();
     await vi.waitFor(() => expect(fetched).toEqual(['journal']));
+  });
+
+  it('refreshes AI queries when Sync changed AI data, and not the others', async () => {
+    const { client, fetched } = setup();
+    const ai = client.getQueryCache().build(client, {
+      queryKey: ['ai', 'conversations'],
+      queryFn: async () => {
+        fetched.push('ai');
+        return 'ai';
+      },
+    });
+    ai.addObserver({
+      options: ai.options,
+      onQueryUpdate: () => {},
+      shouldFetchOnReconnect: () => false,
+      shouldFetchOnWindowFocus: () => false,
+      isActive: () => true,
+      getCurrentQuery: () => ai,
+      setOptions: () => {},
+    } as never);
+    stop = await startEventBridge(client);
+    handlers.get('ai')?.();
+    await vi.waitFor(() => expect(fetched).toEqual(['ai']));
   });
 
   it('removes the earlier listeners when the Journal one cannot be registered', async () => {
