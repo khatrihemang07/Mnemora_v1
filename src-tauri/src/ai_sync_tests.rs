@@ -480,3 +480,24 @@ async fn ai_data_versions_that_differ_pause_sync_until_the_older_one_updates() {
     .await;
     assert_eq!(saved_on(&mac), saved_on(&phone));
 }
+
+#[test]
+fn rows_received_while_the_ai_module_is_off_are_kept_and_show_once_it_is_turned_on() {
+    let c = pair();
+    c[1].set_pref("core.enabled_optional_modules", json!([]));
+    let id = ask_and_wait(&c[0], None, "Where is the museum?");
+    c.sync(0, 1);
+
+    // Sync does not ask whether the Module is on: the rows are stored all the same.
+    assert_eq!(
+        column(
+            &c[1],
+            "SELECT id FROM ai_conversations WHERE deleted_at IS NULL"
+        ),
+        vec![id.clone()]
+    );
+    assert!(!column(&c[1], "SELECT id FROM ai_entries").is_empty());
+
+    c[1].set_pref("core.enabled_optional_modules", json!(["ai"]));
+    assert_eq!(live_ids(&c[1]), vec![id]);
+}
