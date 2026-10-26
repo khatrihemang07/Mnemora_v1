@@ -5,6 +5,7 @@
 
 pub mod address;
 pub mod client;
+pub mod compat;
 pub mod envelope;
 pub mod openai;
 pub mod wrapper;
@@ -12,4 +13,5 @@ pub mod wrapper;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
+pub use compat::CompatProvider;
 pub use wrapper::WrapperProvider;

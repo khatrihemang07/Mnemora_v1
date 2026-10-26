@@ -1,6 +1,7 @@
-//! Command-layer tests for the Local AI Wrapper's envelope (#88): the real Wrapper adapter asks a
-//! fake loopback server that replies in the JSON envelope, so a Run reads Journal data through the
-//! Tools, cites what it read and is corrected when it does not. No network and no Model.
+//! Command-layer tests for the wire adapters (#88): the real Wrapper (JSON envelope) and the
+//! OpenAI-compatible adapter (native Tool calls) ask a fake loopback server, so a Run reads Journal
+//! data through the Tools, cites what it read and is corrected when it does not. No network and no
+//! Model.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -229,4 +230,118 @@ fn a_repeated_call_through_the_envelope_is_answered_with_its_earlier_result() {
         repeat.is_some(),
         "the repeat is refused with the earlier observation named"
     );
+}
+
+/// A streamed reply that makes one Tool call and finishes with it.
+fn sse_call(id: &str, name: &str, arguments: &str) -> String {
+    let arguments = serde_json::to_string(arguments).unwrap();
+    format!(
+        "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"tool_calls\":[{{\"index\":0,\"id\":\"{id}\",\"type\":\"function\",\"function\":{{\"name\":\"{name}\",\"arguments\":{arguments}}}}}]}},\"finish_reason\":null}}]}}\n\n\
+         data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"tool_calls\"}}]}}\n\n\
+         data: [DONE]\n\n"
+    )
+}
+
+/// A streamed reply that writes `text` and finishes.
+fn sse_text(text: &str) -> String {
+    let text = serde_json::to_string(text).unwrap();
+    format!(
+        "data: {{\"choices\":[{{\"index\":0,\"delta\":{{\"content\":{text}}},\"finish_reason\":null}}]}}\n\n\
+         data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"stop\"}}]}}\n\n\
+         data: [DONE]\n\n"
+    )
+}
+
+fn add_compatible(app: &TestApp, address: &str) -> String {
+    let created: Value = app
+        .invoke(
+            "ai_provider_create",
+            json!({ "request": { "kind": "openai_compatible", "name": "Groq", "address": address } }),
+        )
+        .unwrap();
+    assert_eq!(
+        created["key_state"], "not_needed",
+        "the key is optional and none is saved"
+    );
+    created["id"].as_str().unwrap().to_owned()
+}
+
+#[test]
+fn an_openai_compatible_run_makes_native_calls_reads_the_journal_and_cites_it() {
+    let app = TestApp::new();
+    let id = seed_entry(&app, "2026-10-20", "Packed the boxes for the move.");
+    let server = {
+        let turn = AtomicUsize::new(0);
+        let first = sse_call(
+            "call_1",
+            "journal_list",
+            r#"{"from":"2026-10-18","to":"2026-10-25"}"#,
+        );
+        let second = sse_text(&format!("You packed for the move [{id}]."));
+        FakeServer::start(move |_| {
+            let stream = if turn.fetch_add(1, Ordering::SeqCst) == 0 {
+                &first
+            } else {
+                &second
+            };
+            Canned::sse(stream)
+        })
+    };
+    let provider = add_compatible(&app, &server.address());
+    let events = app.ai_events();
+
+    let started = ask(&app, &provider, "What did I do last week?");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+    let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
+    assert_eq!(saved.last().unwrap()["sources"][0]["id"], id);
+
+    let seen = server.requests();
+    let first_body: Value = serde_json::from_str(&seen[0].body).unwrap();
+    assert_eq!(first_body["tools"][0]["type"], "function");
+    assert!(
+        first_body["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["function"]["name"] == "journal_read")
+    );
+    let second_body: Value = serde_json::from_str(&seen[1].body).unwrap();
+    let tool_turn = second_body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|turn| turn["role"] == "tool")
+        .expect("the Tool result is sent back as a tool message");
+    assert_eq!(tool_turn["tool_call_id"], "call_1");
+}
+
+#[test]
+fn a_key_on_an_openai_compatible_provider_is_write_only_and_bound_to_its_address() {
+    let app = TestApp::new();
+    let server = FakeServer::start(|_| Canned::sse(&sse_text("Hi.")));
+    let id = add_compatible(&app, &server.address());
+    let set: Value = app
+        .invoke(
+            "ai_provider_key_set",
+            json!({ "id": id, "key": "gsk-SECRET-7" }),
+        )
+        .unwrap();
+    assert_eq!(set["key_state"], "saved");
+    assert!(
+        !set.to_string().contains("gsk-SECRET-7"),
+        "the key is never returned"
+    );
+
+    let events = app.ai_events();
+    ask(&app, &id, "Hello?");
+    ended_outcome(&until_end(&events));
+    assert_eq!(
+        server.requests()[0].authorization.as_deref(),
+        Some("Bearer gsk-SECRET-7")
+    );
+
+    let cleared: Value = app
+        .invoke("ai_provider_key_clear", json!({ "id": id }))
+        .unwrap();
+    assert_eq!(cleared["key_state"], "not_needed");
 }

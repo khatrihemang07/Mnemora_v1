@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use mnemora_harness::{Failure, Provider};
-use mnemora_providers::{WrapperProvider, address};
+use mnemora_providers::{CompatProvider, WrapperProvider, address};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -17,13 +17,17 @@ pub const KEY_BYTES: usize = 512;
 /// Longest Model id accepted, in characters.
 pub const MODEL_CHARS: usize = 200;
 
-/// The kinds of Provider. Each has fixed behaviour; the rest of the kinds arrive with their own
-/// adapters.
+/// The kinds of Provider. Each has fixed behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
-    /// The Local AI Wrapper: on this machine or the person's network, no key.
+    /// The Local AI Wrapper: on this machine or the person's network, no key. Answers in the
+    /// JSON envelope.
     Wrapper,
+    /// Any endpoint that speaks the OpenAI chat format with native Tool calls, at an address the
+    /// person gives. A key is optional.
+    #[serde(rename = "openai_compatible")]
+    OpenAiCompatible,
 }
 
 /// Whether a kind takes a key.
@@ -42,6 +46,7 @@ impl ProviderKind {
     pub fn label(self) -> &'static str {
         match self {
             Self::Wrapper => "Local AI Wrapper",
+            Self::OpenAiCompatible => "OpenAI-compatible",
         }
     }
 
@@ -49,6 +54,7 @@ impl ProviderKind {
     pub fn key_policy(self) -> KeyPolicy {
         match self {
             Self::Wrapper => KeyPolicy::NotNeeded,
+            Self::OpenAiCompatible => KeyPolicy::Optional,
         }
     }
 
@@ -56,6 +62,7 @@ impl ProviderKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Wrapper => "wrapper",
+            Self::OpenAiCompatible => "openai_compatible",
         }
     }
 
@@ -63,6 +70,7 @@ impl ProviderKind {
     pub fn parse(text: &str) -> Option<Self> {
         match text {
             "wrapper" => Some(Self::Wrapper),
+            "openai_compatible" => Some(Self::OpenAiCompatible),
             _ => None,
         }
     }
@@ -240,6 +248,9 @@ pub fn build_models(record: &ProviderRecord, key: Option<String>) -> Result<Vec<
         ProviderKind::Wrapper => {
             WrapperProvider::new(&record.name, "", &record.address, key).list_models()
         }
+        ProviderKind::OpenAiCompatible => {
+            CompatProvider::new(&record.name, "", &record.address, key).list_models()
+        }
     }
 }
 
@@ -247,6 +258,12 @@ pub fn build_models(record: &ProviderRecord, key: Option<String>) -> Result<Vec<
 pub fn build(record: &ProviderRecord, model: &str, key: Option<String>) -> Arc<dyn Provider> {
     match record.kind {
         ProviderKind::Wrapper => Arc::new(WrapperProvider::new(
+            &record.name,
+            model,
+            &record.address,
+            key,
+        )),
+        ProviderKind::OpenAiCompatible => Arc::new(CompatProvider::new(
             &record.name,
             model,
             &record.address,
