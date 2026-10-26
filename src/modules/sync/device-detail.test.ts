@@ -28,6 +28,16 @@ describe('versionsText', () => {
         ],
       }),
     ).toBe('Core 4 · Zeta 1');
+    expect(
+      versionsText({
+        app_version: null,
+        data_versions: [
+          { module: 'sync', version: 2 },
+          { module: 'ai', version: 6 },
+          { module: 'todo', version: 9 },
+        ],
+      }),
+    ).toBe('Todo 9 · AI 6 · Sync 2');
     expect(versionsText({ app_version: null, data_versions: [] })).toBeNull();
   });
 });

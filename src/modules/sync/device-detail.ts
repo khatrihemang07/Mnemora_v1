@@ -2,13 +2,14 @@ import type { DeviceDetail, ModuleVersion } from '../../lib/ipc/bindings';
 import { IpcError } from '../../lib/ipc/unwrap';
 import { absoluteDay, relativeTime } from '../../lib/time/relative';
 
-/** "Core" for `core`: the Module's name as the sheet shows it. */
+/** The Module's name as the sheet shows it: "Core" for `core`, "AI" for `ai`. */
 function moduleName(id: string): string {
+  if (id === 'ai') return 'AI';
   return id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 /** The order the sheet lists Modules in: the content Modules first, as in the sidebar. */
-const ORDER = ['journal', 'todo', 'sync', 'core'];
+const ORDER = ['journal', 'todo', 'ai', 'sync', 'core'];
 
 /** "Mnemora 0.9.2 · Journal 3 · Todo 9 · Core 4"; just the Modules while the app version is unknown. */
 export function versionsText(
