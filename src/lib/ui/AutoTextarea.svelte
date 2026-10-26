@@ -52,7 +52,7 @@
   bind:value
   rows="1"
   aria-label={label}
-  class="selectable block w-full resize-none overflow-hidden bg-transparent text-ink outline-none placeholder:text-faint {cls}"
+  class="selectable block w-full resize-none overflow-hidden bg-transparent text-ink outline-none placeholder:text-muted {cls}"
   onkeydown={(e) => {
     if (e.key === 'Enter' && !enterBreaksLine({ shiftKey: e.shiftKey, multiline, enterBreaks })) {
       e.preventDefault();

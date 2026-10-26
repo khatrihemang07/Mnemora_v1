@@ -33,7 +33,7 @@
     ? 'border-color: var(--danger); background: var(--danger-soft)'
     : 'border-color: color-mix(in oklch, var(--warning) 50%, transparent); background: color-mix(in oklch, var(--warning) 16%, transparent)'}
 >
-  <span class="mt-0.5 shrink-0" style="color: {banner.tone === 'danger' ? 'var(--danger)' : 'var(--warning)'}">
+  <span class="mt-0.5 shrink-0" style="color: {banner.tone === 'danger' ? 'var(--danger)' : 'var(--warning-ink)'}">
     {#if banner.tone === 'danger'}<CircleAlert class="size-4" />{:else}<TriangleAlert class="size-4" />{/if}
   </span>
   <div class="min-w-[12rem] flex-1">
