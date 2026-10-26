@@ -85,8 +85,9 @@ pub trait ToolHost {
     /// Runs one call. Never fails: a refusal is a `Reply` with `is_error` set.
     fn call(&mut self, name: &str, arguments: &str) -> Reply;
 
-    /// Checks an answer's citations. An `Err` is the correction turn the Model is sent.
-    fn check_answer(&self, text: &str) -> Result<(), String>;
+    /// Checks an answer's citations and its listed sources. An `Err` is the correction turn the
+    /// Model is sent.
+    fn check_answer(&self, text: &str, sources: &[String]) -> Result<(), String>;
 }
 
 /// One Step that ended, with what the Model wrote and asked for.
@@ -100,6 +101,8 @@ pub struct StepRecord {
     pub stop: StopReason,
     /// Whether this Step was the last one, so its answer carries the budget note.
     pub budget_forced: bool,
+    /// The sources the answer lists (envelope Providers); empty otherwise.
+    pub sources: Vec<String>,
 }
 
 /// What the loop reports, in order, as it runs.
@@ -181,9 +184,26 @@ pub fn run(
             Err(failure) => return Outcome::Failed(failure),
         };
 
+        // A reply the protocol could not read: the Model is told why and answers again. It is not
+        // kept in the branch, and it fails the Run only when it keeps happening.
+        if let Some(correction) = answer.correction {
+            invalid_streak += 1;
+            if last || invalid_streak >= MAX_INVALID_STEPS {
+                return Outcome::Failed(Failure::BadResponse);
+            }
+            emit(Event::Correction(correction.clone()));
+            messages.push(Message::Correction(correction));
+            continue;
+        }
+
         if answer.calls.is_empty() || (last && !answer.text.is_empty()) {
             if let Some(outcome) = finish(answer, last, host, &mut messages, emit) {
                 return outcome;
+            }
+            // The answer cited or listed something this Run did not return: a correction was sent.
+            invalid_streak += 1;
+            if invalid_streak >= MAX_INVALID_STEPS {
+                return Outcome::Failed(Failure::BadResponse);
             }
             continue;
         }
@@ -201,6 +221,7 @@ pub fn run(
             calls: answer.calls.clone(),
             stop: answer.stop,
             budget_forced: false,
+            sources: Vec::new(),
         }));
         messages.push(Message::Assistant {
             text: answer.text,
@@ -233,7 +254,7 @@ fn finish(
     if answer.text.trim().is_empty() {
         return Some(Outcome::Failed(Failure::BadResponse));
     }
-    if let Err(correction) = host.check_answer(&answer.text) {
+    if let Err(correction) = host.check_answer(&answer.text, &answer.sources) {
         if last {
             return Some(Outcome::Failed(Failure::BadResponse));
         }
@@ -242,6 +263,7 @@ fn finish(
             calls: Vec::new(),
             stop: answer.stop,
             budget_forced: false,
+            sources: answer.sources.clone(),
         }));
         messages.push(Message::Assistant {
             text: answer.text,
@@ -256,6 +278,7 @@ fn finish(
         calls: Vec::new(),
         stop: answer.stop,
         budget_forced: last,
+        sources: answer.sources,
     }));
     Some(Outcome::Answered)
 }

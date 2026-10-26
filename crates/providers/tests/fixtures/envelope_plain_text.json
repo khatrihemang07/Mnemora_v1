@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-env",
+  "object": "chat.completion",
+  "model": "claude-haiku",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Just some prose, not the envelope."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 40,
+    "completion_tokens": 12,
+    "total_tokens": 52
+  }
+}

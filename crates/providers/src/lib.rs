@@ -5,6 +5,7 @@
 
 pub mod address;
 pub mod client;
+pub mod envelope;
 pub mod openai;
 pub mod wrapper;
 

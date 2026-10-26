@@ -1,27 +1,30 @@
-//! The Local AI Wrapper and every OpenAI-compatible endpoint: one adapter, one wire format. The
-//! Wrapper answers whole (its answer appears when ready); a streaming endpoint sends text as it
-//! comes. Neither keeps the reply's raw text: errors are mapped to a `Failure` and dropped.
+//! The Local AI Wrapper: an OpenAI-compatible chat endpoint that rejects native Tool calls. Its
+//! Steps are written in the JSON envelope (`envelope.rs`), and its answer comes whole when it is
+//! ready. Neither the reply's raw text nor the service's error text is kept: errors are mapped to a
+//! `Failure` and dropped.
 
-use std::io::{BufRead, BufReader, ErrorKind};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use mnemora_harness::{Failure, Provider, Request, StopReason, StreamEvent};
+use mnemora_harness::{Failure, Provider, Request, StreamEvent, ToolProtocol};
+use serde_json::{Value, json};
 
 use crate::client::{Client, read_body};
-use crate::openai::{self, Endpoint, SseEvent};
+use crate::envelope::{self, Parsed};
+use crate::openai::{self, Endpoint};
 
-/// A Provider for any service that speaks the chat format of `OpenAI`. The address
-/// already includes the version path.
+/// A Provider for the Local AI Wrapper. The address already includes the version path.
 pub struct WrapperProvider {
     name: String,
     model: String,
     address: String,
     key: Option<String>,
-    streams: bool,
     client: Client,
+    /// Ids for the calls this Provider reads; unique within the Run that owns it.
+    next_call: AtomicU64,
 }
 
 impl WrapperProvider {
-    /// A Provider that waits for the whole answer, as the Local AI Wrapper answers.
+    /// A Provider with the app's client.
     pub fn new(name: &str, model: &str, address: &str, key: Option<String>) -> Self {
         Self::with_client(Client::new(), name, model, address, key)
     }
@@ -39,16 +42,9 @@ impl WrapperProvider {
             model: model.to_owned(),
             address: address.trim_end_matches('/').to_owned(),
             key,
-            streams: false,
             client,
+            next_call: AtomicU64::new(1),
         }
-    }
-
-    /// Asks for the answer as a stream of text deltas instead of one reply.
-    #[must_use]
-    pub fn streaming(mut self) -> Self {
-        self.streams = true;
-        self
     }
 
     /// The Model ids this address offers. Also the connection test: any answer means reachable.
@@ -64,82 +60,58 @@ impl WrapperProvider {
         openai::parse_model_ids(&body)
     }
 
-    fn whole(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) -> Result<(), Failure> {
-        let body = openai::chat_body(request, false);
-        let response = self.post_chat(&body)?;
+    /// One Step: the envelope is sent as the response format, and the reply is read as one.
+    fn step(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) -> Result<(), Failure> {
+        let finish_only = request.tools.is_empty();
+        let body = self.body(request, finish_only);
+        let response = self.client.post_json(
+            &format!("{}/chat/completions", self.address),
+            &body,
+            self.key.as_deref(),
+        )?;
         let status = response.status().as_u16();
         let text = read_body(response)?;
         if !(200..300).contains(&status) {
             return Err(openai::status_failure(status, &text, Endpoint::Chat));
         }
-        let (answer, stop) = openai::parse_answer(&text)?;
-        emit(StreamEvent::TextDelta(answer));
+        let (content, stop) = openai::parse_answer(&text)?;
+        let parsed = envelope::parse(&content, !finish_only, || {
+            format!("w{}", self.next_call.fetch_add(1, Ordering::Relaxed))
+        });
+        match parsed {
+            Parsed::Calls(calls) => {
+                for call in calls {
+                    emit(StreamEvent::Call(call));
+                }
+            }
+            Parsed::Answer { text, sources } => {
+                emit(StreamEvent::TextDelta(text));
+                emit(StreamEvent::Sources(sources));
+            }
+            Parsed::Correction(message) => emit(StreamEvent::Correction(message.to_owned())),
+        }
         emit(StreamEvent::Done(stop));
         Ok(())
     }
 
-    fn streamed(
-        &self,
-        request: &Request,
-        emit: &mut dyn FnMut(StreamEvent),
-    ) -> Result<(), Failure> {
-        let body = openai::chat_body(request, true);
-        let response = self.post_chat(&body)?;
-        let status = response.status().as_u16();
-        if !(200..300).contains(&status) {
-            let text = read_body(response)?;
-            return Err(openai::status_failure(status, &text, Endpoint::Chat));
-        }
-        let mut reader = BufReader::new(response.into_body().into_reader());
-        let mut stop: Option<StopReason> = None;
-        let mut line = String::new();
-        loop {
-            line.clear();
-            let read = reader.read_line(&mut line).map_err(stream_failure)?;
-            if read == 0 {
-                break;
-            }
-            for event in openai::sse_events(line.trim_end())? {
-                match event {
-                    SseEvent::Text(text) => emit(StreamEvent::TextDelta(text)),
-                    SseEvent::Finish(reason) => stop = Some(reason),
-                    SseEvent::Done => return finish(stop, emit),
-                }
-            }
-        }
-        // The stream ended without `[DONE]`: an answer only counts once it has finished.
-        finish(stop, emit)
-    }
-
-    fn post_chat(
-        &self,
-        body: &serde_json::Value,
-    ) -> Result<ureq::http::Response<ureq::Body>, Failure> {
-        self.client.post_json(
-            &format!("{}/chat/completions", self.address),
-            body,
-            self.key.as_deref(),
-        )
-    }
-}
-
-/// Ends a stream: a finish reason is needed for the answer to count.
-fn finish(stop: Option<StopReason>, emit: &mut dyn FnMut(StreamEvent)) -> Result<(), Failure> {
-    match stop {
-        Some(reason) => {
-            emit(StreamEvent::Done(reason));
-            Ok(())
-        }
-        None => Err(Failure::BadResponse),
-    }
-}
-
-/// A read that breaks mid-stream: a timeout is a timeout, anything else interrupted the answer.
-fn stream_failure(error: std::io::Error) -> Failure {
-    if error.kind() == ErrorKind::TimedOut {
-        Failure::Timeout
-    } else {
-        Failure::Interrupted
+    /// The chat body: the system prompt with the envelope's instructions, the branch as turns,
+    /// and the envelope as the response format. No native `tools` are sent (the Wrapper refuses
+    /// them), and no output limit.
+    fn body(&self, request: &Request, finish_only: bool) -> Value {
+        let instructions = envelope::instructions(&request.tools);
+        let system = if request.system.is_empty() {
+            instructions
+        } else {
+            format!("{}\n\n{instructions}", request.system)
+        };
+        let mut messages = vec![json!({ "role": "system", "content": system })];
+        messages.extend(envelope::turns(&request.messages));
+        json!({
+            "model": request.model,
+            "messages": messages,
+            "stream": false,
+            "response_format": envelope::response_format(finish_only),
+        })
     }
 }
 
@@ -152,13 +124,12 @@ impl Provider for WrapperProvider {
         &self.model
     }
 
+    fn tool_protocol(&self) -> ToolProtocol {
+        ToolProtocol::Envelope
+    }
+
     fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) {
-        let result = if self.streams {
-            self.streamed(request, emit)
-        } else {
-            self.whole(request, emit)
-        };
-        if let Err(failure) = result {
+        if let Err(failure) = self.step(request, emit) {
             emit(StreamEvent::Failed(failure));
         }
     }

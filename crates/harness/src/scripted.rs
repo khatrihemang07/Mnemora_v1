@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::message::Call;
-use crate::provider::{Failure, Provider, Request, StopReason, StreamEvent};
+use crate::provider::{Failure, Provider, Request, StopReason, StreamEvent, ToolProtocol};
 
 /// Gives every scripted Tool call a distinct id, as a real Provider does.
 static CALL_IDS: AtomicUsize = AtomicUsize::new(1);
@@ -18,6 +18,8 @@ pub struct Reply {
     gate: Option<Receiver<()>>,
     chunks: Vec<String>,
     calls: Vec<Call>,
+    sources: Vec<String>,
+    correction: Option<String>,
     end: Option<Result<StopReason, Failure>>,
 }
 
@@ -54,6 +56,20 @@ impl Reply {
         self
     }
 
+    /// Streams `text` and lists `sources` as its sources, then finishes normally.
+    pub fn answer_with_sources(text: &str, sources: &[&str]) -> Self {
+        let mut reply = Self::with(&[text], Some(Ok(StopReason::Stop)));
+        reply.sources = sources.iter().map(|id| (*id).to_owned()).collect();
+        reply
+    }
+
+    /// Reports a reply that was not valid for the protocol, so `correction` is sent back.
+    pub fn corrected(correction: &str) -> Self {
+        let mut reply = Self::with(&[], Some(Ok(StopReason::Stop)));
+        reply.correction = Some(correction.to_owned());
+        reply
+    }
+
     /// Streams `chunks`, then fails.
     pub fn text_then_fail(chunks: &[&str], failure: Failure) -> Self {
         Self::with(chunks, Some(Err(failure)))
@@ -81,6 +97,8 @@ impl Reply {
             gate: None,
             chunks: chunks.iter().map(|c| (*c).to_owned()).collect(),
             calls: Vec::new(),
+            sources: Vec::new(),
+            correction: None,
             end,
         }
     }
@@ -91,7 +109,7 @@ impl Reply {
 pub struct ScriptedProvider {
     name: String,
     model: String,
-    native_tools: bool,
+    protocol: ToolProtocol,
     replies: Mutex<VecDeque<Reply>>,
     requests: Mutex<Vec<Request>>,
 }
@@ -102,7 +120,7 @@ impl ScriptedProvider {
         Self {
             name: name.to_owned(),
             model: model.to_owned(),
-            native_tools: false,
+            protocol: ToolProtocol::None,
             replies: Mutex::new(replies.into()),
             requests: Mutex::new(Vec::new()),
         }
@@ -111,7 +129,14 @@ impl ScriptedProvider {
     /// Makes this Provider accept Tools, as an adapter with native Tool calls does.
     #[must_use]
     pub fn with_native_tools(mut self) -> Self {
-        self.native_tools = true;
+        self.protocol = ToolProtocol::Native;
+        self
+    }
+
+    /// Makes this Provider take Tools through `protocol`.
+    #[must_use]
+    pub fn with_tool_protocol(mut self, protocol: ToolProtocol) -> Self {
+        self.protocol = protocol;
         self
     }
 
@@ -133,8 +158,8 @@ impl Provider for ScriptedProvider {
         &self.model
     }
 
-    fn native_tools(&self) -> bool {
-        self.native_tools
+    fn tool_protocol(&self) -> ToolProtocol {
+        self.protocol
     }
 
     fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) {
@@ -160,6 +185,12 @@ impl Provider for ScriptedProvider {
         }
         for call in reply.calls {
             emit(StreamEvent::Call(call));
+        }
+        if !reply.sources.is_empty() {
+            emit(StreamEvent::Sources(reply.sources));
+        }
+        if let Some(correction) = reply.correction {
+            emit(StreamEvent::Correction(correction));
         }
         match reply.end {
             Some(Ok(stop)) => emit(StreamEvent::Done(stop)),

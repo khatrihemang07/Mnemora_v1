@@ -70,6 +70,17 @@ pub struct Request {
     pub tools: Vec<ToolDef>,
 }
 
+/// How a Provider receives Tools and makes Tool calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolProtocol {
+    /// No Tools: the Provider is sent none and its Model answers from the prompt alone.
+    None,
+    /// The service's own Tool calls (OpenAI-compatible, Anthropic, OpenRouter).
+    Native,
+    /// The JSON envelope every reply is written in (the Local AI Wrapper, as Sphinx does it).
+    Envelope,
+}
+
 /// One event of a Step's stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamEvent {
@@ -77,6 +88,11 @@ pub enum StreamEvent {
     TextDelta(String),
     /// A complete Tool call the Model made.
     Call(Call),
+    /// The ids the answer lists as its sources (envelope Providers only).
+    Sources(Vec<String>),
+    /// The reply was not valid for the protocol: this is the correction the Model is sent. It
+    /// comes before `Done`, and its text is not kept as an answer.
+    Correction(String),
     /// The reply is complete.
     Done(StopReason),
     /// The Step failed; nothing after this is expected.
@@ -92,9 +108,9 @@ pub trait Provider: Send + Sync {
     /// The Model id this Provider sends.
     fn model(&self) -> &str;
 
-    /// Whether this Provider can make native Tool calls. One that cannot is sent no Tools.
-    fn native_tools(&self) -> bool {
-        false
+    /// How this Provider receives Tools. `None` means it is sent no Tools.
+    fn tool_protocol(&self) -> ToolProtocol {
+        ToolProtocol::None
     }
 
     /// Streams one Step, calling `emit` for each event in order. Must end with `Done` or `Failed`.

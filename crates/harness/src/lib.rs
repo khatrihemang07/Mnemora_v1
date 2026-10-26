@@ -14,5 +14,5 @@ pub use agent::{
     MAX_REQUESTS, Outcome, Reply, StepRecord, ToolHost,
 };
 pub use message::{Call, Message};
-pub use provider::{Failure, Provider, Request, StopReason, StreamEvent, ToolDef};
+pub use provider::{Failure, Provider, Request, StopReason, StreamEvent, ToolDef, ToolProtocol};
 pub use step::{Answer, run_step};

@@ -12,6 +12,11 @@ pub struct Answer {
     pub stop: StopReason,
     /// The Tool calls the reply made, in order.
     pub calls: Vec<Call>,
+    /// The ids the answer lists as sources (envelope Providers). Empty otherwise.
+    pub sources: Vec<String>,
+    /// The correction the Model must be sent because its reply was not valid. The reply's text
+    /// is not an answer when this is set.
+    pub correction: Option<String>,
 }
 
 /// Runs one Step. `on_text` sees each delta as it arrives. A stream that ends without `Done` is a
@@ -23,6 +28,8 @@ pub fn run_step(
 ) -> Result<Answer, Failure> {
     let mut text = String::new();
     let mut calls = Vec::new();
+    let mut sources = Vec::new();
+    let mut correction = None;
     let mut end: Option<Result<StopReason, Failure>> = None;
     provider.stream(request, &mut |event| match event {
         StreamEvent::TextDelta(delta) => {
@@ -30,11 +37,19 @@ pub fn run_step(
             text.push_str(&delta);
         }
         StreamEvent::Call(call) => calls.push(call),
+        StreamEvent::Sources(ids) => sources = ids,
+        StreamEvent::Correction(message) => correction = Some(message),
         StreamEvent::Done(stop) => end = Some(Ok(stop)),
         StreamEvent::Failed(failure) => end = Some(Err(failure)),
     });
     match end {
-        Some(Ok(stop)) => Ok(Answer { text, stop, calls }),
+        Some(Ok(stop)) => Ok(Answer {
+            text,
+            stop,
+            calls,
+            sources,
+            correction,
+        }),
         Some(Err(failure)) => Err(failure),
         None => Err(Failure::BadResponse),
     }
@@ -52,6 +67,15 @@ mod tests {
             model: "m".into(),
             tools: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_correction_and_sources_are_carried_with_the_step() {
+        let provider =
+            ScriptedProvider::new("Scripted", "m", vec![Reply::corrected("Send one object.")]);
+        let answer = run_step(&provider, &request(), &mut |_| {}).unwrap();
+        assert_eq!(answer.correction.as_deref(), Some("Send one object."));
+        assert!(answer.sources.is_empty());
     }
 
     #[test]

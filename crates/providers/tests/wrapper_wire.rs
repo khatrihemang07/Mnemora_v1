@@ -3,15 +3,23 @@
 
 use std::time::Duration;
 
-use mnemora_harness::{Failure, Message, Provider, Request, StopReason, StreamEvent};
+use mnemora_harness::{
+    Call, Failure, Message, Provider, Request, StopReason, StreamEvent, ToolDef, ToolProtocol,
+};
 use mnemora_providers::WrapperProvider;
 use mnemora_providers::client::{Client, Options};
+use mnemora_providers::envelope::{self, MAX_ARGUMENT_BYTES};
 use mnemora_providers::testing::{Canned, FakeServer, closed_address};
 use serde_json::Value;
 
+const FINISH: &str = include_str!("fixtures/envelope_finish.json");
+const FENCED: &str = include_str!("fixtures/envelope_fenced_finish.json");
+const CALLS: &str = include_str!("fixtures/envelope_calls.json");
+const CALLS_CUT: &str = include_str!("fixtures/envelope_calls_length.json");
+const PROSE: &str = include_str!("fixtures/envelope_plain_text.json");
+const CITED: &str = "e1b2c3d4-0000-4000-8000-000000000001";
+
 const STOP: &str = include_str!("fixtures/chat_stop.json");
-const LENGTH: &str = include_str!("fixtures/chat_length.json");
-const STREAM: &str = include_str!("fixtures/stream_text.sse");
 const MODELS: &str = include_str!("fixtures/models.json");
 const TOOLS_REFUSED: &str = include_str!("fixtures/error_400_tools.json");
 const NO_SUCH_MODEL: &str = include_str!("fixtures/error_404_model.json");
@@ -37,39 +45,6 @@ fn wrapper(address: &str) -> WrapperProvider {
 }
 
 #[test]
-fn a_whole_answer_is_one_delta_then_done() {
-    let server = FakeServer::start(|_| Canned::json(200, STOP));
-    let events = run(&wrapper(&server.address()));
-    assert_eq!(
-        events,
-        vec![
-            StreamEvent::TextDelta("Hello there.".into()),
-            StreamEvent::Done(StopReason::Stop),
-        ]
-    );
-}
-
-#[test]
-fn the_request_is_an_openai_chat_call_without_tools_or_a_key() {
-    let server = FakeServer::start(|_| Canned::json(200, STOP));
-    run(&wrapper(&server.address()));
-    let seen = server.requests();
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0].method, "POST");
-    assert_eq!(seen[0].path, "/v1/chat/completions");
-    assert_eq!(seen[0].authorization, None);
-    let body: Value = serde_json::from_str(&seen[0].body).unwrap();
-    assert_eq!(body["model"], "claude-haiku");
-    assert_eq!(body["stream"], false);
-    assert!(body.get("tools").is_none());
-    assert_eq!(body["messages"][0]["role"], "system");
-    assert_eq!(
-        body["messages"][1],
-        serde_json::json!({"role": "user", "content": "Hi?"})
-    );
-}
-
-#[test]
 fn a_key_is_sent_as_a_bearer_token_when_there_is_one() {
     let server = FakeServer::start(|_| Canned::json(200, STOP));
     let keyed = WrapperProvider::new("Keyed", "m", &server.address(), Some("k-123".into()));
@@ -77,49 +52,6 @@ fn a_key_is_sent_as_a_bearer_token_when_there_is_one() {
     assert_eq!(
         server.requests()[0].authorization.as_deref(),
         Some("Bearer k-123")
-    );
-}
-
-#[test]
-fn a_length_stop_is_reported_as_length() {
-    let server = FakeServer::start(|_| Canned::json(200, LENGTH));
-    assert_eq!(
-        run(&wrapper(&server.address())),
-        vec![
-            StreamEvent::TextDelta("The answer was cut".into()),
-            StreamEvent::Done(StopReason::Length),
-        ]
-    );
-}
-
-#[test]
-fn a_streamed_answer_arrives_as_deltas_in_order() {
-    let server = FakeServer::start(|_| Canned::sse(STREAM));
-    let events = run(&wrapper(&server.address()).streaming());
-    assert_eq!(
-        events,
-        vec![
-            StreamEvent::TextDelta("1".into()),
-            StreamEvent::TextDelta("\n2\n3".into()),
-            StreamEvent::Done(StopReason::Stop),
-        ]
-    );
-    assert_eq!(
-        serde_json::from_str::<Value>(&server.requests()[0].body).unwrap()["stream"],
-        true
-    );
-}
-
-#[test]
-fn a_stream_that_ends_without_a_finish_is_a_bad_response() {
-    let cut = "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"half\"},\"finish_reason\":null}]}\n\n";
-    let server = FakeServer::start(move |_| Canned::sse(cut));
-    assert_eq!(
-        run(&wrapper(&server.address()).streaming()),
-        vec![
-            StreamEvent::TextDelta("half".into()),
-            StreamEvent::Failed(Failure::BadResponse),
-        ]
     );
 }
 
@@ -244,8 +176,8 @@ fn https_is_spoken_with_a_trusted_root() {
             let mut body = vec![0u8; length];
             let _ = reader.read_exact(&mut body);
             let reply = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{STOP}",
-                STOP.len()
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{FINISH}",
+                FINISH.len()
             );
             let _ = tls.write_all(reply.as_bytes());
             let _ = tls.flush();
@@ -264,10 +196,262 @@ fn https_is_spoken_with_a_trusted_root() {
         None,
     );
     assert_eq!(
-        run(&provider),
+        run(&provider).last(),
+        Some(&StreamEvent::Done(StopReason::Stop))
+    );
+}
+
+/// A chat reply whose content is `content`, as the Wrapper sends it.
+fn reply_with(content: &str, finish: &str) -> String {
+    serde_json::json!({
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": finish}]
+    })
+    .to_string()
+}
+
+fn with_tools() -> Request {
+    let mut request = request();
+    request.tools = vec![ToolDef {
+        name: "journal_list".into(),
+        about: "Lists Entries by date.".into(),
+        schema: r#"{"type":"object"}"#.into(),
+    }];
+    request
+}
+
+fn run_with(provider: &dyn Provider, request: &Request) -> Vec<StreamEvent> {
+    let mut events = Vec::new();
+    provider.stream(request, &mut |event| events.push(event));
+    events
+}
+
+#[test]
+fn the_wrapper_speaks_the_envelope_protocol() {
+    assert_eq!(
+        wrapper("http://127.0.0.1:1/v1").tool_protocol(),
+        ToolProtocol::Envelope
+    );
+}
+
+#[test]
+fn a_finish_reply_gives_its_answer_its_sources_and_done() {
+    let server = FakeServer::start(|_| Canned::json(200, FINISH));
+    assert_eq!(
+        run_with(&wrapper(&server.address()), &with_tools()),
         vec![
-            StreamEvent::TextDelta("Hello there.".into()),
+            StreamEvent::TextDelta(format!("You wrote about the move [{CITED}].")),
+            StreamEvent::Sources(vec![CITED.into()]),
             StreamEvent::Done(StopReason::Stop),
         ]
     );
+}
+
+#[test]
+fn a_reply_in_a_json_fence_is_read_the_same_way() {
+    let server = FakeServer::start(|_| Canned::json(200, FENCED));
+    let events = run_with(&wrapper(&server.address()), &with_tools());
+    assert_eq!(events.last(), Some(&StreamEvent::Done(StopReason::Stop)));
+    assert!(events.contains(&StreamEvent::Sources(vec![CITED.into()])));
+}
+
+#[test]
+fn a_tools_reply_gives_its_calls_in_order_with_distinct_ids_and_done() {
+    let server = FakeServer::start(|_| Canned::json(200, CALLS));
+    let events = run_with(&wrapper(&server.address()), &with_tools());
+    assert_eq!(
+        events,
+        vec![
+            StreamEvent::Call(Call {
+                id: "w1".into(),
+                name: "journal_list".into(),
+                arguments: r#"{"from":"2026-10-19","to":"2026-10-25"}"#.into(),
+            }),
+            StreamEvent::Call(Call {
+                id: "w2".into(),
+                name: "todo_search".into(),
+                arguments: r#"{"query":"move"}"#.into(),
+            }),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
+}
+
+#[test]
+fn a_cut_off_tools_reply_keeps_its_calls_and_reports_length_so_the_loop_refuses_them() {
+    let server = FakeServer::start(|_| Canned::json(200, CALLS_CUT));
+    let events = run_with(&wrapper(&server.address()), &with_tools());
+    assert_eq!(events.last(), Some(&StreamEvent::Done(StopReason::Length)));
+    assert_eq!(events.len(), 3);
+}
+
+#[test]
+fn a_reply_that_breaks_the_protocol_is_a_correction_and_the_step_still_ends() {
+    let server = FakeServer::start(|_| Canned::json(200, PROSE));
+    assert_eq!(
+        run_with(&wrapper(&server.address()), &with_tools()),
+        vec![
+            StreamEvent::Correction(envelope::SHAPE.into()),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
+}
+
+#[test]
+fn each_protocol_breach_gets_its_own_correction() {
+    let long = "a".repeat(MAX_ARGUMENT_BYTES + 1);
+    let nine: Vec<String> = (0..9)
+        .map(|_| r#"{"name":"journal_list","arguments":"{}"}"#.to_owned())
+        .collect();
+    let cases: Vec<(String, &str)> = vec![
+        (
+            r#"{"action":"finish","calls":[{"name":"journal_list","arguments":"{}"}],"answer":"x","sources":[]}"#.into(),
+            envelope::FINISH_WITH_CALLS,
+        ),
+        (
+            r#"{"action":"tools","calls":[{"name":"journal_list","arguments":"{}"}],"answer":"x","sources":[]}"#.into(),
+            envelope::TOOLS_WITH_ANSWER,
+        ),
+        (
+            r#"{"action":"tools","calls":[],"answer":"","sources":[]}"#.into(),
+            envelope::NO_CALLS,
+        ),
+        (
+            r#"{"action":"finish","calls":[],"answer":"  ","sources":[]}"#.into(),
+            envelope::EMPTY_ANSWER,
+        ),
+        (
+            format!(r#"{{"action":"tools","calls":[{}],"answer":"","sources":[]}}"#, nine.join(",")),
+            envelope::TOO_MANY_CALLS,
+        ),
+        (
+            r#"{"action":"tools","calls":[{"name":"journal_list","arguments":"[1]"}],"answer":"","sources":[]}"#.into(),
+            envelope::BAD_ARGUMENTS,
+        ),
+        (
+            format!(r#"{{"action":"tools","calls":[{{"name":"journal_list","arguments":"{{\"q\":\"{long}\"}}"}}],"answer":"","sources":[]}}"#),
+            envelope::BAD_ARGUMENTS,
+        ),
+        (
+            r#"{"action":"finish","calls":[],"answer":"x","sources":[],"extra":1}"#.into(),
+            envelope::SHAPE,
+        ),
+        (
+            r#"{"action":"skip","calls":[],"answer":"x","sources":[]}"#.into(),
+            envelope::SHAPE,
+        ),
+    ];
+    for (content, correction) in cases {
+        let server = FakeServer::start(move |_| Canned::json(200, &reply_with(&content, "stop")));
+        assert_eq!(
+            run_with(&wrapper(&server.address()), &with_tools()),
+            vec![
+                StreamEvent::Correction(correction.into()),
+                StreamEvent::Done(StopReason::Stop),
+            ],
+            "{correction}"
+        );
+    }
+}
+
+#[test]
+fn a_tools_reply_on_a_final_step_is_a_correction() {
+    let server = FakeServer::start(|_| Canned::json(200, CALLS));
+    assert_eq!(
+        run_with(&wrapper(&server.address()), &request()),
+        vec![
+            StreamEvent::Correction(envelope::NO_TOOLS.into()),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
+}
+
+#[test]
+fn the_request_carries_the_envelope_as_a_strict_format_with_the_tools_listed_and_no_native_tools() {
+    let server = FakeServer::start(|_| Canned::json(200, FINISH));
+    run_with(&wrapper(&server.address()), &with_tools());
+    let body: Value = serde_json::from_str(&server.requests()[0].body).unwrap();
+    assert!(body.get("tools").is_none());
+    assert!(body.get("max_tokens").is_none());
+    assert_eq!(body["stream"], false);
+    assert_eq!(body["response_format"]["type"], "json_schema");
+    assert_eq!(body["response_format"]["json_schema"]["strict"], true);
+    let schema = &body["response_format"]["json_schema"]["schema"];
+    assert_eq!(
+        schema["properties"]["action"]["enum"],
+        serde_json::json!(["tools", "finish"])
+    );
+    assert_eq!(schema["properties"]["calls"]["maxItems"], 8);
+    assert_eq!(schema["additionalProperties"], false);
+    let system = body["messages"][0]["content"].as_str().unwrap();
+    assert!(system.starts_with("Be brief."));
+    assert!(system.contains("Reply with one JSON object only"));
+    assert!(system.contains("- journal_list: Lists Entries by date."));
+}
+
+#[test]
+fn a_final_step_offers_only_finish_and_no_calls() {
+    let server = FakeServer::start(|_| Canned::json(200, FINISH));
+    run_with(&wrapper(&server.address()), &request());
+    let body: Value = serde_json::from_str(&server.requests()[0].body).unwrap();
+    let schema = &body["response_format"]["json_schema"]["schema"];
+    assert_eq!(
+        schema["properties"]["action"]["enum"],
+        serde_json::json!(["finish"])
+    );
+    assert_eq!(schema["properties"]["calls"]["maxItems"], 0);
+    assert!(
+        body["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("last reply")
+    );
+}
+
+#[test]
+fn the_branch_reaches_the_model_as_turns_with_its_calls_and_their_results() {
+    let server = FakeServer::start(|_| Canned::json(200, FINISH));
+    let mut request = with_tools();
+    request.messages = vec![
+        Message::User("What moved?".into()),
+        Message::Assistant {
+            text: String::new(),
+            calls: vec![Call {
+                id: "w1".into(),
+                name: "journal_list".into(),
+                arguments: "{}".into(),
+            }],
+        },
+        Message::Tool {
+            call_id: "w1".into(),
+            name: "journal_list".into(),
+            text: "Observation e1.".into(),
+            is_error: false,
+        },
+        Message::Tool {
+            call_id: "w2".into(),
+            name: "nope".into(),
+            text: "There is no Tool called nope.".into(),
+            is_error: true,
+        },
+        Message::Correction("Send one object.".into()),
+    ];
+    run_with(&wrapper(&server.address()), &request);
+    let body: Value = serde_json::from_str(&server.requests()[0].body).unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    assert_eq!(messages[2]["role"], "assistant");
+    assert!(
+        messages[2]["content"]
+            .as_str()
+            .unwrap()
+            .contains(r#""name":"journal_list""#)
+    );
+    assert_eq!(
+        messages[3]["content"],
+        "Result of journal_list:\nObservation e1."
+    );
+    assert_eq!(
+        messages[4]["content"],
+        "Result of nope (refused):\nThere is no Tool called nope."
+    );
+    assert_eq!(messages[5]["content"], "Send one object.");
 }
