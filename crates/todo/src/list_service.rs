@@ -18,10 +18,10 @@ use crate::list::{
     AllView, DeleteChoice, ListDeletion, ListDone, ListEntry, ListView, SidebarView, TodoList,
     name_key, validate_emoji, validate_list_name,
 };
-use crate::order::key_after;
 use crate::service::record_at;
 use crate::when::LocalNow;
 use crate::{list_repo, repo};
+use mnemora_core::order::key_after;
 
 /// Change-log entity name for Lists.
 pub(crate) const ENTITY: &str = "todo_list";

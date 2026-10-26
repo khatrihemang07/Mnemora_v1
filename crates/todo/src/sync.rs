@@ -20,7 +20,6 @@ use mnemora_core::util::now_ms;
 use rusqlite::Connection;
 use serde_json::{Map, Value};
 
-use crate::order::key_after;
 use crate::recurrence::RepeatRule;
 use crate::service::{ENTITY, record_at, snapshot_of};
 use crate::task::{
@@ -28,6 +27,7 @@ use crate::task::{
 };
 use crate::when::{validate_date, validate_time};
 use crate::{list_repo, repo};
+use mnemora_core::order::key_after;
 
 const TITLE: &str = "title";
 const WHEN: &str = "when";

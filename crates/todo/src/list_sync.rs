@@ -32,10 +32,10 @@ use crate::arrange::{GroupBy, TaskSort};
 use crate::list::{TodoList, name_key, validate_emoji, validate_list_name};
 use crate::list_repo::{self, PARKED};
 use crate::list_service::{ENTITY, record_list, snapshot_of};
-use crate::order::key_after;
 use crate::repo;
 use crate::service::record_at;
 use crate::sync::{Set, number, strip_updated, text};
+use mnemora_core::order::key_after;
 
 /// The List entity's fields and how each merges.
 pub(crate) const LIST: SyncEntity = SyncEntity {

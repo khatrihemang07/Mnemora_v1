@@ -6,8 +6,8 @@
 //! byte order, so comparing the strings compares the fractions. A canonical key never ends in `0`
 //! (trailing zeros add nothing to a fraction but would leave no room between two keys); keys made
 //! before this module existed did, and are read as if they did not.
-
-use crate::error::TodoError;
+//!
+//! Shared by Todo (Tasks and Lists) and the AI Module (Saved questions), so it lives in core.
 
 /// Base-62 digits in byte order, so keys sort the same as text and as fractions.
 const DIGITS: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -32,8 +32,8 @@ fn is_key(key: &str) -> bool {
 /// A key strictly between `lo` and `hi`; `None` means no bound on that side (before the first key,
 /// after the last, or, with both none, the very first key). Fails when a bound is not a key or
 /// `lo` is not below `hi` once trailing zeros are ignored: callers fall back to a neighbour.
-pub fn key_between(lo: Option<&str>, hi: Option<&str>) -> Result<String, TodoError> {
-    const BAD: TodoError = TodoError::Validation("Those two places cannot be told apart");
+pub fn key_between(lo: Option<&str>, hi: Option<&str>) -> Result<String, &'static str> {
+    const BAD: &str = "Those two places cannot be told apart";
     let (lo, hi) = (lo.map(canonical), hi.map(canonical));
     if lo.is_some_and(|k| !is_key(k)) || hi.is_some_and(|k| !is_key(k)) {
         return Err(BAD);

@@ -17,7 +17,6 @@ mod list_repo;
 mod list_service;
 mod list_sync;
 mod migrations;
-mod order;
 mod parse;
 mod quick_add;
 mod recurrence;
