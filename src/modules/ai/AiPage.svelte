@@ -14,7 +14,7 @@
   import Sparkles from '~icons/lucide/sparkles';
   import SquarePen from '~icons/lucide/square-pen';
   import Trash2 from '~icons/lucide/trash-2';
-  import { commands, events } from '../../lib/ipc/bindings';
+  import { commands, events, type QueuedNote } from '../../lib/ipc/bindings';
   import { queryClient } from '../../lib/ipc/query-client';
   import { IpcError, unwrap } from '../../lib/ipc/unwrap';
   import { urlParam } from '../../lib/router/url-param';
@@ -44,6 +44,7 @@
   import { liveRuns } from './live.svelte';
   import { localContext } from './local-context';
   import ProviderSheet from './ProviderSheet.svelte';
+import QueuedNotes from './QueuedNotes.svelte';
   import { aiKeys, conversationOptions, providersOptions, savedOptions, usageOptions } from './queries';
   import { answeringIn, failedIn, type LiveRun } from './run-state';
 
@@ -96,6 +97,14 @@
   const failed = $derived(conversationId ? failedIn(liveRuns.runs, conversationId) : []);
   const busy = $derived((conversation.data?.running ?? false) || answering.length > 0);
   const entries = $derived(conversation.data?.entries ?? []);
+  /**
+   * Notes waiting for this Conversation's Run, or left over when it ended. The live list wins once
+   * this page has heard from the Run; before that (a page opened during a Run) the Conversation
+   * says which notes are waiting.
+   */
+  const queued = $derived(
+    conversationId ? (liveRuns.queued[conversationId] ?? conversation.data?.queued ?? []) : [],
+  );
   const blank = $derived(entries.length === 0 && answering.length === 0 && failed.length === 0);
   /** No Provider yet and nothing said: the page explains and offers one button. */
   const firstRun = $derived(providers.isSuccess && (providers.data?.length ?? 0) === 0);
@@ -218,6 +227,58 @@
       choice: { providerId: sent.providerId, model: sent.model },
     });
     if (started) liveRuns.dismiss(run.runId);
+  }
+
+  /** While a Run answers, typed text waits as a note for its next Step. Resolves true when it was queued. */
+  async function addNote(text: string): Promise<boolean> {
+    const id = conversationId;
+    if (!id) return false;
+    try {
+      await unwrap(commands.aiRunSteer(id, text));
+      return true;
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : 'Could not add the note.');
+      return false;
+    }
+  }
+
+  /** Stops the Run answering here. What it wrote so far is kept and marked stopped. */
+  async function stopRun() {
+    const id = conversationId;
+    if (!id) return;
+    try {
+      await commands.aiRunAbort(id);
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : 'Could not stop the answer.');
+    }
+  }
+
+  /** Sends a waiting note now: into the Run (its Step ends), or as a question when none is answering. */
+  async function sendNow(note: QueuedNote) {
+    const id = conversationId;
+    if (!id) return;
+    if (!busy) {
+      if (await send(note.text)) liveRuns.dropNote(id, note.id);
+      return;
+    }
+    try {
+      await unwrap(commands.aiRunSendNow(id, note.id));
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : 'Could not send the note.');
+    }
+  }
+
+  /** Takes a waiting note back. Once a Run has ended there is nothing to tell, so it only leaves the list. */
+  async function removeNote(note: QueuedNote) {
+    const id = conversationId;
+    if (!id) return;
+    liveRuns.dropNote(id, note.id);
+    if (!busy) return;
+    try {
+      await unwrap(commands.aiRunUnqueue(id, note.id));
+    } catch {
+      // Already sent: the Run has it, so there is nothing to take back.
+    }
   }
 
   function handlersFor(run: LiveRun): Partial<Record<BannerAction, () => void>> {
@@ -353,9 +414,14 @@
     {/if}
   </div>
   <div class="px-4 pb-4">
+    <QueuedNotes notes={queued} onsendnow={(note) => void sendNow(note)} onremove={(note) => void removeNote(note)} />
     <AiComposer
       {busy}
-      placeholder={entries.length === 0 ? 'Ask about your journal and tasks…' : 'Ask a follow-up…'}
+      placeholder={busy
+        ? 'Add a note for the next step…'
+        : entries.length === 0
+          ? 'Ask about your journal and tasks…'
+          : 'Ask a follow-up…'}
       choice={choice}
       {modelName}
       saved={saved.data ?? []}
@@ -365,7 +431,8 @@
         picked = next;
         pickerOpen = false;
       }}
-      onsend={(text) => send(text)}
+      onsend={(text) => (busy ? addNote(text) : send(text))}
+      onstop={() => void stopRun()}
       onrunsaved={(text) => void send(text)}
       onmanage={() => moduleContext.navigate('/settings')}
     />

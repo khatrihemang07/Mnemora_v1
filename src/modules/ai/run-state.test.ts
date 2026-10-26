@@ -148,3 +148,19 @@ describe('unplacedRuns', () => {
     expect(unplacedRuns(live, new Set(['other'])).map((r) => r.runId)).toEqual(['r1', 'r2']);
   });
 });
+
+describe('stopping and the queue', () => {
+  it('a stopped Run leaves the live list, since its saved part shows in the thread', () => {
+    const runs = fold([
+      step({ type: 'runStarted' }),
+      step({ type: 'textDelta', text: 'Part' }),
+      step({ type: 'runEnded', outcome: { type: 'stopped' } }),
+    ]);
+    expect(runs).toEqual({});
+  });
+
+  it('a queue change is not a Run of its own', () => {
+    const runs = fold([step({ type: 'queueChanged', notes: [{ id: 'n1', text: 'later' }] })]);
+    expect(runs).toEqual({});
+  });
+});
