@@ -464,3 +464,133 @@ fn an_anthropic_run_makes_tool_use_calls_with_its_headers_and_the_fixed_limit() 
         .expect("the result is sent back as a tool_result block");
     assert_eq!(results["content"][0]["tool_use_id"], "toolu_1");
 }
+
+/// An OpenRouter record aimed at a loopback server. The app's fixed address is checked by the
+/// create test; the wire by the adapter's tests and the requests below.
+fn openrouter_at(app: &TestApp, address: &str) -> String {
+    app.with_db(|conn| {
+        conn.execute(
+            "INSERT INTO ai_providers (id, name, kind, address, created_at, updated_at) \
+             VALUES ('openrouter-test', 'OpenRouter', 'openrouter', ?1, 0, 0)",
+            [address],
+        )
+        .unwrap();
+    });
+    app.invoke::<Value>(
+        "ai_provider_key_set",
+        json!({ "id": "openrouter-test", "key": "sk-or-TEST" }),
+    )
+    .unwrap();
+    "openrouter-test".to_owned()
+}
+
+fn openrouter_list() -> String {
+    json!({ "data": [
+        { "id": "meta-llama/llama-3.3-70b-instruct:free", "pricing": { "prompt": "0", "completion": "0" } },
+        { "id": "openai/gpt-4o-mini", "pricing": { "prompt": "0.00000015", "completion": "0.0000006" } },
+    ]})
+    .to_string()
+}
+
+#[test]
+fn openrouter_is_created_at_its_fixed_address_with_a_key_required_and_paid_models_off() {
+    let app = TestApp::new();
+    let created: Value = app
+        .invoke(
+            "ai_provider_create",
+            json!({ "request": { "kind": "openrouter", "name": "OR", "address": "" } }),
+        )
+        .unwrap();
+    assert_eq!(created["address"], "https://openrouter.ai/api/v1");
+    assert_eq!(created["key_state"], "missing");
+    assert_eq!(created["allow_paid"], false);
+    let id = created["id"].as_str().unwrap().to_owned();
+    let updated: Value = app
+        .invoke(
+            "ai_provider_update",
+            json!({ "id": id, "request": { "name": "OR", "address": "https://openrouter.ai/api/v1", "allow_paid": true } }),
+        )
+        .unwrap();
+    assert_eq!(updated["allow_paid"], true);
+}
+
+#[test]
+fn paid_models_are_listed_as_paid_and_refused_while_the_switch_is_off() {
+    let app = TestApp::new();
+    let server = FakeServer::start(|_| Canned::json(200, &openrouter_list()));
+    let id = openrouter_at(&app, &server.address());
+
+    let list: Value = app
+        .invoke("ai_models_search", json!({ "providerId": id, "query": "" }))
+        .unwrap();
+    assert_eq!(list["models"].as_array().unwrap().len(), 2);
+    assert_eq!(list["paid_models"], json!(["openai/gpt-4o-mini"]));
+
+    let refused = app.invoke::<Value>(
+        "ai_run_start",
+        json!({ "request": { "conversation_id": null, "text": "Hi?", "provider_id": id,
+                             "model": "openai/gpt-4o-mini", "local": local() } }),
+    );
+    assert!(
+        refused.is_err(),
+        "a paid Model cannot be sent while the switch is off"
+    );
+    assert!(
+        server
+            .requests()
+            .iter()
+            .all(|request| request.path.ends_with("/models")),
+        "only the Model list was asked, and no chat request was sent"
+    );
+}
+
+#[test]
+fn a_free_route_is_sent_with_the_zero_price_cap_and_a_paid_one_only_once_switched_on() {
+    let app = TestApp::new();
+    let turn = AtomicUsize::new(0);
+    let answer = sse_text("Hello.");
+    let server = FakeServer::start(move |req| {
+        if req.path.ends_with("/models") {
+            Canned::json(200, &openrouter_list())
+        } else {
+            turn.fetch_add(1, Ordering::SeqCst);
+            Canned::sse(&answer)
+        }
+    });
+    let id = openrouter_at(&app, &server.address());
+    let events = app.ai_events();
+
+    ask_model(&app, &id, "meta-llama/llama-3.3-70b-instruct:free");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+    let free_body: Value = serde_json::from_str(&server.requests()[0].body).unwrap();
+    assert_eq!(
+        free_body["provider"]["max_price"],
+        json!({"prompt": 0, "completion": 0})
+    );
+
+    // Set through the database: the fixed address would reset this test's address on an update.
+    app.with_db(|conn| {
+        conn.execute(
+            "UPDATE ai_providers SET allow_paid = 1 WHERE id = 'openrouter-test'",
+            [],
+        )
+        .unwrap();
+    });
+    let events = app.ai_events();
+    ask_model(&app, &id, "openai/gpt-4o-mini");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+    let paid_body: Value = serde_json::from_str(&server.requests()[1].body).unwrap();
+    assert!(
+        paid_body.get("provider").is_none(),
+        "a paid route carries no price cap"
+    );
+}
+
+fn ask_model(app: &TestApp, provider_id: &str, model: &str) -> Value {
+    app.invoke(
+        "ai_run_start",
+        json!({ "request": { "conversation_id": null, "text": "Hi?", "provider_id": provider_id,
+                             "model": model, "local": local() } }),
+    )
+    .unwrap()
+}

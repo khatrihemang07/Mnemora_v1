@@ -18,23 +18,25 @@ fn record(row: &Row<'_>) -> AppResult<ProviderRecord> {
         address: row.get(3)?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
+        allow_paid: row.get::<_, i64>(6)? != 0,
     })
 }
 
-const COLUMNS: &str = "id, name, kind, address, created_at, updated_at";
+const COLUMNS: &str = "id, name, kind, address, created_at, updated_at, allow_paid";
 
 /// Adds a Provider.
 pub fn insert(conn: &Connection, provider: &ProviderRecord) -> AppResult<()> {
     conn.execute(
-        "INSERT INTO ai_providers(id, name, kind, address, created_at, updated_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO ai_providers(id, name, kind, address, created_at, updated_at, allow_paid)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             provider.id,
             provider.name,
             provider.kind.as_str(),
             provider.address,
             provider.created_at,
-            provider.updated_at
+            provider.updated_at,
+            i64::from(provider.allow_paid)
         ],
     )?;
     Ok(())
@@ -59,12 +61,19 @@ pub fn list(conn: &Connection) -> AppResult<Vec<ProviderRecord>> {
     rows.map(|row| row?).collect()
 }
 
-/// Changes a Provider's name and address.
-pub fn update(conn: &Connection, id: &str, name: &str, address: &str, now: i64) -> AppResult<()> {
+/// Changes a Provider's name, address and paid-Models switch.
+pub fn update(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    address: &str,
+    allow_paid: bool,
+    now: i64,
+) -> AppResult<()> {
     conn.execute(
-        "UPDATE ai_providers SET name = ?2, address = ?3, updated_at = ?4
+        "UPDATE ai_providers SET name = ?2, address = ?3, allow_paid = ?4, updated_at = ?5
          WHERE id = ?1 AND deleted_at IS NULL",
-        params![id, name, address, now],
+        params![id, name, address, i64::from(allow_paid), now],
     )?;
     Ok(())
 }

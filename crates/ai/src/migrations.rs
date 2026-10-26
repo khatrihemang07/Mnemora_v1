@@ -60,5 +60,6 @@ pub fn all() -> Migrations<'static> {
              ) STRICT;
              CREATE INDEX ai_saved_questions_order ON ai_saved_questions(sort_key);",
         ),
+        M::up("ALTER TABLE ai_providers ADD COLUMN allow_paid INTEGER NOT NULL DEFAULT 0;"),
     ])
 }
