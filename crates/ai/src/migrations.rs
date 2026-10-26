@@ -47,5 +47,18 @@ pub fn all() -> Migrations<'static> {
              ALTER TABLE ai_conversations ADD COLUMN provider_name TEXT;
              ALTER TABLE ai_conversations ADD COLUMN model TEXT;",
         ),
+        M::up(
+            // Saved questions keep their manual order as a fractional-index key (ADR 0012), and are
+            // soft-deleted so that Undo can bring one back where it was.
+            "CREATE TABLE ai_saved_questions(
+                 id TEXT PRIMARY KEY NOT NULL,
+                 text TEXT NOT NULL,
+                 sort_key TEXT NOT NULL,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL,
+                 deleted_at INTEGER
+             ) STRICT;
+             CREATE INDEX ai_saved_questions_order ON ai_saved_questions(sort_key);",
+        ),
     ])
 }

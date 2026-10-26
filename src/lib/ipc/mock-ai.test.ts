@@ -2,8 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AiRunEvent, RunRequest } from './bindings';
 import addresses from './fixtures/ai-addresses.json';
 import failures from './fixtures/ai-failures.json';
+import historyRules from './fixtures/ai-history.json';
+import markdownRules from './fixtures/ai-markdown.json';
+import renameRules from './fixtures/ai-rename.json';
 import rules from './fixtures/ai-title.json';
-import { addressProblem, createAiMock, failureSentence, titleOf } from './mock-ai';
+import {
+  addressProblem,
+  createAiMock,
+  failureSentence,
+  markdownOf,
+  titleMatches,
+  titleOf,
+  validateTitle,
+} from './mock-ai';
 
 /** What a rejected command threw (the mock throws its error object, as the IPC rejects). */
 function caught(fn: () => unknown): unknown {
@@ -159,5 +170,89 @@ describe('the shared rules fixtures (the same cases as the Rust tests)', () => {
 
   it.each(failures)('words the $kind failure as the fixture does', ({ kind, message }) => {
     expect(failureSentence(kind as never)).toBe(message);
+  });
+});
+
+describe('shared fixtures for the Conversation rules', () => {
+  it('renames to the trimmed title or refuses it, as the Rust rules do', () => {
+    for (const rule of renameRules) {
+      if ('error' in rule) {
+        expect(caught(() => validateTitle(rule.title))).toMatchObject({
+          code: 'validation',
+          message: rule.error,
+        });
+      } else {
+        expect(validateTitle(rule.title)).toBe(rule.saved);
+      }
+    }
+  });
+
+  it('matches the history search by title only, as the Rust rules do', () => {
+    for (const rule of historyRules) {
+      const matches = rule.titles.filter((title) => titleMatches(title, rule.query));
+      expect(matches).toEqual(rule.matches);
+    }
+  });
+
+  it('copies a Conversation as the Rust rules do', () => {
+    for (const rule of markdownRules) {
+      expect(markdownOf(rule.title, rule.entries as never)).toBe(rule.markdown);
+    }
+  });
+});
+
+describe('the mock Conversation and Saved question commands', () => {
+  it('starts with demo Conversations that page at 30, and three Saved questions', () => {
+    const mock = createAiMock({ emit: () => {} });
+    const first = mock.handle('ai_conversation_list', { query: '', offset: 0, limit: 30 }) as {
+      items: unknown[];
+      more: boolean;
+    };
+    expect(first.items).toHaveLength(30);
+    expect(first.more).toBe(true);
+    const second = mock.handle('ai_conversation_list', { query: '', offset: 30, limit: 30 }) as {
+      items: unknown[];
+      more: boolean;
+    };
+    expect(second.items).toHaveLength(4);
+    expect(second.more).toBe(false);
+    expect(mock.handle('ai_saved_list', {})).toHaveLength(3);
+  });
+
+  it('deletes a Conversation out of the history and restores it whole', () => {
+    const mock = createAiMock({ emit: () => {} });
+    const id =
+      (
+        mock.handle('ai_conversation_list', { query: 'overdue', offset: 0, limit: 30 }) as {
+          items: { id: string }[];
+        }
+      ).items[0]?.id ?? '';
+    mock.handle('ai_conversation_delete', { id });
+    expect(
+      (
+        mock.handle('ai_conversation_list', { query: 'overdue', offset: 0, limit: 30 }) as {
+          items: unknown[];
+        }
+      ).items,
+    ).toHaveLength(0);
+    expect(caught(() => mock.handle('ai_conversation_get', { id }))).toMatchObject({
+      code: 'not_found',
+    });
+    mock.handle('ai_conversation_restore', { id });
+    expect(mock.handle('ai_conversation_get', { id })).toMatchObject({ title: 'What is overdue?' });
+  });
+
+  it('moves a Saved question between the neighbours it was given', () => {
+    const mock = createAiMock({ emit: () => {} });
+    const texts = () => (mock.handle('ai_saved_list', {}) as { text: string }[]).map((q) => q.text);
+    const [first, second, third] = (mock.handle('ai_saved_list', {}) as { id: string }[]).map(
+      (q) => q.id,
+    );
+    mock.handle('ai_saved_reorder', { id: third, afterId: first, beforeId: second });
+    expect(texts()).toEqual([
+      'Summarise my last 7 days',
+      'What did I finish this month?',
+      'What is overdue?',
+    ]);
   });
 });

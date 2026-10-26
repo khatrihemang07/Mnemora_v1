@@ -19,7 +19,7 @@ const TODAY: &str = "2026-10-25";
 const ADDRESS: &str = "http://127.0.0.1:9/v1";
 const TITLE_RULES: &str = include_str!("../../src/lib/ipc/fixtures/ai-title.json");
 
-fn local() -> Value {
+pub(crate) fn local() -> Value {
     json!({
         "today": TODAY,
         "weekday": "Sunday",
@@ -28,13 +28,13 @@ fn local() -> Value {
     })
 }
 
-fn scripted(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
+pub(crate) fn scripted(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
     Arc::new(ScriptedProvider::new("Scripted", "scripted-model", replies))
 }
 
 /// Installs the scripted Provider as the one every Run uses, and adds a Provider record for it
 /// (the command checks the record, the scripted adapter does the answering).
-fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
+pub(crate) fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
     let provider: Arc<dyn Provider> = provider.clone();
     app.set_ai_provider(provider);
     app.invoke::<Value>(
@@ -45,7 +45,7 @@ fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
 }
 
 /// The first Provider on the device, or a missing id when there is none.
-fn provider_id(app: &TestApp) -> String {
+pub(crate) fn provider_id(app: &TestApp) -> String {
     let list: Value = app.invoke("ai_provider_list", json!({})).unwrap();
     list.as_array()
         .and_then(|providers| providers.first())
@@ -55,7 +55,7 @@ fn provider_id(app: &TestApp) -> String {
         )
 }
 
-fn ask(app: &TestApp, conversation: Option<&str>, text: &str) -> Result<Value, Value> {
+pub(crate) fn ask(app: &TestApp, conversation: Option<&str>, text: &str) -> Result<Value, Value> {
     app.invoke(
         "ai_run_start",
         json!({ "request": {
@@ -68,7 +68,7 @@ fn ask(app: &TestApp, conversation: Option<&str>, text: &str) -> Result<Value, V
     )
 }
 
-fn get(app: &TestApp, conversation: &str) -> Value {
+pub(crate) fn get(app: &TestApp, conversation: &str) -> Value {
     app.invoke("ai_conversation_get", json!({ "id": conversation }))
         .unwrap()
 }
@@ -105,7 +105,7 @@ pub(crate) fn ended_outcome(run: &[AiRunEvent]) -> RunOutcome {
     }
 }
 
-fn conversation_count(app: &TestApp) -> i64 {
+pub(crate) fn conversation_count(app: &TestApp) -> i64 {
     app.with_db(|c| {
         c.query_row("SELECT COUNT(*) FROM ai_conversations", [], |r| r.get(0))
             .unwrap()

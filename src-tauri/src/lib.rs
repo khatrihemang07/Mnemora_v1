@@ -39,6 +39,17 @@ macro_rules! specta_builder_for {
                 ai::ai_provider_test,
                 ai::ai_models_search,
                 ai::ai_models_usage,
+                ai::ai_conversation_list,
+                ai::ai_conversation_rename,
+                ai::ai_conversation_delete,
+                ai::ai_conversation_restore,
+                ai::ai_conversation_markdown,
+                ai::ai_saved_list,
+                ai::ai_saved_create,
+                ai::ai_saved_update,
+                ai::ai_saved_delete,
+                ai::ai_saved_restore,
+                ai::ai_saved_reorder,
                 journal::journal_entry_delete,
                 journal::journal_entry_restore,
                 journal::journal_entry_move,
@@ -141,7 +152,11 @@ macro_rules! specta_builder_for {
 
 mod ai;
 #[cfg(test)]
+mod ai_conversations_tests;
+#[cfg(test)]
 mod ai_provider_tests;
+#[cfg(test)]
+mod ai_saved_tests;
 #[cfg(test)]
 mod ai_tools_tests;
 #[cfg(test)]

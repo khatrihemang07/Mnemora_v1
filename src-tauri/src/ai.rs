@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use mnemora_ai::{
-    ConnectionTest, ConversationView, KeyStore, LocalContext, ModelList, ModelUsage, NewProvider,
-    Prepared, ProviderUpdate, ProviderView,
+    ConnectionTest, ConversationPage, ConversationView, KeyStore, LocalContext, ModelList,
+    ModelUsage, NewProvider, Prepared, ProviderUpdate, ProviderView, SavedQuestion,
 };
 use mnemora_core::db::physical_now;
 use mnemora_core::error::{AppError, ErrorCode};
@@ -290,6 +290,127 @@ pub async fn ai_models_search(
     tauri::async_runtime::spawn_blocking(move || mnemora_ai::matching_models(&record, key, &query))
         .await
         .map_err(join_error)
+}
+
+/// One page of the history, newest first, whose titles contain `query`. 30 at a time from the screen.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_list(
+    state: State<'_, AppState>,
+    query: String,
+    offset: u32,
+    limit: u32,
+) -> Result<ConversationPage, AppError> {
+    mnemora_ai::list_conversations(&lock(&state.db), &query, offset, limit)
+}
+
+/// Gives a Conversation a new title, checked first.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_rename(
+    state: State<'_, AppState>,
+    id: String,
+    title: String,
+) -> Result<(), AppError> {
+    mnemora_ai::rename_conversation(&lock(&state.db), &id, &title)
+}
+
+/// Deletes a Conversation at once; Undo restores it. Refused while a Run answers in it, since that
+/// Run would otherwise save into a deleted Conversation.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    if state.ai.is_running(&id) {
+        return Err(AppError::new(
+            ErrorCode::Validation,
+            "This Conversation is still answering.",
+        ));
+    }
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::delete_conversation(&conn, &id, now)
+}
+
+/// Brings a deleted Conversation back, with every entry it had.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_restore(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    mnemora_ai::restore_conversation(&lock(&state.db), &id)
+}
+
+/// A Conversation's visible branch as Markdown, or with `entry_id` one answer, without its citations.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_markdown(
+    state: State<'_, AppState>,
+    id: String,
+    entry_id: Option<String>,
+) -> Result<String, AppError> {
+    mnemora_ai::conversation_markdown(&lock(&state.db), &id, entry_id.as_deref())
+}
+
+/// The Saved questions, in their manual order.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_saved_list(state: State<'_, AppState>) -> Result<Vec<SavedQuestion>, AppError> {
+    mnemora_ai::list_saved(&lock(&state.db))
+}
+
+/// Adds a Saved question at the end of the list.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_saved_create(
+    state: State<'_, AppState>,
+    text: String,
+) -> Result<SavedQuestion, AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::create_saved(&conn, &text, now)
+}
+
+/// Changes a Saved question's text.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_saved_update(
+    state: State<'_, AppState>,
+    id: String,
+    text: String,
+) -> Result<SavedQuestion, AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::update_saved(&conn, &id, &text, now)
+}
+
+/// Deletes a Saved question at once; Undo restores it in its place.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_saved_delete(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::delete_saved(&conn, &id, now)
+}
+
+/// Brings a deleted Saved question back in its place.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_saved_restore(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::restore_saved(&conn, &id, now)
+}
+
+/// Puts a Saved question between two neighbours the screen showed (either may be none).
+#[tauri::command]
+#[specta::specta]
+pub fn ai_saved_reorder(
+    state: State<'_, AppState>,
+    id: String,
+    after_id: Option<String>,
+    before_id: Option<String>,
+) -> Result<(), AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::reorder_saved(&conn, &id, after_id.as_deref(), before_id.as_deref(), now)
 }
 
 /// The Models this device has used most recently and most often.

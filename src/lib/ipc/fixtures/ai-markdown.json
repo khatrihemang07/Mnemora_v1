@@ -1,0 +1,115 @@
+[
+  {
+    "title": "Summarise my last 7 days",
+    "entries": [
+      {
+        "id": "m1",
+        "parent_id": null,
+        "created_at": 1,
+        "payload": {
+          "kind": "model_change",
+          "provider_name": "Scripted",
+          "model": "scripted-model"
+        }
+      },
+      {
+        "id": "q1",
+        "parent_id": "m1",
+        "created_at": 2,
+        "payload": {
+          "kind": "user",
+          "text": "Summarise my last 7 days"
+        }
+      },
+      {
+        "id": "t1",
+        "parent_id": "q1",
+        "created_at": 3,
+        "payload": {
+          "kind": "tool_result",
+          "call_id": "c1",
+          "name": "journal_list",
+          "arguments": "{}",
+          "result": "7 entries",
+          "is_error": false,
+          "observation_id": "e1",
+          "summary": "Listed entries, 7 entries"
+        }
+      },
+      {
+        "id": "a1",
+        "parent_id": "t1",
+        "created_at": 4,
+        "payload": {
+          "kind": "assistant",
+          "text": "You wrote 7 entries [01990000-0000-7000-8000-0000000000e1].",
+          "stop": "stop",
+          "provider": "Scripted",
+          "model": "scripted-model",
+          "calls": [],
+          "sources": [],
+          "budget_note": null
+        }
+      }
+    ],
+    "markdown": "# Summarise my last 7 days\n\n**You:** Summarise my last 7 days\n\nYou wrote 7 entries.\n"
+  },
+  {
+    "title": "Two questions",
+    "entries": [
+      {
+        "id": "m1",
+        "parent_id": null,
+        "created_at": 1,
+        "payload": {
+          "kind": "model_change",
+          "provider_name": "Scripted",
+          "model": "scripted-model"
+        }
+      },
+      {
+        "id": "q1",
+        "parent_id": "m1",
+        "created_at": 2,
+        "payload": {
+          "kind": "user",
+          "text": "First question"
+        }
+      },
+      {
+        "id": "a1",
+        "parent_id": "q1",
+        "created_at": 3,
+        "payload": {
+          "kind": "assistant",
+          "text": "First answer",
+          "stop": "stop",
+          "provider": "Scripted",
+          "model": "scripted-model",
+          "calls": [],
+          "sources": [],
+          "budget_note": null
+        }
+      },
+      {
+        "id": "q2",
+        "parent_id": "a1",
+        "created_at": 4,
+        "payload": {
+          "kind": "user",
+          "text": "Second question\nover two lines"
+        }
+      },
+      {
+        "id": "c1",
+        "parent_id": "q2",
+        "created_at": 5,
+        "payload": {
+          "kind": "correction",
+          "text": "Cite only ids a Tool returned."
+        }
+      }
+    ],
+    "markdown": "# Two questions\n\n**You:** First question\n\nFirst answer\n\n**You:** Second question\nover two lines\n"
+  }
+]

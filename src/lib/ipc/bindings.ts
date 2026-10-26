@@ -73,6 +73,31 @@ export const commands = {
 	aiModelsSearch: (providerId: string, query: string) => typedError<ModelList, AppError>(__TAURI_INVOKE("ai_models_search", { providerId, query })),
 	/**  The Models this device has used most recently and most often. */
 	aiModelsUsage: () => typedError<ModelUsage, AppError>(__TAURI_INVOKE("ai_models_usage")),
+	/**  One page of the history, newest first, whose titles contain `query`. 30 at a time from the screen. */
+	aiConversationList: (query: string, offset: number, limit: number) => typedError<ConversationPage, AppError>(__TAURI_INVOKE("ai_conversation_list", { query, offset, limit })),
+	/**  Gives a Conversation a new title, checked first. */
+	aiConversationRename: (id: string, title: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_rename", { id, title })),
+	/**
+	 *  Deletes a Conversation at once; Undo restores it. Refused while a Run answers in it, since that
+	 *  Run would otherwise save into a deleted Conversation.
+	 */
+	aiConversationDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_delete", { id })),
+	/**  Brings a deleted Conversation back, with every entry it had. */
+	aiConversationRestore: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_restore", { id })),
+	/**  A Conversation's visible branch as Markdown, or with `entry_id` one answer, without its citations. */
+	aiConversationMarkdown: (id: string, entryId: string | null) => typedError<string, AppError>(__TAURI_INVOKE("ai_conversation_markdown", { id, entryId })),
+	/**  The Saved questions, in their manual order. */
+	aiSavedList: () => typedError<SavedQuestion[], AppError>(__TAURI_INVOKE("ai_saved_list")),
+	/**  Adds a Saved question at the end of the list. */
+	aiSavedCreate: (text: string) => typedError<SavedQuestion, AppError>(__TAURI_INVOKE("ai_saved_create", { text })),
+	/**  Changes a Saved question's text. */
+	aiSavedUpdate: (id: string, text: string) => typedError<SavedQuestion, AppError>(__TAURI_INVOKE("ai_saved_update", { id, text })),
+	/**  Deletes a Saved question at once; Undo restores it in its place. */
+	aiSavedDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_saved_delete", { id })),
+	/**  Brings a deleted Saved question back in its place. */
+	aiSavedRestore: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_saved_restore", { id })),
+	/**  Puts a Saved question between two neighbours the screen showed (either may be none). */
+	aiSavedReorder: (id: string, afterId: string | null, beforeId: string | null) => typedError<null, AppError>(__TAURI_INVOKE("ai_saved_reorder", { id, afterId, beforeId })),
 	/**  Deletes an Entry. It can be restored at any time. */
 	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
 	/**  Brings a deleted Entry back to its place on its Page. */
@@ -753,6 +778,26 @@ export type ConnectionTest = {
 	failure: Failure | null,
 	/**  What to show the person. */
 	message: string,
+};
+
+/**  One page of the history. */
+export type ConversationPage = {
+	/**  The Conversations on this page, newest first. */
+	items: ConversationSummary[],
+	/**  Whether another page follows this one. */
+	more: boolean,
+};
+
+/**  One Conversation in the history: enough to list it and to open it. */
+export type ConversationSummary = {
+	/**  The Conversation's id. */
+	id: string,
+	/**  Its title. */
+	title: string,
+	/**  When it was started, in milliseconds (a number for TypeScript, as for entries). */
+	created_at: number | null,
+	/**  When it last changed, in milliseconds; the history is newest first by this. */
+	updated_at: number | null,
 };
 
 /**  A Conversation and its entries. */
@@ -1938,6 +1983,14 @@ export type RunStarted = {
 	run_id: string,
 	/**  The Conversation the question went into. */
 	conversation_id: string,
+};
+
+/**  A Saved question: a question the person runs with one tap. */
+export type SavedQuestion = {
+	/**  The Saved question's id. */
+	id: string,
+	/**  The question as it is asked. */
+	text: string,
 };
 
 /**  The outcome of a search. */
