@@ -278,7 +278,7 @@ fn start_run<R: Runtime>(
         conversation_id: conversation_id.clone(),
     };
     let provider = state.ai.provider_for(&prepared);
-    let (tools, off) = offered_tools(&state)?;
+    let (tools, off) = offered_tools(state)?;
     let toolset = mnemora_ai::Toolset { tools, off };
     let ask = mnemora_ai::Ask {
         conversation_id,
