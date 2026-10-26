@@ -29,6 +29,7 @@ struct Partial {
     id: Option<String>,
     name: String,
     arguments: String,
+    thought_signature: Option<String>,
 }
 
 impl CompatProvider {
@@ -125,10 +126,14 @@ impl CompatProvider {
                         id,
                         name,
                         arguments,
+                        thought_signature,
                     } => {
                         let partial = calls.entry(index).or_default();
                         if id.is_some() {
                             partial.id = id;
+                        }
+                        if thought_signature.is_some() {
+                            partial.thought_signature = thought_signature;
                         }
                         if let Some(name) = name {
                             partial.name.push_str(&name);
@@ -169,6 +174,7 @@ fn finish(
             } else {
                 partial.arguments
             },
+            thought_signature: partial.thought_signature,
         });
     }
     for call in made {

@@ -9,6 +9,9 @@ pub struct Call {
     pub name: String,
     /// The arguments, exactly as the Model sent them.
     pub arguments: String,
+    /// Opaque reasoning token a Provider attached to this call (Gemini's `thought_signature`). It
+    /// is sent back verbatim on the same call in later Steps, and no other Provider sets it.
+    pub thought_signature: Option<String>,
 }
 
 /// One message of a Run's request.

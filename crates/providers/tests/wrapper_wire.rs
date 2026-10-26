@@ -65,8 +65,10 @@ fn an_error_reply_fails_the_step_with_its_kind() {
         (
             502,
             "{\"error\":{\"message\":\"codex login expired\"}}",
-            Failure::Unexpected,
+            Failure::RateLimited,
         ),
+        (503, "{}", Failure::RateLimited),
+        (500, "{}", Failure::RateLimited),
         (504, "{}", Failure::Timeout),
     ];
     for (status, body, expected) in cases {
@@ -265,11 +267,13 @@ fn a_tools_reply_gives_its_calls_in_order_with_distinct_ids_and_done() {
                 id: "w1".into(),
                 name: "journal_list".into(),
                 arguments: r#"{"from":"2026-10-19","to":"2026-10-25"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Call(Call {
                 id: "w2".into(),
                 name: "todo_search".into(),
                 arguments: r#"{"query":"move"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Done(StopReason::Stop),
         ]
@@ -419,6 +423,7 @@ fn the_branch_reaches_the_model_as_turns_with_its_calls_and_their_results() {
                 id: "w1".into(),
                 name: "journal_list".into(),
                 arguments: "{}".into(),
+                thought_signature: None,
             }],
         },
         Message::Tool {

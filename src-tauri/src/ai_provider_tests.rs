@@ -254,15 +254,16 @@ fn a_question_goes_through_the_wrapper_and_the_answer_is_saved_with_its_provider
 
 #[test]
 fn each_failure_ends_the_run_with_its_kind_and_keeps_the_question() {
-    let cases: [(u16, String, Failure); 5] = [
+    let cases: [(u16, String, Failure); 6] = [
         (404, "{}".into(), Failure::ModelUnavailable),
         (429, "{}".into(), Failure::RateLimited),
         (504, "{}".into(), Failure::Timeout),
         (
             502,
             format!("{{\"error\":\"{SECRET}\"}}"),
-            Failure::Unexpected,
+            Failure::RateLimited,
         ),
+        (503, "{}".into(), Failure::RateLimited),
         (
             400,
             "{\"error\":\"tools refused\"}".into(),

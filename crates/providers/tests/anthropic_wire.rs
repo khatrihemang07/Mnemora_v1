@@ -87,6 +87,7 @@ fn a_tool_use_reply_gives_its_text_then_its_call_with_arguments_as_text() {
                 id: "toolu_01A".into(),
                 name: "journal_list".into(),
                 arguments: r#"{"from":"2026-10-18","to":"2026-10-25"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Done(StopReason::Stop),
         ]
@@ -155,11 +156,13 @@ fn tools_are_sent_with_their_schema_and_the_branch_is_joined_into_turns() {
                     id: "toolu_1".into(),
                     name: "journal_list".into(),
                     arguments: r#"{"from":"2026-10-18"}"#.into(),
+                    thought_signature: None,
                 },
                 Call {
                     id: "toolu_2".into(),
                     name: "journal_list".into(),
                     arguments: "{}".into(),
+                    thought_signature: None,
                 },
             ],
         },

@@ -81,11 +81,13 @@ fn streamed_tool_calls_are_whole_when_the_stream_ends_and_keep_their_order() {
                 id: "call_a1".into(),
                 name: "journal_list".into(),
                 arguments: r#"{"from":"2026-10-19","to":"2026-10-25"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Call(Call {
                 id: "call_b2".into(),
                 name: "todo_search".into(),
                 arguments: r#"{"query":"move"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Done(StopReason::Stop),
         ]
@@ -104,6 +106,7 @@ fn tools_are_sent_as_functions_and_the_branch_carries_calls_and_results() {
                 id: "call_a1".into(),
                 name: "journal_list".into(),
                 arguments: "{}".into(),
+                thought_signature: None,
             }],
         },
         Message::Tool {
@@ -253,4 +256,70 @@ fn a_stop_before_the_request_sends_nothing() {
     provider(&server.address()).stream(&request(), &|| true, &mut |event| events.push(event));
     assert_eq!(events, vec![StreamEvent::Done(StopReason::Aborted)]);
     assert!(server.requests().is_empty(), "no request leaves the device");
+}
+
+const GEMINI_TOOLS: &str = include_str!("fixtures/stream_gemini_signature.sse");
+
+#[test]
+fn a_gemini_thought_signature_is_read_from_the_stream_and_echoed_on_the_next_step() {
+    let server = FakeServer::start(|_| Canned::sse(GEMINI_TOOLS));
+    let events = run(&provider(&server.address()), &with_tools());
+    assert_eq!(
+        events[0],
+        StreamEvent::Call(Call {
+            id: "call_g1".into(),
+            name: "journal_list".into(),
+            arguments: r#"{"from":"2026-10-19"}"#.into(),
+            thought_signature: Some("sig-abc==".into()),
+        })
+    );
+
+    let mut next = with_tools();
+    next.messages = vec![
+        Message::User("What moved?".into()),
+        Message::Assistant {
+            text: String::new(),
+            calls: vec![Call {
+                id: "call_g1".into(),
+                name: "journal_list".into(),
+                arguments: r#"{"from":"2026-10-19"}"#.into(),
+                thought_signature: Some("sig-abc==".into()),
+            }],
+        },
+        Message::Tool {
+            call_id: "call_g1".into(),
+            name: "journal_list".into(),
+            text: "Observation e1.".into(),
+            is_error: false,
+        },
+    ];
+    run(&provider(&server.address()), &next);
+    let body: Value = serde_json::from_str(&server.requests()[1].body).unwrap();
+    assert_eq!(
+        body["messages"][2]["tool_calls"][0]["extra_content"],
+        json!({"google": {"thought_signature": "sig-abc=="}})
+    );
+}
+
+#[test]
+fn a_call_without_a_signature_is_sent_unchanged() {
+    let server = FakeServer::start(|_| Canned::sse(TOOLS));
+    let events = run(&provider(&server.address()), &with_tools());
+    let StreamEvent::Call(first) = &events[1] else {
+        panic!("expected a call, got {events:?}");
+    };
+    assert_eq!(first.thought_signature, None);
+
+    let mut next = with_tools();
+    next.messages = vec![Message::Assistant {
+        text: String::new(),
+        calls: vec![first.clone()],
+    }];
+    run(&provider(&server.address()), &next);
+    let body: Value = serde_json::from_str(&server.requests()[1].body).unwrap();
+    assert!(
+        body["messages"][1]["tool_calls"][0]
+            .get("extra_content")
+            .is_none()
+    );
 }

@@ -28,6 +28,8 @@ pub enum SseEvent {
         name: Option<String>,
         /// A piece of the arguments' JSON text.
         arguments: Option<String>,
+        /// Gemini's reasoning token for the call, when this chunk carries it.
+        thought_signature: Option<String>,
     },
     /// The reply is finished and why.
     Finish(StopReason),
@@ -54,11 +56,17 @@ pub fn chat_body(request: &Request, stream: bool) -> Value {
                 let calls: Vec<Value> = calls
                     .iter()
                     .map(|call| {
-                        json!({
+                        let mut wire = json!({
                             "id": call.id,
                             "type": "function",
                             "function": { "name": call.name, "arguments": call.arguments },
-                        })
+                        });
+                        // Gemini rejects a later Step that drops its signature: send it back as it came.
+                        if let Some(signature) = &call.thought_signature {
+                            wire["extra_content"] =
+                                json!({ "google": { "thought_signature": signature } });
+                        }
+                        wire
                     })
                     .collect();
                 json!({
@@ -169,6 +177,10 @@ pub fn sse_events(line: &str) -> Result<Vec<SseEvent>, Failure> {
                 .pointer("/function/arguments")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            thought_signature: piece
+                .pointer("/extra_content/google/thought_signature")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         });
     }
     if let Some(stop) = stop_reason(choice.get("finish_reason").and_then(Value::as_str))? {
@@ -219,7 +231,9 @@ pub fn status_failure(status: u16, body: &str, endpoint: Endpoint) -> Failure {
         404 if endpoint == Endpoint::Chat => Failure::ModelUnavailable,
         408 | 504 => Failure::Timeout,
         413 => Failure::TooLong,
-        429 => Failure::RateLimited,
+        // Busy or limited: rate limits, a server error, a gateway or service that is down, and
+        // Anthropic's overload status (529).
+        429 | 500 | 502 | 503 | 529 => Failure::RateLimited,
         _ => Failure::Unexpected,
     }
 }
@@ -316,6 +330,37 @@ mod tests {
     }
 
     #[test]
+    fn a_gemini_signature_in_a_tool_delta_is_read_and_echoed_in_a_blocking_request() {
+        let line = r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"journal_list","arguments":""},"extra_content":{"google":{"thought_signature":"sig-1"}}}]},"finish_reason":null}]}"#;
+        let events = sse_events(line).unwrap();
+        assert_eq!(
+            events,
+            vec![SseEvent::ToolDelta {
+                index: 0,
+                id: Some("c1".into()),
+                name: Some("journal_list".into()),
+                arguments: Some(String::new()),
+                thought_signature: Some("sig-1".into()),
+            }]
+        );
+        let mut request = request("");
+        request.messages = vec![Message::Assistant {
+            text: String::new(),
+            calls: vec![mnemora_harness::Call {
+                id: "c1".into(),
+                name: "journal_list".into(),
+                arguments: "{}".into(),
+                thought_signature: Some("sig-1".into()),
+            }],
+        }];
+        let body = chat_body(&request, false);
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["extra_content"],
+            json!({"google": {"thought_signature": "sig-1"}})
+        );
+    }
+
+    #[test]
     fn a_stream_error_object_is_a_failure_and_its_text_is_dropped() {
         let line = r#"data: {"error":{"message":"secret upstream text"}}"#;
         assert_eq!(sse_events(line), Err(Failure::Unexpected));
@@ -361,14 +406,18 @@ mod tests {
             (408, "", Endpoint::Chat, Failure::Timeout),
             (413, "", Endpoint::Chat, Failure::TooLong),
             (429, "", Endpoint::Chat, Failure::RateLimited),
+            (500, "", Endpoint::Chat, Failure::RateLimited),
+            (500, "", Endpoint::Models, Failure::RateLimited),
             (
                 502,
                 "codex login expired",
                 Endpoint::Chat,
-                Failure::Unexpected,
+                Failure::RateLimited,
             ),
+            (503, "high demand", Endpoint::Chat, Failure::RateLimited),
+            (503, "", Endpoint::Models, Failure::RateLimited),
+            (529, "", Endpoint::Chat, Failure::RateLimited),
             (504, "", Endpoint::Chat, Failure::Timeout),
-            (500, "", Endpoint::Models, Failure::Unexpected),
         ];
         for (status, body, endpoint, expected) in cases {
             assert_eq!(status_failure(status, body, endpoint), expected, "{status}");

@@ -224,6 +224,7 @@ impl Recorder<'_> {
                             id: c.id,
                             name: c.name,
                             arguments: c.arguments,
+                            thought_signature: c.thought_signature,
                         })
                         .collect(),
                     sources,
