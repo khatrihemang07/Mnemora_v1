@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use mnemora_harness::{Failure, Provider};
-use mnemora_providers::{CompatProvider, WrapperProvider, address};
+use mnemora_providers::{AnthropicProvider, CompatProvider, WrapperProvider, address, anthropic};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -28,6 +28,8 @@ pub enum ProviderKind {
     /// person gives. A key is optional.
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible,
+    /// Anthropic's Messages API: a fixed address and a key that is required.
+    Anthropic,
 }
 
 /// Whether a kind takes a key.
@@ -47,6 +49,7 @@ impl ProviderKind {
         match self {
             Self::Wrapper => "Local AI Wrapper",
             Self::OpenAiCompatible => "OpenAI-compatible",
+            Self::Anthropic => "Anthropic",
         }
     }
 
@@ -55,6 +58,15 @@ impl ProviderKind {
         match self {
             Self::Wrapper => KeyPolicy::NotNeeded,
             Self::OpenAiCompatible => KeyPolicy::Optional,
+            Self::Anthropic => KeyPolicy::Required,
+        }
+    }
+
+    /// The address this kind always uses, if it has one. Its Providers cannot be given another.
+    pub fn fixed_address(self) -> Option<&'static str> {
+        match self {
+            Self::Anthropic => Some(anthropic::ADDRESS),
+            Self::Wrapper | Self::OpenAiCompatible => None,
         }
     }
 
@@ -63,6 +75,7 @@ impl ProviderKind {
         match self {
             Self::Wrapper => "wrapper",
             Self::OpenAiCompatible => "openai_compatible",
+            Self::Anthropic => "anthropic",
         }
     }
 
@@ -71,6 +84,7 @@ impl ProviderKind {
         match text {
             "wrapper" => Some(Self::Wrapper),
             "openai_compatible" => Some(Self::OpenAiCompatible),
+            "anthropic" => Some(Self::Anthropic),
             _ => None,
         }
     }
@@ -242,6 +256,11 @@ pub fn validate_model(raw: &str) -> Result<String, AiError> {
     Ok(model.to_owned())
 }
 
+/// The key a kind cannot work without. Without one the service would refuse the request anyway.
+fn required(key: Option<String>) -> Result<String, Failure> {
+    key.ok_or(Failure::KeyRejected)
+}
+
 /// The Model ids a stored Provider offers, asked with its saved key if it has one.
 pub fn build_models(record: &ProviderRecord, key: Option<String>) -> Result<Vec<String>, Failure> {
     match record.kind {
@@ -250,6 +269,9 @@ pub fn build_models(record: &ProviderRecord, key: Option<String>) -> Result<Vec<
         }
         ProviderKind::OpenAiCompatible => {
             CompatProvider::new(&record.name, "", &record.address, key).list_models()
+        }
+        ProviderKind::Anthropic => {
+            AnthropicProvider::new(&record.name, "", &record.address, &required(key)?).list_models()
         }
     }
 }
@@ -268,6 +290,13 @@ pub fn build(record: &ProviderRecord, model: &str, key: Option<String>) -> Arc<d
             model,
             &record.address,
             key,
+        )),
+        // A run is never prepared without its key (`prepare_run`); a missing one is sent as none.
+        ProviderKind::Anthropic => Arc::new(AnthropicProvider::new(
+            &record.name,
+            model,
+            &record.address,
+            key.as_deref().unwrap_or_default(),
         )),
     }
 }

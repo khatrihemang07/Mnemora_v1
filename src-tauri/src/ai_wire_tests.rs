@@ -345,3 +345,122 @@ fn a_key_on_an_openai_compatible_provider_is_write_only_and_bound_to_its_address
         .unwrap();
     assert_eq!(cleared["key_state"], "not_needed");
 }
+
+fn anthropic_reply(content: Value, stop: &str) -> String {
+    json!({ "type": "message", "role": "assistant", "content": content, "stop_reason": stop })
+        .to_string()
+}
+
+#[test]
+fn an_anthropic_provider_has_its_fixed_address_and_a_required_key() {
+    let app = TestApp::new();
+    let created: Value = app
+        .invoke(
+            "ai_provider_create",
+            json!({ "request": { "kind": "anthropic", "name": "Claude", "address": "https://api.anthropic.com/v1/" } }),
+        )
+        .unwrap();
+    assert_eq!(created["address"], "https://api.anthropic.com/v1");
+    assert_eq!(
+        created["key_state"], "missing",
+        "the key is required and none is saved"
+    );
+
+    let other = app
+        .invoke::<Value>(
+            "ai_provider_create",
+            json!({ "request": { "kind": "anthropic", "name": "Elsewhere", "address": "https://example.com/v1" } }),
+        )
+        .unwrap_err();
+    assert_eq!(other["code"], "validation");
+
+    let id = created["id"].as_str().unwrap().to_owned();
+    let events = app.ai_events();
+    let refused = app.invoke::<Value>(
+        "ai_run_start",
+        json!({ "request": { "conversation_id": null, "text": "Hello?", "provider_id": id,
+                             "model": "claude-haiku-5-5", "local": local() } }),
+    );
+    assert!(refused.is_err(), "no run starts without the key");
+    drop(events);
+
+    let set: Value = app
+        .invoke(
+            "ai_provider_key_set",
+            json!({ "id": id, "key": "sk-ant-SECRET-9" }),
+        )
+        .unwrap();
+    assert_eq!(set["key_state"], "saved");
+    assert!(!set.to_string().contains("sk-ant-SECRET-9"));
+}
+
+#[test]
+fn an_anthropic_run_makes_tool_use_calls_with_its_headers_and_the_fixed_limit() {
+    let app = TestApp::new();
+    let id = seed_entry(&app, "2026-10-20", "Packed the boxes for the move.");
+    let turn = AtomicUsize::new(0);
+    let first = anthropic_reply(
+        json!([{ "type": "tool_use", "id": "toolu_1", "name": "journal_list",
+                 "input": { "from": "2026-10-18", "to": "2026-10-25" } }]),
+        "tool_use",
+    );
+    let second = anthropic_reply(
+        json!([{ "type": "text", "text": format!("You packed for the move [{id}].") }]),
+        "end_turn",
+    );
+    let server = FakeServer::start(move |_| {
+        let reply = if turn.fetch_add(1, Ordering::SeqCst) == 0 {
+            &first
+        } else {
+            &second
+        };
+        Canned::json(200, reply)
+    });
+    // The record points at the loopback server; the app's fixed address is checked by the create
+    // tests above, and the wire itself by the adapter's tests.
+    app.with_db(|conn| {
+        conn.execute(
+            "INSERT INTO ai_providers (id, name, kind, address, created_at, updated_at) \
+             VALUES ('anthropic-test', 'Claude', 'anthropic', ?1, 0, 0)",
+            [server.address()],
+        )
+        .unwrap();
+    });
+    app.invoke::<Value>(
+        "ai_provider_key_set",
+        json!({ "id": "anthropic-test", "key": "sk-ant-TEST" }),
+    )
+    .unwrap();
+    let events = app.ai_events();
+
+    let started = ask(&app, "anthropic-test", "What did I do last week?");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+    let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
+    assert_eq!(saved.last().unwrap()["sources"][0]["id"], id);
+
+    let seen = server.requests();
+    assert_eq!(seen[0].path, "/v1/messages");
+    assert_eq!(
+        seen[0]
+            .headers
+            .iter()
+            .find(|(n, _)| n == "x-api-key")
+            .map(|(_, v)| v.as_str()),
+        Some("sk-ant-TEST")
+    );
+    for request in &seen {
+        let body: Value = serde_json::from_str(&request.body).unwrap();
+        assert_eq!(
+            body["max_tokens"], 8192,
+            "every Anthropic request carries the fixed limit"
+        );
+    }
+    let second_body: Value = serde_json::from_str(&seen[1].body).unwrap();
+    let results = second_body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|turn| turn["content"][0]["type"] == "tool_result")
+        .expect("the result is sent back as a tool_result block");
+    assert_eq!(results["content"][0]["tool_use_id"], "toolu_1");
+}

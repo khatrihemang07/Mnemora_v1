@@ -18,6 +18,8 @@ pub struct Seen {
     pub path: String,
     /// The `Authorization` header, if sent.
     pub authorization: Option<String>,
+    /// Every header sent, names in lower case, in the order received.
+    pub headers: Vec<(String, String)>,
     /// The request body as text.
     pub body: String,
 }
@@ -141,6 +143,7 @@ fn read_request(stream: &TcpStream) -> Option<Seen> {
     let path = parts.next()?.to_owned();
     let mut length = 0usize;
     let mut authorization = None;
+    let mut headers = Vec::new();
     loop {
         let mut header = String::new();
         reader.read_line(&mut header).ok()?;
@@ -154,6 +157,9 @@ fn read_request(stream: &TcpStream) -> Option<Seen> {
                 length = value.parse().unwrap_or(0);
             } else if name.eq_ignore_ascii_case("authorization") {
                 authorization = Some(value.to_owned());
+                headers.push((name.to_ascii_lowercase(), value.to_owned()));
+            } else {
+                headers.push((name.to_ascii_lowercase(), value.to_owned()));
             }
         }
     }
@@ -163,6 +169,7 @@ fn read_request(stream: &TcpStream) -> Option<Seen> {
         method,
         path,
         authorization,
+        headers,
         body: String::from_utf8_lossy(&body).into_owned(),
     })
 }

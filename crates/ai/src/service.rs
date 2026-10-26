@@ -7,8 +7,9 @@ use mnemora_core::util::new_id;
 use crate::error::AiError;
 use crate::keys::KeyStore;
 use crate::provider::{
-    ConnectionTest, KeyPolicy, ModelList, ModelUsage, NewProvider, ProviderRecord, ProviderUpdate,
-    ProviderView, build_models, validate_address, validate_key, validate_model, validate_name,
+    ConnectionTest, KeyPolicy, ModelList, ModelUsage, NewProvider, ProviderKind, ProviderRecord,
+    ProviderUpdate, ProviderView, build_models, validate_address, validate_key, validate_model,
+    validate_name,
 };
 use crate::provider_store as store;
 use crate::run::{Choice, failure_message};
@@ -32,12 +33,30 @@ pub fn create(
         id: new_id(),
         name: validate_name(&new.name)?,
         kind: new.kind,
-        address: validate_address(&new.address)?,
+        address: address_for(new.kind, &new.address)?,
         created_at: now,
         updated_at: now,
     };
     store::insert(conn, &record)?;
     Ok(record.view(keys.has(&record.id)?))
+}
+
+/// The address a Provider is saved with: the kind's fixed one (which the form may echo back, but
+/// no other), or the address the person typed, checked for its kind.
+fn address_for(kind: ProviderKind, typed: &str) -> AppResult<String> {
+    match kind.fixed_address() {
+        Some(fixed) => {
+            let typed = typed.trim().trim_end_matches('/');
+            if !typed.is_empty() && typed != fixed {
+                return Err(AiError::Validation(
+                    "This kind of Provider uses its own fixed address.",
+                )
+                .into());
+            }
+            Ok(fixed.to_owned())
+        }
+        None => Ok(validate_address(typed)?),
+    }
 }
 
 /// Changes a Provider's name and address. A key is bound to the address it was saved with, so a
@@ -51,7 +70,7 @@ pub fn update(
 ) -> AppResult<ProviderView> {
     let current = live(conn, id)?;
     let name = validate_name(&change.name)?;
-    let address = validate_address(&change.address)?;
+    let address = address_for(current.kind, &change.address)?;
     if address != current.address {
         keys.remove(id)?;
     }

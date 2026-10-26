@@ -78,23 +78,50 @@ impl Client {
         body: &Value,
         key: Option<&str>,
     ) -> Result<Response<ureq::Body>, Failure> {
+        let headers: Vec<(&str, String)> = key
+            .map(|key| ("Authorization", format!("Bearer {key}")))
+            .into_iter()
+            .collect();
+        self.post_with(url, body, &headers)
+    }
+
+    /// POSTs `body` as JSON with `headers` added (a provider's own key and version headers).
+    pub fn post_with(
+        &self,
+        url: &str,
+        body: &Value,
+        headers: &[(&str, String)],
+    ) -> Result<Response<ureq::Body>, Failure> {
         let text = serde_json::to_string(body).map_err(|_| Failure::Unexpected)?;
         let mut request = self
             .agent
             .post(url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream");
-        if let Some(key) = key {
-            request = request.header("Authorization", &format!("Bearer {key}"));
+        for (name, value) in headers {
+            request = request.header(*name, value.as_str());
         }
         request.send(text).map_err(transport_failure)
     }
 
     /// GETs `url`, with a bearer key when there is one. Any status comes back as a reply.
     pub fn get(&self, url: &str, key: Option<&str>) -> Result<Response<ureq::Body>, Failure> {
+        let headers: Vec<(&str, String)> = key
+            .map(|key| ("Authorization", format!("Bearer {key}")))
+            .into_iter()
+            .collect();
+        self.get_with(url, &headers)
+    }
+
+    /// GETs `url` with `headers` added. Any status comes back as a reply.
+    pub fn get_with(
+        &self,
+        url: &str,
+        headers: &[(&str, String)],
+    ) -> Result<Response<ureq::Body>, Failure> {
         let mut request = self.agent.get(url).header("Accept", "application/json");
-        if let Some(key) = key {
-            request = request.header("Authorization", &format!("Bearer {key}"));
+        for (name, value) in headers {
+            request = request.header(*name, value.as_str());
         }
         request.call().map_err(transport_failure)
     }
