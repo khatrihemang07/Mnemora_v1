@@ -61,5 +61,14 @@ pub fn all() -> Migrations<'static> {
              CREATE INDEX ai_saved_questions_order ON ai_saved_questions(sort_key);",
         ),
         M::up("ALTER TABLE ai_providers ADD COLUMN allow_paid INTEGER NOT NULL DEFAULT 0;"),
+        // The entry each Conversation shows on this device. It is device-local (the spec): never
+        // synced, so it has no change-log row and no sync entity. Missing means the newest entry.
+        M::up(
+            "CREATE TABLE ai_visible_branches(
+                 conversation_id TEXT PRIMARY KEY NOT NULL REFERENCES ai_conversations(id),
+                 entry_id TEXT NOT NULL REFERENCES ai_entries(id),
+                 updated_at INTEGER NOT NULL
+             ) STRICT;",
+        ),
     ])
 }

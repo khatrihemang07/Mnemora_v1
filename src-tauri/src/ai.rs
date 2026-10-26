@@ -142,6 +142,24 @@ pub struct RunRequest {
     pub model: String,
     /// The person's calendar, for the Model.
     pub local: LocalContext,
+    /// The question this one is a sibling of (Edit): it follows what that question followed. None
+    /// continues the Branch the Conversation shows. Needs a Conversation.
+    pub branch_of: Option<String>,
+}
+
+/// Try again on a question: the question is copied as a sibling of it and asked again.
+#[derive(Debug, Clone, Deserialize, Type)]
+pub struct RetryRequest {
+    /// The Conversation the question is in.
+    pub conversation_id: String,
+    /// The question to try again.
+    pub entry_id: String,
+    /// The Provider that answers.
+    pub provider_id: String,
+    /// The Model id it is asked for.
+    pub model: String,
+    /// The person's calendar, for the Model.
+    pub local: LocalContext,
 }
 
 /// The Run that started and the Conversation it answers in.
@@ -161,8 +179,78 @@ pub fn ai_run_start<R: Runtime>(
     state: State<'_, AppState>,
     request: RunRequest,
 ) -> Result<RunStarted, AppError> {
+    start_run(&app, &state, request)
+}
+
+/// Try again: asks the question again as a sibling of itself, with the Provider and Model given.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_run_retry<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    request: RetryRequest,
+) -> Result<RunStarted, AppError> {
+    let text = mnemora_ai::question_text(
+        &lock(&state.db),
+        &request.conversation_id,
+        &request.entry_id,
+    )?;
+    start_run(
+        &app,
+        &state,
+        RunRequest {
+            conversation_id: Some(request.conversation_id),
+            text,
+            provider_id: request.provider_id,
+            model: request.model,
+            local: request.local,
+            branch_of: Some(request.entry_id),
+        },
+    )
+}
+
+/// Shows the Branch that ends at an answer on this device, so the next question continues from
+/// it (Branch from earlier). The Branch after it stays in the Conversation.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_set_leaf(
+    state: State<'_, AppState>,
+    id: String,
+    entry_id: String,
+) -> Result<(), AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::set_leaf(&conn, &id, &entry_id, now)
+}
+
+/// Shows the Branch that continues from a question the pager picked, on this device.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_conversation_show_branch(
+    state: State<'_, AppState>,
+    id: String,
+    entry_id: String,
+) -> Result<(), AppError> {
+    let conn = lock(&state.db);
+    let now = physical_now(&conn);
+    mnemora_ai::show_branch(&conn, &id, &entry_id, now)
+}
+
+/// Starts a Run for a question: checks it, claims the Conversation, saves the question and answers
+/// on its own thread.
+fn start_run<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    request: RunRequest,
+) -> Result<RunStarted, AppError> {
     mnemora_ai::validate_question(&request.text)?;
     mnemora_ai::validate_local(&request.local)?;
+    if request.branch_of.is_some() && request.conversation_id.is_none() {
+        return Err(AppError::new(
+            ErrorCode::Validation,
+            "A new Conversation has no question to branch from.",
+        ));
+    }
     let continues = request.conversation_id.is_some();
     let conversation_id = request.conversation_id.unwrap_or_else(new_id);
     let prepared = mnemora_ai::prepare_run(
@@ -196,6 +284,7 @@ pub fn ai_run_start<R: Runtime>(
         text: request.text,
         local: request.local,
         choice: prepared.choice,
+        branch_of: request.branch_of,
     };
     // The question is saved before the command returns, so the Conversation can be read at once.
     let question_id = mnemora_ai::begin(&state.db, &ask)?;

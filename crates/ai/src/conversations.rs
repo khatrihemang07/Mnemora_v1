@@ -56,12 +56,39 @@ pub fn restore(conn: &Connection, id: &str) -> AppResult<()> {
     store::set_deleted(conn, id, None)
 }
 
-/// A live Conversation as Markdown: its visible branch (the one ending at its newest entry), or,
-/// with `entry`, that one answer. Only an answer copies on its own.
+/// Shows the Branch that ends at `entry` on this device, and nothing after it: the next question
+/// continues from there (Branch from earlier). The entry must be in this Conversation.
+pub fn set_leaf(conn: &Connection, id: &str, entry: &str, now: i64) -> AppResult<()> {
+    live(conn, id)?;
+    store::entry_in(conn, id, entry)?.ok_or(AiError::NotFound)?;
+    store::show(conn, id, entry, now)
+}
+
+/// Shows the Branch that continues from `entry` (a question with siblings, from the pager): the
+/// newest way on from it. The entry must be in this Conversation.
+pub fn show_branch(conn: &Connection, id: &str, entry: &str, now: i64) -> AppResult<()> {
+    live(conn, id)?;
+    store::entry_in(conn, id, entry)?.ok_or(AiError::NotFound)?;
+    let shown = store::newest_under(conn, entry)?;
+    store::show(conn, id, &shown, now)
+}
+
+/// The text of a question in this Conversation, for Try again. Only a question can be asked again.
+pub fn question_text(conn: &Connection, id: &str, entry: &str) -> AppResult<String> {
+    live(conn, id)?;
+    match store::entry_in(conn, id, entry)?.map(|found| found.payload) {
+        Some(EntryPayload::User { text }) => Ok(text),
+        Some(_) => Err(AiError::Validation("Only a question can be asked again.").into()),
+        None => Err(AiError::NotFound.into()),
+    }
+}
+
+/// A live Conversation as Markdown: the Branch it shows on this device, or, with `entry`, that one
+/// answer. Only an answer copies on its own.
 pub fn markdown(conn: &Connection, id: &str, entry: Option<&str>) -> AppResult<String> {
     let header = live(conn, id)?;
     let Some(entry) = entry else {
-        let branch = match store::leaf(conn, id)? {
+        let branch = match store::visible(conn, id)? {
             Some(leaf) => store::branch_entries(conn, &leaf)?,
             None => Vec::new(),
         };

@@ -30,8 +30,8 @@ use rusqlite_migration::Migrations;
 
 pub use conversations::{
     PAGE_MAX, delete as delete_conversation, list as list_conversations,
-    markdown as conversation_markdown, rename as rename_conversation,
-    restore as restore_conversation,
+    markdown as conversation_markdown, question_text, rename as rename_conversation,
+    restore as restore_conversation, set_leaf, show_branch,
 };
 pub use error::AiError;
 pub use keys::KeyStore;
@@ -86,9 +86,22 @@ pub fn ensure_conversation(conn: &Connection, id: &str) -> AppResult<()> {
         .ok_or_else(|| AiError::NotFound.into())
 }
 
-/// A Conversation with every entry, oldest first. `running` says whether a Run is answering in it.
+/// A Conversation with the entries of the Branch it shows on this device, oldest first, and each
+/// question's place among its siblings. The other Branches are not loaded. `running` says whether
+/// a Run is answering in it.
 pub fn conversation(conn: &Connection, id: &str, running: bool) -> AppResult<ConversationView> {
     let header = store::live_conversation(conn, id)?.ok_or(AiError::NotFound)?;
+    let mut entries = match store::visible(conn, id)? {
+        Some(leaf) => store::branch_entries(conn, &leaf)?,
+        None => Vec::new(),
+    };
+    let places = store::question_places(conn, id)?;
+    for entry in &mut entries {
+        if let Some((index, count)) = places.get(&entry.id) {
+            entry.sibling_index = *index;
+            entry.sibling_count = *count;
+        }
+    }
     Ok(ConversationView {
         id: id.to_owned(),
         title: header.title,
@@ -99,6 +112,6 @@ pub fn conversation(conn: &Connection, id: &str, running: bool) -> AppResult<Con
         model: header.model,
         running,
         queued: Vec::new(),
-        entries: store::entries(conn, id)?,
+        entries,
     })
 }
