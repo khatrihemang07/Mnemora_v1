@@ -29,6 +29,10 @@ macro_rules! specta_builder_for {
                 journal::journal_entry_update,
                 journal::journal_entry_toggle_task,
                 ai::ai_run_start::<$runtime>,
+                ai::ai_run_steer::<$runtime>,
+                ai::ai_run_unqueue::<$runtime>,
+                ai::ai_run_send_now::<$runtime>,
+                ai::ai_run_abort,
                 ai::ai_conversation_get,
                 ai::ai_provider_list,
                 ai::ai_provider_create,
@@ -155,6 +159,8 @@ mod ai;
 mod ai_conversations_tests;
 #[cfg(test)]
 mod ai_provider_tests;
+#[cfg(test)]
+mod ai_run_control_tests;
 #[cfg(test)]
 mod ai_saved_tests;
 #[cfg(test)]

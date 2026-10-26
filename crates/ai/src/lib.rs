@@ -16,6 +16,7 @@ mod run;
 mod saved;
 mod saved_store;
 mod service;
+mod steering;
 mod store;
 mod title;
 mod tools;
@@ -38,7 +39,7 @@ pub use provider::{
     ConnectionTest, KeyState, ModelList, ModelUsage, ModelUse, NewProvider, ProviderKind,
     ProviderRecord, ProviderUpdate, ProviderView, build,
 };
-pub use run::{Ask, Choice, begin, execute, failure_message};
+pub use run::{Ask, Choice, Handles, Toolset, begin, execute, failure_message};
 pub use saved::{
     create as create_saved, delete as delete_saved, list as list_saved, reorder as reorder_saved,
     restore as restore_saved, update as update_saved,
@@ -48,6 +49,7 @@ pub use service::{
     list as list_providers, matching_models, prepare_run, reachable, set_key,
     update as update_provider, usage as model_usage,
 };
+pub use steering::{QueuedNote, Steering};
 pub use title::{TITLE_CHARS, title_of, validate_local, validate_question};
 pub use tools::{UNSEEN_CITATION, cited_ids};
 pub use types::{
@@ -96,6 +98,7 @@ pub fn conversation(conn: &Connection, id: &str, running: bool) -> AppResult<Con
         provider_name: header.provider_name,
         model: header.model,
         running,
+        queued: Vec::new(),
         entries: store::entries(conn, id)?,
     })
 }

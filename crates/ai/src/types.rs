@@ -1,6 +1,8 @@
 //! The shapes the AI Module sends across IPC. Field names are `snake_case`, as the Journal's are.
 
 use mnemora_harness::{Failure, StopReason};
+
+use crate::steering::QueuedNote;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -152,6 +154,8 @@ pub struct ConversationView {
     pub model: Option<String>,
     /// Whether a Run is answering in it on this device right now.
     pub running: bool,
+    /// The notes waiting for that Run, in the order they will be sent. Empty when none is answering.
+    pub queued: Vec<QueuedNote>,
     /// Every entry, oldest first.
     pub entries: Vec<EntryView>,
 }
@@ -162,6 +166,8 @@ pub struct ConversationView {
 pub enum RunOutcome {
     /// The answer was saved.
     Answered,
+    /// The person stopped the Run. What was written before is saved, marked as stopped.
+    Stopped,
     /// No answer was saved. `message` is one plain sentence; the raw Provider error is never kept.
     Failed {
         /// Why.
@@ -208,6 +214,12 @@ pub enum RunEvent {
         summary: String,
         /// Whether the call was refused.
         is_error: bool,
+    },
+    /// The notes waiting to be sent to the Model changed. The last one sent after a Run ends
+    /// lists the notes that were never sent, so the person can still send them.
+    QueueChanged {
+        /// The notes waiting, in the order they will be sent.
+        notes: Vec<QueuedNote>,
     },
     /// The Run is over.
     RunEnded {

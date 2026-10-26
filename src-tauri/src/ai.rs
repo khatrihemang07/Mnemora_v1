@@ -2,19 +2,20 @@
 //! through the typed `AiRunEvent`, so it goes on when the person leaves the page. Asking a Provider
 //! (a connection test, a Model search) runs off the command thread and without the database lock.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use mnemora_ai::{
-    ConnectionTest, ConversationPage, ConversationView, KeyStore, LocalContext, ModelList,
-    ModelUsage, NewProvider, Prepared, ProviderUpdate, ProviderView, SavedQuestion,
+    ConnectionTest, ConversationPage, ConversationView, Handles, KeyStore, LocalContext, ModelList,
+    ModelUsage, NewProvider, Prepared, ProviderUpdate, ProviderView, QueuedNote, SavedQuestion,
+    Steering,
 };
 use mnemora_core::db::physical_now;
 use mnemora_core::error::{AppError, ErrorCode};
 use mnemora_core::tool::{Tool, is_enabled};
 use mnemora_core::util::new_id;
-use mnemora_harness::Provider;
+use mnemora_harness::{Control, Provider};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -22,13 +23,20 @@ use tauri::{AppHandle, Manager, Runtime, State};
 use crate::AiRunEvent;
 use crate::state::{AppState, lock};
 
-/// The Provider that answers the next Run, and which Conversations have a Run answering now.
+/// The Provider that answers the next Run, and the Runs answering now, by Conversation.
 pub struct AiRuntime {
     keys: KeyStore,
     /// Replaces the adapter a Run would build (tests install a scripted one).
     #[cfg_attr(not(test), allow(dead_code))]
     provider: Mutex<Option<Arc<dyn Provider>>>,
-    running: Arc<Mutex<HashSet<String>>>,
+    running: Arc<Mutex<HashMap<String, Arc<LiveRun>>>>,
+}
+
+/// A Run that is answering: its id, how it may be stopped, and the notes waiting for it.
+pub struct LiveRun {
+    run_id: String,
+    control: Control,
+    steering: Steering,
 }
 
 impl AiRuntime {
@@ -66,25 +74,53 @@ impl AiRuntime {
 
     /// Whether a Run is answering in `conversation` now.
     pub fn is_running(&self, conversation: &str) -> bool {
-        lock(&self.running).contains(conversation)
+        lock(&self.running).contains_key(conversation)
+    }
+
+    /// The Run answering in `conversation`, if one is.
+    fn live(&self, conversation: &str) -> Option<Arc<LiveRun>> {
+        lock(&self.running).get(conversation).cloned()
+    }
+
+    /// The notes waiting for the Run answering in `conversation`, if one is.
+    fn queued(&self, conversation: &str) -> Vec<QueuedNote> {
+        self.live(conversation)
+            .map(|live| live.steering.snapshot())
+            .unwrap_or_default()
     }
 
     /// Claims the Conversation for one Run; `None` while another Run holds it.
-    fn reserve(&self, conversation: &str) -> Option<RunSlot> {
-        if !lock(&self.running).insert(conversation.to_owned()) {
+    fn reserve(&self, conversation: &str, run_id: &str) -> Option<RunSlot> {
+        let mut running = lock(&self.running);
+        if running.contains_key(conversation) {
             return None;
         }
+        let live = Arc::new(LiveRun {
+            run_id: run_id.to_owned(),
+            control: Control::new(),
+            steering: Steering::new(),
+        });
+        running.insert(conversation.to_owned(), Arc::clone(&live));
         Some(RunSlot {
             running: Arc::clone(&self.running),
             conversation: conversation.to_owned(),
+            live,
         })
+    }
+
+    /// Ends every Run as interrupted: the app left the foreground on Android.
+    pub fn interrupt_all(&self) {
+        for live in lock(&self.running).values() {
+            live.control.interrupt();
+        }
     }
 }
 
 /// Holds a Conversation's claim until it is dropped.
 struct RunSlot {
-    running: Arc<Mutex<HashSet<String>>>,
+    running: Arc<Mutex<HashMap<String, Arc<LiveRun>>>>,
     conversation: String,
+    live: Arc<LiveRun>,
 }
 
 impl Drop for RunSlot {
@@ -135,9 +171,10 @@ pub fn ai_run_start<R: Runtime>(
         &request.provider_id,
         &request.model,
     )?;
+    let run_id = new_id();
     // Claimed before the check: a Run's first write happens on its thread, so a Conversation that
     // is answering may not be on disk yet.
-    let slot = state.ai.reserve(&conversation_id).ok_or_else(|| {
+    let slot = state.ai.reserve(&conversation_id, &run_id).ok_or_else(|| {
         AppError::new(
             ErrorCode::Validation,
             "This Conversation is still answering.",
@@ -146,13 +183,13 @@ pub fn ai_run_start<R: Runtime>(
     if continues {
         mnemora_ai::ensure_conversation(&lock(&state.db), &conversation_id)?;
     }
-    let run_id = new_id();
     let started = RunStarted {
         run_id: run_id.clone(),
         conversation_id: conversation_id.clone(),
     };
     let provider = state.ai.provider_for(&prepared);
     let (tools, off) = offered_tools(&state)?;
+    let toolset = mnemora_ai::Toolset { tools, off };
     let ask = mnemora_ai::Ask {
         conversation_id,
         continues,
@@ -163,6 +200,7 @@ pub fn ai_run_start<R: Runtime>(
     // The question is saved before the command returns, so the Conversation can be read at once.
     let question_id = mnemora_ai::begin(&state.db, &ask)?;
     let handle = app.clone();
+    let live = Arc::clone(&slot.live);
     std::thread::spawn(move || {
         let mut slot = Some(slot);
         let state = handle.state::<AppState>();
@@ -171,8 +209,11 @@ pub fn ai_run_start<R: Runtime>(
             provider.as_ref(),
             &ask,
             &question_id,
-            tools,
-            &off,
+            toolset,
+            Handles {
+                control: &live.control,
+                steering: &live.steering,
+            },
             &mut |event| {
                 // Released before the end is announced, so a read that follows it finds the
                 // Conversation idle.
@@ -191,6 +232,97 @@ pub fn ai_run_start<R: Runtime>(
     Ok(started)
 }
 
+/// Queues a note for the Run answering in the Conversation. It goes to the Model after the Step's
+/// Tools finish. Refused when no Run is answering there.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_run_steer<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    conversation_id: String,
+    text: String,
+) -> Result<QueuedNote, AppError> {
+    mnemora_ai::validate_question(&text)?;
+    let live = answering(&state, &conversation_id)?;
+    let note = live.steering.add(text.trim()).ok_or_else(not_answering)?;
+    announce_queue(&app, &live, &conversation_id);
+    Ok(note)
+}
+
+/// Takes a queued note back before it is sent.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_run_unqueue<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    conversation_id: String,
+    note_id: String,
+) -> Result<(), AppError> {
+    let live = state.ai.live(&conversation_id).ok_or_else(already_sent)?;
+    if !live.steering.remove(&note_id) {
+        return Err(already_sent());
+    }
+    announce_queue(&app, &live, &conversation_id);
+    Ok(())
+}
+
+/// Sends a queued note now: the Step in progress ends where it is, its unrun Tools are not run,
+/// and the note goes to the Model next. The Run goes on.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_run_send_now<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    conversation_id: String,
+    note_id: String,
+) -> Result<(), AppError> {
+    let live = answering(&state, &conversation_id)?;
+    if !live.steering.promote(&note_id) {
+        return Err(already_sent());
+    }
+    live.control.skip_step();
+    announce_queue(&app, &live, &conversation_id);
+    Ok(())
+}
+
+/// Stops the Run answering in the Conversation. What was written so far is saved, and the Run
+/// ends as stopped. Nothing happens when no Run is answering.
+#[tauri::command]
+#[specta::specta]
+pub fn ai_run_abort(state: State<'_, AppState>, conversation_id: String) {
+    if let Some(live) = state.ai.live(&conversation_id) {
+        live.control.stop();
+    }
+}
+
+/// The Run answering in the Conversation, or a plain refusal when none is.
+fn answering(state: &AppState, conversation_id: &str) -> Result<Arc<LiveRun>, AppError> {
+    state.ai.live(conversation_id).ok_or_else(not_answering)
+}
+
+fn not_answering() -> AppError {
+    AppError::new(
+        ErrorCode::Validation,
+        "No answer is being written in this Conversation.",
+    )
+}
+
+fn already_sent() -> AppError {
+    AppError::new(ErrorCode::NotFound, "That note was already sent.")
+}
+
+/// Tells the Conversation's page what the queue holds now.
+fn announce_queue<R: Runtime>(app: &AppHandle<R>, live: &LiveRun, conversation_id: &str) {
+    let announced = AiRunEvent {
+        run_id: live.run_id.clone(),
+        conversation_id: conversation_id.to_owned(),
+        event: mnemora_ai::RunEvent::QueueChanged {
+            notes: live.steering.snapshot(),
+        },
+    };
+    let _ = tauri_specta::Event::emit(&announced, app);
+}
+
 /// A Conversation with every entry, oldest first.
 #[tauri::command]
 #[specta::specta]
@@ -199,7 +331,9 @@ pub fn ai_conversation_get(
     id: String,
 ) -> Result<ConversationView, AppError> {
     let running = state.ai.is_running(&id);
-    mnemora_ai::conversation(&lock(&state.db), &id, running)
+    let mut view = mnemora_ai::conversation(&lock(&state.db), &id, running)?;
+    view.queued = state.ai.queued(&id);
+    Ok(view)
 }
 
 /// Every Provider on this device, oldest first. Never carries a key.

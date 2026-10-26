@@ -196,6 +196,10 @@ pub fn settle<R: Runtime>(app: &AppHandle<R>) {
 /// The app came to the front (`true`) or left it (`false`).
 pub fn foreground<R: Runtime>(app: &AppHandle<R>, front: bool) {
     let Some(state) = state(app) else { return };
+    if !front {
+        // A Run cannot go on in the background on Android: it ends as interrupted.
+        state.ai.interrupt_all();
+    }
     if front {
         {
             let mut inner = lock(&state.power.inner);
