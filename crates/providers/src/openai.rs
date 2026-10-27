@@ -20,8 +20,9 @@ pub enum SseEvent {
     Text(String),
     /// A piece of one Tool call: its index in the reply and whatever fields this chunk carries.
     ToolDelta {
-        /// Which call in the reply this piece belongs to.
-        index: usize,
+        /// Which call in the reply this piece belongs to; `None` when the chunk names none
+        /// (Gemini's parallel calls), so the caller decides by id.
+        index: Option<usize>,
         /// The call's id, when this chunk carries it.
         id: Option<String>,
         /// The Tool's name, when this chunk carries it.
@@ -166,8 +167,7 @@ pub fn sse_events(line: &str) -> Result<Vec<SseEvent>, Failure> {
             index: piece
                 .get("index")
                 .and_then(Value::as_u64)
-                .and_then(|index| usize::try_from(index).ok())
-                .unwrap_or(0),
+                .and_then(|index| usize::try_from(index).ok()),
             id: piece.get("id").and_then(Value::as_str).map(str::to_owned),
             name: piece
                 .pointer("/function/name")
@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(
             events,
             vec![SseEvent::ToolDelta {
-                index: 0,
+                index: Some(0),
                 id: Some("c1".into()),
                 name: Some("journal_list".into()),
                 arguments: Some(String::new()),
@@ -357,6 +357,21 @@ mod tests {
         assert_eq!(
             body["messages"][0]["tool_calls"][0]["extra_content"],
             json!({"google": {"thought_signature": "sig-1"}})
+        );
+    }
+
+    #[test]
+    fn a_tool_delta_with_no_index_says_so_and_is_not_filed_under_zero() {
+        let line = r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c2","type":"function","function":{"name":"todo_list","arguments":"{}"}}]},"finish_reason":null}]}"#;
+        assert_eq!(
+            sse_events(line),
+            Ok(vec![SseEvent::ToolDelta {
+                index: None,
+                id: Some("c2".into()),
+                name: Some("todo_list".into()),
+                arguments: Some("{}".into()),
+                thought_signature: None,
+            }])
         );
     }
 
