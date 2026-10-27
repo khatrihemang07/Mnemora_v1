@@ -1,0 +1,27 @@
+[
+  {
+    "titles": ["Trip to Lisbon", "Groceries"],
+    "query": "LISBON",
+    "matches": ["Trip to Lisbon"]
+  },
+  {
+    "titles": ["Café plans", "Cafe"],
+    "query": "cafe",
+    "matches": ["Café plans", "Cafe"]
+  },
+  {
+    "titles": ["Plans for the move"],
+    "query": "  ",
+    "matches": ["Plans for the move"]
+  },
+  {
+    "titles": ["Plans for the move", "Move the desk"],
+    "query": "for the move",
+    "matches": ["Plans for the move"]
+  },
+  {
+    "titles": ["Plans for the move"],
+    "query": "rent",
+    "matches": []
+  }
+]

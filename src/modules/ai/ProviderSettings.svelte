@@ -13,6 +13,7 @@
   import SettingSection from '../../lib/ui/SettingSection.svelte';
   import ErrorBanner from '../../lib/ui/ErrorBanner.svelte';
   import ProviderSheet from './ProviderSheet.svelte';
+  import SavedQuestions from './SavedQuestions.svelte';
   import { providersOptions } from './queries';
 
   const providers = createQuery(() => providersOptions);
@@ -73,5 +74,7 @@
     Answers use your Journal and Tasks, read only, and only while those Modules are on.
   </p>
 </SettingSection>
+
+<div class="mt-8"><SavedQuestions /></div>
 
 <ProviderSheet open={sheetOpen} provider={editing} onclose={() => (sheetOpen = false)} />

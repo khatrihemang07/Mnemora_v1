@@ -18,6 +18,39 @@ pub fn title_of(question: &str) -> String {
         .to_owned()
 }
 
+/// Longest Saved question, in characters. A Saved question is a short prompt, not a document.
+pub const SAVED_CHARS: usize = 500;
+
+/// The whitespace of a title or question collapsed to single spaces, so it reads on one line.
+pub fn collapse(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A title the person typed: collapsed, not blank and at most [`TITLE_CHARS`] characters. Unlike
+/// the first question's title, a typed one is refused rather than cut, so the person sees it.
+pub fn validate_title(raw: &str) -> Result<String, AiError> {
+    let title = collapse(raw);
+    if title.is_empty() {
+        return Err(AiError::Validation("Give this Conversation a title."));
+    }
+    if title.chars().count() > TITLE_CHARS {
+        return Err(AiError::Validation("Keep the title to 80 characters."));
+    }
+    Ok(title)
+}
+
+/// A Saved question: the same rules as a question, collapsed, and at most [`SAVED_CHARS`].
+pub fn validate_saved(raw: &str) -> Result<String, AiError> {
+    validate_question(raw)?;
+    let text = collapse(raw);
+    if text.chars().count() > SAVED_CHARS {
+        return Err(AiError::Validation(
+            "Keep a Saved question to 500 characters.",
+        ));
+    }
+    Ok(text)
+}
+
 /// A question must say something.
 pub fn validate_question(text: &str) -> Result<(), AiError> {
     if text.trim().is_empty() {

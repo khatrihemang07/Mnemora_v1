@@ -4,13 +4,17 @@
 
 #![forbid(unsafe_code)]
 
+mod conversations;
 mod error;
 mod keys;
+mod markdown;
 mod migrations;
 mod prompt;
 mod provider;
 mod provider_store;
 mod run;
+mod saved;
+mod saved_store;
 mod service;
 mod store;
 mod title;
@@ -23,6 +27,11 @@ use mnemora_core::module::Module;
 use mnemora_core::settings::SettingsRegistry;
 use rusqlite_migration::Migrations;
 
+pub use conversations::{
+    PAGE_MAX, delete as delete_conversation, list as list_conversations,
+    markdown as conversation_markdown, rename as rename_conversation,
+    restore as restore_conversation,
+};
 pub use error::AiError;
 pub use keys::KeyStore;
 pub use provider::{
@@ -30,6 +39,10 @@ pub use provider::{
     ProviderRecord, ProviderUpdate, ProviderView, build,
 };
 pub use run::{Ask, Choice, begin, execute, failure_message};
+pub use saved::{
+    create as create_saved, delete as delete_saved, list as list_saved, reorder as reorder_saved,
+    restore as restore_saved, update as update_saved,
+};
 pub use service::{
     Prepared, clear_key, connection_test, create as create_provider, delete as delete_provider,
     list as list_providers, matching_models, prepare_run, reachable, set_key,
@@ -38,8 +51,8 @@ pub use service::{
 pub use title::{TITLE_CHARS, title_of, validate_local, validate_question};
 pub use tools::{UNSEEN_CITATION, cited_ids};
 pub use types::{
-    CallRecord, ConversationView, EntryKind, EntryPayload, EntryView, LocalContext, RunEvent,
-    RunOutcome, Source,
+    CallRecord, ConversationPage, ConversationSummary, ConversationView, EntryKind, EntryPayload,
+    EntryView, LocalContext, RunEvent, RunOutcome, SavedQuestion, Source,
 };
 
 /// Module id: the migration namespace.

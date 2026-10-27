@@ -215,3 +215,36 @@ pub enum RunEvent {
         outcome: RunOutcome,
     },
 }
+
+/// One Conversation in the history: enough to list it and to open it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ConversationSummary {
+    /// The Conversation's id.
+    pub id: String,
+    /// Its title.
+    pub title: String,
+    /// When it was started, in milliseconds (a number for TypeScript, as for entries).
+    #[specta(type = f64)]
+    pub created_at: i64,
+    /// When it last changed, in milliseconds; the history is newest first by this.
+    #[specta(type = f64)]
+    pub updated_at: i64,
+}
+
+/// One page of the history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct ConversationPage {
+    /// The Conversations on this page, newest first.
+    pub items: Vec<ConversationSummary>,
+    /// Whether another page follows this one.
+    pub more: bool,
+}
+
+/// A Saved question: a question the person runs with one tap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct SavedQuestion {
+    /// The Saved question's id.
+    pub id: String,
+    /// The question as it is asked.
+    pub text: String,
+}

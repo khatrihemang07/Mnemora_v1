@@ -10,13 +10,13 @@ use rusqlite::Connection;
 use crate::arrange::GroupKey;
 use crate::error::TodoError;
 use crate::list::TodoList;
-use crate::order::key_between;
 use crate::repeat::rule_of;
 use crate::schedule::assign_when;
 use crate::service::record_at;
 use crate::task::{Task, TaskState, validate_priority};
 use crate::when::{LocalNow, validate_pickable};
 use crate::{list_repo, repo};
+use mnemora_core::order::key_between;
 
 /// The sort key that puts something between its neighbours, or none to leave it where it is
 /// (no neighbours). `before` and `after` are the neighbours' keys: the one directly above and the
@@ -39,7 +39,9 @@ pub(crate) fn place_key(
     };
     // Deleted rows keep their keys, so the neighbour may be the one that is moving: a key between
     // `lo` and it is still on the right side of everything else.
-    Ok(Some(key_between(lo.as_deref(), hi.as_deref())?))
+    Ok(Some(
+        key_between(lo.as_deref(), hi.as_deref()).map_err(TodoError::Validation)?,
+    ))
 }
 
 /// Moves an open Task between two neighbours, and into a group: `target` is what the group

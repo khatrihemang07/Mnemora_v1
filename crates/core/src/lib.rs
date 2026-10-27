@@ -14,6 +14,7 @@ pub mod events;
 pub mod hlc;
 pub mod logging;
 pub mod module;
+pub mod order;
 pub mod paths;
 pub mod search;
 pub mod settings;

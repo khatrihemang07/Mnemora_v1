@@ -9,7 +9,6 @@ use rusqlite::Connection;
 use crate::MODULE_ID;
 use crate::arrange::{GroupContext, GroupKey, TaskGroup, ViewPrefs, compare, group_tasks};
 use crate::error::TodoError;
-use crate::order::key_after;
 use crate::repeat::{self, Completion};
 use crate::schedule::{assign_when, settle_when};
 use crate::task::{
@@ -18,6 +17,7 @@ use crate::task::{
 };
 use crate::when::{LocalNow, NewWhen};
 use crate::{list_repo, repo};
+use mnemora_core::order::key_after;
 
 /// Change-log entity name for Tasks.
 pub(crate) const ENTITY: &str = "todo_task";

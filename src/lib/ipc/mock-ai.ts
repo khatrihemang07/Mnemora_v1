@@ -4,12 +4,18 @@
  * a question must say something, a Model must be chosen, a Conversation answers one Run at a time,
  * a missing one is not found, a title is the first question (collapsed, capped at 80 characters),
  * addresses follow the address rules, and failures read the approved wording. The shared fixtures
- * `ai-title.json`, `ai-addresses.json` and `ai-failures.json` run the same cases in Rust and here.
+ * `ai-title.json`, `ai-addresses.json`, `ai-failures.json`, `ai-rename.json`, `ai-markdown.json` and
+ * `ai-history.json` run the same cases in Rust and here.
  *
  * The scripted Provider answers every question with one sentence, streamed word by word. A question
  * containing a trigger word ends with that failure instead, so every banner can be seen:
  * "fail" unreachable, "offline", "interrupt", "key", "busy", "model", "tools", "long", "timeout",
  * "format", "oops".
+ *
+ * The mock starts with demo data so the history and Saved questions can be seen at once: 34
+ * Conversations (2 today, 1 yesterday, 3 in the previous 7 days, the rest earlier, so the history
+ * shows 30 and "Show more" brings the rest) and three Saved questions. Search the history for "move", "budget" or "overdue"; rename, copy as Markdown
+ * or delete a Conversation from its ⋯ menu (Delete shows an Undo toast).
  */
 import type {
   AiRunEvent,
@@ -94,6 +100,8 @@ const MODELS = ['claude-haiku', 'claude-sonnet', 'codex-luna'];
 const USAGE_LIMIT = 5;
 
 interface StoredConversation {
+  /** Soft-deleted: hidden from the history and from every read, until restored. */
+  deleted?: boolean;
   id: string;
   title: string;
   created_at: number;
@@ -227,11 +235,87 @@ function triggeredFailure(text: string): Failure | null {
   return triggers.find(([word]) => lower.includes(word))?.[1] ?? null;
 }
 
+/** A typed title, as Rust checks it: collapsed, not blank, at most 80 characters, or refused. */
+export function validateTitle(raw: string): string {
+  const title = raw.split(/\s+/).filter(Boolean).join(' ');
+  if (title === '') throw aiError('validation', 'Give this Conversation a title.');
+  if (Array.from(title).length > AI_TITLE_CHARS)
+    throw aiError('validation', 'Keep the title to 80 characters.');
+  return title;
+}
+
+/** Whether a Conversation's title matches the search. Titles only; case and accents ignored. */
+export function titleMatches(title: string, query: string): boolean {
+  const fold = (text: string) =>
+    text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+  const needle = fold(query.trim());
+  return needle === '' || fold(title).includes(needle);
+}
+
+/** An answer without its citation markers (the whitespace before each goes too), as Rust does. */
+export function stripCitations(text: string): string {
+  return text.replace(/\s*\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]/g, '');
+}
+
+/**
+ * A Conversation's branch as Markdown, the same text the Rust copy makes: the title, then each
+ * question as "**You:**" with its answer. Tool steps, corrections and Model switches are left out.
+ */
+export function markdownOf(title: string, branch: readonly EntryView[]): string {
+  const blocks = [`# ${title}`];
+  for (const entry of branch) {
+    if (entry.payload.kind === 'user') blocks.push(`**You:** ${entry.payload.text}`);
+    else if (entry.payload.kind === 'assistant' && entry.payload.calls.length === 0) {
+      const answer = stripCitations(entry.payload.text);
+      if (answer.trim() !== '') blocks.push(answer);
+    }
+  }
+  return `${blocks.join('\n\n')}\n`;
+}
+
+/** The entries from the root to `leaf`, oldest first, following each entry's parent. */
+export function branchOf(entries: readonly EntryView[], leaf: string | undefined): EntryView[] {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const out: EntryView[] = [];
+  let current = leaf;
+  while (current !== undefined) {
+    const entry = byId.get(current);
+    if (!entry) break;
+    out.unshift(entry);
+    current = entry.parent_id ?? undefined;
+  }
+  return out;
+}
+
+const DAY_MS = 86_400_000;
+/** Demo Conversations: [title, days ago]. Thirty-four in all, so the history pages. */
+const DEMO_CONVERSATIONS: [string, number][] = [
+  ['Summarise my last 7 days', 0],
+  ['What is overdue?', 1],
+  ['Entries about the move', 3],
+  ['Plan the November budget with the travel costs and the gifts', 4],
+  ['Which tasks have I put off longest?', 9],
+  ...Array.from({ length: 29 }, (_, n): [string, number] => [
+    `Earlier question ${n + 1}`,
+    10 + n * 3,
+  ]),
+];
+const DEMO_SAVED = [
+  'Summarise my last 7 days',
+  'What is overdue?',
+  'What did I finish this month?',
+];
+
 export function createAiMock({
   emit,
   later = (fn, ms = 0) => void setTimeout(fn, ms),
 }: AiMockOptions) {
   const conversations = new Map<string, StoredConversation>();
+  /** Saved questions in their manual order; a deleted one stays here until restored. */
+  const saved: { id: string; text: string; deleted: boolean }[] = [];
   const providers: StoredProvider[] = [];
   const usage = new Map<
     string,
@@ -242,6 +326,39 @@ export function createAiMock({
   const nextId = (prefix: string) => `${prefix}-${++counter}`;
 
   const liveProvider = (id: string) => providers.find((p) => p.id === id);
+
+  /** A Conversation that is not deleted, or not found (as the Rust lookups answer). */
+  function liveConversation(id: string): StoredConversation {
+    const found = conversations.get(id);
+    if (!found || found.deleted) throw aiError('not_found', 'That Conversation no longer exists');
+    return found;
+  }
+
+  // Demo data, as described in the header.
+  const seedNow = Date.now();
+  DEMO_CONVERSATIONS.forEach(([title, daysAgo], n) => {
+    const at = seedNow - daysAgo * DAY_MS;
+    const conv = startConversation(`demo-${n}`, title, at);
+    const question = addEntry(conv, { kind: 'user', text: title }, at);
+    addEntry(
+      conv,
+      {
+        kind: 'assistant',
+        text: `A demo answer to “${title}”.`,
+        stop: 'stop',
+        provider: 'Local AI Wrapper',
+        model: 'claude-haiku',
+        calls: [],
+        sources: [],
+        budget_note: null,
+      },
+      at + 1,
+      question.id,
+    );
+  });
+  DEMO_SAVED.forEach((text, n) => {
+    saved.push({ id: `saved-${n}`, text, deleted: false });
+  });
 
   function requireProvider(id: string): StoredProvider {
     const found = liveProvider(id);
@@ -270,8 +387,7 @@ export function createAiMock({
   }
 
   function view(id: string): ConversationView {
-    const found = conversations.get(id);
-    if (!found) throw aiError('not_found', 'That Conversation no longer exists');
+    const found = liveConversation(id);
     // A copy, as real IPC gives: later saves must not change what the page already holds.
     return JSON.parse(JSON.stringify({ ...found, running: answering.has(id) })) as ConversationView;
   }
@@ -286,7 +402,9 @@ export function createAiMock({
     if (answering.has(conversationId)) {
       throw aiError('validation', 'This Conversation is still answering.');
     }
-    const existing = conversations.get(conversationId);
+    const existing = conversations.get(conversationId)?.deleted
+      ? undefined
+      : conversations.get(conversationId);
     if (continues && !existing) throw aiError('not_found', 'That Conversation no longer exists');
     // As in Rust, the Model change and the question are written here, before the Run's own steps.
     const now = Date.now();
@@ -559,6 +677,113 @@ export function createAiMock({
     return { models: MODELS, failure: null };
   }
 
+  /** Saved questions that are live, in their order. */
+  const liveSaved = () => saved.filter((q) => !q.deleted);
+
+  function savedOrNotFound(id: string) {
+    const found = saved.find((q) => q.id === id && !q.deleted);
+    if (!found) throw aiError('not_found', 'That Saved question no longer exists');
+    return found;
+  }
+
+  /** The history, Conversation management and Saved questions. */
+  function handleConversations(cmd: string, args: Record<string, unknown>): unknown {
+    switch (cmd) {
+      case 'ai_conversation_list': {
+        const query = String(args.query ?? '');
+        const offset = Number(args.offset ?? 0);
+        const limit = Math.min(Math.max(Number(args.limit ?? 30), 1), 100);
+        const matching = [...conversations.values()]
+          .filter((c) => !c.deleted && titleMatches(c.title, query))
+          .sort((a, b) => b.updated_at - a.updated_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
+        return {
+          items: matching.slice(offset, offset + limit).map((c) => ({
+            id: c.id,
+            title: c.title,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+          })),
+          more: matching.length > offset + limit,
+        };
+      }
+      case 'ai_conversation_rename': {
+        const found = liveConversation(args.id as string);
+        found.title = validateTitle(String(args.title ?? ''));
+        return null;
+      }
+      case 'ai_conversation_delete': {
+        const id = args.id as string;
+        const found = liveConversation(id);
+        if (answering.has(id)) throw aiError('validation', 'This Conversation is still answering.');
+        found.deleted = true;
+        return null;
+      }
+      case 'ai_conversation_restore': {
+        const found = conversations.get(args.id as string);
+        if (found?.deleted !== true)
+          throw aiError('not_found', 'That Conversation no longer exists');
+        found.deleted = false;
+        return null;
+      }
+      case 'ai_conversation_markdown': {
+        const found = liveConversation(args.id as string);
+        const entryId = (args.entryId as string | null) ?? null;
+        if (entryId === null) {
+          const leaf = found.entries.at(-1)?.id;
+          return markdownOf(found.title, branchOf(found.entries, leaf));
+        }
+        const entry = found.entries.find((e) => e.id === entryId);
+        if (!entry) throw aiError('not_found', 'That Conversation no longer exists');
+        if (entry.payload.kind === 'assistant' && entry.payload.calls.length === 0)
+          return stripCitations(entry.payload.text);
+        throw aiError('validation', 'Only an answer copies on its own.');
+      }
+      case 'ai_saved_list':
+        return liveSaved().map((q) => ({ id: q.id, text: q.text }));
+      case 'ai_saved_create': {
+        const text = collapseSaved(String(args.text ?? ''));
+        const created = { id: nextId('saved'), text, deleted: false };
+        saved.push(created);
+        return { id: created.id, text: created.text };
+      }
+      case 'ai_saved_update': {
+        const found = savedOrNotFound(args.id as string);
+        found.text = collapseSaved(String(args.text ?? ''));
+        return { id: found.id, text: found.text };
+      }
+      case 'ai_saved_delete':
+        savedOrNotFound(args.id as string).deleted = true;
+        return null;
+      case 'ai_saved_restore': {
+        const found = saved.find((q) => q.id === args.id);
+        if (found?.deleted !== true)
+          throw aiError('not_found', 'That Saved question no longer exists');
+        found.deleted = false;
+        return null;
+      }
+      case 'ai_saved_reorder': {
+        const id = args.id as string;
+        const moving = savedOrNotFound(id);
+        const after = (args.afterId as string | null) ?? null;
+        const before = (args.beforeId as string | null) ?? null;
+        if (after !== null) savedOrNotFound(after);
+        if (before !== null) savedOrNotFound(before);
+        const rest = saved.filter((q) => q !== moving);
+        const at =
+          after !== null
+            ? rest.findIndex((q) => q.id === after) + 1
+            : before !== null
+              ? rest.findIndex((q) => q.id === before)
+              : rest.length;
+        rest.splice(at, 0, moving);
+        saved.splice(0, saved.length, ...rest);
+        return null;
+      }
+      default:
+        return undefined;
+    }
+  }
+
   function handleProvider(cmd: string, args: Record<string, unknown>): unknown {
     switch (cmd) {
       case 'ai_provider_list':
@@ -644,14 +869,27 @@ export function createAiMock({
       cmd === 'ai_run_start' ||
       cmd === 'ai_conversation_get' ||
       cmd.startsWith('ai_provider_') ||
+      cmd.startsWith('ai_conversation_') ||
+      cmd.startsWith('ai_saved_') ||
       cmd === 'ai_models_search' ||
       cmd === 'ai_models_usage',
     handle(cmd: string, args: Record<string, unknown>): unknown {
       if (cmd === 'ai_run_start') return start(args.request as RunRequest);
       if (cmd === 'ai_conversation_get') return view(args.id as string);
+      if (cmd.startsWith('ai_conversation_') || cmd.startsWith('ai_saved_'))
+        return handleConversations(cmd, args);
       return handleProvider(cmd, args);
     },
   };
+}
+
+/** A typed Saved question, collapsed; as Rust, it must say something and fit 500 characters. */
+function collapseSaved(raw: string): string {
+  const text = raw.split(/\s+/).filter(Boolean).join(' ');
+  if (text === '') throw aiError('validation', 'Type a question first.');
+  if (Array.from(text).length > 500)
+    throw aiError('validation', 'Keep a Saved question to 500 characters.');
+  return text;
 }
 
 /** The scripted Provider's answer to a question. */

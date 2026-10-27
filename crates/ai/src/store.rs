@@ -6,7 +6,7 @@ use mnemora_harness::{Call, Message};
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::error::AiError;
-use crate::types::{EntryKind, EntryPayload, EntryView};
+use crate::types::{ConversationSummary, EntryKind, EntryPayload, EntryView};
 
 fn kind_text(kind: EntryKind) -> &'static str {
     match kind {
@@ -204,4 +204,97 @@ pub fn entries(conn: &Connection, conversation: &str) -> AppResult<Vec<EntryView
         });
     }
     Ok(out)
+}
+
+/// Every live Conversation, newest first. Titles are matched by the caller, which folds them.
+pub fn live_conversations(conn: &Connection) -> AppResult<Vec<ConversationSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, created_at, updated_at FROM ai_conversations
+         WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(ConversationSummary {
+            id: r.get(0)?,
+            title: r.get(1)?,
+            created_at: r.get(2)?,
+            updated_at: r.get(3)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Gives a Conversation a new title. The caller has checked the title and that the Conversation is live.
+pub fn set_title(conn: &Connection, id: &str, title: &str) -> AppResult<()> {
+    conn.execute(
+        "UPDATE ai_conversations SET title = ?2 WHERE id = ?1",
+        rusqlite::params![id, title],
+    )?;
+    Ok(())
+}
+
+/// Whether a Conversation exists and is deleted (so that Undo can bring it back).
+pub fn is_deleted(conn: &Connection, id: &str) -> AppResult<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT deleted_at IS NOT NULL FROM ai_conversations WHERE id = ?1",
+            [id],
+            |r| r.get::<_, bool>(0),
+        )
+        .optional()?
+        .unwrap_or(false))
+}
+
+/// Marks a Conversation deleted at `at`, or brings it back when `at` is none. Nothing is purged.
+pub fn set_deleted(conn: &Connection, id: &str, at: Option<i64>) -> AppResult<()> {
+    conn.execute(
+        "UPDATE ai_conversations SET deleted_at = ?2 WHERE id = ?1",
+        rusqlite::params![id, at],
+    )?;
+    Ok(())
+}
+
+/// The branch that ends at `leaf`, as entries, oldest first (what a copy of the Conversation shows).
+pub fn branch_entries(conn: &Connection, leaf: &str) -> AppResult<Vec<EntryView>> {
+    let mut stmt =
+        conn.prepare("SELECT id, parent_id, created_at, payload FROM ai_entries WHERE id = ?1")?;
+    let mut out = Vec::new();
+    let mut current = Some(leaf.to_owned());
+    while let Some(id) = current {
+        let (entry, parent) = stmt.query_row([&id], entry_row)?;
+        out.push(entry);
+        current = parent;
+    }
+    out.reverse();
+    Ok(out)
+}
+
+/// One entry of a Conversation, if it belongs to it.
+pub fn entry_in(conn: &Connection, conversation: &str, id: &str) -> AppResult<Option<EntryView>> {
+    Ok(conn
+        .query_row(
+            "SELECT id, parent_id, created_at, payload FROM ai_entries
+             WHERE id = ?1 AND conversation_id = ?2",
+            rusqlite::params![id, conversation],
+            entry_row,
+        )
+        .optional()?
+        .map(|(entry, _)| entry))
+}
+
+/// A row of `ai_entries` as an entry and the id it follows.
+fn entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(EntryView, Option<String>)> {
+    let payload: String = r.get(3)?;
+    let payload = serde_json::from_str(&payload).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let parent: Option<String> = r.get(1)?;
+    Ok((
+        EntryView {
+            id: r.get(0)?,
+            parent_id: parent.clone(),
+            created_at: r.get(2)?,
+            payload,
+        },
+        parent,
+    ))
 }

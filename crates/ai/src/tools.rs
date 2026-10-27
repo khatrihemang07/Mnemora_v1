@@ -178,7 +178,7 @@ pub fn cited_ids(text: &str) -> Vec<String> {
     ids
 }
 
-fn is_id(bytes: &[u8]) -> bool {
+pub(crate) fn is_id(bytes: &[u8]) -> bool {
     bytes.iter().enumerate().all(|(i, byte)| match i {
         8 | 13 | 18 | 23 => *byte == b'-',
         _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(byte),

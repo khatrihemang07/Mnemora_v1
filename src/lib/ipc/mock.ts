@@ -21,6 +21,14 @@
  *        "!" badge, Home card, one Activity line; clears on 'ok'; 'phone' words it for Android).
  *        `__listMergeMock(name?)`; `__journalRemoteMock(text, id?)`.
  *
+ * AI (mock-ai.ts documents its trigger words): open /ai. The mock starts with 34 demo Conversations
+ *   (the history shows 30 and "Show more" brings the rest) and 3 Saved questions. Keys: A opens AI,
+ *   C starts a new Conversation and / focuses the question box (on /ai only); ⌘K has "Ask AI",
+ *   "New Conversation" and "Open Conversation…". A question containing "fail", "offline", "interrupt",
+ *   "key", "busy", "model", "tools", "long", "timeout", "format" or "oops" ends with that failure.
+ *   Search the history for "move", "budget" or "overdue"; ⋯ on a Conversation gives Rename, Copy as
+ *   Markdown and Delete (Undo). The + in the question box lists the Saved questions.
+ *
  * Every Sync scenario of docs/design/sync-prototype.html (its SCENARIOS list) and how to reach it
  * (P = `?paired=2`, which also turns Sync on):
  *   off          /settings                         Settings › Modules, Sync still off (the default)
