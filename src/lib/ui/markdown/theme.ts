@@ -24,7 +24,7 @@ export const editorTheme = EditorView.theme({
     overflowWrap: 'anywhere',
   },
   '.cm-line': { padding: '0' },
-  '.cm-placeholder': { color: 'var(--faint)' },
+  '.cm-placeholder': { color: 'var(--muted)' },
 
   '.cm-md-mark': { color: 'var(--faint)' },
   '.cm-md-strong': { fontWeight: '700' },

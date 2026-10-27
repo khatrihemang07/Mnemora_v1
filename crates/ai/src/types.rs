@@ -44,6 +44,10 @@ pub struct CallRecord {
     pub name: String,
     /// The arguments, as the Model sent them (JSON text).
     pub arguments: String,
+    /// The Provider's reasoning token for the call (Gemini), sent back on later Steps. Absent for
+    /// every other Provider (null), and in entries written before it was kept (absent, read as null).
+    #[serde(default)]
+    pub thought_signature: Option<String>,
 }
 
 /// An Entry or Task an answer cites, with what the person needs to find it again. Kept in the

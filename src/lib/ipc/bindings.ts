@@ -632,6 +632,11 @@ export type CallRecord = {
 	name: string,
 	/**  The arguments, as the Model sent them (JSON text). */
 	arguments: string,
+	/**
+	 *  The Provider's reasoning token for the call (Gemini), sent back on later Steps. Absent for
+	 *  every other Provider (null), and in entries written before it was kept (absent, read as null).
+	 */
+	thought_signature?: string | null,
 };
 
 /**  What a Check found. */

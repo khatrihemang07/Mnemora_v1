@@ -1,0 +1,8 @@
+data: {"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"id":"call_t1","type":"function","function":{"name":"todo_list","arguments":"{\"due_to\":\"2026-10-25\"}"},"extra_content":{"google":{"thought_signature":"sig-todo"}}}]},"finish_reason":null}]}
+
+data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_j2","type":"function","function":{"name":"journal_list","arguments":"{\"limit\":10}"},"extra_content":{"google":{"thought_signature":"sig-journal"}}}]},"finish_reason":null}]}
+
+data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

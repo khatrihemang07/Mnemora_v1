@@ -53,6 +53,7 @@ impl Reply {
                 id: format!("call-{}", CALL_IDS.fetch_add(1, Ordering::Relaxed)),
                 name: (*name).to_owned(),
                 arguments: (*arguments).to_owned(),
+                thought_signature: None,
             })
             .collect();
         self

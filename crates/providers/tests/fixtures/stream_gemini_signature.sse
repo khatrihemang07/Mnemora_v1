@@ -1,0 +1,8 @@
+data: {"choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_g1","type":"function","function":{"name":"journal_list","arguments":""},"extra_content":{"google":{"thought_signature":"sig-abc=="}}}]},"finish_reason":null}]}
+
+data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"from\":\"2026-10-19\"}"}}]},"finish_reason":null}]}
+
+data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}
+
+data: [DONE]
+

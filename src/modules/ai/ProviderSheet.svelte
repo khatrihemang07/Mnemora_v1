@@ -8,7 +8,7 @@
   details. Centred on a desktop, a bottom sheet on a phone.
 -->
 <script lang="ts">
-  import type { Component } from 'svelte';
+  import { type Component, tick } from 'svelte';
   import Plug from '~icons/lucide/plug';
   import Route from '~icons/lucide/route';
   import Server from '~icons/lucide/server';
@@ -24,7 +24,9 @@
   import Sheet from '../../lib/ui/Sheet.svelte';
   import Switch from '../../lib/ui/Switch.svelte';
   import { notify } from '../../lib/ui/toast';
+  import { returnFocus } from './focus';
   import { aiKeys } from './queries';
+  import { PLAIN_ENTRY } from './text-entry';
   import {
     addressFor,
     createRequest,
@@ -41,9 +43,11 @@
     /** The Provider to edit, or none to add one. */
     provider: ProviderView | null;
     onclose: () => void;
+    /** Where focus goes when the sheet closes: the control that opened it. */
+    restoreFocus?: () => void;
   }
 
-  let { open, provider, onclose }: Props = $props();
+  let { open, provider, onclose, restoreFocus }: Props = $props();
 
   const ICONS: Record<ProviderKind, Component<{ class?: string }>> = {
     wrapper: Plug,
@@ -72,6 +76,16 @@
   let keyIssue = $state<string | null>(null);
   let test = $state<ConnectionTest | null>(null);
   let confirmDelete = $state(false);
+  /** The step-two form: focus moves here when the kind is picked, so it is never lost to the body. */
+  let form = $state<HTMLFormElement | null>(null);
+  /** The Delete button that asked for the confirmation: focus returns to it if the sheet is still open. */
+  let deleteOpener = $state<HTMLElement | null>(null);
+
+  /** After a delete the sheet has closed, so focus goes to what opened the sheet instead. */
+  function restoreAfterConfirm() {
+    if (deleteOpener?.isConnected) deleteOpener.focus();
+    else restoreFocus?.();
+  }
 
   // Each opening starts afresh: a new Provider from the kind step, an existing one from its details.
   $effect(() => {
@@ -92,6 +106,14 @@
 
   const title = $derived(current ? 'Provider' : 'Add a Provider');
   const effectiveAddress = $derived(addressFor(info, address));
+  /** Whether the address on the form is not the one saved: Test connection tests the saved one only. */
+  const addressChanged = $derived(current !== null && effectiveAddress !== current.address);
+  // A connection result describes the saved Provider as it was: a changed address or key clears it.
+  $effect(() => {
+    void address;
+    void current?.key_state;
+    test = null;
+  });
   const canSave = $derived(!working && name.trim() !== '' && effectiveAddress !== '');
 
   function chooseKind(kind: KindInfo) {
@@ -100,6 +122,7 @@
     address = kind.address;
     allowPaid = false;
     step = 'form';
+    void tick().then(() => form?.focus());
   }
 
   async function refresh() {
@@ -247,7 +270,7 @@
   }
 </script>
 
-<Sheet {open} {title} {onclose} centered closable>
+<Sheet {open} {title} {onclose} centered closable restoreFocus={restoreFocus}>
   {#if step === 'kind'}
     <div class="flex flex-col gap-3">
       <p class="text-sm text-muted">Choose the kind first. Each kind asks only for what it needs.</p>
@@ -268,7 +291,9 @@
     </div>
   {:else}
     <form
-      class="flex flex-col gap-4"
+      bind:this={form}
+      tabindex="-1"
+      class="flex flex-col gap-4 outline-none"
       onsubmit={(event) => {
         event.preventDefault();
         if (canSave) void save();
@@ -288,9 +313,7 @@
             bind:value={address}
             label="Address"
             placeholder={info.id === 'openai_compatible' ? 'https://api.example.com/v1' : undefined}
-            autocapitalize="off"
-            autocomplete="off"
-            spellcheck="false"
+            {...PLAIN_ENTRY}
             invalid={addressIssue !== null}
           />
         {/if}
@@ -327,8 +350,7 @@
                 label="API key"
                 placeholder={replacing ? 'Paste a new key' : 'Paste the key'}
                 onkeydown={onKeyEnter}
-                autocomplete="off"
-                spellcheck={false}
+                {...PLAIN_ENTRY}
                 invalid={keyIssue !== null}
               />
               <Button size="sm" variant="secondary" onclick={() => void saveKey()} disabled={keyDraft.trim() === '' || working}>
@@ -359,10 +381,12 @@
 
       {#if current}
         <div class="flex flex-wrap items-center gap-3">
-          <Button variant="secondary" onclick={() => void runTest()} disabled={working}>
+          <Button variant="secondary" onclick={() => void runTest()} disabled={working || addressChanged}>
             <Plug class="size-4" /> Test connection
           </Button>
-          {#if test}
+          {#if addressChanged}
+            <span class="text-sm text-muted">Save the new address to test it.</span>
+          {:else if test}
             <span class="text-sm {test.connected ? 'text-success' : 'text-danger'}" role="status">{test.message}</span>
           {/if}
         </div>
@@ -374,7 +398,14 @@
 
       <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
         {#if current}
-          <Button variant="danger" onclick={() => (confirmDelete = true)} disabled={working}>
+          <Button
+            variant="danger"
+            onclick={(event: MouseEvent) => {
+              deleteOpener = event.currentTarget as HTMLElement;
+              confirmDelete = true;
+            }}
+            disabled={working}
+          >
             <Trash2 class="size-4" /> Delete
           </Button>
         {:else}
@@ -398,6 +429,7 @@
   title="Delete this Provider?"
   description="Conversations that used it keep their text. Its key is removed from this device."
   onclose={() => (confirmDelete = false)}
+  restoreFocus={restoreAfterConfirm}
   overSheet
 >
   {#snippet actions()}

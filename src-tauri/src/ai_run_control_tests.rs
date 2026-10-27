@@ -3,7 +3,7 @@
 //! answering together. A scripted Provider plays the Model; the real commands drive the Run.
 
 use std::sync::mpsc::{self, Receiver};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use mnemora_ai::{RunEvent, RunOutcome, failure_message};
 use mnemora_harness::scripted::Reply;
@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 
 use crate::AiRunEvent;
 use crate::ai_tracer_tests::{ask, ended_outcome, get, install, label, scripted, until_end};
+use crate::ai_wire_tests::{add_wrapper, finish, reply};
 use crate::test_support::TestApp;
+use mnemora_providers::testing::{Canned, FakeServer};
 
 const JOURNAL: &str = r#"{"from":"2026-10-18","to":"2026-10-25"}"#;
 
@@ -151,6 +153,8 @@ fn stopping_in_the_middle_of_the_calls_keeps_the_ones_not_run_as_stopped_results
     let started = ask(&app, None, "What did I write?").unwrap();
     let conversation = started["conversation_id"].as_str().unwrap().to_owned();
     until_label(&events, "stepStarted");
+    // Stop only once the first call has streamed in: the Step keeps the calls it has at Stop.
+    std::thread::sleep(Duration::from_millis(100));
     stop(&app, &conversation);
     release.send(()).unwrap();
     let run = until_end(&events);
@@ -282,6 +286,14 @@ fn send_now_ends_the_step_being_written_and_sends_the_note_next() {
         entry_texts(&view, "assistant"),
         vec!["First part", "Answer to the note"]
     );
+    // Send now is not a stop: the step it ended is not shown as "Stopped".
+    let first = view["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["payload"]["kind"] == "assistant")
+        .expect("the step ended by Send now is saved");
+    assert_eq!(first["payload"]["stop"], "stop");
 }
 
 #[test]
@@ -420,4 +432,35 @@ fn send_now_on_the_answer_the_budget_forces_ends_the_run_and_hands_the_note_back
         })
         .expect("the note that could not be sent is handed back");
     assert_eq!(handed_back[0].text, "Too late");
+}
+
+#[test]
+fn stopping_a_run_waiting_on_a_blocked_reply_ends_it_at_once_and_the_late_reply_is_never_written() {
+    // The Wrapper answers whole, and only after the reply is due: the Run must not wait for it.
+    let late = Duration::from_millis(2500);
+    let server = FakeServer::start(move |_| {
+        Canned::json(200, &reply(finish("Too late to show", &[]))).delayed(late)
+    });
+    let app = TestApp::new();
+    add_wrapper(&app, &server.address());
+    let events = app.ai_events();
+
+    let started = ask(&app, None, "Tell me").unwrap();
+    let conversation = started["conversation_id"].as_str().unwrap().to_owned();
+    until_label(&events, "stepStarted");
+    std::thread::sleep(Duration::from_millis(100));
+    let pressed = Instant::now();
+    stop(&app, &conversation);
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Stopped);
+    assert!(
+        pressed.elapsed() < Duration::from_secs(1),
+        "the Run ends at once, not when the blocked reply arrives"
+    );
+
+    // Let the late reply arrive: it must not reach the Conversation.
+    std::thread::sleep(late + Duration::from_millis(500));
+    let view = get(&app, &conversation);
+    assert_eq!(view["running"], false);
+    assert!(!view.to_string().contains("Too late to show"));
+    assert_eq!(entry_texts(&view, "assistant"), vec![""]);
 }

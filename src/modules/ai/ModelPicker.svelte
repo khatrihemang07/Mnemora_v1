@@ -18,9 +18,11 @@
   import Sheet from '../../lib/ui/Sheet.svelte';
   import { viewport } from '../../lib/viewport.svelte';
   import type { Choice } from './choice';
-  import { matchingModels, modelRowState, typedModelId, usesOf } from './model-picker';
+  import { choiceOnEnter, matchingModels, modelRowState, typedModelId, usesOf } from './model-picker';
+  import { returnFocus } from './focus';
   import { kindOf } from './provider-kinds';
   import { modelsOptions, providersOptions, usageOptions } from './queries';
+  import { PLAIN_ENTRY } from './text-entry';
 
   interface Props {
     open: boolean;
@@ -110,6 +112,7 @@
         value={providerId}
         options={providerOptions}
         twoRows
+        wrap
         onchange={(value) => {
           providerId = value;
           browsing = false;
@@ -117,7 +120,18 @@
       />
     {/if}
 
-    <Input bind:value={query} label="Search or type a Model id" placeholder="Search or type a Model id" />
+    <Input
+      bind:value={query}
+      label="Search or type a Model id"
+      placeholder="Search or type a Model id"
+      {...PLAIN_ENTRY}
+      onkeydown={(event) => {
+        const id = choiceOnEnter(event.key, query);
+        if (id === null) return;
+        event.preventDefault();
+        pick(id);
+      }}
+    />
 
     {#if active}
       {#if !searching}
@@ -167,11 +181,11 @@
 {/snippet}
 
 {#if viewport.isPhone}
-  <Sheet {open} title="Choose a Model" onclose={() => (open = false)} closable>
+  <Sheet {open} title="Choose a Model" onclose={() => (open = false)} closable restoreFocus={() => returnFocus(anchor)}>
     {@render body()}
   </Sheet>
 {:else}
-  <Popover bind:open {anchor} label="Choose a Model" flush>
+  <Popover bind:open {anchor} label="Choose a Model" flush restoreFocus={() => returnFocus(anchor)}>
     {@render body()}
   </Popover>
 {/if}

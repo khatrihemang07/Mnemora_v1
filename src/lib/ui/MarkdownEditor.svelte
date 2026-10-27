@@ -182,7 +182,7 @@
   <div bind:this={host} class="scroll-my-16"></div>
   {#if !ctrl}
     <!-- Until CodeMirror has loaded: the same box, so nothing jumps when it arrives. -->
-    <div class="md-p {value ? '' : 'text-faint'}">{value || placeholder}</div>
+    <div class="md-p {value ? '' : 'text-muted'}">{value || placeholder}</div>
   {/if}
 </div>
 

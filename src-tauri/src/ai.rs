@@ -297,7 +297,7 @@ fn start_run<R: Runtime>(
         let state = handle.state::<AppState>();
         mnemora_ai::execute(
             &state.db,
-            provider.as_ref(),
+            provider,
             &ask,
             &question_id,
             toolset,

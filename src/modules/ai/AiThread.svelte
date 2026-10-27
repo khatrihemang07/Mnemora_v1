@@ -128,11 +128,15 @@
 {#snippet runsView(answeringRuns: LiveRun[], failedRuns: LiveRun[])}
   {#each answeringRuns as run (run.runId)}
     <Activity steps={run.steps} running />
-    {#if run.text === ''}
-      <p class="text-sm text-muted">Answering…</p>
-    {:else}
-      <MarkdownView source={withoutCitations(run.text)} />
-    {/if}
+    <!-- Streamed text is never a live region: the page announces "Response complete" once, at the end. -->
+    <div aria-live="off" aria-busy="true" class="flex flex-col gap-1">
+      {#if run.text === ''}
+        <p class="text-sm text-muted">Answering…</p>
+      {:else}
+        <MarkdownView source={withoutCitations(run.text)} />
+      {/if}
+      <span aria-hidden="true" class="inline-block h-4 w-2 rounded-sm bg-(--hue-ai) motion-safe:animate-pulse"></span>
+    </div>
   {/each}
   {#each failedRuns as run (run.runId)}
     {#if run.failure}

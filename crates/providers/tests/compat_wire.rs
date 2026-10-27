@@ -81,11 +81,13 @@ fn streamed_tool_calls_are_whole_when_the_stream_ends_and_keep_their_order() {
                 id: "call_a1".into(),
                 name: "journal_list".into(),
                 arguments: r#"{"from":"2026-10-19","to":"2026-10-25"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Call(Call {
                 id: "call_b2".into(),
                 name: "todo_search".into(),
                 arguments: r#"{"query":"move"}"#.into(),
+                thought_signature: None,
             }),
             StreamEvent::Done(StopReason::Stop),
         ]
@@ -104,6 +106,7 @@ fn tools_are_sent_as_functions_and_the_branch_carries_calls_and_results() {
                 id: "call_a1".into(),
                 name: "journal_list".into(),
                 arguments: "{}".into(),
+                thought_signature: None,
             }],
         },
         Message::Tool {
@@ -253,4 +256,206 @@ fn a_stop_before_the_request_sends_nothing() {
     provider(&server.address()).stream(&request(), &|| true, &mut |event| events.push(event));
     assert_eq!(events, vec![StreamEvent::Done(StopReason::Aborted)]);
     assert!(server.requests().is_empty(), "no request leaves the device");
+}
+
+const GEMINI_TOOLS: &str = include_str!("fixtures/stream_gemini_signature.sse");
+
+#[test]
+fn a_gemini_thought_signature_is_read_from_the_stream_and_echoed_on_the_next_step() {
+    let server = FakeServer::start(|_| Canned::sse(GEMINI_TOOLS));
+    let events = run(&provider(&server.address()), &with_tools());
+    assert_eq!(
+        events[0],
+        StreamEvent::Call(Call {
+            id: "call_g1".into(),
+            name: "journal_list".into(),
+            arguments: r#"{"from":"2026-10-19"}"#.into(),
+            thought_signature: Some("sig-abc==".into()),
+        })
+    );
+
+    let mut next = with_tools();
+    next.messages = vec![
+        Message::User("What moved?".into()),
+        Message::Assistant {
+            text: String::new(),
+            calls: vec![Call {
+                id: "call_g1".into(),
+                name: "journal_list".into(),
+                arguments: r#"{"from":"2026-10-19"}"#.into(),
+                thought_signature: Some("sig-abc==".into()),
+            }],
+        },
+        Message::Tool {
+            call_id: "call_g1".into(),
+            name: "journal_list".into(),
+            text: "Observation e1.".into(),
+            is_error: false,
+        },
+    ];
+    run(&provider(&server.address()), &next);
+    let body: Value = serde_json::from_str(&server.requests()[1].body).unwrap();
+    assert_eq!(
+        body["messages"][2]["tool_calls"][0]["extra_content"],
+        json!({"google": {"thought_signature": "sig-abc=="}})
+    );
+}
+
+#[test]
+fn a_call_without_a_signature_is_sent_unchanged() {
+    let server = FakeServer::start(|_| Canned::sse(TOOLS));
+    let events = run(&provider(&server.address()), &with_tools());
+    let StreamEvent::Call(first) = &events[1] else {
+        panic!("expected a call, got {events:?}");
+    };
+    assert_eq!(first.thought_signature, None);
+
+    let mut next = with_tools();
+    next.messages = vec![Message::Assistant {
+        text: String::new(),
+        calls: vec![first.clone()],
+    }];
+    run(&provider(&server.address()), &next);
+    let body: Value = serde_json::from_str(&server.requests()[1].body).unwrap();
+    assert!(
+        body["messages"][1]["tool_calls"][0]
+            .get("extra_content")
+            .is_none()
+    );
+}
+
+const GEMINI_PARALLEL: &str = include_str!("fixtures/stream_gemini_parallel.sse");
+
+#[test]
+fn gemini_parallel_calls_without_an_index_stay_two_calls_with_their_own_signatures() {
+    let server = FakeServer::start(|_| Canned::sse(GEMINI_PARALLEL));
+    let events = run(&provider(&server.address()), &with_tools());
+    assert_eq!(
+        events,
+        vec![
+            StreamEvent::Call(Call {
+                id: "call_t1".into(),
+                name: "todo_list".into(),
+                arguments: r#"{"due_to":"2026-10-25"}"#.into(),
+                thought_signature: Some("sig-todo".into()),
+            }),
+            StreamEvent::Call(Call {
+                id: "call_j2".into(),
+                name: "journal_list".into(),
+                arguments: r#"{"limit":10}"#.into(),
+                thought_signature: Some("sig-journal".into()),
+            }),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
+
+    let mut next = with_tools();
+    next.messages = vec![Message::Assistant {
+        text: String::new(),
+        calls: events
+            .iter()
+            .filter_map(|event| match event {
+                StreamEvent::Call(call) => Some(call.clone()),
+                _ => None,
+            })
+            .collect(),
+    }];
+    run(&provider(&server.address()), &next);
+    let body: Value = serde_json::from_str(&server.requests()[1].body).unwrap();
+    let calls = &body["messages"][1]["tool_calls"];
+    assert_eq!(calls[0]["id"], "call_t1");
+    assert_eq!(calls[0]["function"]["name"], "todo_list");
+    assert_eq!(
+        calls[0]["function"]["arguments"],
+        r#"{"due_to":"2026-10-25"}"#
+    );
+    assert_eq!(
+        calls[0]["extra_content"],
+        json!({"google": {"thought_signature": "sig-todo"}})
+    );
+    assert_eq!(calls[1]["id"], "call_j2");
+    assert_eq!(calls[1]["function"]["name"], "journal_list");
+    assert_eq!(calls[1]["function"]["arguments"], r#"{"limit":10}"#);
+    assert_eq!(
+        calls[1]["extra_content"],
+        json!({"google": {"thought_signature": "sig-journal"}})
+    );
+}
+
+#[test]
+fn one_call_without_an_index_is_one_call_with_its_arguments() {
+    let line = "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"call_s1\",\"type\":\"function\",\"function\":{\"name\":\"journal_list\",\"arguments\":\"{\\\"from\\\":\\\"2026-10-19\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
+    let server = FakeServer::start(move |_| Canned::sse(line));
+    assert_eq!(
+        run(&provider(&server.address()), &with_tools()),
+        vec![
+            StreamEvent::Call(Call {
+                id: "call_s1".into(),
+                name: "journal_list".into(),
+                arguments: r#"{"from":"2026-10-19"}"#.into(),
+                thought_signature: None,
+            }),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
+}
+
+#[test]
+fn argument_pieces_without_an_index_or_id_continue_the_latest_call() {
+    let stream = concat!(
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"call_s1\",\"type\":\"function\",\"function\":{\"name\":\"journal_list\",\"arguments\":\"{\\\"from\\\":\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"\\\"2026-10-19\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"id\":\"call_j2\",\"type\":\"function\",\"function\":{\"name\":\"todo_search\",\"arguments\":\"{\\\"query\\\":\\\"move\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"function\":{\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let server = FakeServer::start(move |_| Canned::sse(stream));
+    assert_eq!(
+        run(&provider(&server.address()), &with_tools()),
+        vec![
+            StreamEvent::Call(Call {
+                id: "call_s1".into(),
+                name: "journal_list".into(),
+                arguments: r#"{"from":"2026-10-19"}"#.into(),
+                thought_signature: None,
+            }),
+            StreamEvent::Call(Call {
+                id: "call_j2".into(),
+                name: "todo_search".into(),
+                arguments: r#"{"query":"move"}"#.into(),
+                thought_signature: None,
+            }),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
+}
+
+#[test]
+fn a_new_id_at_an_index_that_holds_another_id_starts_a_new_call() {
+    let stream = concat!(
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_a1\",\"type\":\"function\",\"function\":{\"name\":\"journal_list\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_b2\",\"type\":\"function\",\"function\":{\"name\":\"todo_search\",\"arguments\":\"{\\\"query\\\":\\\"move\\\"}\"}}]},\"finish_reason\":null}]}\n\n",
+        "data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+        "data: [DONE]\n\n",
+    );
+    let server = FakeServer::start(move |_| Canned::sse(stream));
+    assert_eq!(
+        run(&provider(&server.address()), &with_tools()),
+        vec![
+            StreamEvent::Call(Call {
+                id: "call_a1".into(),
+                name: "journal_list".into(),
+                arguments: "{}".into(),
+                thought_signature: None,
+            }),
+            StreamEvent::Call(Call {
+                id: "call_b2".into(),
+                name: "todo_search".into(),
+                arguments: r#"{"query":"move"}"#.into(),
+                thought_signature: None,
+            }),
+            StreamEvent::Done(StopReason::Stop),
+        ]
+    );
 }

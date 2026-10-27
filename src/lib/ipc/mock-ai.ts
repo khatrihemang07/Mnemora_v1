@@ -59,10 +59,10 @@
  * ## Branches (type these in the composer)
  *
  * A question can have siblings: questions that follow the same answer. A question with siblings shows
- * "2 of 3" with ‹ › arrows beside its heading, which move between them. The page shows one Branch at a
+ * "Question 2 of 3" with ‹ › arrows beside its heading, which move between them. The page shows one Branch at a
  * time, and the mock keeps which one per Conversation, as the device does.
  * - Try again (the round arrow under an answer) asks its question again as a sibling. Ask "Name a good
- *   book", then press Try again under the answer: the question shows "2 of 2".
+ *   book", then press Try again under the answer: the question shows "Question 2 of 2".
  * - Edit (the pencil on a question's heading; on a phone, a long press on the question) puts it in the
  *   box. Ask "Name a good book", then "Read it aloud" as a follow-up, Edit "Read it aloud" and send
  *   "Read it at night": the answer sits beside the edited question. Wait for the answer to finish first.

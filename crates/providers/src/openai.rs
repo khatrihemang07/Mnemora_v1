@@ -20,14 +20,17 @@ pub enum SseEvent {
     Text(String),
     /// A piece of one Tool call: its index in the reply and whatever fields this chunk carries.
     ToolDelta {
-        /// Which call in the reply this piece belongs to.
-        index: usize,
+        /// Which call in the reply this piece belongs to; `None` when the chunk names none
+        /// (Gemini's parallel calls), so the caller decides by id.
+        index: Option<usize>,
         /// The call's id, when this chunk carries it.
         id: Option<String>,
         /// The Tool's name, when this chunk carries it.
         name: Option<String>,
         /// A piece of the arguments' JSON text.
         arguments: Option<String>,
+        /// Gemini's reasoning token for the call, when this chunk carries it.
+        thought_signature: Option<String>,
     },
     /// The reply is finished and why.
     Finish(StopReason),
@@ -54,11 +57,17 @@ pub fn chat_body(request: &Request, stream: bool) -> Value {
                 let calls: Vec<Value> = calls
                     .iter()
                     .map(|call| {
-                        json!({
+                        let mut wire = json!({
                             "id": call.id,
                             "type": "function",
                             "function": { "name": call.name, "arguments": call.arguments },
-                        })
+                        });
+                        // Gemini rejects a later Step that drops its signature: send it back as it came.
+                        if let Some(signature) = &call.thought_signature {
+                            wire["extra_content"] =
+                                json!({ "google": { "thought_signature": signature } });
+                        }
+                        wire
                     })
                     .collect();
                 json!({
@@ -158,8 +167,7 @@ pub fn sse_events(line: &str) -> Result<Vec<SseEvent>, Failure> {
             index: piece
                 .get("index")
                 .and_then(Value::as_u64)
-                .and_then(|index| usize::try_from(index).ok())
-                .unwrap_or(0),
+                .and_then(|index| usize::try_from(index).ok()),
             id: piece.get("id").and_then(Value::as_str).map(str::to_owned),
             name: piece
                 .pointer("/function/name")
@@ -167,6 +175,10 @@ pub fn sse_events(line: &str) -> Result<Vec<SseEvent>, Failure> {
                 .map(str::to_owned),
             arguments: piece
                 .pointer("/function/arguments")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            thought_signature: piece
+                .pointer("/extra_content/google/thought_signature")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
         });
@@ -219,7 +231,9 @@ pub fn status_failure(status: u16, body: &str, endpoint: Endpoint) -> Failure {
         404 if endpoint == Endpoint::Chat => Failure::ModelUnavailable,
         408 | 504 => Failure::Timeout,
         413 => Failure::TooLong,
-        429 => Failure::RateLimited,
+        // Busy or limited: rate limits, a server error, a gateway or service that is down, and
+        // Anthropic's overload status (529).
+        429 | 500 | 502 | 503 | 529 => Failure::RateLimited,
         _ => Failure::Unexpected,
     }
 }
@@ -316,6 +330,52 @@ mod tests {
     }
 
     #[test]
+    fn a_gemini_signature_in_a_tool_delta_is_read_and_echoed_in_a_blocking_request() {
+        let line = r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"journal_list","arguments":""},"extra_content":{"google":{"thought_signature":"sig-1"}}}]},"finish_reason":null}]}"#;
+        let events = sse_events(line).unwrap();
+        assert_eq!(
+            events,
+            vec![SseEvent::ToolDelta {
+                index: Some(0),
+                id: Some("c1".into()),
+                name: Some("journal_list".into()),
+                arguments: Some(String::new()),
+                thought_signature: Some("sig-1".into()),
+            }]
+        );
+        let mut request = request("");
+        request.messages = vec![Message::Assistant {
+            text: String::new(),
+            calls: vec![mnemora_harness::Call {
+                id: "c1".into(),
+                name: "journal_list".into(),
+                arguments: "{}".into(),
+                thought_signature: Some("sig-1".into()),
+            }],
+        }];
+        let body = chat_body(&request, false);
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["extra_content"],
+            json!({"google": {"thought_signature": "sig-1"}})
+        );
+    }
+
+    #[test]
+    fn a_tool_delta_with_no_index_says_so_and_is_not_filed_under_zero() {
+        let line = r#"data: {"choices":[{"index":0,"delta":{"tool_calls":[{"id":"c2","type":"function","function":{"name":"todo_list","arguments":"{}"}}]},"finish_reason":null}]}"#;
+        assert_eq!(
+            sse_events(line),
+            Ok(vec![SseEvent::ToolDelta {
+                index: None,
+                id: Some("c2".into()),
+                name: Some("todo_list".into()),
+                arguments: Some("{}".into()),
+                thought_signature: None,
+            }])
+        );
+    }
+
+    #[test]
     fn a_stream_error_object_is_a_failure_and_its_text_is_dropped() {
         let line = r#"data: {"error":{"message":"secret upstream text"}}"#;
         assert_eq!(sse_events(line), Err(Failure::Unexpected));
@@ -361,14 +421,18 @@ mod tests {
             (408, "", Endpoint::Chat, Failure::Timeout),
             (413, "", Endpoint::Chat, Failure::TooLong),
             (429, "", Endpoint::Chat, Failure::RateLimited),
+            (500, "", Endpoint::Chat, Failure::RateLimited),
+            (500, "", Endpoint::Models, Failure::RateLimited),
             (
                 502,
                 "codex login expired",
                 Endpoint::Chat,
-                Failure::Unexpected,
+                Failure::RateLimited,
             ),
+            (503, "high demand", Endpoint::Chat, Failure::RateLimited),
+            (503, "", Endpoint::Models, Failure::RateLimited),
+            (529, "", Endpoint::Chat, Failure::RateLimited),
             (504, "", Endpoint::Chat, Failure::Timeout),
-            (500, "", Endpoint::Models, Failure::Unexpected),
         ];
         for (status, body, endpoint, expected) in cases {
             assert_eq!(status_failure(status, body, endpoint), expected, "{status}");

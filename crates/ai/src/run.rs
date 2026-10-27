@@ -2,7 +2,7 @@
 //! step is reported through `emit` in order. Runs never throw: a failure is the last event.
 
 use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use mnemora_core::db::{Connection, physical_now};
 use mnemora_core::error::AppResult;
@@ -108,7 +108,7 @@ pub fn budget_note() -> String {
 /// Notes still queued when the Run ends are announced, so the person can send them.
 pub fn execute(
     db: &Mutex<Connection>,
-    provider: &dyn Provider,
+    provider: Arc<dyn Provider>,
     ask: &Ask,
     question_id: &str,
     toolset: Toolset,
@@ -141,14 +141,14 @@ pub fn execute(
     let mut recorder = Recorder {
         db,
         ask,
-        provider,
+        provider: &*provider,
         parent: question_id.to_owned(),
         cited: HashMap::new(),
         broken: false,
         steering: handles.steering,
     };
     let outcome = agent::run(
-        provider,
+        Arc::clone(&provider),
         &system,
         messages,
         &mut toolbox,
@@ -224,6 +224,7 @@ impl Recorder<'_> {
                             id: c.id,
                             name: c.name,
                             arguments: c.arguments,
+                            thought_signature: c.thought_signature,
                         })
                         .collect(),
                     sources,

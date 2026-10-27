@@ -1,6 +1,6 @@
-/** The pager's words for a question among its siblings, such as "2 of 3" (`index` counts from 1). */
+/** The pager's words for a question among its siblings, as the prototype has them: "Question 2 of 3" (`index` counts from 1). */
 export function pagerLabel(index: number, count: number): string {
-  return `${index} of ${count}`;
+  return `Question ${index} of ${count}`;
 }
 
 /**

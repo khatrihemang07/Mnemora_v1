@@ -3,7 +3,7 @@ import { pagerFocusAfterShow, pagerLabel, pagerStep } from './branch-pager';
 
 describe('pagerLabel', () => {
   it('says which question of how many is shown', () => {
-    expect(pagerLabel(2, 3)).toBe('2 of 3');
+    expect(pagerLabel(2, 3)).toBe('Question 2 of 3');
   });
 });
 

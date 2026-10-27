@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  choiceOnEnter,
   isFreeModel,
   matchingModels,
   modelRowState,
@@ -9,6 +10,12 @@ import {
 } from './model-picker';
 
 describe('the Model picker’s lists', () => {
+  it('Enter in the search box chooses the typed id, as the Use row does', () => {
+    expect(choiceOnEnter('Enter', '  gemini-3.5-flash ')).toBe('gemini-3.5-flash');
+    expect(choiceOnEnter('Enter', '   ')).toBeNull();
+    expect(choiceOnEnter('ArrowDown', 'gemini-3.5-flash')).toBeNull();
+  });
+
   it('accepts any typed id, trimmed, and nothing when the box is empty', () => {
     expect(typedModelId('  openai/gpt-5-mini  ')).toBe('openai/gpt-5-mini');
     expect(typedModelId('   ')).toBeNull();

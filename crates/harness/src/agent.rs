@@ -3,6 +3,8 @@
 //! answer. The limits, the stop-reason gate and the correction turns are the approved ones: a
 //! mistake the Model can fix is sent back to it, never shown to the person as a failure.
 
+use std::sync::Arc;
+
 use crate::control::Control;
 use crate::message::{Call, Message};
 use crate::provider::{Failure, Provider, Request, StopReason, ToolDef};
@@ -171,7 +173,7 @@ enum Finished {
 /// `steer` hands over the next note the person queued, if any; notes are sent to the Model after
 /// the Step's Tools finish, or after a Step that asked for none but is not the answer.
 pub fn run(
-    provider: &dyn Provider,
+    provider: Arc<dyn Provider>,
     system: &str,
     mut messages: Vec<Message>,
     host: &mut dyn ToolHost,
@@ -206,9 +208,13 @@ pub fn run(
         requests += 1;
         control.begin_step();
         emit(Event::StepStarted);
-        let answer = match run_step(provider, &request, &|| control.halts_step(), &mut |text| {
-            emit(Event::TextDelta(text.to_owned()));
-        }) {
+        let halt = control.clone();
+        let answer = match run_step(
+            Arc::clone(&provider),
+            request,
+            Arc::new(move || halt.halts_step()),
+            &mut |text| emit(Event::TextDelta(text.to_owned())),
+        ) {
             Ok(answer) => answer,
             Err(_) if control.ended() => return Outcome::Stopped,
             Err(failure) => return Outcome::Failed(failure),
@@ -295,11 +301,16 @@ fn keep_halted(
 ) -> bool {
     let ended = control.ended();
     if ended || !answer.text.is_empty() || !answer.calls.is_empty() {
-        // A stopped Step is saved even when empty, so the thread can say it was stopped.
+        // A stopped Step is saved even when empty, so the thread can say it was stopped. A skipped
+        // one (Send now) was not stopped by the person: it is saved as an ordinary finished Step.
         emit(Event::StepEnded(StepRecord {
             text: answer.text.clone(),
             calls: answer.calls.clone(),
-            stop: StopReason::Aborted,
+            stop: if ended {
+                StopReason::Aborted
+            } else {
+                StopReason::Stop
+            },
             budget_forced: false,
             sources: Vec::new(),
         }));

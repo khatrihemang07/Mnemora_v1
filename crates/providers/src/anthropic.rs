@@ -60,7 +60,7 @@ impl AnthropicProvider {
         let status = response.status().as_u16();
         let body = read_body(response)?;
         if !(200..300).contains(&status) {
-            return Err(status_failure(status, &body, Endpoint::Models));
+            return Err(openai::status_failure(status, &body, Endpoint::Models));
         }
         openai::parse_model_ids(&body)
     }
@@ -98,7 +98,7 @@ impl AnthropicProvider {
         let status = response.status().as_u16();
         let text = read_body(response)?;
         if !(200..300).contains(&status) {
-            return Err(status_failure(status, &text, Endpoint::Chat));
+            return Err(openai::status_failure(status, &text, Endpoint::Chat));
         }
         let (answer, calls, stop) = parse_reply(&text)?;
         if !answer.is_empty() {
@@ -201,6 +201,7 @@ pub fn parse_reply(body: &str) -> Result<(String, Vec<Call>, StopReason), Failur
                     id: id.to_owned(),
                     name: name.to_owned(),
                     arguments: input.to_string(),
+                    thought_signature: None,
                 });
             }
             // Thinking and other blocks carry nothing Mnemora shows.
@@ -208,14 +209,6 @@ pub fn parse_reply(body: &str) -> Result<(String, Vec<Call>, StopReason), Failur
         }
     }
     Ok((text, calls, stop))
-}
-
-/// The failure for a reply that is not a success. Anthropic's overload status is a busy service.
-pub fn status_failure(status: u16, body: &str, endpoint: Endpoint) -> Failure {
-    match status {
-        529 => Failure::RateLimited,
-        _ => openai::status_failure(status, body, endpoint),
-    }
 }
 
 impl Provider for AnthropicProvider {

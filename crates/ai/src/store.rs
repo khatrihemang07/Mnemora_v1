@@ -274,6 +274,7 @@ pub fn branch_messages(conn: &Connection, leaf: &str) -> AppResult<Vec<Message>>
                         id: c.id,
                         name: c.name,
                         arguments: c.arguments,
+                        thought_signature: c.thought_signature,
                     })
                     .collect(),
             }),

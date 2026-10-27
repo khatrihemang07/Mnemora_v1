@@ -264,6 +264,73 @@ fn renames_of_the_same_title_on_both_devices_are_one_conflict_that_both_show() {
 }
 
 #[test]
+fn keep_other_on_a_conversation_title_conflict_writes_it_back_and_converges() {
+    let c = pair();
+    let id = ask_and_wait(&c[0], None, "Plan the hike");
+    c.sync(0, 1);
+    rename(&c[0], &id, "Hike with Ana");
+    c[1].clock().advance(1_000);
+    rename(&c[1], &id, "Hike with Bruno");
+    c.sync_all();
+    let conflict = crate::sync_conflicts_tests::ids(&c[0])[0].clone();
+
+    // The older device keeps the other title: its own, which the newer rename set aside.
+    crate::sync_conflicts_tests::resolve(&c[0], &conflict, json!({ "kind": "keep_other" }));
+    assert_eq!(title_of(&c[0], &id).as_deref(), Some("Hike with Ana"));
+    assert!(crate::sync_conflicts_tests::ids(&c[0]).is_empty());
+    c.sync_all();
+    for d in 0..2 {
+        assert!(
+            crate::sync_conflicts_tests::ids(&c[d]).is_empty(),
+            "device {d}"
+        );
+        assert_eq!(
+            title_of(&c[d], &id).as_deref(),
+            Some("Hike with Ana"),
+            "device {d}"
+        );
+    }
+}
+
+#[test]
+fn keep_other_on_a_saved_question_text_conflict_writes_it_back_and_converges() {
+    let c = pair();
+    c[0].invoke::<Value>("ai_saved_create", json!({ "text": "Coffee shops" }))
+        .unwrap();
+    c.sync(0, 1);
+    let id = saved_id(&c[0], "Coffee shops");
+    update_saved(&c[0], &id, "Coffee shops near the canal");
+    c[1].clock().advance(1_000);
+    update_saved(&c[1], &id, "Coffee shops near the park");
+    c.sync_all();
+    let conflict = crate::sync_conflicts_tests::ids(&c[0])[0].clone();
+
+    crate::sync_conflicts_tests::resolve(&c[0], &conflict, json!({ "kind": "keep_other" }));
+    assert_eq!(
+        saved_texts(&c[0]),
+        vec!["Coffee shops near the canal".to_owned()]
+    );
+    assert!(crate::sync_conflicts_tests::ids(&c[0]).is_empty());
+    c.sync_all();
+    for d in 0..2 {
+        assert!(
+            crate::sync_conflicts_tests::ids(&c[d]).is_empty(),
+            "device {d}"
+        );
+        assert_eq!(
+            saved_texts(&c[d]),
+            vec!["Coffee shops near the canal".to_owned()],
+            "device {d}"
+        );
+    }
+}
+
+fn update_saved(app: &TestApp, id: &str, text: &str) {
+    app.invoke::<Value>("ai_saved_update", json!({ "id": id, "text": text }))
+        .unwrap();
+}
+
+#[test]
 fn a_deleted_conversation_is_hidden_on_the_other_device_and_undo_brings_it_back() {
     let c = pair();
     let id = ask_and_wait(&c[0], None, "Where to eat?");
@@ -479,4 +546,25 @@ async fn ai_data_versions_that_differ_pause_sync_until_the_older_one_updates() {
     })
     .await;
     assert_eq!(saved_on(&mac), saved_on(&phone));
+}
+
+#[test]
+fn rows_received_while_the_ai_module_is_off_are_kept_and_show_once_it_is_turned_on() {
+    let c = pair();
+    c[1].set_pref("core.enabled_optional_modules", json!([]));
+    let id = ask_and_wait(&c[0], None, "Where is the museum?");
+    c.sync(0, 1);
+
+    // Sync does not ask whether the Module is on: the rows are stored all the same.
+    assert_eq!(
+        column(
+            &c[1],
+            "SELECT id FROM ai_conversations WHERE deleted_at IS NULL"
+        ),
+        vec![id.clone()]
+    );
+    assert!(!column(&c[1], "SELECT id FROM ai_entries").is_empty());
+
+    c[1].set_pref("core.enabled_optional_modules", json!(["ai"]));
+    assert_eq!(live_ids(&c[1]), vec![id]);
 }

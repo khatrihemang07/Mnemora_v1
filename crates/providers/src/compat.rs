@@ -3,7 +3,7 @@
 //! price cap as an extra). Replies stream: text arrives as it is written, and each Tool call is
 //! complete when the stream ends. Neither the raw reply nor the service's error text is kept.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, ErrorKind};
 
 use mnemora_harness::{Call, Failure, Provider, Request, StopReason, StreamEvent, ToolProtocol};
@@ -29,6 +29,7 @@ struct Partial {
     id: Option<String>,
     name: String,
     arguments: String,
+    thought_signature: Option<String>,
 }
 
 impl CompatProvider {
@@ -104,7 +105,7 @@ impl CompatProvider {
         }
         let mut reader = BufReader::new(response.into_body().into_reader());
         let mut stop: Option<StopReason> = None;
-        let mut calls: BTreeMap<usize, Partial> = BTreeMap::new();
+        let mut calls = Calls::default();
         let mut line = String::new();
         loop {
             // Stopped: the calls still being read are dropped, and the text so far is the answer.
@@ -125,50 +126,96 @@ impl CompatProvider {
                         id,
                         name,
                         arguments,
-                    } => {
-                        let partial = calls.entry(index).or_default();
-                        if id.is_some() {
-                            partial.id = id;
-                        }
-                        if let Some(name) = name {
-                            partial.name.push_str(&name);
-                        }
-                        if let Some(arguments) = arguments {
-                            partial.arguments.push_str(&arguments);
-                        }
-                    }
+                        thought_signature,
+                    } => calls.piece(index, id, name, arguments, thought_signature),
                     SseEvent::Finish(reason) => stop = Some(reason),
-                    SseEvent::Done => return finish(stop, calls, emit),
+                    SseEvent::Done => return finish(stop, calls.made, emit),
                 }
             }
         }
         // The stream ended without `[DONE]`: an answer only counts once it has finished.
-        finish(stop, calls, emit)
+        finish(stop, calls.made, emit)
+    }
+}
+
+/// The Tool calls of one reply, pieced together as their chunks arrive. A piece with an index
+/// continues the call that index is filling. A piece with no index continues the latest call
+/// only when it has no id; Gemini sends parallel calls with no index, each with its own id.
+#[derive(Default)]
+struct Calls {
+    made: Vec<Partial>,
+    /// The position in `made` of the call each index is filling now.
+    filling: HashMap<usize, usize>,
+}
+
+impl Calls {
+    fn piece(
+        &mut self,
+        index: Option<usize>,
+        id: Option<String>,
+        name: Option<String>,
+        arguments: Option<String>,
+        thought_signature: Option<String>,
+    ) {
+        let target = match index {
+            Some(index) => self.filling.get(&index).copied(),
+            None => self.made.len().checked_sub(1),
+        };
+        let continues = target.filter(|&at| match (&id, &self.made[at].id) {
+            // No id: a continuation of whatever the target is.
+            (None, _) => true,
+            // Indexed, the same call (or one whose id has not arrived yet) keeps going.
+            (Some(id), known) if index.is_some() => known.as_ref().is_none_or(|known| known == id),
+            // With no index, only a repeat of the latest call's id keeps going.
+            (Some(id), known) => known.as_ref() == Some(id),
+        });
+        let at = continues.unwrap_or_else(|| {
+            self.made.push(Partial::default());
+            let at = self.made.len() - 1;
+            if let Some(index) = index {
+                self.filling.insert(index, at);
+            }
+            at
+        });
+        let partial = &mut self.made[at];
+        if id.is_some() {
+            partial.id = id;
+        }
+        if thought_signature.is_some() {
+            partial.thought_signature = thought_signature;
+        }
+        if let Some(name) = name {
+            partial.name.push_str(&name);
+        }
+        if let Some(arguments) = arguments {
+            partial.arguments.push_str(&arguments);
+        }
     }
 }
 
 /// Ends a stream: a finish reason is needed for the answer to count. Each call is complete now.
 fn finish(
     stop: Option<StopReason>,
-    calls: BTreeMap<usize, Partial>,
+    calls: Vec<Partial>,
     emit: &mut dyn FnMut(StreamEvent),
 ) -> Result<(), Failure> {
     let Some(stop) = stop else {
         return Err(Failure::BadResponse);
     };
     let mut made = Vec::with_capacity(calls.len());
-    for (index, partial) in calls {
+    for (position, partial) in calls.into_iter().enumerate() {
         if partial.name.is_empty() {
             return Err(Failure::BadResponse);
         }
         made.push(Call {
-            id: partial.id.unwrap_or_else(|| format!("call-{index}")),
+            id: partial.id.unwrap_or_else(|| format!("call-{position}")),
             name: partial.name,
             arguments: if partial.arguments.is_empty() {
                 "{}".to_owned()
             } else {
                 partial.arguments
             },
+            thought_signature: partial.thought_signature,
         });
     }
     for call in made {

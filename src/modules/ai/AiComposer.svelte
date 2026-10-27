@@ -39,6 +39,8 @@
     onsend: (text: string) => Promise<boolean>;
     /** Stops the Run that is answering. */
     onstop: () => void;
+    /** Escape while a Run answers and the box is empty: takes the waiting notes back and returns their text. */
+    onrecall: () => Promise<string>;
     /** Runs a Saved question (one tap). */
     onrunsaved: (text: string) => void;
     /** Opens the AI Settings where Saved questions are kept. */
@@ -62,6 +64,7 @@
     saved,
     onsend,
     onstop,
+    onrecall,
     onrunsaved,
     onmanage,
     editing,
@@ -107,14 +110,47 @@
   async function send() {
     if (!canSend) return;
     const text = draft;
-    if (await onsend(text)) draft = '';
+    if (!(await onsend(text))) return;
+    draft = '';
+    // The round Send button becomes Stop while the Run answers; focus stays in the question box, not on the body.
+    ref?.focus();
+  }
+
+  /**
+   * Stop takes focus first: the round button is replaced once the Run ends, and a focused button that
+   * leaves the page drops focus to the body.
+   */
+  function stop() {
+    ref?.focus();
+    onstop();
+  }
+
+  /** Escape during a Run, with nothing typed, takes the waiting notes back into the box (as Pi does). */
+  async function recall() {
+    const text = await onrecall();
+    if (text !== '' && draft.trim() === '') draft = text;
   }
 
   function onkeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && busy && draft.trim() === '' && !event.isComposing) {
+      event.preventDefault();
+      void recall();
+      return;
+    }
     if (event.key !== 'Enter' || event.shiftKey || event.isComposing || viewport.isPhone) return;
     event.preventDefault();
     void send();
   }
+
+  // When the Run ends while focus sits on the Stop button, the button goes: focus moves to the box
+  // instead of falling to the body.
+  let wasStopping = false;
+  $effect(() => {
+    const now = stopping;
+    const lost = document.activeElement === null || document.activeElement === document.body;
+    if (wasStopping && !now && lost) ref?.focus();
+    wasStopping = now;
+  });
 </script>
 
 {#if editing}
@@ -158,7 +194,7 @@
     </Chip>
     <span class="flex-1"></span>
     {#if stopping}
-      <IconButton icon={Square} label="Stop" variant="solid" hue="--ink" onclick={onstop} />
+      <IconButton icon={Square} label="Stop" variant="solid" hue="--ink" onclick={stop} />
     {:else}
       <IconButton
         type="submit"

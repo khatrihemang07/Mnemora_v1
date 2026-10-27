@@ -5,7 +5,7 @@
 -->
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import Copy from '~icons/lucide/copy';
   import Ellipsis from '~icons/lucide/ellipsis';
   import GitBranch from '~icons/lucide/git-branch';
@@ -41,14 +41,18 @@
   import { showBranch } from './branch-actions';
   import BranchPicker from './BranchPicker.svelte';
   import ConversationHistory from './ConversationHistory.svelte';
+  import { phoneBottom } from '../../lib/ui/sheet-open.svelte';
+  import { announcementFor } from './announce';
   import { copyAsMarkdown } from './copy';
   import type { BannerAction } from './failure-banner';
+  import { returnFocus } from './focus';
   import { aiRequests } from './ai-requests.svelte';
   import { liveRuns } from './live.svelte';
   import { localContext } from './local-context';
   import ProviderSheet from './ProviderSheet.svelte';
-import QueuedNotes from './QueuedNotes.svelte';
+  import QueuedNotes from './QueuedNotes.svelte';
   import { aiKeys, conversationOptions, providersOptions, savedOptions, usageOptions } from './queries';
+  import { recalledText } from './queue-state';
   import { answeringIn, bannerRuns, failedIn, lastQuestionId, type LiveRun } from './run-state';
 
   /** The open Conversation, in the URL so a reload and Back keep it. None is a new one. */
@@ -86,6 +90,12 @@ import QueuedNotes from './QueuedNotes.svelte';
   let branchOpen = $state(false);
   /** The question being edited: sending the box makes an edited sibling of it. Only in this Conversation. */
   let editing = $state<{ id: string; text: string; conversationId: string | null } | null>(null);
+  /** What the page's polite live region says; set once when a Run ends (never per streamed token). */
+  let announcement = $state('');
+  /** The button that opened Branch from earlier, so focus can go back to it (null: opened from a banner). */
+  let branchOpener = $state<HTMLElement | null>(null);
+  /** The button that opened the add-Provider sheet from the empty state. */
+  let addOpener = $state<HTMLElement | null>(null);
 
   const choice = $derived(
     effectiveChoice({
@@ -124,6 +134,22 @@ import QueuedNotes from './QueuedNotes.svelte';
 
   /** The question box, for focusing it on request. */
   let composerRef = $state<HTMLTextAreaElement | null>(null);
+  /** The phone tab bar's height, under the dock (the Toaster's own count for it). */
+  const PHONE_TAB_BAR = 72;
+  /** The bottom dock (queued notes and the composer): on a phone, toasts sit above it. */
+  let dock = $state<HTMLElement | null>(null);
+  $effect(() => {
+    if (!viewport.isPhone || !dock) return;
+    const element = dock;
+    const update = () => (phoneBottom.px = element.offsetHeight + PHONE_TAB_BAR);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      phoneBottom.px = 0;
+    };
+  });
 
   /** How close to the end, in pixels, the thread must be for new content to keep it there. */
   const END_PX = 96;
@@ -176,6 +202,7 @@ import QueuedNotes from './QueuedNotes.svelte';
         }
         if (payload.event.type === 'runEnded') {
           void queryClient.invalidateQueries({ queryKey: aiKeys.history });
+          if (payload.conversation_id === conversationId) void announce(announcementFor(payload.event.outcome));
         }
       })
       .then((stop) => {
@@ -187,6 +214,13 @@ import QueuedNotes from './QueuedNotes.svelte';
       stopListening?.();
     };
   });
+
+  /** Says `text` once: the region is cleared first so the same sentence twice is still read out. */
+  async function announce(text: string) {
+    announcement = '';
+    await tick();
+    announcement = text;
+  }
 
   /**
    * Starts a Run with the Model in use (or the one given, for "Try again"). Resolves false when it
@@ -353,17 +387,31 @@ import QueuedNotes from './QueuedNotes.svelte';
     }
   }
 
-  /** Takes a waiting note back. Once a Run has ended there is nothing to tell, so it only leaves the list. */
-  async function removeNote(note: QueuedNote) {
+  /**
+   * Takes a waiting note back. Once a Run has ended there is nothing to tell, so it only leaves the
+   * list. Resolves true when the note is no longer going to be sent.
+   */
+  async function takeBack(note: QueuedNote): Promise<boolean> {
     const id = conversationId;
-    if (!id) return;
+    if (!id) return false;
     liveRuns.dropNote(id, note.id);
-    if (!busy) return;
+    if (!busy) return true;
     try {
       await unwrap(commands.aiRunUnqueue(id, note.id));
+      return true;
     } catch {
       // Already sent: the Run has it, so there is nothing to take back.
+      return false;
     }
+  }
+
+  /** Escape in the box during a Run: the notes not yet sent come back into the box as text. */
+  async function recallNotes(): Promise<string> {
+    const taken: QueuedNote[] = [];
+    for (const note of queued) {
+      if (await takeBack(note)) taken.push(note);
+    }
+    return recalledText(taken);
   }
 
   function handlersFor(run: LiveRun): Partial<Record<BannerAction, () => void>> {
@@ -371,13 +419,23 @@ import QueuedNotes from './QueuedNotes.svelte';
       retry: () => void tryAgain(run),
       change_model: () => (pickerOpen = true),
       change_provider: () => (pickerOpen = true),
-      branch_from_earlier: () => (branchOpen = true),
+      branch_from_earlier: () => openBranch(null),
       new_conversation: newConversation,
     };
   }
 
   function newConversation() {
     urlParam.delete('conversation');
+  }
+
+  function openAddProvider(event: MouseEvent) {
+    addOpener = event.currentTarget as HTMLElement;
+    addingProvider = true;
+  }
+
+  function openBranch(opener: HTMLElement | null) {
+    branchOpener = opener;
+    branchOpen = true;
   }
 
   function openConversation(id: string) {
@@ -433,7 +491,7 @@ import QueuedNotes from './QueuedNotes.svelte';
             label: 'Branch from earlier...',
             icon: GitBranch,
             disabled: busy,
-            onselect: () => (branchOpen = true),
+            onselect: () => openBranch(moreButton),
           },
           {
             label: 'Copy as Markdown',
@@ -454,10 +512,11 @@ import QueuedNotes from './QueuedNotes.svelte';
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
+  <p class="sr-only" role="status" aria-live="polite">{announcement}</p>
   {#if viewport.isPhone}
     <!-- The minimal phone header: the title is small, centred and always clear of the two icons. -->
     <div class="grid shrink-0 grid-cols-[2.25rem_minmax(0,1fr)_2.25rem] items-center gap-2 px-(--pad) pt-(--pad) pb-2">
-      <IconButton icon={History} label="Conversations" variant="ghost" onclick={() => (historyOpen = true)} />
+      <IconButton icon={History} label="Conversations" variant="ghost" bind:ref={historyButton} onclick={() => (historyOpen = true)} />
       <h1 class="min-w-0 truncate text-center text-sm font-medium text-ink">{title}</h1>
       {#if conversationId}
         <IconButton icon={Ellipsis} label="Conversation menu" variant="ghost" bind:ref={moreButton} onclick={() => (menuOpen = true)} />
@@ -491,7 +550,7 @@ import QueuedNotes from './QueuedNotes.svelte';
         hue="--hue-ai"
       >
         {#snippet action()}
-          <Button variant="primary" onclick={() => (addingProvider = true)}>Add a Provider</Button>
+          <Button variant="primary" onclick={openAddProvider}>Add a Provider</Button>
         {/snippet}
       </EmptyState>
     {:else if blank}
@@ -517,8 +576,8 @@ import QueuedNotes from './QueuedNotes.svelte';
       {/key}
     {/if}
   </div>
-  <div class="px-4 pb-4">
-    <QueuedNotes notes={queued} onsendnow={(note) => void sendNow(note)} onremove={(note) => void removeNote(note)} />
+  <div bind:this={dock} class="px-4 pb-4">
+    <QueuedNotes notes={queued} onsendnow={(note) => void sendNow(note)} onremove={(note) => void takeBack(note)} />
     <AiComposer
       {busy}
       placeholder={busy
@@ -540,6 +599,7 @@ import QueuedNotes from './QueuedNotes.svelte';
       editing={editingNow}
       oncancelEdit={() => (editing = null)}
       onstop={() => void stopRun()}
+      onrecall={recallNotes}
       onrunsaved={(text) => void send(text)}
       onmanage={() => moduleContext.navigate('/settings')}
     />
@@ -547,13 +607,26 @@ import QueuedNotes from './QueuedNotes.svelte';
 </div>
 
 {#if viewport.isPhone}
-  <Sheet open={historyOpen} title="Conversations" onclose={() => (historyOpen = false)}>
+  <Sheet
+    open={historyOpen}
+    title="Conversations"
+    onclose={() => (historyOpen = false)}
+    restoreFocus={() => returnFocus(historyButton, composerRef)}
+  >
     <div class="flex h-[70vh] flex-col">
       <ConversationHistory currentId={conversationId} onpick={openConversation} onnew={() => { historyOpen = false; newConversation(); }} />
     </div>
   </Sheet>
 {:else}
-  <Popover open={historyOpen} anchor={historyButton} label="Conversations" align="end" side="bottom" capHeight>
+  <Popover
+    open={historyOpen}
+    anchor={historyButton}
+    label="Conversations"
+    align="end"
+    side="bottom"
+    capHeight
+    restoreFocus={() => returnFocus(historyButton, composerRef)}
+  >
     <div class="flex min-h-0 w-[22rem] flex-col p-2">
       <ConversationHistory currentId={conversationId} onpick={openConversation} />
     </div>
@@ -562,7 +635,12 @@ import QueuedNotes from './QueuedNotes.svelte';
 
 <ActionMenu bind:open={menuOpen} anchor={moreButton} items={conversationItems} label="Conversation" />
 
-<Dialog open={renameOpen} title="Rename Conversation" onclose={() => (renameOpen = false)}>
+<Dialog
+  open={renameOpen}
+  title="Rename Conversation"
+  onclose={() => (renameOpen = false)}
+  restoreFocus={() => returnFocus(moreButton, composerRef)}
+>
   <form
     class="flex flex-col gap-2"
     onsubmit={(event) => {
@@ -584,7 +662,12 @@ import QueuedNotes from './QueuedNotes.svelte';
   {conversationId}
   {entries}
   onclose={() => (branchOpen = false)}
-  restoreFocus={() => composerRef?.focus()}
+  restoreFocus={() => returnFocus(branchOpener, composerRef)}
 />
 
-<ProviderSheet open={addingProvider} provider={null} onclose={() => (addingProvider = false)} />
+<ProviderSheet
+  open={addingProvider}
+  provider={null}
+  onclose={() => (addingProvider = false)}
+  restoreFocus={() => returnFocus(addOpener, composerRef)}
+/>

@@ -279,6 +279,7 @@ fn call_of(call: &Map<String, Value>, next_id: &mut impl FnMut() -> String) -> O
         id: next_id(),
         name,
         arguments: arguments.to_owned(),
+        thought_signature: None,
     })
 }
 
