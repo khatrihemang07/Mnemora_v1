@@ -400,3 +400,155 @@ describe('the mock Provider kinds, key states and paid Models', () => {
     expect(update(groq.id, 'Groq', 'https://other.example/v1').key_state).toBe('not_needed');
   });
 });
+
+describe('the AI browser mock: stopping, notes and limits', () => {
+  let heard: AiRunEvent[];
+  let mock: ReturnType<typeof createAiMock>;
+  let providerId: string;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    heard = [];
+    mock = createAiMock({ emit: (event) => heard.push(event) });
+    providerId = (
+      mock.handle('ai_provider_create', {
+        request: { kind: 'wrapper', name: 'Scripted', address: 'http://127.0.0.1:9/v1' },
+      }) as { id: string }
+    ).id;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function ask(text: string, conversationId: string | null = null) {
+    return mock.handle('ai_run_start', { request: request(text, conversationId, providerId) }) as {
+      run_id: string;
+      conversation_id: string;
+    };
+  }
+
+  function entriesOf(conversationId: string) {
+    return (
+      mock.handle('ai_conversation_get', { id: conversationId }) as {
+        running: boolean;
+        entries: {
+          payload: {
+            kind: string;
+            text?: string;
+            result?: string;
+            stop?: string;
+            budget_note?: string | null;
+          };
+        }[];
+      }
+    ).entries.map((entry) => entry.payload);
+  }
+
+  function outcomeOf(run: AiRunEvent[]) {
+    const ended = run.find((e) => e.event.type === 'runEnded');
+    return ended?.event.type === 'runEnded' ? ended.event.outcome : null;
+  }
+
+  it('stops a slow answer: the words so far are kept, marked stopped, and the Conversation is free', () => {
+    const started = ask('Tell me something slow');
+    vi.advanceTimersByTime(1000);
+    mock.handle('ai_run_abort', { conversationId: started.conversation_id });
+    vi.runAllTimers();
+
+    expect(outcomeOf(heard)).toEqual({ type: 'stopped' });
+    const answer = entriesOf(started.conversation_id).at(-1);
+    expect(answer?.kind).toBe('assistant');
+    expect(answer?.stop).toBe('aborted');
+    expect(answer?.text?.length ?? 0).toBeGreaterThan(0);
+    expect(entriesOf(started.conversation_id).at(-1)?.text).not.toContain(
+      'scripted answer to Tell me something slow.',
+    );
+    expect(
+      (mock.handle('ai_conversation_get', { id: started.conversation_id }) as { running: boolean })
+        .running,
+    ).toBe(false);
+  });
+
+  it('a note typed during a Step is sent after its Tools finish, and a removed note is never sent', () => {
+    const started = ask('Which tasks are overdue?');
+    vi.advanceTimersByTime(70);
+    const kept = mock.handle('ai_run_steer', {
+      conversationId: started.conversation_id,
+      text: 'Only the work tasks',
+    }) as { id: string; text: string };
+    const dropped = mock.handle('ai_run_steer', {
+      conversationId: started.conversation_id,
+      text: 'Drop me',
+    }) as { id: string };
+    mock.handle('ai_run_unqueue', { conversationId: started.conversation_id, noteId: dropped.id });
+    vi.runAllTimers();
+
+    expect(kept.text).toBe('Only the work tasks');
+    const kinds = entriesOf(started.conversation_id).map((payload) => payload.kind);
+    expect(kinds.filter((kind) => kind === 'user')).toHaveLength(2);
+    const texts = entriesOf(started.conversation_id).map((payload) => payload.text ?? '');
+    expect(texts.join('|')).not.toContain('Drop me');
+    expect(texts.join('|')).toContain('Answer to your note: "Only the work tasks".');
+    expect(outcomeOf(heard)).toEqual({ type: 'answered' });
+  });
+
+  it('Send now ends the answer in progress and sends the note next', () => {
+    const started = ask('Tell me something slow');
+    vi.advanceTimersByTime(700);
+    const note = mock.handle('ai_run_steer', {
+      conversationId: started.conversation_id,
+      text: 'Make it shorter',
+    }) as { id: string };
+    mock.handle('ai_run_send_now', { conversationId: started.conversation_id, noteId: note.id });
+    vi.runAllTimers();
+
+    const payloads = entriesOf(started.conversation_id);
+    expect(payloads.find((p) => p.kind === 'assistant')?.stop).toBe('aborted');
+    expect(
+      payloads
+        .map((p) => p.text)
+        .filter(Boolean)
+        .join('|'),
+    ).toContain('Make it shorter');
+    expect(outcomeOf(heard)).toEqual({ type: 'answered' });
+  });
+
+  it('a note nobody sends in time is handed back when the Run ends, and the Run refuses later notes', () => {
+    const started = ask('Tell me something slow');
+    vi.advanceTimersByTime(200);
+    mock.handle('ai_run_steer', { conversationId: started.conversation_id, text: 'Left over' });
+    mock.handle('ai_run_abort', { conversationId: started.conversation_id });
+    vi.runAllTimers();
+
+    const handedBack = heard.flatMap((e) =>
+      e.event.type === 'queueChanged' ? [e.event.notes] : [],
+    );
+    expect(handedBack.at(-1)?.map((note) => note.text)).toEqual(['Left over']);
+    expect(() =>
+      mock.handle('ai_run_steer', { conversationId: started.conversation_id, text: 'Too late' }),
+    ).toThrow();
+  });
+
+  it('a question that asks for twelve steps is answered on the twelfth with the budget note', () => {
+    const started = ask('Go through the steps of my year');
+    vi.runAllTimers();
+
+    const steps = heard.filter((e) => e.event.type === 'stepStarted').length;
+    expect(steps).toBe(12);
+    const answer = entriesOf(started.conversation_id).at(-1);
+    expect(answer?.kind).toBe('assistant');
+    expect(answer?.budget_note).toBe('Answered after 12 steps; there may be more to find');
+    expect(outcomeOf(heard)).toEqual({ type: 'answered' });
+  });
+
+  it('an exact repeat of a call is refused with the earlier result named', () => {
+    const started = ask('Repeat the list of my entries');
+    vi.runAllTimers();
+
+    const results = entriesOf(started.conversation_id).filter((p) => p.kind === 'tool_result');
+    expect(results).toHaveLength(2);
+    expect(results[1]?.result).toContain('This repeats call');
+    expect(outcomeOf(heard)).toEqual({ type: 'answered' });
+  });
+});

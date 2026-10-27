@@ -49,6 +49,9 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
   };
   const step = event.event;
   switch (step.type) {
+    case 'queueChanged':
+      // The notes waiting are kept by the Conversation, not by the Run (see queue-state).
+      return runs;
     case 'runStarted':
       return { ...runs, [runId]: current };
     case 'textDelta':
@@ -80,7 +83,10 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
         },
       };
     case 'runEnded': {
-      if (step.outcome.type === 'answered') return withoutRun(runs, runId);
+      // A stopped Run is saved as it stood, marked stopped, so the thread shows it from the Conversation.
+      if (step.outcome.type === 'answered' || step.outcome.type === 'stopped') {
+        return withoutRun(runs, runId);
+      }
       return {
         ...runs,
         [runId]: {

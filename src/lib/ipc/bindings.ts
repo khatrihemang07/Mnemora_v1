@@ -50,6 +50,23 @@ export const commands = {
 	journalEntryToggleTask: (id: string, line: number) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_toggle_task", { id, line })),
 	/**  Asks a question. Returns at once; the answer arrives as `AiRunEvent`s, ending with `RunEnded`. */
 	aiRunStart: (request: RunRequest) => typedError<RunStarted, AppError>(__TAURI_INVOKE("ai_run_start", { request })),
+	/**
+	 *  Queues a note for the Run answering in the Conversation. It goes to the Model after the Step's
+	 *  Tools finish. Refused when no Run is answering there.
+	 */
+	aiRunSteer: (conversationId: string, text: string) => typedError<QueuedNote, AppError>(__TAURI_INVOKE("ai_run_steer", { conversationId, text })),
+	/**  Takes a queued note back before it is sent. */
+	aiRunUnqueue: (conversationId: string, noteId: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_run_unqueue", { conversationId, noteId })),
+	/**
+	 *  Sends a queued note now: the Step in progress ends where it is, its unrun Tools are not run,
+	 *  and the note goes to the Model next. The Run goes on.
+	 */
+	aiRunSendNow: (conversationId: string, noteId: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_run_send_now", { conversationId, noteId })),
+	/**
+	 *  Stops the Run answering in the Conversation. What was written so far is saved, and the Run
+	 *  ends as stopped. Nothing happens when no Run is answering.
+	 */
+	aiRunAbort: (conversationId: string) => __TAURI_INVOKE<void>("ai_run_abort", { conversationId }),
 	/**  A Conversation with every entry, oldest first. */
 	aiConversationGet: (id: string) => typedError<ConversationView, AppError>(__TAURI_INVOKE("ai_conversation_get", { id })),
 	/**  Every Provider on this device, oldest first. Never carries a key. */
@@ -818,6 +835,8 @@ export type ConversationView = {
 	model: string | null,
 	/**  Whether a Run is answering in it on this device right now. */
 	running: boolean,
+	/**  The notes waiting for that Run, in the order they will be sent. Empty when none is answering. */
+	queued: QueuedNote[],
 	/**  Every entry, oldest first. */
 	entries: EntryView[],
 };
@@ -1367,7 +1386,7 @@ export type ModelList = {
 	/**  The matching Model ids, in the Provider's order. */
 	models: string[],
 	/**
-	 *  The ids among `models` that are paid routes (OpenRouter only). They can be chosen only
+	 *  The ids among `models` that are paid routes (`OpenRouter` only). They can be chosen only
 	 *  while the Provider's paid switch is on.
 	 */
 	paid_models: string[],
@@ -1790,14 +1809,14 @@ export type ProviderKind =
  */
 "wrapper" | 
 /**
- *  Any endpoint that speaks the OpenAI chat format with native Tool calls, at an address the
+ *  Any endpoint that speaks the `OpenAI` chat format with native Tool calls, at an address the
  *  person gives. A key is optional.
  */
 "openai_compatible" | 
 /**  Anthropic's Messages API: a fixed address and a key that is required. */
 "anthropic" | 
 /**
- *  OpenRouter: a fixed address and a key that is required. Free Models are the default; paid
+ *  `OpenRouter`: a fixed address and a key that is required. Free Models are the default; paid
  *  ones need the Provider's own switch.
  */
 "openrouter";
@@ -1830,6 +1849,14 @@ export type ProviderView = {
 	updated_at: number | null,
 	/**  Whether paid Models may be chosen and sent. */
 	allow_paid: boolean,
+};
+
+/**  A note waiting to be sent to the Model. */
+export type QueuedNote = {
+	/**  The note's id, for removing or sending it now. */
+	id: string,
+	/**  The note as typed. */
+	text: string,
 };
 
 /**
@@ -1968,6 +1995,13 @@ name: string;
 summary: string; 
 /**  Whether the call was refused. */
 is_error: boolean } | 
+/**
+ *  The notes waiting to be sent to the Model changed. The last one sent after a Run ends
+ *  lists the notes that were never sent, so the person can still send them.
+ */
+{ type: "queueChanged"; 
+/**  The notes waiting, in the order they will be sent. */
+notes: QueuedNote[] } | 
 /**  The Run is over. */
 { type: "runEnded"; 
 /**  How it ended. */
@@ -1977,6 +2011,8 @@ outcome: RunOutcome };
 export type RunOutcome = 
 /**  The answer was saved. */
 { type: "answered" } | 
+/**  The person stopped the Run. What was written before is saved, marked as stopped. */
+{ type: "stopped" } | 
 /**  No answer was saved. `message` is one plain sentence; the raw Provider error is never kept. */
 { type: "failed"; 
 /**  Why. */
@@ -2126,7 +2162,12 @@ export type StopReason =
 /**  The Model finished its reply. */
 "stop" | 
 /**  The reply hit the Model's output limit. */
-"length";
+"length" | 
+/**
+ *  The Step was stopped (or its Tools skipped) before the reply finished. What came so far is
+ *  kept, and no Tool call in it runs.
+ */
+"aborted";
 
 /**
  *  Activity gained lines (a session was logged, or a line arrived from another device): the

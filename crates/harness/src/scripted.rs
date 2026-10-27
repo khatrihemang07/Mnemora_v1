@@ -15,7 +15,9 @@ static CALL_IDS: AtomicUsize = AtomicUsize::new(1);
 
 /// One scripted Step: the deltas it streams, the Tool calls it makes and how it ends.
 pub struct Reply {
+    /// Waits on this before the piece of the reply at `gate_at` (the pieces, then the end).
     gate: Option<Receiver<()>>,
+    gate_at: usize,
     chunks: Vec<String>,
     calls: Vec<Call>,
     sources: Vec<String>,
@@ -87,20 +89,39 @@ impl Reply {
 
     /// Waits until `gate` yields or is dropped before it streams. Tests hold a Run open with it.
     #[must_use]
-    pub fn held(mut self, gate: Receiver<()>) -> Self {
+    pub fn held(self, gate: Receiver<()>) -> Self {
+        self.held_at(0, gate)
+    }
+
+    /// Streams its first piece, then waits on `gate` before the rest. Tests stop a Step in the middle.
+    #[must_use]
+    pub fn held_after_first(self, gate: Receiver<()>) -> Self {
+        self.held_at(1, gate)
+    }
+
+    fn held_at(mut self, at: usize, gate: Receiver<()>) -> Self {
         self.gate = Some(gate);
+        self.gate_at = at;
         self
     }
 
     fn with(chunks: &[&str], end: Option<Result<StopReason, Failure>>) -> Self {
         Self {
             gate: None,
+            gate_at: 0,
             chunks: chunks.iter().map(|c| (*c).to_owned()).collect(),
             calls: Vec::new(),
             sources: Vec::new(),
             correction: None,
             end,
         }
+    }
+}
+
+/// Holds a scripted Step at its gate, if it has one at `at`. The gate opens on a send or a drop.
+fn wait_at(reply: &Reply, at: usize) {
+    if let Some(gate) = reply.gate.as_ref().filter(|_| reply.gate_at == at) {
+        let _ = gate.recv();
     }
 }
 
@@ -162,7 +183,12 @@ impl Provider for ScriptedProvider {
         self.protocol
     }
 
-    fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) {
+    fn stream(
+        &self,
+        request: &Request,
+        halt: &dyn Fn() -> bool,
+        emit: &mut dyn FnMut(StreamEvent),
+    ) {
         self.requests
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -172,25 +198,34 @@ impl Provider for ScriptedProvider {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .pop_front();
-        let Some(reply) = next else {
+        let Some(mut reply) = next else {
             emit(StreamEvent::Failed(Failure::Unexpected));
             return;
         };
-        if let Some(gate) = &reply.gate {
-            // Opened by a send or by the sender being dropped; either way the Step goes on.
-            let _ = gate.recv();
-        }
-        for chunk in reply.chunks {
-            emit(StreamEvent::TextDelta(chunk));
-        }
-        for call in reply.calls {
-            emit(StreamEvent::Call(call));
-        }
+        let mut pieces: Vec<StreamEvent> =
+            reply.chunks.drain(..).map(StreamEvent::TextDelta).collect();
+        pieces.extend(reply.calls.drain(..).map(StreamEvent::Call));
         if !reply.sources.is_empty() {
-            emit(StreamEvent::Sources(reply.sources));
+            pieces.push(StreamEvent::Sources(std::mem::take(&mut reply.sources)));
         }
-        if let Some(correction) = reply.correction {
-            emit(StreamEvent::Correction(correction));
+        if let Some(correction) = reply.correction.take() {
+            pieces.push(StreamEvent::Correction(correction));
+        }
+        // As a real Provider does: each piece is checked against `halt` before it is sent, so a
+        // stopped Step ends with what came before and no Tool call that was not finished.
+        let total = pieces.len();
+        for (at, piece) in pieces.into_iter().enumerate() {
+            wait_at(&reply, at);
+            if halt() {
+                emit(StreamEvent::Done(StopReason::Aborted));
+                return;
+            }
+            emit(piece);
+        }
+        wait_at(&reply, total);
+        if halt() {
+            emit(StreamEvent::Done(StopReason::Aborted));
+            return;
         }
         match reply.end {
             Some(Ok(stop)) => emit(StreamEvent::Done(stop)),

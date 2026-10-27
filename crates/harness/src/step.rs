@@ -24,6 +24,7 @@ pub struct Answer {
 pub fn run_step(
     provider: &dyn Provider,
     request: &Request,
+    halt: &dyn Fn() -> bool,
     on_text: &mut dyn FnMut(&str),
 ) -> Result<Answer, Failure> {
     let mut text = String::new();
@@ -31,7 +32,7 @@ pub fn run_step(
     let mut sources = Vec::new();
     let mut correction = None;
     let mut end: Option<Result<StopReason, Failure>> = None;
-    provider.stream(request, &mut |event| match event {
+    provider.stream(request, halt, &mut |event| match event {
         StreamEvent::TextDelta(delta) => {
             on_text(&delta);
             text.push_str(&delta);
@@ -73,7 +74,7 @@ mod tests {
     fn a_correction_and_sources_are_carried_with_the_step() {
         let provider =
             ScriptedProvider::new("Scripted", "m", vec![Reply::corrected("Send one object.")]);
-        let answer = run_step(&provider, &request(), &mut |_| {}).unwrap();
+        let answer = run_step(&provider, &request(), &|| false, &mut |_| {}).unwrap();
         assert_eq!(answer.correction.as_deref(), Some("Send one object."));
         assert!(answer.sources.is_empty());
     }
@@ -82,7 +83,10 @@ mod tests {
     fn collects_the_deltas_in_order_into_the_answer() {
         let provider = ScriptedProvider::new("Scripted", "m", vec![Reply::text(&["Hel", "lo"])]);
         let mut seen = Vec::new();
-        let answer = run_step(&provider, &request(), &mut |d| seen.push(d.to_owned())).unwrap();
+        let answer = run_step(&provider, &request(), &|| false, &mut |d| {
+            seen.push(d.to_owned());
+        })
+        .unwrap();
         assert_eq!(answer.text, "Hello");
         assert_eq!(answer.stop, StopReason::Stop);
         assert!(answer.calls.is_empty());
@@ -96,7 +100,7 @@ mod tests {
             "m",
             vec![Reply::text_then_fail(&["half"], Failure::Timeout)],
         );
-        let result = run_step(&provider, &request(), &mut |_| {});
+        let result = run_step(&provider, &request(), &|| false, &mut |_| {});
         assert_eq!(result, Err(Failure::Timeout));
     }
 
@@ -104,7 +108,7 @@ mod tests {
     fn a_stream_that_ends_without_done_is_a_bad_response() {
         let provider =
             ScriptedProvider::new("Scripted", "m", vec![Reply::text_without_end(&["partial"])]);
-        let result = run_step(&provider, &request(), &mut |_| {});
+        let result = run_step(&provider, &request(), &|| false, &mut |_| {});
         assert_eq!(result, Err(Failure::BadResponse));
     }
 }

@@ -1,7 +1,9 @@
 <!--
   The question box, as the approved prototype has it: the text on top, then a row of round tools
-  (+ for Saved questions, the Model chip) and the round send at the right. Desktop: Enter sends,
-  Shift+Enter adds a line. Phone: Enter adds a line and the round button sends.
+  (+ for Saved questions, the Model chip) and the round send at the right. While a Run answers the
+  round button is Stop, until something is typed: then it sends the typed text as a note for the
+  Run. Desktop: Enter sends, Shift+Enter adds a line. Phone: Enter adds a line and the round
+  button sends.
 -->
 <script lang="ts">
   import Bookmark from '~icons/lucide/bookmark';
@@ -9,6 +11,7 @@
   import Cpu from '~icons/lucide/cpu';
   import Plus from '~icons/lucide/plus';
   import Settings from '~icons/lucide/settings';
+  import Square from '~icons/lucide/square';
   import type { SavedQuestion } from '../../lib/ipc/bindings';
   import AutoTextarea from '../../lib/ui/AutoTextarea.svelte';
   import Chip from '../../lib/ui/Chip.svelte';
@@ -20,7 +23,7 @@
   import ModelPicker from './ModelPicker.svelte';
 
   interface Props {
-    /** A Run is answering: the box waits. */
+    /** A Run is answering: the round button stops it until something is typed, which queues a note. */
     busy: boolean;
     /** Shown while the box is empty. */
     placeholder: string;
@@ -30,8 +33,11 @@
     modelName: string | null;
     /** The Saved questions, for the + menu. */
     saved: SavedQuestion[];
-    /** Sends the question. Resolves true when it was accepted, so the box empties only then. */
+    /** Sends the question, or while a Run answers, queues the text as a note. Resolves true when it
+     *  was accepted, so the box empties only then. */
     onsend: (text: string) => Promise<boolean>;
+    /** Stops the Run that is answering. */
+    onstop: () => void;
     /** Runs a Saved question (one tap). */
     onrunsaved: (text: string) => void;
     /** Opens the AI Settings where Saved questions are kept. */
@@ -50,6 +56,7 @@
     modelName,
     saved,
     onsend,
+    onstop,
     onrunsaved,
     onmanage,
     onpick,
@@ -60,7 +67,9 @@
   let pill = $state<HTMLButtonElement | null>(null);
   let plus = $state<HTMLButtonElement | null>(null);
   let plusOpen = $state(false);
-  const canSend = $derived(draft.trim() !== '' && !busy && choice !== null);
+  const canSend = $derived(draft.trim() !== '' && choice !== null);
+  /** Stop only while the box is empty, so a note can still be sent from a phone (Enter adds a line there). */
+  const stopping = $derived(busy && draft.trim() === '');
 
   /** The + menu: each Saved question, then the way to manage them. */
   const plusItems = $derived<MenuItem[]>([
@@ -126,14 +135,18 @@
       {modelName ?? 'Choose a Model'}
     </Chip>
     <span class="flex-1"></span>
-    <IconButton
-      type="submit"
-      icon={ArrowUp}
-      label="Send"
-      variant="solid"
-      hue="--hue-ai"
-      disabled={!canSend}
-    />
+    {#if stopping}
+      <IconButton icon={Square} label="Stop" variant="solid" hue="--ink" onclick={onstop} />
+    {:else}
+      <IconButton
+        type="submit"
+        icon={ArrowUp}
+        label={busy ? 'Add a note' : 'Send'}
+        variant="solid"
+        hue="--hue-ai"
+        disabled={!canSend}
+      />
+    {/if}
   </div>
 </form>
 {#if !viewport.isPhone}

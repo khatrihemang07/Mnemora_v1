@@ -89,6 +89,7 @@ impl CompatProvider {
     fn streamed(
         &self,
         request: &Request,
+        halt: &dyn Fn() -> bool,
         emit: &mut dyn FnMut(StreamEvent),
     ) -> Result<(), Failure> {
         let response = self.client.post_json(
@@ -106,6 +107,11 @@ impl CompatProvider {
         let mut calls: BTreeMap<usize, Partial> = BTreeMap::new();
         let mut line = String::new();
         loop {
+            // Stopped: the calls still being read are dropped, and the text so far is the answer.
+            if halt() {
+                emit(StreamEvent::Done(StopReason::Aborted));
+                return Ok(());
+            }
             line.clear();
             let read = reader.read_line(&mut line).map_err(stream_failure)?;
             if read == 0 {
@@ -194,8 +200,17 @@ impl Provider for CompatProvider {
         ToolProtocol::Native
     }
 
-    fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) {
-        if let Err(failure) = self.streamed(request, emit) {
+    fn stream(
+        &self,
+        request: &Request,
+        halt: &dyn Fn() -> bool,
+        emit: &mut dyn FnMut(StreamEvent),
+    ) {
+        if halt() {
+            emit(StreamEvent::Done(StopReason::Aborted));
+            return;
+        }
+        if let Err(failure) = self.streamed(request, halt, emit) {
             emit(StreamEvent::Failed(failure));
         }
     }

@@ -5,7 +5,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use mnemora_harness::{Failure, Provider, Request, StreamEvent, ToolProtocol};
+use mnemora_harness::{Failure, Provider, Request, StopReason, StreamEvent, ToolProtocol};
 use serde_json::{Value, json};
 
 use crate::client::{Client, read_body};
@@ -128,7 +128,17 @@ impl Provider for WrapperProvider {
         ToolProtocol::Envelope
     }
 
-    fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) {
+    fn stream(
+        &self,
+        request: &Request,
+        halt: &dyn Fn() -> bool,
+        emit: &mut dyn FnMut(StreamEvent),
+    ) {
+        // The reply comes whole, so a Stop can only be seen before the request is sent.
+        if halt() {
+            emit(StreamEvent::Done(StopReason::Aborted));
+            return;
+        }
         if let Err(failure) = self.step(request, emit) {
             emit(StreamEvent::Failed(failure));
         }

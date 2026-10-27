@@ -83,6 +83,9 @@
     {:else if entry.payload.kind === 'assistant' && entry.payload.calls.length === 0}
       <div class="flex flex-col gap-3">
         <MarkdownView source={withoutCitations(entry.payload.text)} />
+        {#if entry.payload.stop === 'aborted'}
+          <p class="text-sm text-muted">Stopped</p>
+        {/if}
         <Sources sources={entry.payload.sources} />
         {#if entry.payload.budget_note}
           <p class="text-sm text-muted">{entry.payload.budget_note}</p>

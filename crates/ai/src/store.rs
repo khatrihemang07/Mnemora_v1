@@ -147,6 +147,8 @@ pub fn branch_messages(conn: &Connection, leaf: &str) -> AppResult<Vec<Message>>
             stmt.query_row([&id], |r| Ok((r.get(0)?, r.get(1)?)))?;
         match parse(&payload)? {
             EntryPayload::User { text } => messages.push(Message::User(text)),
+            // A Step stopped before it wrote anything is kept only to show that it was stopped.
+            EntryPayload::Assistant { text, calls, .. } if text.is_empty() && calls.is_empty() => {}
             EntryPayload::Assistant { text, calls, .. } => messages.push(Message::Assistant {
                 text,
                 calls: calls

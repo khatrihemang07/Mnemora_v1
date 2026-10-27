@@ -231,7 +231,17 @@ impl Provider for AnthropicProvider {
         ToolProtocol::Native
     }
 
-    fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent)) {
+    fn stream(
+        &self,
+        request: &Request,
+        halt: &dyn Fn() -> bool,
+        emit: &mut dyn FnMut(StreamEvent),
+    ) {
+        // The reply comes whole, so a Stop can only be seen before the request is sent.
+        if halt() {
+            emit(StreamEvent::Done(StopReason::Aborted));
+            return;
+        }
         if let Err(failure) = self.step(request, emit) {
             emit(StreamEvent::Failed(failure));
         }

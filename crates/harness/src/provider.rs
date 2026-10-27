@@ -44,6 +44,9 @@ pub enum StopReason {
     Stop,
     /// The reply hit the Model's output limit.
     Length,
+    /// The Step was stopped (or its Tools skipped) before the reply finished. What came so far is
+    /// kept, and no Tool call in it runs.
+    Aborted,
 }
 
 /// A Tool as the Model is offered it: its name, what it is for and its JSON Schema as text.
@@ -114,5 +117,7 @@ pub trait Provider: Send + Sync {
     }
 
     /// Streams one Step, calling `emit` for each event in order. Must end with `Done` or `Failed`.
-    fn stream(&self, request: &Request, emit: &mut dyn FnMut(StreamEvent));
+    /// `halt` is checked between pieces of the reply: once it returns true the Provider stops
+    /// reading and ends with `Done(StopReason::Aborted)`, keeping the text it has.
+    fn stream(&self, request: &Request, halt: &dyn Fn() -> bool, emit: &mut dyn FnMut(StreamEvent));
 }

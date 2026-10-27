@@ -1,5 +1,6 @@
 import type { AiRunEvent } from '../../lib/ipc/bindings';
 import type { Choice } from './choice';
+import { dropQueued, type QueuedNotes, setQueued } from './queue-state';
 import { applyRunEvent, type LiveRuns } from './run-state';
 
 /** What a question was sent with, kept so "Try again" can send it again. */
@@ -16,9 +17,20 @@ class LiveRunStore {
   runs = $state<LiveRuns>({});
   /** The questions this page sent, by Run id. */
   sent = $state<Readonly<Record<string, SentQuestion>>>({});
+  /** The notes waiting for each Conversation's Run, or left over once it ended. */
+  queued = $state<QueuedNotes>({});
 
   apply(event: AiRunEvent): void {
+    if (event.event.type === 'queueChanged') {
+      this.queued = setQueued(this.queued, event.conversation_id, event.event.notes);
+      return;
+    }
     this.runs = applyRunEvent(this.runs, event);
+  }
+
+  /** Forgets one note on this page: it was sent, or taken back while no Run was answering. */
+  dropNote(conversationId: string, noteId: string): void {
+    this.queued = dropQueued(this.queued, conversationId, noteId);
   }
 
   remember(runId: string, question: SentQuestion): void {
@@ -33,6 +45,7 @@ class LiveRunStore {
   clear(): void {
     this.runs = {};
     this.sent = {};
+    this.queued = {};
   }
 }
 

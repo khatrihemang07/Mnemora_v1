@@ -10,16 +10,36 @@ use mnemora_core::tool::{Calendar, Tool};
 use mnemora_core::util::new_id;
 use mnemora_harness::Cited;
 use mnemora_harness::agent::{self, Event, MAX_REQUESTS, Outcome};
-use mnemora_harness::{Failure, Message, Provider, ToolProtocol};
+use mnemora_harness::{Control, Failure, Message, Provider, ToolProtocol};
 
 use crate::prompt;
 use crate::provider_store;
+use crate::steering::Steering;
 use crate::store::{self, NewRow};
 use crate::title::title_of;
 use crate::tools::{Toolbox, cited_ids};
 use crate::types::{
     CallRecord, EntryKind, EntryPayload, LocalContext, RunEvent, RunOutcome, Source,
 };
+
+/// The Tools a Run may call, and the names of the Modules that are off and would have offered some
+/// (the prompt says those are unavailable).
+pub struct Toolset {
+    /// The Tools offered this Run.
+    pub tools: Vec<Box<dyn Tool>>,
+    /// The Modules turned off that would have offered Tools.
+    pub off: Vec<String>,
+}
+
+/// What the person can do to a Run while it answers: stop it, skip its Step, and the notes queued
+/// for the Model. Owned by the Run's command, shared with the commands that change it.
+#[derive(Clone, Copy)]
+pub struct Handles<'a> {
+    /// Stop and Send now.
+    pub control: &'a Control,
+    /// The notes waiting to be sent after the Step's Tools finish.
+    pub steering: &'a Steering,
+}
 
 /// The Provider and Model a question is asked with.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,13 +102,14 @@ pub fn budget_note() -> String {
 /// Runs a question that `begin` has written, to its end. `db` is locked only while a row is read
 /// or written, never while the Provider streams or a Tool reads, so the rest of the app stays
 /// responsive. `tools` are the Tools this Run may call and `off` names the Modules turned off.
+/// Notes still queued when the Run ends are announced, so the person can send them.
 pub fn execute(
     db: &Mutex<Connection>,
     provider: &dyn Provider,
     ask: &Ask,
     question_id: &str,
-    tools: Vec<Box<dyn Tool>>,
-    off: &[String],
+    toolset: Toolset,
+    handles: Handles<'_>,
     emit: &mut dyn FnMut(RunEvent),
 ) {
     emit(RunEvent::RunStarted);
@@ -96,9 +117,13 @@ pub fn execute(
         entry_id: question_id.to_owned(),
         kind: EntryKind::User,
     });
+    let Toolset { tools, off } = toolset;
     let messages = match branch(db, question_id) {
         Ok(messages) => messages,
-        Err(error) => return fail_unexpected(emit, &error),
+        Err(error) => {
+            handles.steering.close();
+            return fail_unexpected(emit, &error);
+        }
     };
     let native = provider.tool_protocol() != ToolProtocol::None;
     let mut toolbox = Toolbox::new(
@@ -109,7 +134,7 @@ pub fn execute(
         },
         native,
     );
-    let system = prompt::system(&ask.local, &toolbox.available(), off, native);
+    let system = prompt::system(&ask.local, &toolbox.available(), &off, native);
     let mut recorder = Recorder {
         db,
         ask,
@@ -117,25 +142,40 @@ pub fn execute(
         parent: question_id.to_owned(),
         cited: HashMap::new(),
         broken: false,
+        steering: handles.steering,
     };
-    let outcome = agent::run(provider, &system, messages, &mut toolbox, &mut |event| {
-        recorder.handle(event, emit);
-    });
+    let outcome = agent::run(
+        provider,
+        &system,
+        messages,
+        &mut toolbox,
+        handles.control,
+        &mut || handles.steering.next(),
+        &mut |event| recorder.handle(event, emit),
+    );
     let outcome = if recorder.broken {
         Outcome::Failed(Failure::Unexpected)
     } else {
         outcome
     };
-    match outcome {
-        Outcome::Answered => emit(RunEvent::RunEnded {
-            outcome: RunOutcome::Answered,
-        }),
-        Outcome::Failed(kind) => emit(RunEvent::RunEnded {
-            outcome: RunOutcome::Failed {
-                kind,
-                message: failure_message(kind).to_owned(),
-            },
-        }),
+    // Closed first, so a note sent now is refused rather than lost; what was never sent is shown.
+    let unsent = handles.steering.close();
+    if !unsent.is_empty() {
+        emit(RunEvent::QueueChanged { notes: unsent });
+    }
+    let outcome = match outcome {
+        Outcome::Answered => RunOutcome::Answered,
+        Outcome::Stopped if handles.control.interrupted() => failed(Failure::Interrupted),
+        Outcome::Stopped => RunOutcome::Stopped,
+        Outcome::Failed(kind) => failed(kind),
+    };
+    emit(RunEvent::RunEnded { outcome });
+}
+
+fn failed(kind: Failure) -> RunOutcome {
+    RunOutcome::Failed {
+        kind,
+        message: failure_message(kind).to_owned(),
     }
 }
 
@@ -151,6 +191,8 @@ struct Recorder<'a> {
     /// Every item a Tool returned in this Run, by id.
     cited: HashMap<String, Source>,
     broken: bool,
+    /// The notes still queued, announced after each one is sent.
+    steering: &'a Steering,
 }
 
 impl Recorder<'_> {
@@ -216,6 +258,12 @@ impl Recorder<'_> {
             Event::Correction(text) => {
                 let payload = EntryPayload::Correction { text };
                 self.save(EntryKind::Correction, &payload, emit);
+            }
+            Event::Steered(text) => {
+                self.save(EntryKind::User, &EntryPayload::User { text }, emit);
+                emit(RunEvent::QueueChanged {
+                    notes: self.steering.snapshot(),
+                });
             }
         }
     }
