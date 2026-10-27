@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older: AI Provider keys never leave the device (ADR 0020). Tauri's data dir is the
+     app's root directory, so the paths are relative to it, one per Environment. -->
+<full-backup-content>
+    <exclude domain="root" path="com.hemang.mnemora/config/ai-keys/" />
+    <exclude domain="root" path="com.hemang.mnemora.sandbox/config/ai-keys/" />
+</full-backup-content>

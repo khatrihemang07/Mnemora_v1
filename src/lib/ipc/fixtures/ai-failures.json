@@ -1,0 +1,29 @@
+[
+  { "kind": "no_provider", "message": "No AI service is set up on this device yet." },
+  {
+    "kind": "unreachable",
+    "message": "Could not reach the AI service. Check its address and that it is running."
+  },
+  { "kind": "timeout", "message": "The AI service took too long to answer." },
+  {
+    "kind": "key_rejected",
+    "message": "The AI service rejected the key. Check it in AI settings."
+  },
+  {
+    "kind": "rate_limited",
+    "message": "The AI service is busy or has reached a limit. Try again soon."
+  },
+  {
+    "kind": "model_unavailable",
+    "message": "The chosen Model is not available from this service."
+  },
+  {
+    "kind": "model_cannot_use_tools",
+    "message": "The chosen Model cannot use Tools. Pick another Model."
+  },
+  { "kind": "bad_response", "message": "The AI service sent a reply Mnemora could not read." },
+  { "kind": "too_long", "message": "This Conversation is too long to continue." },
+  { "kind": "interrupted", "message": "The answer was interrupted. Try again." },
+  { "kind": "offline", "message": "You’re offline. Your question is kept." },
+  { "kind": "unexpected", "message": "Something went wrong while answering. Try again." }
+]

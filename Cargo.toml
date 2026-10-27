@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/journal", "crates/todo", "crates/sync", "crates/harness", "crates/ai", "src-tauri"]
+members = ["crates/core", "crates/journal", "crates/todo", "crates/sync", "crates/harness", "crates/providers", "crates/ai", "src-tauri"]
 
 [workspace.package]
 version = "0.1.6"
@@ -16,6 +16,7 @@ mnemora-todo = { path = "crates/todo" }
 mnemora-sync = { path = "crates/sync" }
 mnemora-harness = { path = "crates/harness" }
 mnemora-ai = { path = "crates/ai" }
+mnemora-providers = { path = "crates/providers" }
 # Tauri 2.x stable. Crates.io "latest" is 3.0 alpha; we deliberately stay on 2.x.
 tauri = { version = "=2.12.4", default-features = false }
 tauri-build = "=2.7.3"
@@ -57,6 +58,10 @@ socket2 = { version = "=0.6.5", features = ["all"] }
 # Three-way text merge (#66): Myers diff of lines and words. No default features: the slice diff
 # is all we use, and it then has no dependencies.
 similar = { version = "=2.7.0", default-features = false }
+# AI Providers (#86): blocking HTTP(S) for the OpenAI-compatible wire format. Only its `rustls`
+# feature: ring provider and the bundled Mozilla roots, the stack already in the tree (no OpenSSL,
+# no native TLS, no default gzip or cookie code). Pinned exactly.
+ureq = { version = "=3.3.0", default-features = false, features = ["rustls"] }
 # JNI glue for the Todo widget (ADR 0014); Android only.
 jni = "=0.21.1"
 

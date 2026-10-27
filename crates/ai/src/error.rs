@@ -11,6 +11,9 @@ pub enum AiError {
     /// The Conversation does not exist (or is deleted).
     #[error("That Conversation no longer exists")]
     NotFound,
+    /// The Provider does not exist (or is deleted).
+    #[error("That Provider no longer exists")]
+    ProviderNotFound,
     /// A stored entry could not be read or written.
     #[error("Could not read or store the Conversation")]
     Payload(#[source] serde_json::Error),
@@ -20,7 +23,7 @@ impl From<AiError> for AppError {
     fn from(e: AiError) -> Self {
         let code = match &e {
             AiError::Validation(_) => ErrorCode::Validation,
-            AiError::NotFound => ErrorCode::NotFound,
+            AiError::NotFound | AiError::ProviderNotFound => ErrorCode::NotFound,
             AiError::Payload(_) => ErrorCode::Internal,
         };
         let error = Self::new(code, e.to_string());

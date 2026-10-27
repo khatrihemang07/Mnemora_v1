@@ -1,0 +1,1 @@
+{"error":{"message":"This server does not support tool calling; requests containing \"tools\" are rejected.","type":"invalid_request_error","code":null}}

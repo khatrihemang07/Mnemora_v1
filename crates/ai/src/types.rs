@@ -25,6 +25,8 @@ pub enum EntryKind {
     User,
     /// The Model's answer.
     Assistant,
+    /// The Provider and Model the following questions use.
+    ModelChange,
 }
 
 /// What an entry holds. The tag is the entry's kind.
@@ -46,6 +48,13 @@ pub enum EntryPayload {
         /// The name of the Provider that answered.
         provider: String,
         /// The Model id that answered.
+        model: String,
+    },
+    /// The Conversation switched to another Provider and Model. Carries no text for the Model.
+    ModelChange {
+        /// The name of the Provider chosen.
+        provider_name: String,
+        /// The Model id chosen.
         model: String,
     },
 }
@@ -78,6 +87,12 @@ pub struct ConversationView {
     /// When it last changed, in milliseconds.
     #[specta(type = f64)]
     pub updated_at: i64,
+    /// The Provider the Conversation last used, on this device.
+    pub provider_id: Option<String>,
+    /// The Provider the Conversation last used, by name, as text (other devices may not have it).
+    pub provider_name: Option<String>,
+    /// The Model the Conversation last used.
+    pub model: Option<String>,
     /// Whether a Run is answering in it on this device right now.
     pub running: bool,
     /// Every entry, oldest first.

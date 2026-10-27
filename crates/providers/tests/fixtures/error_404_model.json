@@ -1,0 +1,1 @@
+{"error":{"message":"Model \"nope\" not found. Valid models: claude-haiku","type":"invalid_request_error","code":"model_not_found"}}

@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 mnemora-core.workspace = true
 mnemora-harness.workspace = true
+mnemora-providers.workspace = true
 rusqlite.workspace = true
 rusqlite_migration.workspace = true
 serde.workspace = true
@@ -17,6 +18,9 @@ serde_json.workspace = true
 specta = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

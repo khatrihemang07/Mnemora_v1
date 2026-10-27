@@ -30,6 +30,15 @@ macro_rules! specta_builder_for {
                 journal::journal_entry_toggle_task,
                 ai::ai_run_start::<$runtime>,
                 ai::ai_conversation_get,
+                ai::ai_provider_list,
+                ai::ai_provider_create,
+                ai::ai_provider_update,
+                ai::ai_provider_delete,
+                ai::ai_provider_key_set,
+                ai::ai_provider_key_clear,
+                ai::ai_provider_test,
+                ai::ai_models_search,
+                ai::ai_models_usage,
                 journal::journal_entry_delete,
                 journal::journal_entry_restore,
                 journal::journal_entry_move,
@@ -131,6 +140,8 @@ macro_rules! specta_builder_for {
 }
 
 mod ai;
+#[cfg(test)]
+mod ai_provider_tests;
 #[cfg(test)]
 mod ai_tracer_tests;
 mod commands;
@@ -484,6 +495,9 @@ pub fn export_bindings(path: &std::path::Path) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+/// The owner-only folder for AI keys, under the config directory (ADR 0020).
+pub(crate) const AI_KEYS_DIR: &str = "ai-keys";
+
 fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<dyn Error>> {
     let base = app.path().data_dir()?;
     env_guard::check(
@@ -549,6 +563,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
     });
     builder.mount_events(app);
 
+    let ai = ai::AiRuntime::new(paths.config_dir.join(AI_KEYS_DIR));
     let state = AppState {
         env: ENVIRONMENT,
         db: Mutex::new(conn),
@@ -562,7 +577,7 @@ fn setup(app: &mut tauri::App, builder: &Builder<tauri::Wry>) -> Result<(), Box<
         live_network: true,
         modules,
         bus,
-        ai: ai::AiRuntime::default(),
+        ai,
     };
     app.manage(state);
     // With Sync on, open the port and start announcing; with it off nothing is started.

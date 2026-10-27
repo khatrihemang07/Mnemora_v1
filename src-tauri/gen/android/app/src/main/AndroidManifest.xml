@@ -21,6 +21,8 @@
         android:icon="${appIcon}"
         android:label="${appLabel}"
         android:theme="@style/Theme.mnemora_app"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="${usesCleartextTraffic}">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"

@@ -11,4 +11,9 @@ export const aiManifest: ModuleManifest = {
   routes: [{ path: '/ai', component: () => import('./AiPage.svelte') }],
   nav: { order: 40 },
   defaultEnabled: false,
+  settingsSection: {
+    label: 'AI',
+    icon: Sparkles,
+    component: () => import('./ProviderSettings.svelte'),
+  },
 };
