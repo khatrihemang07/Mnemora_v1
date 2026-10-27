@@ -161,6 +161,8 @@ mod ai_saved_tests;
 mod ai_tools_tests;
 #[cfg(test)]
 mod ai_tracer_tests;
+#[cfg(test)]
+mod ai_wire_tests;
 mod commands;
 mod editing;
 mod env_guard;

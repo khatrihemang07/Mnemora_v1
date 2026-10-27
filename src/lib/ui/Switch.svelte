@@ -15,7 +15,7 @@
   {disabled}
   onCheckedChange={onchange}
   aria-label={label}
-  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-line
+  class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-switch-off
     transition-colors duration-(--dur) ease-out data-[state=checked]:bg-accent disabled:opacity-50"
 >
   <Switch.Thumb

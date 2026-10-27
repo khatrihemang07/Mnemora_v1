@@ -7,15 +7,55 @@
  * `ai-title.json`, `ai-addresses.json`, `ai-failures.json`, `ai-rename.json`, `ai-markdown.json` and
  * `ai-history.json` run the same cases in Rust and here.
  *
- * The scripted Provider answers every question with one sentence, streamed word by word. A question
- * containing a trigger word ends with that failure instead, so every banner can be seen:
- * "fail" unreachable, "offline", "interrupt", "key", "busy", "model", "tools", "long", "timeout",
- * "format", "oops".
+ * ## Trigger words (type them in the composer)
+ *
+ * The scripted Provider answers every question with one sentence, streamed word by word, unless the
+ * question holds a trigger word. Matching ignores case and is a plain "contains", so "long" also
+ * matches "along" and "key" matches "keyboard".
+ *
+ * Failure words are checked first. The first one in this list that the question contains ends the
+ * Run with that failure, after the question is saved, so the banner can be seen:
+ * - "fail": unreachable ("Couldn't reach…"). Also "failed", "failure".
+ * - "offline": offline.
+ * - "interrupt": interrupted.
+ * - "key": key rejected. Also "keyboard", "monkey".
+ * - "busy": rate limited.
+ * - "model": model unavailable. Also "models", "modelling".
+ * - "tools": the Model cannot use Tools.
+ * - "long": too long. Also "along", "belong".
+ * - "timeout": timeout.
+ * - "format": bad response.
+ * - "oops": unexpected failure.
+ *
+ * Tool words run only when no failure word matched. The first matching group wins:
+ * - "walk": searches Entries (`journal_search`), finds 2 Entries, and the answer cites them.
+ * - "overdue" or "task": lists open Tasks due by 2026-10-30 (`todo_list`), finds 2 Tasks, and the
+ *   answer cites them. Also "tasks".
+ * - "week": lists Entries from 2026-10-18 to 2026-10-25 (`journal_list`, 2 found), then lists done
+ *   Tasks (`todo_list`, none found) as a second Step; the answer cites the 2 Entries.
+ *
+ * Any other question gets the scripted sentence "This is a scripted answer to …", which cites nothing.
+ *
+ * ## Providers in the mock
+ *
+ * All four kinds can be added: "wrapper" (Local AI Wrapper, the default address), "openai_compatible"
+ * (any address, a key is optional), "anthropic" and "openrouter" (fixed addresses, a key is required).
+ * A key is never returned by any command. Its state moves between "missing" and "saved" (and, for an
+ * optional key, "not_needed" when none is saved), and clearing it moves it back. Changing an
+ * OpenAI-compatible address removes its key, as Rust does.
+ *
+ * - A kind that needs a key: a connection test without one fails with the key-rejected message, and
+ *   a send fails with "Add this Provider's key first.".
+ * - OpenRouter lists four Models: "deepseek-v3.2:free" and "llama-3.3-70b:free" (free), and
+ *   "claude-haiku-5.5" and "gpt-5-mini" (paid). Its `paid_models` are the paid ones. A send through a
+ *   paid Model fails with "This is a paid Model. Turn on paid Models for this Provider to use it."
+ *   until the Provider's paid switch is on (an update with `allow_paid`).
+ * - The Anthropic list is "claude-haiku-5.5" and "claude-sonnet-5".
  *
  * The mock starts with demo data so the history and Saved questions can be seen at once: 34
  * Conversations (2 today, 1 yesterday, 3 in the previous 7 days, the rest earlier, so the history
  * shows 30 and "Show more" brings the rest) and three Saved questions. Search the history for "move", "budget" or "overdue"; rename, copy as Markdown
- * or delete a Conversation from its ⋯ menu (Delete shows an Undo toast).
+ * or delete a Conversation from its ⋯ menu (Delete shows an Undo toast). It starts with no Providers.
  */
 import type {
   AiRunEvent,
@@ -28,6 +68,7 @@ import type {
   ModelUsage,
   ModelUse,
   NewProvider,
+  ProviderKind,
   ProviderUpdate,
   ProviderView,
   RunEvent,
@@ -96,6 +137,39 @@ function isLocalHost(host: string): boolean {
 const WORD_DELAY_MS = 60;
 /** The mock's Models, as the scripted Provider's `GET /models` lists them. */
 const MODELS = ['claude-haiku', 'claude-sonnet', 'codex-luna'];
+/** The Models each kind lists. OpenRouter's `:free` ids are free routes; the rest are paid. */
+const MODELS_BY_KIND: Record<ProviderKind, string[]> = {
+  wrapper: MODELS,
+  openai_compatible: MODELS,
+  anthropic: ['claude-haiku-5.5', 'claude-sonnet-5'],
+  openrouter: ['deepseek-v3.2:free', 'llama-3.3-70b:free', 'claude-haiku-5.5', 'gpt-5-mini'],
+};
+/** How each kind takes a key, as the Rust `KeyPolicy` does. */
+const KEY_RULE: Record<ProviderKind, 'none' | 'optional' | 'required'> = {
+  wrapper: 'none',
+  openai_compatible: 'optional',
+  anthropic: 'required',
+  openrouter: 'required',
+};
+/** The address a fixed kind always has. */
+const FIXED_ADDRESS: Partial<Record<ProviderKind, string>> = {
+  anthropic: 'https://api.anthropic.com/v1',
+  openrouter: 'https://openrouter.ai/api/v1',
+};
+const KIND_IDS: readonly ProviderKind[] = [
+  'wrapper',
+  'openai_compatible',
+  'anthropic',
+  'openrouter',
+];
+
+/** The key state a Provider shows, from its kind and whether a key is saved. */
+function keyStateOf(kind: ProviderKind, hasKey: boolean): ProviderView['key_state'] {
+  const rule = KEY_RULE[kind];
+  if (rule === 'none') return 'not_needed';
+  if (hasKey) return 'saved';
+  return rule === 'required' ? 'missing' : 'not_needed';
+}
 /** Recent and most-used lists are this long, as in Rust. */
 const USAGE_LIMIT = 5;
 
@@ -317,6 +391,8 @@ export function createAiMock({
   /** Saved questions in their manual order; a deleted one stays here until restored. */
   const saved: { id: string; text: string; deleted: boolean }[] = [];
   const providers: StoredProvider[] = [];
+  /** Saved keys by Provider id. Never returned: a key leaves this map only by being cleared or deleted. */
+  const keys = new Map<string, string>();
   const usage = new Map<
     string,
     { provider_id: string; model: string; uses: number; last: number }
@@ -326,6 +402,11 @@ export function createAiMock({
   const nextId = (prefix: string) => `${prefix}-${++counter}`;
 
   const liveProvider = (id: string) => providers.find((p) => p.id === id);
+  /** A Provider as the screen sees it: its key state from whether a key is saved. */
+  const viewOfProvider = (p: StoredProvider): ProviderView => ({
+    ...p,
+    key_state: keyStateOf(p.kind, keys.has(p.id)),
+  });
 
   /** A Conversation that is not deleted, or not found (as the Rust lookups answer). */
   function liveConversation(id: string): StoredConversation {
@@ -366,6 +447,30 @@ export function createAiMock({
     return found;
   }
 
+  /** Refuses a send as Rust's `prepare_run` does: a paid Model with the switch off, or no key saved. */
+  function checkCanSend(provider: StoredProvider, model: string) {
+    if (provider.kind === 'openrouter' && !model.endsWith(':free') && !provider.allow_paid) {
+      throw aiError(
+        'validation',
+        'This is a paid Model. Turn on paid Models for this Provider to use it.',
+      );
+    }
+    if (KEY_RULE[provider.kind] === 'required' && !keys.has(provider.id)) {
+      throw aiError('validation', "Add this Provider's key first.");
+    }
+  }
+
+  /** The address a kind is saved with: its fixed one (another typed address is refused), else the checked one. */
+  function addressOfKind(kind: ProviderKind, typed: string): string {
+    const fixed = FIXED_ADDRESS[kind];
+    if (fixed === undefined) return checkAddress(typed);
+    const given = typed.trim().replace(/\/+$/, '');
+    if (given !== '' && given !== fixed) {
+      throw aiError('validation', 'This kind of Provider uses its own fixed address.');
+    }
+    return fixed;
+  }
+
   function checkName(raw: string): string {
     const name = raw.trim();
     if (name === '') throw aiError('validation', 'Give this Provider a name.');
@@ -397,6 +502,7 @@ export function createAiMock({
     const model = request.model.trim();
     if (model === '') throw aiError('validation', 'Choose a Model first.');
     const provider = requireProvider(request.provider_id);
+    checkCanSend(provider, model);
     const continues = request.conversation_id !== null;
     const conversationId = request.conversation_id ?? nextId('conv');
     if (answering.has(conversationId)) {
@@ -668,13 +774,16 @@ export function createAiMock({
     };
   }
 
-  /** The Provider's Models for a connection test: the scripted list, or why it cannot answer. */
+  /** The Provider's Models for a connection test: its kind's list, or why it cannot answer. */
   function probe(provider: StoredProvider): { models: string[]; failure: Failure | null } {
+    if (KEY_RULE[provider.kind] === 'required' && !keys.has(provider.id)) {
+      return { models: [], failure: 'key_rejected' };
+    }
     const lower = provider.address.toLowerCase();
     if (lower.includes('nowhere') || lower.includes('closed')) {
       return { models: [], failure: 'unreachable' };
     }
-    return { models: MODELS, failure: null };
+    return { models: MODELS_BY_KIND[provider.kind], failure: null };
   }
 
   /** Saved questions that are live, in their order. */
@@ -787,43 +896,61 @@ export function createAiMock({
   function handleProvider(cmd: string, args: Record<string, unknown>): unknown {
     switch (cmd) {
       case 'ai_provider_list':
-        return providers.map((p) => ({ ...p }));
+        return providers.map(viewOfProvider);
       case 'ai_provider_create': {
         const request = args.request as NewProvider;
-        if (request.kind !== 'wrapper')
+        if (!KIND_IDS.includes(request.kind)) {
           throw aiError('validation', 'Choose a kind of Provider first.');
+        }
         const now = Date.now();
+        // The switch is not part of a new Provider: it is sent by an update, as in Rust.
         const created: StoredProvider = {
           id: nextId('provider'),
           name: checkName(request.name),
-          kind: 'wrapper',
-          address: checkAddress(request.address),
+          kind: request.kind,
+          address: addressOfKind(request.kind, request.address),
           key_state: 'not_needed',
           created_at: now,
           updated_at: now,
+          allow_paid: false,
         };
         providers.push(created);
-        return { ...created };
+        return viewOfProvider(created);
       }
       case 'ai_provider_update': {
         const provider = requireProvider(args.id as string);
         const change = args.request as ProviderUpdate;
-        provider.name = checkName(change.name);
-        provider.address = checkAddress(change.address);
+        const name = checkName(change.name);
+        const address = addressOfKind(provider.kind, change.address);
+        // A key is bound to the address it was saved with, so a new address clears it.
+        if (address !== provider.address) keys.delete(provider.id);
+        provider.name = name;
+        provider.address = address;
+        provider.allow_paid = change.allow_paid === true && provider.kind === 'openrouter';
         provider.updated_at = Date.now();
-        return { ...provider };
+        return viewOfProvider(provider);
       }
       case 'ai_provider_delete': {
         const provider = requireProvider(args.id as string);
+        keys.delete(provider.id);
         providers.splice(providers.indexOf(provider), 1);
         return null;
       }
-      case 'ai_provider_key_set':
-        // Every kind so far is keyless; the browser mock refuses a key as Rust does.
-        requireProvider(args.id as string);
-        throw aiError('validation', 'This kind of Provider does not use a key.');
-      case 'ai_provider_key_clear':
-        return { ...requireProvider(args.id as string) };
+      case 'ai_provider_key_set': {
+        const provider = requireProvider(args.id as string);
+        if (KEY_RULE[provider.kind] === 'none') {
+          throw aiError('validation', 'This kind of Provider does not use a key.');
+        }
+        const key = String(args.key ?? '').trim();
+        if (key === '') throw aiError('validation', 'Paste the key first.');
+        keys.set(provider.id, key);
+        return viewOfProvider(provider);
+      }
+      case 'ai_provider_key_clear': {
+        const provider = requireProvider(args.id as string);
+        keys.delete(provider.id);
+        return viewOfProvider(provider);
+      }
       case 'ai_provider_test': {
         const provider = requireProvider(args.id as string);
         const result = probe(provider);
@@ -847,14 +974,24 @@ export function createAiMock({
         const needle = (args.query as string).trim().toLowerCase();
         const result = probe(provider);
         const list: ModelList = result.failure
-          ? { models: [], failure: result.failure, message: failureSentence(result.failure) }
-          : {
-              models: result.models.filter(
+          ? {
+              models: [],
+              paid_models: [],
+              failure: result.failure,
+              message: failureSentence(result.failure),
+            }
+          : (() => {
+              const models = result.models.filter(
                 (m) => needle === '' || m.toLowerCase().includes(needle),
-              ),
-              failure: null,
-              message: '',
-            };
+              );
+              return {
+                models,
+                paid_models:
+                  provider.kind === 'openrouter' ? models.filter((m) => !m.endsWith(':free')) : [],
+                failure: null,
+                message: '',
+              };
+            })();
         return list;
       }
       case 'ai_models_usage':

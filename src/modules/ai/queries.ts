@@ -37,6 +37,12 @@ export const usageOptions = queryOptions({
   queryFn: () => unwrap(commands.aiModelsUsage()),
 });
 
+/** A Provider's Model ids, and which of them are paid routes (OpenRouter only). */
+export interface ProviderModels {
+  models: string[];
+  paid: string[];
+}
+
 /**
  * The full Model list of one Provider. Fetched only when the person browses or searches, then kept
  * for the session: the cache never goes stale and is not dropped while the app runs.
@@ -44,10 +50,10 @@ export const usageOptions = queryOptions({
 export function modelsOptions(providerId: string) {
   return queryOptions({
     queryKey: aiKeys.models(providerId),
-    queryFn: async () => {
+    queryFn: async (): Promise<ProviderModels> => {
       const list = await unwrap(commands.aiModelsSearch(providerId, ''));
       if (list.failure) throw new Error(list.message);
-      return list.models;
+      return { models: list.models, paid: list.paid_models };
     },
     staleTime: Number.POSITIVE_INFINITY,
     gcTime: Number.POSITIVE_INFINITY,

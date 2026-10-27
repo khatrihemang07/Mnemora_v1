@@ -7,8 +7,9 @@ use mnemora_core::util::new_id;
 use crate::error::AiError;
 use crate::keys::KeyStore;
 use crate::provider::{
-    ConnectionTest, KeyPolicy, ModelList, ModelUsage, NewProvider, ProviderRecord, ProviderUpdate,
-    ProviderView, build_models, validate_address, validate_key, validate_model, validate_name,
+    ConnectionTest, KeyPolicy, ModelList, ModelUsage, NewProvider, ProviderKind, ProviderRecord,
+    ProviderUpdate, ProviderView, build_models, is_free, may_send, validate_address, validate_key,
+    validate_model, validate_name,
 };
 use crate::provider_store as store;
 use crate::run::{Choice, failure_message};
@@ -32,12 +33,31 @@ pub fn create(
         id: new_id(),
         name: validate_name(&new.name)?,
         kind: new.kind,
-        address: validate_address(&new.address)?,
+        address: address_for(new.kind, &new.address)?,
         created_at: now,
         updated_at: now,
+        allow_paid: false,
     };
     store::insert(conn, &record)?;
     Ok(record.view(keys.has(&record.id)?))
+}
+
+/// The address a Provider is saved with: the kind's fixed one (which the form may echo back, but
+/// no other), or the address the person typed, checked for its kind.
+fn address_for(kind: ProviderKind, typed: &str) -> AppResult<String> {
+    match kind.fixed_address() {
+        Some(fixed) => {
+            let typed = typed.trim().trim_end_matches('/');
+            if !typed.is_empty() && typed != fixed {
+                return Err(AiError::Validation(
+                    "This kind of Provider uses its own fixed address.",
+                )
+                .into());
+            }
+            Ok(fixed.to_owned())
+        }
+        None => Ok(validate_address(typed)?),
+    }
 }
 
 /// Changes a Provider's name and address. A key is bound to the address it was saved with, so a
@@ -51,11 +71,13 @@ pub fn update(
 ) -> AppResult<ProviderView> {
     let current = live(conn, id)?;
     let name = validate_name(&change.name)?;
-    let address = validate_address(&change.address)?;
+    let address = address_for(current.kind, &change.address)?;
     if address != current.address {
         keys.remove(id)?;
     }
-    store::update(conn, id, &name, &address, now)?;
+    // Only OpenRouter has paid Models, so the switch means nothing for any other kind.
+    let allow_paid = change.allow_paid && current.kind == ProviderKind::OpenRouter;
+    store::update(conn, id, &name, &address, allow_paid, now)?;
     let updated = live(conn, id)?;
     Ok(updated.view(keys.has(id)?))
 }
@@ -129,17 +151,29 @@ pub fn matching_models(record: &ProviderRecord, key: Option<String>, query: &str
     match build_models(record, key) {
         Ok(models) => {
             let needle = query.trim().to_lowercase();
+            let models: Vec<String> = models
+                .into_iter()
+                .filter(|model| needle.is_empty() || model.to_lowercase().contains(&needle))
+                .collect();
+            let paid_models = if record.kind == ProviderKind::OpenRouter {
+                models
+                    .iter()
+                    .filter(|model| !is_free(model))
+                    .cloned()
+                    .collect()
+            } else {
+                Vec::new()
+            };
             ModelList {
-                models: models
-                    .into_iter()
-                    .filter(|model| needle.is_empty() || model.to_lowercase().contains(&needle))
-                    .collect(),
+                models,
+                paid_models,
                 failure: None,
                 message: String::new(),
             }
         }
         Err(failure) => ModelList {
             models: Vec::new(),
+            paid_models: Vec::new(),
             failure: Some(failure),
             message: failure_message(failure).to_owned(),
         },
@@ -166,6 +200,13 @@ pub fn prepare_run(
 ) -> AppResult<Prepared> {
     let model = validate_model(model)?;
     let record = live(conn, provider_id)?;
+    // The paid guard is checked here, on every send, not only when the Model was picked.
+    if !may_send(&record, &model) {
+        return Err(AiError::Validation(
+            "This is a paid Model. Turn on paid Models for this Provider to use it.",
+        )
+        .into());
+    }
     let key = match record.kind.key_policy() {
         KeyPolicy::NotNeeded => None,
         KeyPolicy::Optional => keys.get(provider_id)?,

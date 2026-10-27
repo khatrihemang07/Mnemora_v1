@@ -15,6 +15,7 @@
   import ProviderSheet from './ProviderSheet.svelte';
   import SavedQuestions from './SavedQuestions.svelte';
   import { providersOptions } from './queries';
+  import { freeOnlyNote, keyChip } from './provider-kinds';
 
   const providers = createQuery(() => providersOptions);
   let sheetOpen = $state(false);
@@ -30,11 +31,6 @@
     sheetOpen = true;
   }
 
-  const CHIP: Record<ProviderView['key_state'], { label: string; tone: string }> = {
-    not_needed: { label: 'No key needed', tone: 'text-muted' },
-    saved: { label: 'Key saved', tone: 'text-success' },
-    missing: { label: 'Needs a key', tone: 'text-warning' },
-  };
 </script>
 
 <SettingSection
@@ -46,6 +42,8 @@
   {:else}
     <Card padded={false}>
       {#each providers.data ?? [] as provider (provider.id)}
+        {@const chip = keyChip(provider.key_state)}
+        {@const note = freeOnlyNote(provider)}
         <button
           type="button"
           class="flex w-full cursor-pointer items-center gap-3 border-b border-line px-(--pad) py-3 text-left transition-colors duration-(--dur) ease-out first:rounded-t-md hover:bg-hover"
@@ -57,10 +55,13 @@
           <span class="min-w-0 flex-1">
             <span class="block truncate font-medium text-ink">{provider.name}</span>
             <span class="block truncate text-sm text-muted">{provider.address}</span>
+            {#if note}<span class="block truncate text-xs text-muted">{note}</span>{/if}
           </span>
-          <span class="shrink-0 text-xs font-semibold {CHIP[provider.key_state].tone}">
-            {CHIP[provider.key_state].label}
-          </span>
+          {#if chip}
+            <span class="inline-flex shrink-0 items-center rounded-full border border-line-strong bg-surface-2 px-2.5 py-1 text-xs font-semibold whitespace-nowrap {chip.tone === 'warn' ? 'text-warning-ink' : 'text-success'}">
+              {chip.label}
+            </span>
+          {/if}
         </button>
       {:else}
         <p class="px-(--pad) py-3 text-sm text-muted">No Providers yet. Add one to start asking questions.</p>

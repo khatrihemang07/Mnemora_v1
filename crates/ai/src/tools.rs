@@ -149,10 +149,11 @@ impl ToolHost for Toolbox<'_> {
         }
     }
 
-    fn check_answer(&self, text: &str) -> Result<(), String> {
-        for id in cited_ids(text) {
-            if !self.returned.contains_key(&id) {
-                return Err(UNSEEN_CITATION.replace("{id}", &id));
+    fn check_answer(&self, text: &str, sources: &[String]) -> Result<(), String> {
+        let listed = cited_ids(text);
+        for id in listed.iter().chain(sources) {
+            if !self.returned.contains_key(id) {
+                return Err(UNSEEN_CITATION.replace("{id}", id));
             }
         }
         Ok(())

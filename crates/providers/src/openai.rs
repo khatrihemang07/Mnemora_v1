@@ -1,7 +1,7 @@
-//! The OpenAI-compatible wire format: the chat request, whole and streamed replies, the model
+//! The `OpenAI`-compatible wire format: the chat request, whole and streamed replies, the model
 //! list and the error envelope. Pure functions over text, so the fixtures test them directly.
 
-use mnemora_harness::{Failure, Message, Request, StopReason};
+use mnemora_harness::{Failure, Message, Request, StopReason, ToolDef};
 use serde_json::{Value, json};
 
 /// Which endpoint a reply came from; the same status means different things on each.
@@ -18,14 +18,25 @@ pub enum Endpoint {
 pub enum SseEvent {
     /// A piece of the answer's text.
     Text(String),
+    /// A piece of one Tool call: its index in the reply and whatever fields this chunk carries.
+    ToolDelta {
+        /// Which call in the reply this piece belongs to.
+        index: usize,
+        /// The call's id, when this chunk carries it.
+        id: Option<String>,
+        /// The Tool's name, when this chunk carries it.
+        name: Option<String>,
+        /// A piece of the arguments' JSON text.
+        arguments: Option<String>,
+    },
     /// The reply is finished and why.
     Finish(StopReason),
     /// The stream is over (`data: [DONE]`).
     Done,
 }
 
-/// The JSON body of a chat request. Tools are never offered (no Tool is available yet), and no
-/// output limit is sent: the Provider's own default applies.
+/// The JSON body of a chat request with native Tools. No `tools` key is sent when none are
+/// offered, and no output limit is sent: the Provider's own default applies.
 pub fn chat_body(request: &Request, stream: bool) -> Value {
     let mut messages = Vec::with_capacity(request.messages.len() + 1);
     if !request.system.is_empty() {
@@ -33,19 +44,55 @@ pub fn chat_body(request: &Request, stream: bool) -> Value {
     }
     for message in &request.messages {
         messages.push(match message {
-            Message::User(text) => json!({ "role": "user", "content": text }),
-            Message::Assistant { text, .. } => json!({ "role": "assistant", "content": text }),
-            // Tool calls and results travel on the wire only once this adapter offers Tools (#88);
-            // until then their text reaches the Model as plain user turns.
-            Message::Tool { text, .. } | Message::Correction(text) => {
+            Message::User(text) | Message::Correction(text) => {
                 json!({ "role": "user", "content": text })
+            }
+            Message::Assistant { text, calls } if calls.is_empty() => {
+                json!({ "role": "assistant", "content": text })
+            }
+            Message::Assistant { text, calls } => {
+                let calls: Vec<Value> = calls
+                    .iter()
+                    .map(|call| {
+                        json!({
+                            "id": call.id,
+                            "type": "function",
+                            "function": { "name": call.name, "arguments": call.arguments },
+                        })
+                    })
+                    .collect();
+                json!({
+                    "role": "assistant",
+                    "content": if text.is_empty() { Value::Null } else { json!(text) },
+                    "tool_calls": calls,
+                })
+            }
+            Message::Tool { call_id, text, .. } => {
+                json!({ "role": "tool", "tool_call_id": call_id, "content": text })
             }
         });
     }
-    json!({
+    let mut body = json!({
         "model": request.model,
         "messages": messages,
         "stream": stream,
+    });
+    if !request.tools.is_empty() {
+        body["tools"] = request.tools.iter().map(function_tool).collect();
+    }
+    body
+}
+
+/// One Tool as the chat format offers it: a function with its schema as parameters.
+fn function_tool(tool: &ToolDef) -> Value {
+    let parameters: Value = serde_json::from_str(&tool.schema).unwrap_or_else(|_| json!({}));
+    json!({
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.about,
+            "parameters": parameters,
+        },
     })
 }
 
@@ -62,8 +109,12 @@ pub fn parse_answer(body: &str) -> Result<(String, StopReason), Failure> {
         .and_then(Value::as_str)
         .filter(|text| !text.is_empty())
         .ok_or(Failure::BadResponse)?;
-    let stop = stop_reason(choice.get("finish_reason").and_then(Value::as_str))?
-        .ok_or(Failure::BadResponse)?;
+    let finish = choice.get("finish_reason").and_then(Value::as_str);
+    // A whole answer the envelope reads must not be a reply that made native Tool calls.
+    if matches!(finish, Some("tool_calls" | "function_call")) {
+        return Err(Failure::BadResponse);
+    }
+    let stop = stop_reason(finish)?.ok_or(Failure::BadResponse)?;
     Ok((text.to_owned(), stop))
 }
 
@@ -97,19 +148,43 @@ pub fn sse_events(line: &str) -> Result<Vec<SseEvent>, Failure> {
     {
         events.push(SseEvent::Text(text.to_owned()));
     }
+    for piece in choice
+        .pointer("/delta/tool_calls")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        events.push(SseEvent::ToolDelta {
+            index: piece
+                .get("index")
+                .and_then(Value::as_u64)
+                .and_then(|index| usize::try_from(index).ok())
+                .unwrap_or(0),
+            id: piece.get("id").and_then(Value::as_str).map(str::to_owned),
+            name: piece
+                .pointer("/function/name")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            arguments: piece
+                .pointer("/function/arguments")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        });
+    }
     if let Some(stop) = stop_reason(choice.get("finish_reason").and_then(Value::as_str))? {
         events.push(SseEvent::Finish(stop));
     }
     Ok(events)
 }
 
-/// How a chat reply ended. `None` for "not yet" (no finish reason on a chunk).
+/// How a chat reply ended. `None` for "not yet" (no finish reason on a chunk). A reply that
+/// ends in Tool calls is a `Stop`: the calls are what it made.
 fn stop_reason(reason: Option<&str>) -> Result<Option<StopReason>, Failure> {
     match reason {
         None => Ok(None),
-        Some("stop") => Ok(Some(StopReason::Stop)),
+        Some("stop" | "tool_calls" | "function_call") => Ok(Some(StopReason::Stop)),
         Some("length") => Ok(Some(StopReason::Length)),
-        // Tool calls and content filters are not answers Mnemora can show.
+        // Content filters are not answers Mnemora can show.
         Some(_) => Err(Failure::BadResponse),
     }
 }

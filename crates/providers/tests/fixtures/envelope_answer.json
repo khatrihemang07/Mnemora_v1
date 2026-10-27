@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-env-answer",
+  "object": "chat.completion",
+  "model": "claude-haiku",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"action\": \"finish\", \"calls\": [], \"answer\": \"Hello there.\", \"sources\": []}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 20,
+    "completion_tokens": 6,
+    "total_tokens": 26
+  }
+}

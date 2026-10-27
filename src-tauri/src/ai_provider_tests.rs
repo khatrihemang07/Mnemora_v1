@@ -15,7 +15,7 @@ use crate::ai_tracer_tests::{ended_outcome, label, until_end};
 use crate::test_support::TestApp;
 
 const MODELS: &str = include_str!("../../crates/providers/tests/fixtures/models.json");
-const ANSWER: &str = include_str!("../../crates/providers/tests/fixtures/chat_stop.json");
+const ANSWER: &str = include_str!("../../crates/providers/tests/fixtures/envelope_answer.json");
 const SECRET: &str = "SECRET-UPSTREAM-TEXT-42";
 
 fn local() -> Value {

@@ -10,7 +10,7 @@ use mnemora_core::tool::{Calendar, Tool};
 use mnemora_core::util::new_id;
 use mnemora_harness::Cited;
 use mnemora_harness::agent::{self, Event, MAX_REQUESTS, Outcome};
-use mnemora_harness::{Failure, Message, Provider};
+use mnemora_harness::{Failure, Message, Provider, ToolProtocol};
 
 use crate::prompt;
 use crate::provider_store;
@@ -55,7 +55,7 @@ pub fn failure_message(failure: Failure) -> &'static str {
             "Could not reach the AI service. Check its address and that it is running."
         }
         Failure::Timeout => "The AI service took too long to answer.",
-        Failure::KeyRejected => "The AI service rejected the key. Check it in AI settings.",
+        Failure::KeyRejected => "The AI service rejected the key. Check the key and try again.",
         Failure::RateLimited => "The AI service is busy or has reached a limit. Try again soon.",
         Failure::ModelUnavailable => "The chosen Model is not available from this service.",
         Failure::ModelCannotUseTools => "The chosen Model cannot use Tools. Pick another Model.",
@@ -100,7 +100,7 @@ pub fn execute(
         Ok(messages) => messages,
         Err(error) => return fail_unexpected(emit, &error),
     };
-    let native = provider.native_tools();
+    let native = provider.tool_protocol() != ToolProtocol::None;
     let mut toolbox = Toolbox::new(
         db,
         tools,
@@ -163,7 +163,7 @@ impl Recorder<'_> {
             Event::TextDelta(text) => emit(RunEvent::TextDelta { text }),
             Event::StepEnded(record) => {
                 let sources = if record.calls.is_empty() {
-                    cited_sources(&record.text, &self.cited)
+                    cited_sources(&record.text, &record.sources, &self.cited)
                 } else {
                     Vec::new()
                 };
@@ -262,11 +262,14 @@ fn record_entry(
 }
 
 /// The Sources of an answer: the items it cites that a Tool returned in this Run.
-fn cited_sources(text: &str, cited: &HashMap<String, Source>) -> Vec<Source> {
-    cited_ids(text)
-        .iter()
-        .filter_map(|id| cited.get(id).cloned())
-        .collect()
+fn cited_sources(text: &str, listed: &[String], cited: &HashMap<String, Source>) -> Vec<Source> {
+    let mut ids = cited_ids(text);
+    for id in listed {
+        if !ids.contains(id) {
+            ids.push(id.clone());
+        }
+    }
+    ids.iter().filter_map(|id| cited.get(id).cloned()).collect()
 }
 
 /// The branch that ends at `question_id`, read under the lock.

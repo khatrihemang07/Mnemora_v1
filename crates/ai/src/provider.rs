@@ -4,8 +4,9 @@
 use std::sync::Arc;
 
 use mnemora_harness::{Failure, Provider};
-use mnemora_providers::{WrapperProvider, address};
+use mnemora_providers::{AnthropicProvider, CompatProvider, WrapperProvider, address, anthropic};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use specta::Type;
 
 use crate::error::AiError;
@@ -17,14 +18,29 @@ pub const KEY_BYTES: usize = 512;
 /// Longest Model id accepted, in characters.
 pub const MODEL_CHARS: usize = 200;
 
-/// The kinds of Provider. Each has fixed behaviour; the rest of the kinds arrive with their own
-/// adapters.
+/// The kinds of Provider. Each has fixed behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
-    /// The Local AI Wrapper: on this machine or the person's network, no key.
+    /// The Local AI Wrapper: on this machine or the person's network, no key. Answers in the
+    /// JSON envelope.
     Wrapper,
+    /// Any endpoint that speaks the `OpenAI` chat format with native Tool calls, at an address the
+    /// person gives. A key is optional.
+    #[serde(rename = "openai_compatible")]
+    OpenAiCompatible,
+    /// Anthropic's Messages API: a fixed address and a key that is required.
+    Anthropic,
+    /// `OpenRouter`: a fixed address and a key that is required. Free Models are the default; paid
+    /// ones need the Provider's own switch.
+    #[serde(rename = "openrouter")]
+    OpenRouter,
 }
+
+/// `OpenRouter`'s address. It is not editable.
+pub const OPENROUTER_ADDRESS: &str = "https://openrouter.ai/api/v1";
+/// The suffix `OpenRouter` gives its free routes of a Model.
+pub const FREE_SUFFIX: &str = ":free";
 
 /// Whether a kind takes a key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +58,9 @@ impl ProviderKind {
     pub fn label(self) -> &'static str {
         match self {
             Self::Wrapper => "Local AI Wrapper",
+            Self::OpenAiCompatible => "OpenAI-compatible",
+            Self::Anthropic => "Anthropic",
+            Self::OpenRouter => "OpenRouter",
         }
     }
 
@@ -49,6 +68,17 @@ impl ProviderKind {
     pub fn key_policy(self) -> KeyPolicy {
         match self {
             Self::Wrapper => KeyPolicy::NotNeeded,
+            Self::OpenAiCompatible => KeyPolicy::Optional,
+            Self::Anthropic | Self::OpenRouter => KeyPolicy::Required,
+        }
+    }
+
+    /// The address this kind always uses, if it has one. Its Providers cannot be given another.
+    pub fn fixed_address(self) -> Option<&'static str> {
+        match self {
+            Self::Anthropic => Some(anthropic::ADDRESS),
+            Self::OpenRouter => Some(OPENROUTER_ADDRESS),
+            Self::Wrapper | Self::OpenAiCompatible => None,
         }
     }
 
@@ -56,6 +86,9 @@ impl ProviderKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Wrapper => "wrapper",
+            Self::OpenAiCompatible => "openai_compatible",
+            Self::Anthropic => "anthropic",
+            Self::OpenRouter => "openrouter",
         }
     }
 
@@ -63,6 +96,9 @@ impl ProviderKind {
     pub fn parse(text: &str) -> Option<Self> {
         match text {
             "wrapper" => Some(Self::Wrapper),
+            "openai_compatible" => Some(Self::OpenAiCompatible),
+            "anthropic" => Some(Self::Anthropic),
+            "openrouter" => Some(Self::OpenRouter),
             _ => None,
         }
     }
@@ -95,6 +131,8 @@ pub struct ProviderRecord {
     pub created_at: i64,
     /// When it last changed, in milliseconds.
     pub updated_at: i64,
+    /// Whether paid Models may be chosen and sent (`OpenRouter` only; always false elsewhere).
+    pub allow_paid: bool,
 }
 
 /// A Provider as the screen sees it. Never carries the key.
@@ -116,6 +154,8 @@ pub struct ProviderView {
     /// When it last changed, in milliseconds.
     #[specta(type = f64)]
     pub updated_at: i64,
+    /// Whether paid Models may be chosen and sent.
+    pub allow_paid: bool,
 }
 
 /// The fields a new Provider is made from.
@@ -136,6 +176,9 @@ pub struct ProviderUpdate {
     pub name: String,
     /// The new address.
     pub address: String,
+    /// Whether paid Models may be chosen and sent (ignored unless the kind has paid Models).
+    #[serde(default)]
+    pub allow_paid: bool,
 }
 
 /// The Models a Provider offers that match a search, or why it could not be asked.
@@ -143,6 +186,9 @@ pub struct ProviderUpdate {
 pub struct ModelList {
     /// The matching Model ids, in the Provider's order.
     pub models: Vec<String>,
+    /// The ids among `models` that are paid routes (`OpenRouter` only). They can be chosen only
+    /// while the Provider's paid switch is on.
+    pub paid_models: Vec<String>,
     /// Why the Provider could not be asked, if it could not.
     pub failure: Option<Failure>,
     /// What to show the person when there is a failure.
@@ -179,6 +225,7 @@ impl ProviderRecord {
             key_state,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            allow_paid: self.allow_paid,
         }
     }
 }
@@ -234,11 +281,37 @@ pub fn validate_model(raw: &str) -> Result<String, AiError> {
     Ok(model.to_owned())
 }
 
+/// Whether a Model id is a free route. `OpenRouter` marks its free routes with `:free`.
+pub fn is_free(model: &str) -> bool {
+    model.ends_with(FREE_SUFFIX)
+}
+
+/// Whether a Model may be sent through a Provider: free routes always, paid ones only with the
+/// Provider's switch on. Kinds without paid Models always may.
+pub fn may_send(record: &ProviderRecord, model: &str) -> bool {
+    record.kind != ProviderKind::OpenRouter || is_free(model) || record.allow_paid
+}
+
+/// The key a kind cannot work without. Without one the service would refuse the request anyway.
+fn required(key: Option<String>) -> Result<String, Failure> {
+    key.ok_or(Failure::KeyRejected)
+}
+
 /// The Model ids a stored Provider offers, asked with its saved key if it has one.
 pub fn build_models(record: &ProviderRecord, key: Option<String>) -> Result<Vec<String>, Failure> {
     match record.kind {
         ProviderKind::Wrapper => {
             WrapperProvider::new(&record.name, "", &record.address, key).list_models()
+        }
+        ProviderKind::OpenAiCompatible => {
+            CompatProvider::new(&record.name, "", &record.address, key).list_models()
+        }
+        ProviderKind::Anthropic => {
+            AnthropicProvider::new(&record.name, "", &record.address, &required(key)?).list_models()
+        }
+        ProviderKind::OpenRouter => {
+            CompatProvider::new(&record.name, "", &record.address, Some(required(key)?))
+                .list_models()
         }
     }
 }
@@ -252,6 +325,31 @@ pub fn build(record: &ProviderRecord, model: &str, key: Option<String>) -> Arc<d
             &record.address,
             key,
         )),
+        ProviderKind::OpenAiCompatible => Arc::new(CompatProvider::new(
+            &record.name,
+            model,
+            &record.address,
+            key,
+        )),
+        // A run is never prepared without its key (`prepare_run`); a missing one is sent as none.
+        ProviderKind::Anthropic => Arc::new(AnthropicProvider::new(
+            &record.name,
+            model,
+            &record.address,
+            key.as_deref().unwrap_or_default(),
+        )),
+        ProviderKind::OpenRouter => {
+            let provider = CompatProvider::new(&record.name, model, &record.address, key);
+            // A free route is sent with a zero price cap, so no price can be charged for it.
+            let provider = if is_free(model) {
+                provider.with_extra(json!({
+                    "provider": { "max_price": { "prompt": 0, "completion": 0 } }
+                }))
+            } else {
+                provider
+            };
+            Arc::new(provider)
+        }
     }
 }
 

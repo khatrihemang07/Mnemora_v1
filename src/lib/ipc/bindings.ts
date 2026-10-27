@@ -1366,6 +1366,11 @@ export type LookAndFeel = {
 export type ModelList = {
 	/**  The matching Model ids, in the Provider's order. */
 	models: string[],
+	/**
+	 *  The ids among `models` that are paid routes (OpenRouter only). They can be chosen only
+	 *  while the Provider's paid switch is on.
+	 */
+	paid_models: string[],
 	/**  Why the Provider could not be asked, if it could not. */
 	failure: Failure | null,
 	/**  What to show the person when there is a failure. */
@@ -1777,13 +1782,25 @@ export type Progress = {
 	total: number,
 };
 
-/**
- *  The kinds of Provider. Each has fixed behaviour; the rest of the kinds arrive with their own
- *  adapters.
- */
+/**  The kinds of Provider. Each has fixed behaviour. */
 export type ProviderKind = 
-/**  The Local AI Wrapper: on this machine or the person's network, no key. */
-"wrapper";
+/**
+ *  The Local AI Wrapper: on this machine or the person's network, no key. Answers in the
+ *  JSON envelope.
+ */
+"wrapper" | 
+/**
+ *  Any endpoint that speaks the OpenAI chat format with native Tool calls, at an address the
+ *  person gives. A key is optional.
+ */
+"openai_compatible" | 
+/**  Anthropic's Messages API: a fixed address and a key that is required. */
+"anthropic" | 
+/**
+ *  OpenRouter: a fixed address and a key that is required. Free Models are the default; paid
+ *  ones need the Provider's own switch.
+ */
+"openrouter";
 
 /**  The fields a Provider's details may change to. */
 export type ProviderUpdate = {
@@ -1791,6 +1808,8 @@ export type ProviderUpdate = {
 	name: string,
 	/**  The new address. */
 	address: string,
+	/**  Whether paid Models may be chosen and sent (ignored unless the kind has paid Models). */
+	allow_paid?: boolean,
 };
 
 /**  A Provider as the screen sees it. Never carries the key. */
@@ -1809,6 +1828,8 @@ export type ProviderView = {
 	created_at: number | null,
 	/**  When it last changed, in milliseconds. */
 	updated_at: number | null,
+	/**  Whether paid Models may be chosen and sent. */
+	allow_paid: boolean,
 };
 
 /**

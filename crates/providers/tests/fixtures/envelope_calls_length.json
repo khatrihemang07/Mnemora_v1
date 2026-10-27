@@ -1,0 +1,20 @@
+{
+  "id": "chatcmpl-env",
+  "object": "chat.completion",
+  "model": "claude-haiku",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"action\": \"tools\", \"calls\": [{\"name\": \"journal_list\", \"arguments\": \"{\\\"from\\\":\\\"2026-10-19\\\",\\\"to\\\":\\\"2026-10-25\\\"}\"}, {\"name\": \"todo_search\", \"arguments\": \"{\\\"query\\\":\\\"move\\\"}\"}], \"answer\": \"\", \"sources\": []}"
+      },
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 40,
+    "completion_tokens": 12,
+    "total_tokens": 52
+  }
+}

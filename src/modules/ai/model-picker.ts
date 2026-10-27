@@ -18,3 +18,32 @@ export function matchingModels(models: readonly string[], query: string): string
 export function usesOf(uses: readonly ModelUse[], providerId: string): ModelUse[] {
   return uses.filter((use) => use.provider_id === providerId);
 }
+
+/** Whether a Model id is a free route. OpenRouter marks its free routes with `:free`, as the Rust rule does. */
+export function isFreeModel(model: string): boolean {
+  return model.endsWith(':free');
+}
+
+/** The muted reason a paid Model row is disabled. */
+export const PAID_MODEL_REASON = 'Paid Model. Turn on paid Models for this Provider to choose it.';
+
+/** How one Model row is shown: whether it is paid, whether it can be chosen, and why not. */
+export interface ModelRowState {
+  readonly paid: boolean;
+  readonly disabled: boolean;
+  readonly reason: string | null;
+}
+
+/**
+ * A Model row in the picker. Only a kind with paid Models can have paid rows: a row is paid when the
+ * Provider's list says so, or when its id is not a free route (recent and most-used rows are not
+ * listed by the Provider, so the id decides for them). A paid row is disabled while the switch is off.
+ */
+export function modelRowState(
+  model: string,
+  options: { paidKind: boolean; paidIds: ReadonlySet<string>; allowPaid: boolean },
+): ModelRowState {
+  const paid = options.paidKind && (options.paidIds.has(model) || !isFreeModel(model));
+  const disabled = paid && !options.allowPaid;
+  return { paid, disabled, reason: disabled ? PAID_MODEL_REASON : null };
+}
