@@ -44,6 +44,16 @@ pub enum ConflictSubject {
         /// The Task's title now.
         task_title: String,
     },
+    /// A Conversation's title: "‘Plan the hike’ · conversation title".
+    Conversation {
+        /// The title now.
+        title: String,
+    },
+    /// A Saved question's text: "‘Coffee shops’ · saved question".
+    SavedQuestion {
+        /// The text now.
+        text: String,
+    },
 }
 
 /// Which text of a Task.
@@ -208,6 +218,18 @@ pub(crate) fn subject_of(
                 "journal",
             )
         }
+        "ai_conversation" => (
+            ConflictSubject::Conversation {
+                title: string_of(target, "title"),
+            },
+            "ai",
+        ),
+        "ai_saved_question" => (
+            ConflictSubject::SavedQuestion {
+                text: string_of(target, "text"),
+            },
+            "ai",
+        ),
         "todo_comment" => {
             let task_id = string_of(target, "task_id");
             let task = texts::current(conn, "todo_task", &task_id)?;

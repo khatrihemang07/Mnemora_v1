@@ -496,6 +496,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	aiChangedEvent: makeEvent<AiChangedEvent>("ai-changed-event"),
 	aiRunEvent: makeEvent<AiRunEvent>("ai-run-event"),
 	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
 	journalEntryDeletedEvent: makeEvent<JournalEntryDeletedEvent>("journal-entry-deleted-event"),
@@ -556,6 +557,12 @@ export type ActivityRow = {
 	/**  Where the line leads. */
 	link: ActivityLink | null,
 };
+
+/**
+ *  Sync changed AI data (Conversations, entries or Saved questions) from another device, so whatever
+ *  the AI page shows is stale. The UI refreshes in place, silently.
+ */
+export type AiChangedEvent = null;
 
 /**  One step of an AI Run, with the Run and its Conversation: the page follows it live. */
 export type AiRunEvent = {
@@ -777,7 +784,15 @@ field: TaskText } |
 /**  A Comment on a Task. */
 { kind: "comment"; 
 /**  The Task's title now. */
-task_title: string };
+task_title: string } | 
+/**  A Conversation's title: "‘Plan the hike’ · conversation title". */
+{ kind: "conversation"; 
+/**  The title now. */
+title: string } | 
+/**  A Saved question's text: "‘Coffee shops’ · saved question". */
+{ kind: "saved_question"; 
+/**  The text now. */
+text: string };
 
 /**  One Conflict for Compare. */
 export type ConflictView = {

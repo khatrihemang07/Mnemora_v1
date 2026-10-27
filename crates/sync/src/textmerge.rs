@@ -183,24 +183,32 @@ struct Hunk {
     new: Range<usize>,
 }
 
+/// The changed stretches between two versions. The matched stretches (`Equal`) are the anchors:
+/// they come out of the diff in order, but the changes around them need not (a delete and an
+/// insert can come out in either order), so the changes are read as the gaps between anchors.
 fn hunks<T: Eq + Hash + Ord>(base: &[T], new: &[T]) -> Vec<Hunk> {
-    let mut out: Vec<Hunk> = Vec::new();
-    let mut open: Option<Hunk> = None;
-    for op in capture_diff_slices(Algorithm::Myers, base, new) {
-        let (tag, old, now) = op.as_tag_tuple();
-        if tag == DiffTag::Equal {
-            out.extend(open.take());
-        } else if let Some(h) = &mut open {
-            h.base.end = old.end;
-            h.new.end = now.end;
-        } else {
-            open = Some(Hunk {
-                base: old,
-                new: now,
+    let mut anchors: Vec<(Range<usize>, Range<usize>)> =
+        capture_diff_slices(Algorithm::Myers, base, new)
+            .iter()
+            .filter_map(|op| {
+                let (tag, old, now) = op.as_tag_tuple();
+                (tag == DiffTag::Equal).then_some((old, now))
+            })
+            .collect();
+    anchors.sort_by_key(|(old, _)| old.start);
+    let end = (base.len()..base.len(), new.len()..new.len());
+    let mut out = Vec::new();
+    let (mut at_base, mut at_new) = (0, 0);
+    for (old, now) in anchors.into_iter().chain(std::iter::once(end)) {
+        if old.start > at_base || now.start > at_new {
+            out.push(Hunk {
+                base: at_base..old.start,
+                new: at_new..now.start,
             });
         }
+        at_base = old.end;
+        at_new = now.end;
     }
-    out.extend(open);
     out
 }
 
@@ -446,6 +454,17 @@ mod tests {
         let m = merge(base, ours, theirs);
         assert_eq!(m.clashes(), 0);
         assert_eq!(m.text(), "The quick red fox leaps over the lazy cat.\n");
+    }
+
+    #[test]
+    fn a_line_rewritten_on_both_sides_with_repeated_words_is_a_clash_not_a_panic() {
+        // Found by the convergence run (seed 51): the word hunks of one side overlapped.
+        let m = merge(
+            "eta\ndelta zeta delta beta",
+            "settled by hand",
+            "eta beta zeta beta eta",
+        );
+        assert!(m.clashes() >= 1);
     }
 
     #[test]

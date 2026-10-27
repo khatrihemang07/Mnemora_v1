@@ -143,6 +143,7 @@ macro_rules! specta_builder_for {
                 SettingsChangedEvent,
                 TodoChangedEvent,
                 JournalChangedEvent,
+                AiChangedEvent,
                 LinkOpenedEvent,
                 SyncPairingEvent,
                 SyncPeersEvent,
@@ -168,6 +169,8 @@ mod ai_provider_tests;
 mod ai_run_control_tests;
 #[cfg(test)]
 mod ai_saved_tests;
+#[cfg(test)]
+mod ai_sync_tests;
 #[cfg(test)]
 mod ai_tools_tests;
 #[cfg(test)]
@@ -285,6 +288,11 @@ pub struct TodoChangedEvent;
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 pub struct JournalChangedEvent;
 
+/// Sync changed AI data (Conversations, entries or Saved questions) from another device, so whatever
+/// the AI page shows is stale. The UI refreshes in place, silently.
+#[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
+pub struct AiChangedEvent;
+
 /// Sync merged two Todo Lists with the same name: whoever is looking at `from_id` moves to
 /// `into_id` (the List that was kept) and is told. `device` names the other device the List came
 /// from, when it is a paired one.
@@ -379,6 +387,24 @@ fn modules() -> Vec<Box<dyn Module>> {
     ]
 }
 
+/// Tells the screens of the Module whose data another device changed that what they show is stale.
+fn announce_remote_change<R: tauri::Runtime>(handle: &tauri::AppHandle<R>, module: &str) {
+    let sent = match module {
+        mnemora_todo::MODULE_ID => TodoChangedEvent.emit(handle),
+        mnemora_journal::MODULE_ID => JournalChangedEvent.emit(handle),
+        mnemora_ai::MODULE_ID => AiChangedEvent.emit(handle),
+        // The names in the Devices list can have changed with the Activity lines (a rename).
+        mnemora_sync::MODULE_ID => SyncConflictsEvent
+            .emit(handle)
+            .and_then(|()| SyncPeersEvent.emit(handle))
+            .and_then(|()| SyncActivityEvent.emit(handle)),
+        _ => Ok(()),
+    };
+    if let Err(e) = sent {
+        tracing::warn!(target: "sync", error = %e, "could not emit the change event");
+    }
+}
+
 /// Turns "Sync changed a Module's data" into that Module's own change event: Todo's and the
 /// Journal's screens refresh in place after every batch, silently. The Todo widget redraws once per sync session,
 /// not per batch, so a big sync does not flood it.
@@ -391,21 +417,7 @@ fn follow_remote<R: tauri::Runtime>(
     let handle_for_deletes = handle.clone();
     let toast_handle = handle.clone();
     let rename_handle = handle.clone();
-    bus.subscribe(move |event: &RemoteChanged| {
-        let sent = match event.module.as_str() {
-            mnemora_todo::MODULE_ID => TodoChangedEvent.emit(&handle),
-            mnemora_journal::MODULE_ID => JournalChangedEvent.emit(&handle),
-            // The names in the Devices list can have changed with the Activity lines (a rename).
-            mnemora_sync::MODULE_ID => SyncConflictsEvent
-                .emit(&handle)
-                .and_then(|()| SyncPeersEvent.emit(&handle))
-                .and_then(|()| SyncActivityEvent.emit(&handle)),
-            _ => Ok(()),
-        };
-        if let Err(e) = sent {
-            tracing::warn!(target: "sync", error = %e, "could not emit the change event");
-        }
-    });
+    bus.subscribe(move |event: &RemoteChanged| announce_remote_change(&handle, &event.module));
     // Another device renamed this one: the name is saved in the device file like a rename here.
     // The file is written before the session goes on, so the name is there whenever the rename's
     // Activity line is; advertising it is off the session's thread: that holds the database,

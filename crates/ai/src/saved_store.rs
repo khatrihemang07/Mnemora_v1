@@ -1,8 +1,10 @@
 //! Reads and writes of Saved question rows. Rules live in `saved.rs`; this file only moves rows.
 
+use mnemora_core::changelog::ChangeOp;
 use mnemora_core::error::AppResult;
 use rusqlite::{Connection, OptionalExtension};
 
+use crate::sync;
 use crate::types::SavedQuestion;
 
 /// The live Saved questions in their manual order.
@@ -59,7 +61,7 @@ pub fn insert(conn: &Connection, id: &str, text: &str, key: &str, now: i64) -> A
          VALUES(?1, ?2, ?3, ?4, ?4)",
         rusqlite::params![id, text, key, now],
     )?;
-    Ok(())
+    sync::log_saved(conn, id, ChangeOp::Create)
 }
 
 /// Changes the text of a Saved question.
@@ -68,7 +70,7 @@ pub fn set_text(conn: &Connection, id: &str, text: &str, now: i64) -> AppResult<
         "UPDATE ai_saved_questions SET text = ?2, updated_at = ?3 WHERE id = ?1",
         rusqlite::params![id, text, now],
     )?;
-    Ok(())
+    sync::log_saved(conn, id, ChangeOp::Update)
 }
 
 /// Moves a Saved question to a new key.
@@ -77,7 +79,7 @@ pub fn set_key(conn: &Connection, id: &str, key: &str, now: i64) -> AppResult<()
         "UPDATE ai_saved_questions SET sort_key = ?2, updated_at = ?3 WHERE id = ?1",
         rusqlite::params![id, key, now],
     )?;
-    Ok(())
+    sync::log_saved(conn, id, ChangeOp::Update)
 }
 
 /// Marks a Saved question deleted at `at`, or brings it back when `at` is none.
@@ -86,5 +88,10 @@ pub fn set_deleted(conn: &Connection, id: &str, at: Option<i64>, now: i64) -> Ap
         "UPDATE ai_saved_questions SET deleted_at = ?2, updated_at = ?3 WHERE id = ?1",
         rusqlite::params![id, at, now],
     )?;
-    Ok(())
+    let op = if at.is_some() {
+        ChangeOp::Delete
+    } else {
+        ChangeOp::Restore
+    };
+    sync::log_saved(conn, id, op)
 }

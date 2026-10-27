@@ -111,6 +111,11 @@ pub(crate) fn world(app: &TestApp) -> Value {
             "comments": rows("id, task_id, body, edited, deleted_at IS NOT NULL", "todo_comments", "id"),
             "settings": rows("module, key, value", "settings", "module, key"),
             "entries": rows("id, page_date, body, written_at, written_offset_min, written_tz, edited_at, word_count, created_at, deleted_at IS NOT NULL", "journal_entries", "id"),
+            // The AI Module: Conversation headers (the Provider's name and Model travel as text;
+            // the Provider id names a device's own Provider), every entry, and Saved questions.
+            "conversations": rows("id, title, provider_id, provider_name, model, created_at, updated_at, deleted_at IS NOT NULL", "ai_conversations", "id"),
+            "ai_entries": rows("id, conversation_id, parent_id, kind, payload, created_at", "ai_entries", "id"),
+            "saved": rows("id, text, sort_key, created_at, deleted_at IS NOT NULL", "ai_saved_questions", "id"),
         })
     })
 }

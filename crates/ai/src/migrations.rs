@@ -70,5 +70,9 @@ pub fn all() -> Migrations<'static> {
                  updated_at INTEGER NOT NULL
              ) STRICT;",
         ),
+        // Sync (ADR 0017, ADR 0019): a data version of its own, so a build that predates the AI
+        // records pauses against this one. The index serves the walks up a Branch and the
+        // parent lookups that a synced entry makes.
+        M::up("CREATE INDEX ai_entries_parent ON ai_entries(parent_id);"),
     ])
 }

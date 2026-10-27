@@ -37,7 +37,7 @@ use tempfile::TempDir;
 use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    AiRunEvent, JournalChangedEvent, JournalEntryDeletedEvent, LinkOpenedEvent,
+    AiChangedEvent, AiRunEvent, JournalChangedEvent, JournalEntryDeletedEvent, LinkOpenedEvent,
     SettingsChangedEvent, SyncActivityEvent, SyncConflictsEvent, SyncNewConflictsEvent,
     SyncPairingEvent, SyncPeersEvent, TodoChangedEvent, TodoListsMergedEvent, TodoTaskDeletedEvent,
     ai, commands, editing, journal, links, modules, settings_store, sync, sync_conflicts, todo,

@@ -27,11 +27,15 @@ export function effectiveChoice(sources: ChoiceSources): Choice | null {
   const usable = (choice: Choice | null): Choice | null =>
     choice && live.has(choice.providerId) && choice.model !== '' ? choice : null;
   const conversation = sources.conversation;
+  // A Conversation synced from another device may name a Provider this device lacks. Then the
+  // person chooses one of this device's own: this device's usual Model is not used in its place.
+  const lacksProvider = !!conversation?.providerId && !live.has(conversation.providerId);
   const fromConversation =
-    conversation?.providerId && conversation.model
+    conversation?.providerId && conversation.model && !lacksProvider
       ? { providerId: conversation.providerId, model: conversation.model }
       : null;
   const latest = sources.usage?.recent[0];
-  const fromUsage = latest ? { providerId: latest.provider_id, model: latest.model } : null;
+  const fromUsage =
+    latest && !lacksProvider ? { providerId: latest.provider_id, model: latest.model } : null;
   return usable(sources.picked) ?? usable(fromConversation) ?? usable(fromUsage);
 }
