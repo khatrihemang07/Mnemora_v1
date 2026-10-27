@@ -563,6 +563,16 @@ export type Attention = {
 	needed: boolean,
 };
 
+/**  A Tool call the Model made, as it was sent. */
+export type CallRecord = {
+	/**  The call's id. */
+	id: string,
+	/**  The Tool's name. */
+	name: string,
+	/**  The arguments, as the Model sent them (JSON text). */
+	arguments: string,
+};
+
 /**  What a Check found. */
 export type CheckKind = 
 /**  The device answered. */
@@ -950,8 +960,12 @@ export type Entry = {
 export type EntryKind = 
 /**  The person's question. */
 "user" | 
-/**  The Model's answer. */
+/**  The Model's answer, or a Step that asked for Tools. */
 "assistant" | 
+/**  What a Tool returned for one call. */
+"tool_result" | 
+/**  A correction turn the Model was sent. */
+"correction" | 
 /**  The Provider and Model the following questions use. */
 "model_change";
 
@@ -962,18 +976,44 @@ export type EntryPayload =
 /**  The question as typed. */
 text: string } | 
 /**
- *  The Model's answer, with the Provider and Model that gave it, kept as text so another
- *  device can show them.
+ *  The Model's reply in one Step: the answer when it asks for no Tools, or the Tools it asked
+ *  for. The answer carries the Provider and Model as text, so another device can show them.
  */
 { kind: "assistant"; 
-/**  The answer's Markdown. */
+/**  The reply's Markdown. */
 text: string; 
 /**  How the reply ended. */
 stop: StopReason; 
 /**  The name of the Provider that answered. */
 provider: string; 
 /**  The Model id that answered. */
-model: string } | 
+model: string; 
+/**  The Tool calls this Step made, in order. */
+calls: CallRecord[]; 
+/**  The Entries and Tasks the answer cites, which a Tool returned in this Run. */
+sources: Source[]; 
+/**  Why the answer may be incomplete, when the Run ran out of steps. */
+budget_note: string | null } | 
+/**  What a Tool returned for one call. */
+{ kind: "tool_result"; 
+/**  The call it answers. */
+call_id: string; 
+/**  The Tool's name. */
+name: string; 
+/**  The arguments the Model sent (JSON text). */
+arguments: string; 
+/**  What the Model read back, labelled with its observation id. */
+result: string; 
+/**  Whether the call was refused. */
+is_error: boolean; 
+/**  The observation id this result is known by in the Run ("e1"). */
+observation_id: string; 
+/**  The plain line the activity shows for it. */
+summary: string } | 
+/**  A correction the Model was sent, such as a citation no Tool returned. */
+{ kind: "correction"; 
+/**  What the Model was told. */
+text: string } | 
 /**  The Conversation switched to another Provider and Model. Carries no text for the Model. */
 { kind: "model_change"; 
 /**  The name of the Provider chosen. */
@@ -1846,6 +1886,22 @@ kind: EntryKind } |
 { type: "textDelta"; 
 /**  The text, as streamed. */
 text: string } | 
+/**  A Tool call is running. */
+{ type: "toolStarted"; 
+/**  The call's id. */
+call_id: string; 
+/**  The Tool's name. */
+name: string } | 
+/**  A Tool call finished. */
+{ type: "toolEnded"; 
+/**  The call's id. */
+call_id: string; 
+/**  The Tool's name. */
+name: string; 
+/**  The plain line the activity shows. */
+summary: string; 
+/**  Whether the call was refused. */
+is_error: boolean } | 
 /**  The Run is over. */
 { type: "runEnded"; 
 /**  How it ended. */
@@ -1967,6 +2023,21 @@ export type SnippetSource =
 "notes" | 
 /**  A Comment. */
 "comment";
+
+/**
+ *  An Entry or Task an answer cites, with what the person needs to find it again. Kept in the
+ *  answer so another device can show it without the Tool results.
+ */
+export type Source = {
+	/**  The Entry's or Task's id. */
+	id: string,
+	/**  The Module it belongs to, `journal` or `todo`. */
+	module: string,
+	/**  A label the person recognises it by. */
+	title: string,
+	/**  Its date (a Page date or a due date), when it has one. */
+	date: string | null,
+};
 
 /**  A run of snippet text, either plain or a match. */
 export type Span = {

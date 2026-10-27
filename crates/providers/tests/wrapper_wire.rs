@@ -21,6 +21,7 @@ fn request() -> Request {
         system: "Be brief.".into(),
         messages: vec![Message::User("Hi?".into())],
         model: "claude-haiku".into(),
+        tools: Vec::new(),
     }
 }
 

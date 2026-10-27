@@ -143,6 +143,8 @@ mod ai;
 #[cfg(test)]
 mod ai_provider_tests;
 #[cfg(test)]
+mod ai_tools_tests;
+#[cfg(test)]
 mod ai_tracer_tests;
 mod commands;
 mod editing;

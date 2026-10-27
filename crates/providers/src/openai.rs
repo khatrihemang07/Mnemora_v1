@@ -34,7 +34,12 @@ pub fn chat_body(request: &Request, stream: bool) -> Value {
     for message in &request.messages {
         messages.push(match message {
             Message::User(text) => json!({ "role": "user", "content": text }),
-            Message::Assistant(text) => json!({ "role": "assistant", "content": text }),
+            Message::Assistant { text, .. } => json!({ "role": "assistant", "content": text }),
+            // Tool calls and results travel on the wire only once this adapter offers Tools (#88);
+            // until then their text reaches the Model as plain user turns.
+            Message::Tool { text, .. } | Message::Correction(text) => {
+                json!({ "role": "user", "content": text })
+            }
         });
     }
     json!({
@@ -153,10 +158,14 @@ mod tests {
             system: system.into(),
             messages: vec![
                 Message::User("first".into()),
-                Message::Assistant("answer".into()),
+                Message::Assistant {
+                    text: "answer".into(),
+                    calls: Vec::new(),
+                },
                 Message::User("second".into()),
             ],
             model: "claude-haiku".into(),
+            tools: Vec::new(),
         }
     }
 

@@ -92,7 +92,7 @@
     {#if active}
       {#if !searching}
         {#if recent.length > 0}
-          <div class="text-xs font-semibold text-faint">Recent</div>
+          <div class="text-xs font-semibold text-muted">Recent</div>
           {#each recent as use (use.model)}
             <button type="button" class="flex items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover" onclick={() => pick(use.model)}>
               <span class="truncate">{use.model}</span>
@@ -101,7 +101,7 @@
           {/each}
         {/if}
         {#if mostUsed.length > 0}
-          <div class="text-xs font-semibold text-faint">Most used</div>
+          <div class="text-xs font-semibold text-muted">Most used</div>
           {#each mostUsed as use (use.model)}
             <button type="button" class="flex items-center justify-between gap-2 rounded-sm px-2 py-2 text-left text-sm text-ink hover:bg-hover" onclick={() => pick(use.model)}>
               <span class="truncate">{use.model}</span>

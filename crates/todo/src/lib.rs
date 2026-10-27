@@ -32,6 +32,7 @@ mod steps;
 mod sync;
 mod task;
 mod task_service;
+mod tools;
 mod upgrade;
 mod when;
 mod widget;
@@ -43,6 +44,7 @@ use mnemora_core::error::AppResult;
 use mnemora_core::module::Module;
 use mnemora_core::settings::{SettingsRegistry, validate};
 use mnemora_core::syncable::{Applied, Holdings, RemoteChange, Settled, SyncEntity};
+use mnemora_core::tool::Tool;
 use rusqlite::Connection;
 use rusqlite_migration::Migrations;
 use serde_json::json;
@@ -124,6 +126,10 @@ impl Module for TodoModule {
 
     fn sync_entities(&self) -> &'static [SyncEntity] {
         sync::ENTITIES
+    }
+
+    fn tools(&self) -> Vec<Box<dyn Tool>> {
+        tools::all()
     }
 
     fn holdings(&self, conn: &Connection) -> AppResult<Holdings> {

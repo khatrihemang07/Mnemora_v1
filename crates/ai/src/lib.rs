@@ -14,6 +14,7 @@ mod run;
 mod service;
 mod store;
 mod title;
+mod tools;
 mod types;
 
 use mnemora_core::db::Connection;
@@ -35,8 +36,10 @@ pub use service::{
     update as update_provider, usage as model_usage,
 };
 pub use title::{TITLE_CHARS, title_of, validate_local, validate_question};
+pub use tools::{UNSEEN_CITATION, cited_ids};
 pub use types::{
-    ConversationView, EntryKind, EntryPayload, EntryView, LocalContext, RunEvent, RunOutcome,
+    CallRecord, ConversationView, EntryKind, EntryPayload, EntryView, LocalContext, RunEvent,
+    RunOutcome, Source,
 };
 
 /// Module id: the migration namespace.

@@ -6,14 +6,25 @@ export interface RunFailure {
   readonly message: string;
 }
 
+/** One Tool call of a Run: running (no summary yet) or finished with its plain line. */
+export interface LiveStep {
+  readonly callId: string;
+  readonly name: string;
+  /** The plain line the activity shows; null while the call runs. */
+  readonly summary: string | null;
+  readonly isError: boolean;
+}
+
 /** A Run this page has seen since it opened, and has not seen answered. */
 export interface LiveRun {
   readonly runId: string;
   readonly conversationId: string;
   /** The entry id of the question this Run answers, once it is saved. Places the Run in the thread. */
   readonly questionId: string | null;
-  /** The answer as streamed so far. */
+  /** The answer as streamed so far (the current Step's text). */
   readonly text: string;
+  /** The Tool calls made so far in this Run, in order. */
+  readonly steps: readonly LiveStep[];
   /** Set when the Run failed: shown in the answer's place. */
   readonly failure: RunFailure | null;
 }
@@ -33,6 +44,7 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
     conversationId,
     questionId: null,
     text: '',
+    steps: [],
     failure: null,
   };
   const step = event.event;
@@ -41,6 +53,32 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
       return { ...runs, [runId]: current };
     case 'textDelta':
       return { ...runs, [runId]: { ...current, text: current.text + step.text } };
+    case 'stepStarted':
+      // Each Step's text starts afresh: a Step that asks for Tools writes little or none.
+      return { ...runs, [runId]: { ...current, text: '' } };
+    case 'toolStarted':
+      return {
+        ...runs,
+        [runId]: {
+          ...current,
+          steps: [
+            ...current.steps,
+            { callId: step.call_id, name: step.name, summary: null, isError: false },
+          ],
+        },
+      };
+    case 'toolEnded':
+      return {
+        ...runs,
+        [runId]: {
+          ...current,
+          steps: current.steps.map((known) =>
+            known.callId === step.call_id
+              ? { ...known, summary: step.summary, isError: step.is_error }
+              : known,
+          ),
+        },
+      };
     case 'runEnded': {
       if (step.outcome.type === 'answered') return withoutRun(runs, runId);
       return {
@@ -54,8 +92,6 @@ export function applyRunEvent(runs: LiveRuns, event: AiRunEvent): LiveRuns {
     case 'entrySaved':
       if (step.kind !== 'user') return runs;
       return { ...runs, [runId]: { ...current, questionId: step.entry_id } };
-    case 'stepStarted':
-      return runs;
   }
 }
 
