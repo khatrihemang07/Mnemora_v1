@@ -1,0 +1,15 @@
+[package]
+name = "mnemora-harness"
+description = "Mnemora agent harness: typed messages, the Provider contract and one Step of the loop (inspired by pi, ADR 0018)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+specta = { workspace = true, features = ["derive"] }
+
+[lints]
+workspace = true

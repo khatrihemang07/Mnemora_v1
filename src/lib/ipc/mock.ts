@@ -60,6 +60,7 @@
 import { mockIPC } from '@tauri-apps/api/mocks';
 import type { AppError, DeviceSettings, JsonValue, SettingsChange } from './bindings';
 import { events } from './bindings';
+import { createAiMock } from './mock-ai';
 import { createJournalMock } from './mock-journal';
 import { createSyncMock } from './mock-sync';
 import {
@@ -171,6 +172,7 @@ export async function installMock() {
   };
 
   const todo = createTodoMock((key) => values[key]);
+  const ai = createAiMock({ emit: (event) => void events.aiRunEvent.emit(event) });
   todo.onRemoteChange = () => void events.todoChangedEvent.emit();
   // The person typed in a Task's notes while a change for them waited: the typing shows when the
   // editor lets go and the other text becomes a Conflict, as for an Entry (Rust held.rs).
@@ -466,6 +468,7 @@ export async function installMock() {
           if (conflicts.handles(cmd)) return conflicts.handle(cmd, a);
           if (sync.handles(cmd)) return sync.handle(cmd, a);
           if (todo.handles(cmd) || todo.handlesEditing(cmd, a)) return todo.handle(cmd, a);
+          if (ai.handles(cmd)) return ai.handle(cmd, a);
           return journal.handles(cmd) ? journal.handle(cmd, a) : undefined;
       }
     },

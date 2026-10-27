@@ -48,6 +48,10 @@ export const commands = {
 	journalEntryUpdate: (id: string, text: string, sessionId: string) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_update", { id, text, sessionId })),
 	/**  Ticks or unticks the checklist item on the 0-based source `line`. Never marks the Entry edited. */
 	journalEntryToggleTask: (id: string, line: number) => typedError<Entry, AppError>(__TAURI_INVOKE("journal_entry_toggle_task", { id, line })),
+	/**  Asks a question. Returns at once; the answer arrives as `AiRunEvent`s, ending with `RunEnded`. */
+	aiRunStart: (request: RunRequest) => typedError<RunStarted, AppError>(__TAURI_INVOKE("ai_run_start", { request })),
+	/**  A Conversation with every entry, oldest first. */
+	aiConversationGet: (id: string) => typedError<ConversationView, AppError>(__TAURI_INVOKE("ai_conversation_get", { id })),
 	/**  Deletes an Entry. It can be restored at any time. */
 	journalEntryDelete: (id: string) => typedError<null, AppError>(__TAURI_INVOKE("journal_entry_delete", { id })),
 	/**  Brings a deleted Entry back to its place on its Page. */
@@ -417,6 +421,7 @@ export const commands = {
 
 /** Events */
 export const events = {
+	aiRunEvent: makeEvent<AiRunEvent>("ai-run-event"),
 	journalChangedEvent: makeEvent<JournalChangedEvent>("journal-changed-event"),
 	journalEntryDeletedEvent: makeEvent<JournalEntryDeletedEvent>("journal-entry-deleted-event"),
 	linkOpenedEvent: makeEvent<LinkOpenedEvent>("link-opened-event"),
@@ -475,6 +480,16 @@ export type ActivityRow = {
 	breakdown: string | null,
 	/**  Where the line leads. */
 	link: ActivityLink | null,
+};
+
+/**  One step of an AI Run, with the Run and its Conversation: the page follows it live. */
+export type AiRunEvent = {
+	/**  The Run. */
+	run_id: string,
+	/**  The Conversation it answers in. */
+	conversation_id: string,
+	/**  What happened. */
+	event: RunEvent,
 };
 
 /**
@@ -697,6 +712,22 @@ export type ConflictView = {
 	pieces: ClashPiece[],
 };
 
+/**  A Conversation and its entries. */
+export type ConversationView = {
+	/**  The Conversation's id. */
+	id: string,
+	/**  Its title: the first question, trimmed. */
+	title: string,
+	/**  When it was started, in milliseconds (a number for TypeScript, as for entries). */
+	created_at: number | null,
+	/**  When it last changed, in milliseconds. */
+	updated_at: number | null,
+	/**  Whether a Run is answering in it on this device right now. */
+	running: boolean,
+	/**  Every entry, oldest first. */
+	entries: EntryView[],
+};
+
 /**  The numbers of one side of the preview. */
 export type Counts = {
 	/**  Journal Entries. */
@@ -876,6 +907,48 @@ export type Entry = {
 	updated_at: number,
 };
 
+/**  Who wrote an entry. */
+export type EntryKind = 
+/**  The person's question. */
+"user" | 
+/**  The Model's answer. */
+"assistant";
+
+/**  What an entry holds. The tag is the entry's kind. */
+export type EntryPayload = 
+/**  The person's question. */
+{ kind: "user"; 
+/**  The question as typed. */
+text: string } | 
+/**
+ *  The Model's answer, with the Provider and Model that gave it, kept as text so another
+ *  device can show them.
+ */
+{ kind: "assistant"; 
+/**  The answer's Markdown. */
+text: string; 
+/**  How the reply ended. */
+stop: StopReason; 
+/**  The name of the Provider that answered. */
+provider: string; 
+/**  The Model id that answered. */
+model: string };
+
+/**  One entry of a Conversation's tree. */
+export type EntryView = {
+	/**  The entry's id. */
+	id: string,
+	/**  The entry this one followed, or none for the first question. */
+	parent_id: string | null,
+	/**
+	 *  When it was written, in milliseconds. Typed as a number for TypeScript (ids and instants
+	 *  stay below 2^53); specta refuses `i64`.
+	 */
+	created_at: number | null,
+	/**  What it holds. */
+	payload: EntryPayload,
+};
+
 /**  Which data set the app uses. Chosen by the `sandbox` cargo feature of the app crate. */
 export type Environment = 
 /**  The user's real data. */
@@ -897,6 +970,33 @@ export type ErrorCode =
 "database" | 
 /**  Anything else; a bug or an unexpected state. */
 "internal";
+
+/**  Why a Step failed. The AI Module words it for the person; the raw text is never kept. */
+export type Failure = 
+/**  No Provider is set up on this device. */
+"no_provider" | 
+/**  The address could not be reached. */
+"unreachable" | 
+/**  The service did not answer in time. */
+"timeout" | 
+/**  The service refused the key. */
+"key_rejected" | 
+/**  The service is busy or has a limit in force. */
+"rate_limited" | 
+/**  The chosen Model is not offered by this service. */
+"model_unavailable" | 
+/**  The chosen Model cannot make Tool calls. */
+"model_cannot_use_tools" | 
+/**  The reply was not in a shape Mnemora can read. */
+"bad_response" | 
+/**  The request is too large for the Model. */
+"too_long" | 
+/**  The Run was stopped by the app (Android background, an abort). */
+"interrupted" | 
+/**  The device has no connection. */
+"offline" | 
+/**  Anything else. */
+"unexpected";
 
 /**  What a view groups its Tasks by. */
 export type GroupBy = 
@@ -1073,6 +1173,18 @@ export type ListView = {
 	groups: TaskGroup[],
 	/**  Done and Won't do Tasks. */
 	done: ListDone,
+};
+
+/**  The device's calendar, sent with every question so that "last week" means what the person means. */
+export type LocalContext = {
+	/**  Today on the device, `YYYY-MM-DD`. */
+	today: string,
+	/**  Today's weekday in English, such as "Sunday". */
+	weekday: string,
+	/**  The device's IANA time zone, such as "Europe/London". */
+	time_zone: string,
+	/**  The first day of the week: `mon` or `sun`. */
+	week_start: string,
 };
 
 /**  What the UI says "now" is on the device: every date-dependent command takes one. */
@@ -1586,6 +1698,56 @@ export type Route =
 /**  Over Tailscale. */
 "tailscale";
 
+/**  One step of a Run, in the order it happens. The app wraps each with its Run and Conversation ids. */
+export type RunEvent = 
+/**  The Run began. */
+{ type: "runStarted" } | 
+/**  An entry was written. */
+{ type: "entrySaved"; 
+/**  The entry's id. */
+entry_id: string; 
+/**  Who wrote it. */
+kind: EntryKind } | 
+/**  The Model is asked. */
+{ type: "stepStarted" } | 
+/**  A piece of the answer. */
+{ type: "textDelta"; 
+/**  The text, as streamed. */
+text: string } | 
+/**  The Run is over. */
+{ type: "runEnded"; 
+/**  How it ended. */
+outcome: RunOutcome };
+
+/**  How a Run ended. */
+export type RunOutcome = 
+/**  The answer was saved. */
+{ type: "answered" } | 
+/**  No answer was saved. `message` is one plain sentence; the raw Provider error is never kept. */
+{ type: "failed"; 
+/**  Why. */
+kind: Failure; 
+/**  What the person should read. */
+message: string };
+
+/**  A question, and the Conversation it goes into (none starts a new one). */
+export type RunRequest = {
+	/**  The Conversation to continue, or none to start one. */
+	conversation_id: string | null,
+	/**  The question as typed. */
+	text: string,
+	/**  The person's calendar, for the Model. */
+	local: LocalContext,
+};
+
+/**  The Run that started and the Conversation it answers in. */
+export type RunStarted = {
+	/**  The Run's id: every event of this Run carries it. */
+	run_id: string,
+	/**  The Conversation the question went into. */
+	conversation_id: string,
+};
+
 /**  The outcome of a search. */
 export type SearchResults = {
 	/**  Entries that match every word and phrase, newest first. */
@@ -1677,6 +1839,13 @@ export type Span = {
 	/**  Whether it matched the search. */
 	matched: boolean,
 };
+
+/**  Why a Step's reply ended. */
+export type StopReason = 
+/**  The Model finished its reply. */
+"stop" | 
+/**  The reply hit the Model's output limit. */
+"length";
 
 /**
  *  Activity gained lines (a session was logged, or a line arrived from another device): the

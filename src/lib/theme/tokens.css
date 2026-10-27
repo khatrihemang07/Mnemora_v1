@@ -122,6 +122,8 @@
   --hue-sync: oklch(78% 0.1 265);
   --on-hue-sync: oklch(18% 0.03 265);
   --hue-sync-soft: color-mix(in oklch, var(--hue-sync) 16%, transparent);
+  /* Lighter violet on dark surfaces, as --hue-sync; True black keeps it too. */
+  --hue-ai: oklch(72% 0.15 295);
   --diff-add: oklch(70% 0.14 150 / 0.22);
   --diff-del: oklch(70% 0.17 27 / 0.2);
 

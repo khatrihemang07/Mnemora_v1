@@ -2294,11 +2294,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mnemora-ai"
+version = "0.1.6"
+dependencies = [
+ "mnemora-core",
+ "mnemora-harness",
+ "rusqlite",
+ "rusqlite_migration",
+ "serde",
+ "serde_json",
+ "specta",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
 name = "mnemora-app"
 version = "0.1.6"
 dependencies = [
  "jni",
+ "mnemora-ai",
  "mnemora-core",
+ "mnemora-harness",
  "mnemora-journal",
  "mnemora-sync",
  "mnemora-todo",
@@ -2332,6 +2349,14 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "mnemora-harness"
+version = "0.1.6"
+dependencies = [
+ "serde",
+ "specta",
 ]
 
 [[package]]

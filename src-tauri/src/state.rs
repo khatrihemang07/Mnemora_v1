@@ -40,4 +40,6 @@ pub struct AppState {
     pub modules: Modules,
     /// The in-process event bus Sync publishes on.
     pub bus: EventBus,
+    /// The AI Module's Provider and the Conversations with a Run answering in them.
+    pub ai: crate::ai::AiRuntime,
 }

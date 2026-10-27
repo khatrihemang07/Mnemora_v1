@@ -37,10 +37,10 @@ use tempfile::TempDir;
 use crate::state::{AppState, lock};
 use crate::widget::signal::WidgetSignal;
 use crate::{
-    JournalChangedEvent, JournalEntryDeletedEvent, LinkOpenedEvent, SettingsChangedEvent,
-    SyncActivityEvent, SyncConflictsEvent, SyncNewConflictsEvent, SyncPairingEvent, SyncPeersEvent,
-    TodoChangedEvent, TodoListsMergedEvent, TodoTaskDeletedEvent, commands, editing, journal,
-    links, modules, settings_store, sync, sync_conflicts, todo,
+    AiRunEvent, JournalChangedEvent, JournalEntryDeletedEvent, LinkOpenedEvent,
+    SettingsChangedEvent, SyncActivityEvent, SyncConflictsEvent, SyncNewConflictsEvent,
+    SyncPairingEvent, SyncPeersEvent, TodoChangedEvent, TodoListsMergedEvent, TodoTaskDeletedEvent,
+    ai, commands, editing, journal, links, modules, settings_store, sync, sync_conflicts, todo,
 };
 
 /// The wall clock a [`TestApp`] stamps its change-log records with: the system clock plus a
@@ -161,6 +161,7 @@ impl TestApp {
             live_network: false,
             modules,
             bus: bus.clone(),
+            ai: crate::ai::AiRuntime::default(),
         };
         // As at app start: services run only if the device file says Sync is on.
         state.sync.reconcile(state.device.get().sync.enabled);
@@ -221,6 +222,23 @@ impl TestApp {
             serde_json::json!({ "changes": [{ "key": key, "value": value }] }),
         )
         .unwrap();
+    }
+
+    /// Installs the Provider the AI Module asks from now on (a scripted one in tests).
+    pub fn set_ai_provider(&self, provider: Arc<dyn mnemora_harness::Provider>) {
+        self.state().ai.set_provider(provider);
+    }
+
+    /// Every AI run event this app emits, from now on, in order.
+    pub fn ai_events(&self) -> std::sync::mpsc::Receiver<crate::AiRunEvent> {
+        let (sink, events) = std::sync::mpsc::channel();
+        tauri_specta::Event::listen(
+            &self.handle(),
+            move |e: tauri_specta::TypedEvent<crate::AiRunEvent>| {
+                let _ = sink.send(e.payload);
+            },
+        );
+        events
     }
 
     /// The app's handle: what the Todo widget's bridge uses when the app is alive.
