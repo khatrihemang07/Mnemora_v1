@@ -56,6 +56,21 @@
  * - "long" (too long), "interrupt" (Answer stopped, with Try again) and the other failure words above
  *   end the Run as before.
  *
+ * ## Branches (type these in the composer)
+ *
+ * A question can have siblings: questions that follow the same answer. A question with siblings shows
+ * "2 of 3" with ‹ › arrows beside its heading, which move between them. The page shows one Branch at a
+ * time, and the mock keeps which one per Conversation, as the device does.
+ * - Try again (the round arrow under an answer) asks its question again as a sibling. Ask "Name a good
+ *   book", then press Try again under the answer: the question shows "2 of 2".
+ * - Edit (the pencil on a question's heading; on a phone, a long press on the question) puts it in the
+ *   box. Ask "Name a good book", then "Read it aloud" as a follow-up, Edit "Read it aloud" and send
+ *   "Read it at night": the answer sits beside the edited question. Wait for the answer to finish first.
+ * - Branch from earlier (in the Conversation menu, or the first action of the too-long banner) picks an
+ *   answer. The next question continues from it, and the rest of the Conversation stays where it was.
+ * - "long" ends a question as too long; that question stays shown, so Branch from earlier is the way on.
+ * Copy as Markdown copies the Branch on screen.
+ *
  * ## Providers in the mock
  *
  * All four kinds can be added: "wrapper" (Local AI Wrapper, the default address), "openai_compatible"
@@ -92,6 +107,7 @@ import type {
   ProviderUpdate,
   ProviderView,
   QueuedNote,
+  RetryRequest,
   RunEvent,
   RunRequest,
   RunStarted,
@@ -205,6 +221,8 @@ interface StoredConversation {
   provider_name: string | null;
   model: string | null;
   entries: EntryView[];
+  /** The entry this device shows the Branch of; unset means the newest entry (as Rust's `visible`). */
+  shown?: string;
 }
 
 type StoredProvider = ProviderView;
@@ -468,6 +486,69 @@ export function branchOf(entries: readonly EntryView[], leaf: string | undefined
   return out;
 }
 
+/**
+ * The questions that sit beside each other, oldest first, as Rust's `question_groups` groups them: a
+ * question's siblings follow the same answer, and a Model change between them does not separate them.
+ */
+export function questionGroups(entries: readonly EntryView[]): string[][] {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const anchor = (entry: EntryView): string | null => {
+    let current = entry.parent_id;
+    while (current !== null) {
+      const above = byId.get(current);
+      if (above?.payload.kind !== 'model_change') return current;
+      current = above.parent_id;
+    }
+    return null;
+  };
+  const groups = new Map<string | null, string[]>();
+  for (const entry of entries) {
+    if (entry.payload.kind !== 'user') continue;
+    const key = anchor(entry);
+    groups.set(key, [...(groups.get(key) ?? []), entry.id]);
+  }
+  return [...groups.values()];
+}
+
+/** Each question's place among the questions beside it, from 1, oldest first. */
+export function placesOf(
+  entries: readonly EntryView[],
+): Map<string, { index: number; count: number }> {
+  const places = new Map<string, { index: number; count: number }>();
+  for (const group of questionGroups(entries)) {
+    group.forEach((id, at) => {
+      places.set(id, { index: at + 1, count: group.length });
+    });
+  }
+  return places;
+}
+
+/** A Branch's entries with each question's `sibling_count` and `sibling_index` (others are 1 of 1). */
+export function withPlaces(all: readonly EntryView[], branch: readonly EntryView[]): EntryView[] {
+  const places = placesOf(all);
+  return branch.map((entry) => {
+    const place = places.get(entry.id);
+    return {
+      ...entry,
+      sibling_count: place?.count ?? 1,
+      sibling_index: place?.index ?? 1,
+    };
+  });
+}
+
+/** The end of the Branch that continues from an entry: its newest follower, then that one's, and so on. */
+export function newestUnder(entries: readonly EntryView[], id: string): string {
+  const newestChild = (parent: string) =>
+    [...entries].reverse().find((entry) => entry.parent_id === parent);
+  let current = id;
+  let next = newestChild(current);
+  while (next) {
+    current = next.id;
+    next = newestChild(current);
+  }
+  return current;
+}
+
 const DAY_MS = 86_400_000;
 /** Demo Conversations: [title, days ago]. Thirty-four in all, so the history pages. */
 const DEMO_CONVERSATIONS: [string, number][] = [
@@ -602,12 +683,20 @@ export function createAiMock({
     // A copy, as real IPC gives: later saves must not change what the page already holds.
     const queued = activeRuns.get(id)?.queue ?? [];
     return JSON.parse(
-      JSON.stringify({ ...found, running: answering.has(id), queued: [...queued] }),
+      JSON.stringify({
+        ...found,
+        entries: shownBranch(found),
+        running: answering.has(id),
+        queued: [...queued],
+      }),
     ) as ConversationView;
   }
 
   function start(request: RunRequest): RunStarted {
     if (request.text.trim() === '') throw aiError('validation', 'Type a question first.');
+    if (request.branch_of !== null && request.conversation_id === null) {
+      throw aiError('validation', 'A new Conversation has no question to branch from.');
+    }
     const model = request.model.trim();
     if (model === '') throw aiError('validation', 'Choose a Model first.');
     const provider = requireProvider(request.provider_id);
@@ -624,13 +713,23 @@ export function createAiMock({
     // As in Rust, the Model change and the question are written here, before the Run's own steps.
     const now = Date.now();
     const conversation = existing ?? startConversation(conversationId, request.text, now);
+    // A sibling (Edit, Try again) follows what its question followed; otherwise the Branch shown.
+    let parent: string | null = visibleId(conversation);
+    if (request.branch_of !== null) {
+      const sibling = conversation.entries.find((entry) => entry.id === request.branch_of);
+      if (!sibling) throw aiError('not_found', 'That Conversation no longer exists');
+      if (sibling.payload.kind !== 'user') {
+        throw aiError('validation', 'Only a question can be asked again.');
+      }
+      parent = sibling.parent_id;
+    }
     const same = conversation.provider_id === provider.id && conversation.model === model;
-    let parent: string | undefined;
     if (!same) {
       const change = addEntry(
         conversation,
         { kind: 'model_change', provider_name: provider.name, model },
         now,
+        parent,
       );
       conversation.provider_id = provider.id;
       conversation.provider_name = provider.name;
@@ -638,11 +737,31 @@ export function createAiMock({
       parent = change.id;
     }
     const question = addEntry(conversation, { kind: 'user', text: request.text }, now, parent);
+    // A question always shows its own Branch, as Rust does.
+    conversation.shown = question.id;
     countUse(provider.id, model, now);
     const runId = nextId('run');
     answering.add(conversationId);
     play(runId, conversation, question.id, request.text, provider, model);
     return { run_id: runId, conversation_id: conversationId };
+  }
+
+  /** Try again: the question is asked again as its sibling, with the Provider and Model given. */
+  function retry(request: RetryRequest): RunStarted {
+    const found = liveConversation(request.conversation_id);
+    const question = found.entries.find((entry) => entry.id === request.entry_id);
+    if (!question) throw aiError('not_found', 'That Conversation no longer exists');
+    if (question.payload.kind !== 'user') {
+      throw aiError('validation', 'Only a question can be asked again.');
+    }
+    return start({
+      conversation_id: request.conversation_id,
+      text: question.payload.text,
+      provider_id: request.provider_id,
+      model: request.model,
+      local: request.local,
+      branch_of: request.entry_id,
+    });
   }
 
   function countUse(providerId: string, model: string, now: number) {
@@ -754,7 +873,7 @@ export function createAiMock({
   /** A Step that asks for Tools: the request is saved, then each call runs in turn. */
   function toolsStep(run: MockRun, calls: MockCall[]) {
     const ids = calls.map(() => nextId('call'));
-    const saved = addEntry(
+    const saved = addRunEntry(
       run.conversation,
       {
         kind: 'assistant',
@@ -817,7 +936,7 @@ export function createAiMock({
     next: () => void,
   ) {
     const observation = result.observation ?? '';
-    const entry = addEntry(
+    const entry = addRunEntry(
       run.conversation,
       {
         kind: 'tool_result',
@@ -882,7 +1001,7 @@ export function createAiMock({
     while (run.queue.length > 0) {
       const note = run.queue.shift();
       if (!note) break;
-      const entry = addEntry(
+      const entry = addRunEntry(
         run.conversation,
         { kind: 'user', text: note.text },
         Date.now(),
@@ -917,7 +1036,7 @@ export function createAiMock({
   function finishAnswer(run: MockRun, step: MockAnswer, words: string[], budget: boolean) {
     const at = Date.now();
     const pending = run.queue.length > 0 && !budget;
-    const answer = addEntry(
+    const answer = addRunEntry(
       run.conversation,
       {
         kind: 'assistant',
@@ -946,8 +1065,9 @@ export function createAiMock({
 
   /** The person stopped the Run. A part written is saved, marked stopped; an empty one is marked too. */
   function stopped(run: MockRun, partial: string | null) {
-    if (partial !== null) {
-      const entry = addEntry(
+    // Stopped before its first word: no answer is left behind.
+    if (partial !== null && partial !== '') {
+      const entry = addRunEntry(
         run.conversation,
         {
           kind: 'assistant',
@@ -970,7 +1090,7 @@ export function createAiMock({
 
   /** Send now: the words so far are kept, the queued note is sent, and the Run goes on. */
   function skipped(run: MockRun, partial: string) {
-    const entry = addEntry(
+    const entry = addRunEntry(
       run.conversation,
       {
         kind: 'assistant',
@@ -1045,22 +1165,51 @@ export function createAiMock({
     return created;
   }
 
-  /** Appends an entry after the newest one (or after `parent`), as the Rust write does. */
+  /** Appends an entry after the newest one (no `parent` given), or after `parent` (null: a first entry). */
   function addEntry(
     conversation: StoredConversation,
     payload: EntryView['payload'],
     now: number,
-    parent?: string,
+    parent?: string | null,
   ): EntryView {
     const last = conversation.entries.at(-1);
     const entry: EntryView = {
       id: nextId('entry'),
-      parent_id: parent ?? last?.id ?? null,
+      parent_id: parent === undefined ? (last?.id ?? null) : parent,
       created_at: now,
       payload,
+      sibling_count: 1,
+      sibling_index: 1,
     };
     conversation.entries.push(entry);
     conversation.updated_at = now;
+    return entry;
+  }
+
+  /** The entry the device shows for a Conversation: the one set, else its newest. */
+  function visibleId(conversation: StoredConversation): string | null {
+    return conversation.shown ?? conversation.entries.at(-1)?.id ?? null;
+  }
+
+  /** The Branch the device shows, oldest first, with each question's place among its siblings. */
+  function shownBranch(conversation: StoredConversation): EntryView[] {
+    const leaf = visibleId(conversation);
+    return withPlaces(conversation.entries, branchOf(conversation.entries, leaf ?? undefined));
+  }
+
+  /**
+   * Adds an entry a Run writes after `parent`. As Rust does, the shown Branch moves on to it when it
+   * ended at `parent`, so a Run answering the Branch on screen keeps it on screen.
+   */
+  function addRunEntry(
+    conversation: StoredConversation,
+    payload: EntryView['payload'],
+    now: number,
+    parent: string,
+  ): EntryView {
+    const shownBefore = visibleId(conversation);
+    const entry = addEntry(conversation, payload, now, parent);
+    if (shownBefore === parent) conversation.shown = entry.id;
     return entry;
   }
 
@@ -1147,14 +1296,33 @@ export function createAiMock({
         const found = liveConversation(args.id as string);
         const entryId = (args.entryId as string | null) ?? null;
         if (entryId === null) {
-          const leaf = found.entries.at(-1)?.id;
-          return markdownOf(found.title, branchOf(found.entries, leaf));
+          return markdownOf(found.title, shownBranch(found));
         }
         const entry = found.entries.find((e) => e.id === entryId);
         if (!entry) throw aiError('not_found', 'That Conversation no longer exists');
         if (entry.payload.kind === 'assistant' && entry.payload.calls.length === 0)
           return stripCitations(entry.payload.text);
         throw aiError('validation', 'Only an answer copies on its own.');
+      }
+      case 'ai_conversation_set_leaf': {
+        const found = liveConversation(args.id as string);
+        const entryId = args.entryId as string;
+        if (!found.entries.some((entry) => entry.id === entryId)) {
+          throw aiError('not_found', 'That Conversation no longer exists');
+        }
+        found.shown = entryId;
+        return null;
+      }
+      case 'ai_conversation_show_branch': {
+        const found = liveConversation(args.id as string);
+        const entryId = args.entryId as string;
+        const position = Number(args.position);
+        const group = questionGroups(found.entries).find((members) => members.includes(entryId));
+        if (!group) throw aiError('validation', 'Only a question can be switched.');
+        const chosen = Number.isInteger(position) ? group[position - 1] : undefined;
+        if (chosen === undefined) throw aiError('not_found', 'That Conversation no longer exists');
+        found.shown = newestUnder(found.entries, chosen);
+        return null;
       }
       case 'ai_saved_list':
         return liveSaved().map((q) => ({ id: q.id, text: q.text }));
@@ -1313,6 +1481,7 @@ export function createAiMock({
   return {
     handles: (cmd: string) =>
       cmd === 'ai_run_start' ||
+      cmd === 'ai_run_retry' ||
       cmd === 'ai_run_steer' ||
       cmd === 'ai_run_unqueue' ||
       cmd === 'ai_run_send_now' ||
@@ -1325,6 +1494,7 @@ export function createAiMock({
       cmd === 'ai_models_usage',
     handle(cmd: string, args: Record<string, unknown>): unknown {
       if (cmd === 'ai_run_start') return start(args.request as RunRequest);
+      if (cmd === 'ai_run_retry') return retry(args.request as RetryRequest);
       if (cmd === 'ai_run_steer') return steer(args.conversationId as string, args.text as string);
       if (cmd === 'ai_run_unqueue')
         return unqueue(args.conversationId as string, args.noteId as string);

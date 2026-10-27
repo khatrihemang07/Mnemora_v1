@@ -67,6 +67,18 @@ export const commands = {
 	 *  ends as stopped. Nothing happens when no Run is answering.
 	 */
 	aiRunAbort: (conversationId: string) => __TAURI_INVOKE<void>("ai_run_abort", { conversationId }),
+	/**  Try again: asks the question again as a sibling of itself, with the Provider and Model given. */
+	aiRunRetry: (request: RetryRequest) => typedError<RunStarted, AppError>(__TAURI_INVOKE("ai_run_retry", { request })),
+	/**
+	 *  Shows the Branch that ends at an answer on this device, so the next question continues from
+	 *  it (Branch from earlier). The Branch after it stays in the Conversation.
+	 */
+	aiConversationSetLeaf: (id: string, entryId: string) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_set_leaf", { id, entryId })),
+	/**
+	 *  Shows another question of the same place on this device (the pager): `position` counts from 1,
+	 *  oldest first, among the questions beside `entry_id`.
+	 */
+	aiConversationShowBranch: (id: string, entryId: string, position: number) => typedError<null, AppError>(__TAURI_INVOKE("ai_conversation_show_branch", { id, entryId, position })),
 	/**  A Conversation with every entry, oldest first. */
 	aiConversationGet: (id: string) => typedError<ConversationView, AppError>(__TAURI_INVOKE("ai_conversation_get", { id })),
 	/**  Every Provider on this device, oldest first. Never carries a key. */
@@ -1098,6 +1110,13 @@ export type EntryView = {
 	created_at: number | null,
 	/**  What it holds. */
 	payload: EntryPayload,
+	/**
+	 *  How many questions share this one's place (Try again and Edit add more). Always 1 for an
+	 *  entry that is not a question, and for a question with no siblings.
+	 */
+	sibling_count: number,
+	/**  This question's place among them, from 1, oldest first. */
+	sibling_index: number,
 };
 
 /**  Which data set the app uses. Chosen by the `sandbox` cargo feature of the app crate. */
@@ -1956,6 +1975,20 @@ export type ResolvedRow = {
 	changes: string[],
 };
 
+/**  Try again on a question: the question is copied as a sibling of it and asked again. */
+export type RetryRequest = {
+	/**  The Conversation the question is in. */
+	conversation_id: string,
+	/**  The question to try again. */
+	entry_id: string,
+	/**  The Provider that answers. */
+	provider_id: string,
+	/**  The Model id it is asked for. */
+	model: string,
+	/**  The person's calendar, for the Model. */
+	local: LocalContext,
+};
+
 /**  How a connection reached the other device. */
 export type Route = 
 /**  Over the local network. */
@@ -2032,6 +2065,11 @@ export type RunRequest = {
 	model: string,
 	/**  The person's calendar, for the Model. */
 	local: LocalContext,
+	/**
+	 *  The question this one is a sibling of (Edit): it follows what that question followed. None
+	 *  continues the Branch the Conversation shows. Needs a Conversation.
+	 */
+	branch_of: string | null,
 };
 
 /**  The Run that started and the Conversation it answers in. */

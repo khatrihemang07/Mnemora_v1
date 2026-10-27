@@ -65,6 +65,9 @@ pub struct Ask {
     pub local: LocalContext,
     /// The Provider and Model that answer it.
     pub choice: Choice,
+    /// The question this one is a sibling of (Try again, Edit): it follows what that question
+    /// followed. None continues the Branch the Conversation shows.
+    pub branch_of: Option<String>,
 }
 
 /// The one sentence the person reads for each failure. The Provider's own text is never used.
@@ -355,6 +358,10 @@ fn save_entry(
         payload,
     )?;
     store::touch_conversation(&tx, &ask.conversation_id, now)?;
+    // The Branch shown moves on with the Run, unless the person has shown another one meanwhile.
+    if store::visible(&tx, &ask.conversation_id)?.as_deref() == Some(parent) {
+        store::show(&tx, &ask.conversation_id, &id, now)?;
+    }
     tx.commit()?;
     Ok(id)
 }
@@ -382,7 +389,20 @@ fn save_question(db: &Mutex<Connection>, ask: &Ask) -> AppResult<String> {
     if !ask.continues {
         store::insert_conversation(&tx, &ask.conversation_id, &title_of(&ask.text), now)?;
     }
-    let mut parent = store::leaf(&tx, &ask.conversation_id)?;
+    let mut parent = match ask.branch_of.as_deref() {
+        Some(question) => {
+            let sibling = store::entry_in(&tx, &ask.conversation_id, question)?
+                .ok_or(crate::error::AiError::NotFound)?;
+            if !matches!(sibling.payload, EntryPayload::User { .. }) {
+                return Err(crate::error::AiError::Validation(
+                    "Only a question can be asked again.",
+                )
+                .into());
+            }
+            sibling.parent_id
+        }
+        None => store::visible(&tx, &ask.conversation_id)?,
+    };
     let header = store::live_conversation(&tx, &ask.conversation_id)?
         .ok_or(crate::error::AiError::NotFound)?;
     let same_model = header.provider_id.as_deref() == Some(ask.choice.provider_id.as_str())
@@ -428,6 +448,7 @@ fn save_question(db: &Mutex<Connection>, ask: &Ask) -> AppResult<String> {
         },
     )?;
     store::touch_conversation(&tx, &ask.conversation_id, now)?;
+    store::show(&tx, &ask.conversation_id, &id, now)?;
     provider_store::record_use(&tx, &ask.choice.provider_id, &ask.choice.model, now)?;
     tx.commit()?;
     Ok(id)

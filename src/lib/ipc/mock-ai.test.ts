@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AiRunEvent, ConnectionTest, ModelList, ProviderView, RunRequest } from './bindings';
+import type {
+  AiRunEvent,
+  ConnectionTest,
+  ConversationView,
+  EntryView,
+  ModelList,
+  ProviderView,
+  RunRequest,
+} from './bindings';
 import addresses from './fixtures/ai-addresses.json';
 import failures from './fixtures/ai-failures.json';
 import historyRules from './fixtures/ai-history.json';
@@ -42,6 +50,7 @@ function request(
       time_zone: 'Europe/London',
       week_start: 'mon',
     },
+    branch_of: null,
   };
 }
 
@@ -550,5 +559,198 @@ describe('the AI browser mock: stopping, notes and limits', () => {
     expect(results).toHaveLength(2);
     expect(results[1]?.result).toContain('This repeats call');
     expect(outcomeOf(heard)).toEqual({ type: 'answered' });
+  });
+});
+
+describe('the AI browser mock: branches', () => {
+  let mock: ReturnType<typeof createAiMock>;
+  let providerId: string;
+  const local = {
+    today: '2026-10-25',
+    weekday: 'Sunday',
+    time_zone: 'Europe/London',
+    week_start: 'mon' as const,
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mock = createAiMock({ emit: () => {} });
+    providerId = (
+      mock.handle('ai_provider_create', {
+        request: { kind: 'wrapper', name: 'Scripted', address: 'http://127.0.0.1:9/v1' },
+      }) as { id: string }
+    ).id;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function ask(text: string, conversationId: string | null = null, branchOf: string | null = null) {
+    return mock.handle('ai_run_start', {
+      request: { ...request(text, conversationId, providerId), branch_of: branchOf },
+    }) as { run_id: string; conversation_id: string };
+  }
+  function retry(conversationId: string, entryId: string) {
+    return mock.handle('ai_run_retry', {
+      request: {
+        conversation_id: conversationId,
+        entry_id: entryId,
+        provider_id: providerId,
+        model: 'claude-haiku',
+        local,
+      },
+    }) as { run_id: string; conversation_id: string };
+  }
+  function view(id: string): ConversationView {
+    return mock.handle('ai_conversation_get', { id }) as ConversationView;
+  }
+  function questions(id: string): EntryView[] {
+    return view(id).entries.filter((entry) => entry.payload.kind === 'user');
+  }
+  function questionTexts(id: string): string[] {
+    return view(id).entries.flatMap((entry) =>
+      entry.payload.kind === 'user' ? [entry.payload.text] : [],
+    );
+  }
+  function answersOf(id: string): EntryView[] {
+    return view(id).entries.filter(
+      (entry) => entry.payload.kind === 'assistant' && entry.payload.calls.length === 0,
+    );
+  }
+  function showBranch(id: string, entryId: string, position: number) {
+    return mock.handle('ai_conversation_show_branch', { id, entryId, position });
+  }
+
+  it('try again adds a sibling question, shows it, and the pager moves back to the first', () => {
+    const started = ask('Tell me about the move');
+    vi.runAllTimers();
+    const conversation = started.conversation_id;
+    const original = questions(conversation)[0]?.id ?? '';
+
+    retry(conversation, original);
+    vi.runAllTimers();
+
+    const [shown] = questions(conversation);
+    expect(shown?.id).not.toBe(original);
+    expect(shown).toMatchObject({ sibling_count: 2, sibling_index: 2 });
+
+    showBranch(conversation, shown?.id ?? '', 1);
+    expect(questions(conversation)[0]).toMatchObject({
+      id: original,
+      sibling_count: 2,
+      sibling_index: 1,
+    });
+  });
+
+  it('a question with no siblings is 1 of 1, and a Conversation shows only its Branch', () => {
+    const started = ask('Start the Conversation');
+    vi.runAllTimers();
+    ask('Second question', started.conversation_id);
+    vi.runAllTimers();
+
+    expect(questions(started.conversation_id).map((e) => e.sibling_count)).toEqual([1, 1]);
+    expect(questionTexts(started.conversation_id)).toEqual([
+      'Start the Conversation',
+      'Second question',
+    ]);
+  });
+
+  it('edit adds a sibling beside the question it changed, and the first Branch stays', () => {
+    const started = ask('Start');
+    vi.runAllTimers();
+    const conversation = started.conversation_id;
+    ask('Follow-up vague', conversation);
+    vi.runAllTimers();
+    const vague = questions(conversation)[1];
+
+    ask('Follow-up, now precise', conversation, vague?.id ?? null);
+    vi.runAllTimers();
+
+    const [, precise] = questions(conversation);
+    expect(precise).toMatchObject({ sibling_count: 2, sibling_index: 2 });
+    expect(precise?.parent_id).toBe(vague?.parent_id);
+    expect(questionTexts(conversation)).toEqual(['Start', 'Follow-up, now precise']);
+
+    showBranch(conversation, precise?.id ?? '', 1);
+    expect(questionTexts(conversation)).toEqual(['Start', 'Follow-up vague']);
+  });
+
+  it('copies the Branch on screen as Markdown', () => {
+    const started = ask('Start');
+    vi.runAllTimers();
+    const conversation = started.conversation_id;
+    ask('Follow-up vague', conversation);
+    vi.runAllTimers();
+    const vague = questions(conversation)[1];
+    ask('Follow-up, now precise', conversation, vague?.id ?? null);
+    vi.runAllTimers();
+
+    const markdown = mock.handle('ai_conversation_markdown', {
+      id: conversation,
+      entryId: null,
+    }) as string;
+    expect(markdown).toContain('**You:** Follow-up, now precise');
+    expect(markdown).not.toContain('Follow-up vague');
+  });
+
+  it('branch from earlier shows the Branch ending at that answer, and the next question continues from it', () => {
+    const started = ask('Q1');
+    vi.runAllTimers();
+    const conversation = started.conversation_id;
+    ask('Q2', conversation);
+    vi.runAllTimers();
+    const firstAnswer = answersOf(conversation)[0]?.id ?? '';
+
+    mock.handle('ai_conversation_set_leaf', { id: conversation, entryId: firstAnswer });
+    expect(questionTexts(conversation)).toEqual(['Q1']);
+
+    ask('Q3', conversation);
+    vi.runAllTimers();
+    expect(questionTexts(conversation)).toEqual(['Q1', 'Q3']);
+    expect(questions(conversation)[1]?.parent_id).toBe(firstAnswer);
+  });
+
+  it('after a too-long question, branch from earlier continues from an earlier answer', () => {
+    const started = ask('Q1');
+    vi.runAllTimers();
+    const conversation = started.conversation_id;
+    const firstAnswer = answersOf(conversation)[0]?.id ?? '';
+
+    ask('this is too long', conversation);
+    vi.runAllTimers();
+    expect(questionTexts(conversation)).toEqual(['Q1', 'this is too long']);
+
+    mock.handle('ai_conversation_set_leaf', { id: conversation, entryId: firstAnswer });
+    ask('Continue', conversation);
+    vi.runAllTimers();
+    expect(questionTexts(conversation)).toEqual(['Q1', 'Continue']);
+  });
+
+  it('refuses what the Rust rules refuse: a non-question, a bad position, an unknown entry', () => {
+    const started = ask('Q1');
+    vi.runAllTimers();
+    const conversation = started.conversation_id;
+    retry(conversation, questions(conversation)[0]?.id ?? '');
+    vi.runAllTimers();
+    const [shown] = questions(conversation);
+    const answer = answersOf(conversation)[0]?.id ?? '';
+
+    expect(caught(() => showBranch(conversation, answer, 1))).toMatchObject({ code: 'validation' });
+    expect(caught(() => showBranch(conversation, shown?.id ?? '', 3))).toMatchObject({
+      code: 'not_found',
+    });
+    expect(caught(() => showBranch(conversation, shown?.id ?? '', 0))).toMatchObject({
+      code: 'not_found',
+    });
+    expect(
+      caught(() =>
+        mock.handle('ai_conversation_set_leaf', { id: conversation, entryId: 'missing' }),
+      ),
+    ).toMatchObject({ code: 'not_found' });
+    expect(caught(() => retry(conversation, answer))).toMatchObject({ code: 'validation' });
+    expect(caught(() => ask('A new question', null, 'anything'))).toMatchObject({
+      code: 'validation',
+    });
   });
 });

@@ -131,6 +131,11 @@ pub struct EntryView {
     pub created_at: i64,
     /// What it holds.
     pub payload: EntryPayload,
+    /// How many questions share this one's place (Try again and Edit add more). Always 1 for an
+    /// entry that is not a question, and for a question with no siblings.
+    pub sibling_count: u32,
+    /// This question's place among them, from 1, oldest first.
+    pub sibling_index: u32,
 }
 
 /// A Conversation and its entries.

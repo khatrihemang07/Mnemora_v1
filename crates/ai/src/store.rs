@@ -1,6 +1,8 @@
 //! Reads and writes of Conversations and their entries. Rules live in the other modules; this file
 //! only moves rows.
 
+use std::collections::HashMap;
+
 use mnemora_core::error::AppResult;
 use mnemora_harness::{Call, Message};
 use rusqlite::{Connection, OptionalExtension};
@@ -92,6 +94,118 @@ pub fn set_model(
     Ok(())
 }
 
+/// The entry a Conversation shows on this device: the one set, else its newest entry.
+pub fn visible(conn: &Connection, conversation: &str) -> AppResult<Option<String>> {
+    let set: Option<String> = conn
+        .query_row(
+            "SELECT entry_id FROM ai_visible_branches WHERE conversation_id = ?1",
+            [conversation],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match set {
+        Some(entry) => Ok(Some(entry)),
+        None => leaf(conn, conversation),
+    }
+}
+
+/// Makes `entry` the one a Conversation shows on this device. Device-local: nothing is recorded to
+/// the change log, so it is never synced.
+pub fn show(conn: &Connection, conversation: &str, entry: &str, now: i64) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO ai_visible_branches(conversation_id, entry_id, updated_at) VALUES(?1, ?2, ?3)
+         ON CONFLICT(conversation_id) DO UPDATE SET entry_id = excluded.entry_id,
+             updated_at = excluded.updated_at",
+        rusqlite::params![conversation, entry, now],
+    )?;
+    Ok(())
+}
+
+/// The newest entry that follows `entry`, then the newest after that, down to an entry with no
+/// follower: the end of the Branch that continues from `entry`.
+pub fn newest_under(conn: &Connection, entry: &str) -> AppResult<String> {
+    let mut stmt = conn.prepare(
+        "SELECT id FROM ai_entries WHERE parent_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
+    )?;
+    let mut current = entry.to_owned();
+    while let Some(next) = stmt
+        .query_row([&current], |r| r.get::<_, String>(0))
+        .optional()?
+    {
+        current = next;
+    }
+    Ok(current)
+}
+
+/// The questions a question sits beside, oldest first, including itself. Questions are siblings
+/// when they follow the same answer or the same start; a Model change between a question and what
+/// it follows does not separate them. Reads ids, parents and kinds only: no payloads, so other
+/// Branches are not loaded.
+pub fn question_groups(conn: &Connection, conversation: &str) -> AppResult<Vec<Vec<String>>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, parent_id, kind FROM ai_entries WHERE conversation_id = ?1 ORDER BY created_at, rowid",
+    )?;
+    let rows: Vec<(String, Option<String>, String)> = stmt
+        .query_map([conversation], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    let parent: HashMap<&str, Option<&str>> = rows
+        .iter()
+        .map(|(id, parent, _)| (id.as_str(), parent.as_deref()))
+        .collect();
+    let kind: HashMap<&str, &str> = rows
+        .iter()
+        .map(|(id, _, kind)| (id.as_str(), kind.as_str()))
+        .collect();
+    // The first entry above a question that is not a Model change.
+    let anchor = |id: &str| -> Option<String> {
+        let mut current = parent.get(id).copied().flatten();
+        while let Some(above) = current {
+            if kind.get(above) != Some(&"model_change") {
+                return Some(above.to_owned());
+            }
+            current = parent.get(above).copied().flatten();
+        }
+        None
+    };
+    let mut groups: HashMap<Option<String>, Vec<String>> = HashMap::new();
+    for (id, _, entry_kind) in &rows {
+        if entry_kind == "user" {
+            groups.entry(anchor(id)).or_default().push(id.clone());
+        }
+    }
+    Ok(groups.into_values().collect())
+}
+
+/// Every question of a Conversation with its place among the questions it sits beside: `(index,
+/// count)`, from 1.
+pub fn question_places(
+    conn: &Connection,
+    conversation: &str,
+) -> AppResult<HashMap<String, (u32, u32)>> {
+    let mut places = HashMap::new();
+    for members in question_groups(conn, conversation)? {
+        let count = u32::try_from(members.len()).unwrap_or(u32::MAX);
+        for (index, id) in members.into_iter().enumerate() {
+            let index = u32::try_from(index + 1).unwrap_or(u32::MAX);
+            places.insert(id, (index, count));
+        }
+    }
+    Ok(places)
+}
+
+/// The questions that sit beside `question` (itself included), oldest first, or none when it is
+/// not a question of this Conversation.
+pub fn siblings_of(
+    conn: &Connection,
+    conversation: &str,
+    question: &str,
+) -> AppResult<Vec<String>> {
+    Ok(question_groups(conn, conversation)?
+        .into_iter()
+        .find(|members| members.iter().any(|id| id == question))
+        .unwrap_or_default())
+}
+
 /// The newest entry of a Conversation: what a new entry follows.
 pub fn leaf(conn: &Connection, conversation: &str) -> AppResult<Option<String>> {
     Ok(conn
@@ -179,33 +293,6 @@ pub fn branch_messages(conn: &Connection, leaf: &str) -> AppResult<Vec<Message>>
     }
     messages.reverse();
     Ok(messages)
-}
-
-/// Every entry of a Conversation, oldest first.
-pub fn entries(conn: &Connection, conversation: &str) -> AppResult<Vec<EntryView>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, parent_id, created_at, payload FROM ai_entries
-         WHERE conversation_id = ?1 ORDER BY created_at, rowid",
-    )?;
-    let rows = stmt.query_map([conversation], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, Option<String>>(1)?,
-            r.get::<_, i64>(2)?,
-            r.get::<_, String>(3)?,
-        ))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (id, parent_id, created_at, payload) = row?;
-        out.push(EntryView {
-            id,
-            parent_id,
-            created_at,
-            payload: parse(&payload)?,
-        });
-    }
-    Ok(out)
 }
 
 /// Every live Conversation, newest first. Titles are matched by the caller, which folds them.
@@ -296,6 +383,9 @@ fn entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(EntryView, Option<Strin
             parent_id: parent.clone(),
             created_at: r.get(2)?,
             payload,
+            // The places among siblings are filled in by `question_places`, not per row.
+            sibling_count: 1,
+            sibling_index: 1,
         },
         parent,
     ))

@@ -33,6 +33,9 @@ macro_rules! specta_builder_for {
                 ai::ai_run_unqueue::<$runtime>,
                 ai::ai_run_send_now::<$runtime>,
                 ai::ai_run_abort,
+                ai::ai_run_retry::<$runtime>,
+                ai::ai_conversation_set_leaf,
+                ai::ai_conversation_show_branch,
                 ai::ai_conversation_get,
                 ai::ai_provider_list,
                 ai::ai_provider_create,
@@ -155,6 +158,8 @@ macro_rules! specta_builder_for {
 }
 
 mod ai;
+#[cfg(test)]
+mod ai_branching_tests;
 #[cfg(test)]
 mod ai_conversations_tests;
 #[cfg(test)]

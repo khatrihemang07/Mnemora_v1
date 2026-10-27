@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import Copy from '~icons/lucide/copy';
   import Ellipsis from '~icons/lucide/ellipsis';
+  import GitBranch from '~icons/lucide/git-branch';
   import History from '~icons/lucide/history';
   import Pencil from '~icons/lucide/pencil';
   import Plug from '~icons/lucide/plug';
@@ -37,6 +38,8 @@
   import AiComposer from './AiComposer.svelte';
   import AiThread from './AiThread.svelte';
   import { type Choice, effectiveChoice } from './choice';
+  import { showBranch } from './branch-actions';
+  import BranchPicker from './BranchPicker.svelte';
   import ConversationHistory from './ConversationHistory.svelte';
   import { copyAsMarkdown } from './copy';
   import type { BannerAction } from './failure-banner';
@@ -46,7 +49,7 @@
   import ProviderSheet from './ProviderSheet.svelte';
 import QueuedNotes from './QueuedNotes.svelte';
   import { aiKeys, conversationOptions, providersOptions, savedOptions, usageOptions } from './queries';
-  import { answeringIn, failedIn, type LiveRun } from './run-state';
+  import { answeringIn, bannerRuns, failedIn, lastQuestionId, type LiveRun } from './run-state';
 
   /** The open Conversation, in the URL so a reload and Back keep it. None is a new one. */
   const conversationId = $derived(urlParam.get('conversation'));
@@ -80,6 +83,9 @@ import QueuedNotes from './QueuedNotes.svelte';
   let renameOpen = $state(false);
   let renameText = $state('');
   let renameProblem = $state<string | null>(null);
+  let branchOpen = $state(false);
+  /** The question being edited: sending the box makes an edited sibling of it. Only in this Conversation. */
+  let editing = $state<{ id: string; text: string; conversationId: string | null } | null>(null);
 
   const choice = $derived(
     effectiveChoice({
@@ -94,9 +100,16 @@ import QueuedNotes from './QueuedNotes.svelte';
   const modelName = $derived(choice?.model ?? null);
 
   const answering = $derived(conversationId ? answeringIn(liveRuns.runs, conversationId) : []);
-  const failed = $derived(conversationId ? failedIn(liveRuns.runs, conversationId) : []);
   const busy = $derived((conversation.data?.running ?? false) || answering.length > 0);
+  /** Edit ends when a Run starts or the Conversation changes. */
+  const editingNow = $derived(
+    busy || editing?.conversationId !== conversationId ? null : editing,
+  );
   const entries = $derived(conversation.data?.entries ?? []);
+  /** A failed Run keeps its banner only while its question is the last on the Branch shown. */
+  const failed = $derived(
+    conversationId ? bannerRuns(failedIn(liveRuns.runs, conversationId), lastQuestionId(entries)) : [],
+  );
   /**
    * Notes waiting for this Conversation's Run, or left over when it ended. The live list wins once
    * this page has heard from the Run; before that (a page opened during a Run) the Conversation
@@ -182,6 +195,7 @@ import QueuedNotes from './QueuedNotes.svelte';
   async function send(
     text: string,
     target: { conversationId: string | null; choice: Choice } | null = null,
+    branchOf: string | null = null,
   ): Promise<boolean> {
     const asked = target?.choice ?? choice;
     if (!asked) {
@@ -197,6 +211,7 @@ import QueuedNotes from './QueuedNotes.svelte';
           provider_id: asked.providerId,
           model: asked.model,
           local: localContext(new Date(), weekStart, Intl.DateTimeFormat().resolvedOptions().timeZone),
+          branch_of: branchOf,
         }),
       );
       liveRuns.remember(started.run_id, {
@@ -215,18 +230,88 @@ import QueuedNotes from './QueuedNotes.svelte';
     }
   }
 
-  /** Asks the failed question again, with the Provider and Model it was sent with. */
+  /** The text of a question in this Conversation, or null when the entry is not one. */
+  function questionTextOf(questionId: string): string | null {
+    const found = entries.find((entry) => entry.id === questionId);
+    return found?.payload.kind === 'user' ? found.payload.text : null;
+  }
+
+  /**
+   * Try again: asks a question again as its sibling, with the Provider and Model given. Resolves true
+   * when the Run started.
+   */
+  async function askAgain(questionId: string, asked: Choice, text: string): Promise<boolean> {
+    const id = conversationId;
+    if (!id) return false;
+    try {
+      const started = await unwrap(
+        commands.aiRunRetry({
+          conversation_id: id,
+          entry_id: questionId,
+          provider_id: asked.providerId,
+          model: asked.model,
+          local: localContext(new Date(), weekStart, Intl.DateTimeFormat().resolvedOptions().timeZone),
+        }),
+      );
+      liveRuns.remember(started.run_id, {
+        text,
+        providerId: asked.providerId,
+        model: asked.model,
+        conversationId: started.conversation_id,
+      });
+      return true;
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : 'Could not try again.');
+      return false;
+    }
+  }
+
+  /** Try again on a failed Run: its question is asked again with the Provider and Model it was sent with. */
   async function tryAgain(run: LiveRun) {
     const sent = liveRuns.sent[run.runId];
-    if (!sent) {
+    if (!sent || !run.questionId) {
       notifyError('Ask the question again to retry it.');
       return;
     }
-    const started = await send(sent.text, {
-      conversationId: sent.conversationId,
-      choice: { providerId: sent.providerId, model: sent.model },
-    });
-    if (started) liveRuns.dismiss(run.runId);
+    if (await askAgain(run.questionId, sent, sent.text)) liveRuns.dismiss(run.runId);
+  }
+
+  /** Try again on an answer: its question is asked again with the Model in use on this page. */
+  function tryAnswerAgain(questionId: string) {
+    if (!choice) {
+      notifyError('Choose a Model first.');
+      return;
+    }
+    const text = questionTextOf(questionId);
+    if (text === null) {
+      notifyError('Ask the question again to retry it.');
+      return;
+    }
+    void askAgain(questionId, choice, text);
+  }
+
+  /** Edit: the question goes into the box. Sending it makes an edited sibling; Cancel leaves Edit. */
+  function startEdit(question: { id: string; text: string }) {
+    editing = { ...question, conversationId };
+    composerRef?.focus();
+  }
+
+  /** Sends an edited question as a sibling of the one it changes. Edit ends once it is sent. */
+  async function sendEdit(text: string, questionId: string): Promise<boolean> {
+    const sent = await send(text, null, questionId);
+    if (sent) editing = null;
+    return sent;
+  }
+
+  /** The pager: shows another question's Branch. */
+  async function showOtherBranch(questionId: string, position: number) {
+    const id = conversationId;
+    if (!id) return;
+    try {
+      await showBranch(id, questionId, position);
+    } catch (error) {
+      notifyError(error instanceof Error ? error.message : 'Could not show that branch.');
+    }
   }
 
   /** While a Run answers, typed text waits as a note for its next Step. Resolves true when it was queued. */
@@ -286,6 +371,7 @@ import QueuedNotes from './QueuedNotes.svelte';
       retry: () => void tryAgain(run),
       change_model: () => (pickerOpen = true),
       change_provider: () => (pickerOpen = true),
+      branch_from_earlier: () => (branchOpen = true),
       new_conversation: newConversation,
     };
   }
@@ -338,11 +424,17 @@ import QueuedNotes from './QueuedNotes.svelte';
     });
   }
 
-  /** The Conversation menu: Rename, Copy as Markdown, Delete. Branch from earlier comes with Branching. */
+  /** The Conversation menu: Rename, Branch from earlier, Copy as Markdown, Delete. */
   const conversationItems = $derived<MenuItem[]>(
     conversationId
       ? [
           { label: 'Rename', icon: Pencil, onselect: openRename },
+          {
+            label: 'Branch from earlier...',
+            icon: GitBranch,
+            disabled: busy,
+            onselect: () => (branchOpen = true),
+          },
           {
             label: 'Copy as Markdown',
             icon: Copy,
@@ -410,7 +502,19 @@ import QueuedNotes from './QueuedNotes.svelte';
         hue="--hue-ai"
       />
     {:else}
-      <AiThread {entries} {answering} {failed} {handlersFor} conversationId={conversationId ?? ''} />
+      {#key conversationId}
+        <AiThread
+          {entries}
+          {answering}
+          {failed}
+          {handlersFor}
+          conversationId={conversationId ?? ''}
+          {busy}
+          onedit={startEdit}
+          onretry={tryAnswerAgain}
+          onshow={(questionId, position) => void showOtherBranch(questionId, position)}
+        />
+      {/key}
     {/if}
   </div>
   <div class="px-4 pb-4">
@@ -431,7 +535,10 @@ import QueuedNotes from './QueuedNotes.svelte';
         picked = next;
         pickerOpen = false;
       }}
-      onsend={(text) => (busy ? addNote(text) : send(text))}
+      onsend={(text) =>
+        busy ? addNote(text) : editingNow ? sendEdit(text, editingNow.id) : send(text)}
+      editing={editingNow}
+      oncancelEdit={() => (editing = null)}
       onstop={() => void stopRun()}
       onrunsaved={(text) => void send(text)}
       onmanage={() => moduleContext.navigate('/settings')}
@@ -471,5 +578,13 @@ import QueuedNotes from './QueuedNotes.svelte';
     <Button variant="primary" onclick={() => void rename()}>Save</Button>
   {/snippet}
 </Dialog>
+
+<BranchPicker
+  open={branchOpen}
+  {conversationId}
+  {entries}
+  onclose={() => (branchOpen = false)}
+  restoreFocus={() => composerRef?.focus()}
+/>
 
 <ProviderSheet open={addingProvider} provider={null} onclose={() => (addingProvider = false)} />

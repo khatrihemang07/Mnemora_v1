@@ -21,6 +21,7 @@
     retry: 'Try again',
     change_model: 'Change Model',
     change_provider: 'Change Provider',
+    branch_from_earlier: 'Branch from earlier...',
     new_conversation: 'New Conversation',
   };
   const shown = $derived(banner.actions.filter((action) => handlers[action] !== undefined));

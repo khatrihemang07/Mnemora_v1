@@ -10,12 +10,15 @@ describe('the failure banners', () => {
     expect(banner.actions.length).toBeGreaterThan(0);
   });
 
-  it('offers Try again to offline and interrupted answers, and a new Conversation when too long', () => {
+  it('offers Try again to offline and interrupted answers', () => {
     expect(failureBanner('offline')).toMatchObject({ tone: 'warning', actions: ['retry'] });
     expect(failureBanner('interrupted').actions).toEqual(['retry']);
+  });
+
+  it('offers Branch from earlier first, then a new Conversation, when a Conversation is too long', () => {
     expect(failureBanner('too_long')).toMatchObject({
       tone: 'warning',
-      actions: ['new_conversation'],
+      actions: ['branch_from_earlier', 'new_conversation'],
     });
   });
 
