@@ -202,3 +202,41 @@ _Avoid_: Auto-merge, silent conflict
 **Sync activity**:
 The record of what Sync did: sessions with how much moved, pairing, joining, forgetting, pauses, failures, and Conflicts raised and resolved. It is kept for good, is shared by every device, and never holds your content.
 _Avoid_: Sync log, history (that is a Task's)
+
+### AI
+
+**Conversation**:
+A saved exchange of questions and answers with the AI, kept in order so it can be continued, renamed or deleted. It can be continued on another device that has a Provider of its own.
+_Avoid_: Chat, session, thread
+
+**Run**:
+One question asked in a Conversation, and everything the AI does to answer it, ending in an answer, a stop or a failure.
+_Avoid_: Job, query
+
+**Step**:
+One request the Model is asked within a Run. It either asks for Tools to be run or gives the answer.
+_Avoid_: Round, turn
+
+**Provider**:
+A connection to one AI service that the person set up on this device, such as a local wrapper, OpenRouter or Anthropic. Providers belong to one device and are never synced.
+_Avoid_: Backend, endpoint, service, account
+
+**Model**:
+A model that a Provider offers, chosen for a Conversation. A person can also type the name of a Model the Provider does not list.
+_Avoid_: Engine
+
+**Tool**:
+A read-only action the Model may ask for, such as listing Journal Entries or searching Tasks. A Module offers its Tools, and they are available only while that Module is on.
+_Avoid_: Function, plugin, skill
+
+**Saved question**:
+A question the person keeps to ask again with one tap.
+_Avoid_: Prompt, template, digest
+
+**Source**:
+An Entry or Task that an answer rests on, shown so the person can check it.
+_Avoid_: Citation, reference
+
+**Branch**:
+An alternative line of a Conversation that starts at an earlier question or answer and is kept beside the original.
+_Avoid_: Fork, version
