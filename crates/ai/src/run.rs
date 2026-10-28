@@ -9,7 +9,7 @@ use mnemora_core::error::AppResult;
 use mnemora_core::tool::{Calendar, Tool};
 use mnemora_core::util::new_id;
 use mnemora_harness::Cited;
-use mnemora_harness::agent::{self, Event, MAX_REQUESTS, Outcome};
+use mnemora_harness::agent::{self, Event, Forced, MAX_REQUESTS, Outcome};
 use mnemora_harness::{Control, Failure, Message, Provider, ToolProtocol};
 
 use crate::prompt;
@@ -97,9 +97,15 @@ pub fn begin(db: &Mutex<Connection>, ask: &Ask) -> AppResult<String> {
     save_question(db, ask)
 }
 
-/// The note added to an answer that the Run ran out of steps for.
-pub fn budget_note() -> String {
-    format!("Answered after {MAX_REQUESTS} steps; there may be more to find")
+/// The note added to an answer that the Run gave without its last steps: the step budget ran out,
+/// or the Model kept repeating its lookups.
+pub fn budget_note(forced: Forced) -> String {
+    match forced {
+        Forced::Budget => format!("Answered after {MAX_REQUESTS} steps; there may be more to find"),
+        Forced::Repeats => {
+            "Stopped early after repeated lookups; there may be more to find".to_owned()
+        }
+    }
 }
 
 /// Runs a question that `begin` has written, to its end. `db` is locked only while a row is read
@@ -229,7 +235,7 @@ impl Recorder<'_> {
                         })
                         .collect(),
                     sources,
-                    budget_note: record.budget_forced.then(budget_note),
+                    budget_note: record.forced.map(budget_note),
                 };
                 self.save(EntryKind::Assistant, &payload, emit);
             }

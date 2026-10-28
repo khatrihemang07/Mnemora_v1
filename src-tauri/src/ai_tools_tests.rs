@@ -5,10 +5,10 @@
 use std::sync::Arc;
 
 use mnemora_harness::scripted::{Reply, ScriptedProvider};
-use mnemora_harness::{Provider, ToolDef};
+use mnemora_harness::{Message, Provider, ToolDef};
 use serde_json::{Value, json};
 
-use crate::ai_tracer_tests::{ended_outcome, label, until_end};
+use crate::ai_tracer_tests::{ended_outcome, get, label, until_end};
 use crate::test_support::TestApp;
 use mnemora_ai::RunOutcome;
 
@@ -338,7 +338,8 @@ fn an_exact_repeat_is_answered_with_its_earlier_result_and_three_in_a_row_close_
     // After three repeats in a row the Model is asked to answer: its next request has no Tools.
     let (tools, system) = sent(&provider, 4);
     assert!(tools.is_empty());
-    assert!(system.contains("answer"), "{system}");
+    assert!(system.contains(FINAL_STEP), "{system}");
+    assert_eq!(nudges(&provider.requests()[4].messages), 0);
 }
 
 #[test]
@@ -360,14 +361,23 @@ fn the_twelfth_request_has_no_tools_and_its_answer_says_it_may_be_incomplete() {
     let run = until_end(&events);
     assert_eq!(ended_outcome(&run), RunOutcome::Answered);
 
-    let (tools, _) = sent(&provider, 11);
+    let (tools, system) = sent(&provider, 11);
     assert!(tools.is_empty(), "the last step is finish-only");
+    assert!(system.contains(FINAL_STEP), "{system}");
+    assert_eq!(
+        nudges(&provider.requests()[11].messages),
+        0,
+        "the final note replaces the nudge"
+    );
     let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
     let answer = saved.last().unwrap();
     assert_eq!(
         answer["budget_note"],
         "Answered after 12 steps; there may be more to find"
     );
+    let notes = saved.iter().filter(|p| !p["budget_note"].is_null()).count();
+    assert_eq!(notes, 1, "the note is shown once");
+    assert!(!system.contains(REMOVED_LINE), "{system}");
 }
 
 #[test]
@@ -823,4 +833,175 @@ fn a_closing_day_question_in_an_unknown_zone_is_refused() {
         results[0]
     );
     assert!(!results[0].contains(&task), "{}", results[0]);
+}
+
+/// The intent paragraph of the system prompt, as one line.
+const INTENT: &str = "Work out what the person wants before you call a Tool: a lookup (a specific \
+    Entry or Task, or its exact words), a period (what happened in a span of time), or an overview \
+    (a pattern, a count or a comparison). For a lookup, stay faithful and quote. For a period or an \
+    overview, answer in your own words from what the Tools showed; do not paste Entry or Task text \
+    that was not asked for.";
+
+#[test]
+fn the_prompt_asks_what_the_person_wants_before_a_tool_and_fixes_no_phrasing() {
+    let app = TestApp::new();
+    let provider = native(vec![Reply::text(&["Hello."])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "Hi");
+    until_end(&events);
+
+    let (_, system) = sent(&provider, 0);
+    assert!(system.contains(INTENT), "{system}");
+    assert!(!system.contains("yesterday"), "{system}");
+    assert!(!system.contains("what did I do"), "{system}");
+}
+
+/// The closing nudge the loop adds after each batch of Tool results.
+pub(crate) const NUDGE: &str = "If you now have what you need, answer in your own words unless the person \
+    asked for exact text. If something is missing, call the next Tool.";
+
+/// The final-Step instruction, sent in the system prompt when Tools are removed.
+const FINAL_STEP: &str = "Investigation is closed. Answer now from the observations only. Write in \
+    your own words unless the person asked for exact text. Group by day when the question spans \
+    days. Cite ids. If the observations are empty, say so plainly.";
+
+/// The sentence the final-step note no longer asks the Model to write: the app adds its own note.
+const REMOVED_LINE: &str = "Add one line that there may be more to find.";
+
+/// How many of a request's messages are the closing nudge.
+fn nudges(messages: &[Message]) -> usize {
+    messages
+        .iter()
+        .filter(|message| **message == Message::User(NUDGE.to_owned()))
+        .count()
+}
+
+#[test]
+fn after_a_batch_of_tool_results_the_next_request_ends_with_the_nudge_once() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let second = &provider.requests()[1].messages;
+    assert_eq!(second.last(), Some(&Message::User(NUDGE.to_owned())));
+    assert_eq!(nudges(second), 1);
+}
+
+#[test]
+fn two_batches_in_a_row_give_each_request_one_nudge_and_the_nudges_do_not_stack() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::calls(&[("journal_search", r#"{"query":"walk"}"#)]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 3);
+    assert_eq!(nudges(&requests[1].messages), 1);
+    assert_eq!(nudges(&requests[2].messages), 1);
+    assert_eq!(
+        requests[2].messages.last(),
+        Some(&Message::User(NUDGE.to_owned()))
+    );
+}
+
+#[test]
+fn a_greeting_answered_without_a_tool_is_one_request_and_carries_no_nudge() {
+    let app = TestApp::new();
+    let provider = native(vec![Reply::text(&["Hello! What would you like to know?"])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "Hi");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 1, "the greeting takes one request");
+    assert_eq!(nudges(&requests[0].messages), 0);
+    assert!(
+        !format!("{:?}", requests[0]).contains(NUDGE),
+        "no nudge in the request"
+    );
+}
+
+#[test]
+fn the_nudge_is_sent_to_the_model_but_never_stored_shown_or_returned_to_the_ui() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    let started = ask(&app, "What did I write?");
+    let run = until_end(&events);
+    let conversation = started["conversation_id"].as_str().unwrap().to_owned();
+
+    assert_eq!(nudges(&provider.requests()[1].messages), 1);
+    let listed: Value = app
+        .invoke(
+            "ai_conversation_list",
+            json!({ "query": "", "offset": 0, "limit": 20 }),
+        )
+        .unwrap();
+    let markdown: String = app
+        .invoke(
+            "ai_conversation_markdown",
+            json!({ "id": conversation, "entryId": null }),
+        )
+        .unwrap();
+    let shown = [
+        started.to_string(),
+        run.iter()
+            .map(|event| serde_json::to_string(&event.event).unwrap())
+            .collect::<String>(),
+        get(&app, &conversation).to_string(),
+        listed.to_string(),
+        markdown,
+    ];
+    for text in shown {
+        assert!(!text.contains(NUDGE), "the nudge leaked: {text}");
+    }
+}
+
+/// The note the app adds to an answer given after the Model repeated its lookups.
+const LOOP_NOTE: &str = "Stopped early after repeated lookups; there may be more to find";
+
+#[test]
+fn a_loop_guard_stop_shows_its_note_once_and_the_answer_does_not_repeat_it() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let same = || Reply::calls(&[("journal_list", r#"{"from":"2026-10-22","to":"2026-10-22"}"#)]);
+    let provider = native(vec![
+        same(),
+        same(),
+        same(),
+        same(),
+        Reply::text(&["Enough looking."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    let started = ask(&app, "Repeat yourself");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+
+    let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
+    let answer = saved.last().unwrap();
+    assert_eq!(answer["budget_note"], LOOP_NOTE);
+    let notes = saved.iter().filter(|p| !p["budget_note"].is_null()).count();
+    assert_eq!(notes, 1, "the note is shown once");
+    assert!(!answer["text"].as_str().unwrap().contains("may be more"));
 }

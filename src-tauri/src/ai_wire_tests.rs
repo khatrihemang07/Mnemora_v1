@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use mnemora_providers::testing::{Canned, FakeServer};
 use serde_json::{Value, json};
 
+use crate::ai_tools_tests::NUDGE;
 use crate::ai_tracer_tests::{ended_outcome, until_end};
 use crate::test_support::TestApp;
 use mnemora_ai::RunOutcome;
@@ -593,4 +594,38 @@ fn ask_model(app: &TestApp, provider_id: &str, model: &str) -> Value {
                              "model": model, "local": local() } }),
     )
     .unwrap()
+}
+
+#[test]
+fn a_wrapper_sends_the_nudge_as_its_own_turn_after_the_tool_result() {
+    let app = TestApp::new();
+    let id = seed_entry(&app, "2026-10-20", "Packed the boxes for the move.");
+    let server = wrapper_playing(vec![
+        reply(tools(&[(
+            "journal_list",
+            r#"{"from":"2026-10-18","to":"2026-10-25"}"#,
+        )])),
+        reply(finish(&format!("You packed for the move [{id}]."), &[&id])),
+    ]);
+    let provider = add_wrapper(&app, &server.address());
+    let events = app.ai_events();
+
+    ask(&app, &provider, "What did I write last week?");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+
+    let seen = server.requests();
+    let second: Value = serde_json::from_str(&seen[1].body).unwrap();
+    let turns = second["messages"].as_array().unwrap();
+    let result = turns
+        .iter()
+        .position(|turn| {
+            turn["content"]
+                .as_str()
+                .is_some_and(|text| text.starts_with("Result of journal_list:"))
+        })
+        .expect("the Tool result is read back to the Model");
+    assert_eq!(turns[result + 1]["role"], "user");
+    assert_eq!(turns[result + 1]["content"], NUDGE);
+    let nudges = turns.iter().filter(|turn| turn["content"] == NUDGE).count();
+    assert_eq!(nudges, 1, "one nudge per request");
 }

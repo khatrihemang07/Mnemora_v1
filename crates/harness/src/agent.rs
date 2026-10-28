@@ -21,12 +21,15 @@ pub const MAX_REPEATS: usize = 3;
 /// Steps in a row whose calls were unknown or badly formed. After that the Run fails.
 pub const MAX_INVALID_STEPS: usize = 3;
 
-/// Sent with the last request: no Tools, answer what there is.
-pub const FINAL_NOTE: &str = "This is your last step. Answer now from what the Tools have shown, \
-    and say that the answer may be incomplete.";
-/// Sent once the Model has repeated itself: stop searching and answer.
-pub const CLOSE_NOTE: &str = "Stop looking things up. Answer now from what the Tools have shown, \
-    and say what is missing.";
+/// Sent after each batch of Tool results, while Tools are still offered: answer, or call the next
+/// Tool. It goes into the request only, never into the branch, so it is not saved as an entry.
+pub const NUDGE: &str = "If you now have what you need, answer in your own words unless the person \
+    asked for exact text. If something is missing, call the next Tool.";
+/// Sent with the answer-only request, when Tools are removed: on the last request, or once the
+/// Model has repeated itself. The app adds its own note saying the Run stopped early.
+pub const FINAL_NOTE: &str = "Investigation is closed. Answer now from the observations only. \
+    Write in your own words unless the person asked for exact text. Group by day when the question \
+    spans days. Cite ids. If the observations are empty, say so plainly.";
 /// The result of a call the Model made in a reply that was cut off. It did not run.
 pub const CUT_OFF: &str =
     "The reply was cut off before these calls ran. Send them again, one at a time.";
@@ -97,6 +100,16 @@ pub trait ToolHost {
     fn check_answer(&self, text: &str, sources: &[String]) -> Result<(), String>;
 }
 
+/// Why the Tools were removed for an answer: the Model's requests ran out, or it kept repeating
+/// its lookups.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Forced {
+    /// The last request of the Run.
+    Budget,
+    /// The Model repeated its calls, so the loop closed the investigation.
+    Repeats,
+}
+
 /// One Step that ended, with what the Model wrote and asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StepRecord {
@@ -106,8 +119,9 @@ pub struct StepRecord {
     pub calls: Vec<Call>,
     /// How the reply ended.
     pub stop: StopReason,
-    /// Whether this Step was the last one, so its answer carries the budget note.
-    pub budget_forced: bool,
+    /// Why this Step's answer is forced, when Tools were removed for it; the answer then carries
+    /// the app's note saying the Run stopped early.
+    pub forced: Option<Forced>,
     /// The sources the answer lists (envelope Providers); empty otherwise.
     pub sources: Vec<String>,
 }
@@ -186,22 +200,23 @@ pub fn run(
     let mut repeat_streak = 0;
     let mut invalid_streak = 0;
     let mut closing = false;
+    // Where the nudge goes in the messages: right after the last batch of Tool results, so notes
+    // the person sent after the batch follow it. Set after each batch, used by the next request.
+    let mut nudge_at: Option<usize> = None;
     loop {
         if control.ended() {
             return Outcome::Stopped;
         }
         let last = requests + 1 == MAX_REQUESTS;
         let withheld = last || closing;
-        let request = Request {
-            system: match (last, closing) {
-                (true, _) => format!("{system}\n{FINAL_NOTE}"),
-                (false, true) => format!("{system}\n{CLOSE_NOTE}"),
-                (false, false) => system.to_owned(),
-            },
-            messages: messages.clone(),
-            model: provider.model().to_owned(),
-            tools: if withheld { Vec::new() } else { host.specs() },
-        };
+        let request = request_for(
+            &*provider,
+            system,
+            &messages,
+            nudge_at.take(),
+            withheld,
+            host,
+        );
         if request_bytes(&request) > MAX_PROMPT_BYTES {
             return Outcome::Failed(Failure::TooLong);
         }
@@ -223,8 +238,12 @@ pub fn run(
         // A Step the person stopped or skipped: what it wrote is kept, and its calls do not run.
         if answer.stop == StopReason::Aborted || control.ended() {
             // On the answer-only request there is no request left for a note, so the Run ends too.
+            let had_calls = !answer.calls.is_empty();
             if keep_halted(answer, host, &mut messages, &mut ran, control, emit) || last {
                 return Outcome::Stopped;
+            }
+            if had_calls {
+                nudge_at = Some(messages.len());
             }
             deliver(steer, &mut messages, emit);
             continue;
@@ -243,7 +262,8 @@ pub fn run(
         }
 
         if answer.calls.is_empty() || (last && !answer.text.is_empty()) {
-            match finish(answer, last, host, &mut messages, steer, emit) {
+            let forced = forced_by(last, closing);
+            match finish(answer, last, forced, host, &mut messages, steer, emit) {
                 Finished::Answered => return Outcome::Answered,
                 Finished::Failed(failure) => return Outcome::Failed(failure),
                 Finished::Steered => continue,
@@ -272,6 +292,7 @@ pub fn run(
             control,
             emit,
         );
+        nudge_at = Some(messages.len());
         if !control.ended() {
             deliver(steer, &mut messages, emit);
         }
@@ -286,6 +307,45 @@ pub fn run(
         if invalid_streak >= MAX_INVALID_STEPS {
             return Outcome::Failed(Failure::BadResponse);
         }
+    }
+}
+
+/// Why an answer is forced: it is the last request, or the Model repeated its calls and the loop
+/// closed the investigation.
+fn forced_by(last: bool, closing: bool) -> Option<Forced> {
+    if last {
+        Some(Forced::Budget)
+    } else if closing {
+        Some(Forced::Repeats)
+    } else {
+        None
+    }
+}
+
+/// The request for one Step. The nudge, if due, goes in at `nudge_at` (after the last batch of Tool
+/// results). Once Tools are removed (`withheld`) the final note goes in the system prompt instead,
+/// and no nudge is sent, since it asks for a Tool.
+fn request_for(
+    provider: &dyn Provider,
+    system: &str,
+    messages: &[Message],
+    nudge_at: Option<usize>,
+    withheld: bool,
+    host: &dyn ToolHost,
+) -> Request {
+    let mut sent = messages.to_vec();
+    if let Some(at) = nudge_at.filter(|_| !withheld) {
+        sent.insert(at, Message::User(NUDGE.to_owned()));
+    }
+    Request {
+        system: if withheld {
+            format!("{system}\n{FINAL_NOTE}")
+        } else {
+            system.to_owned()
+        },
+        messages: sent,
+        model: provider.model().to_owned(),
+        tools: if withheld { Vec::new() } else { host.specs() },
     }
 }
 
@@ -311,7 +371,7 @@ fn keep_halted(
             } else {
                 StopReason::Stop
             },
-            budget_forced: false,
+            forced: None,
             sources: Vec::new(),
         }));
         messages.push(Message::Assistant {
@@ -358,7 +418,7 @@ fn run_step_calls(
         text: answer.text.clone(),
         calls: answer.calls.clone(),
         stop: answer.stop,
-        budget_forced: false,
+        forced: None,
         sources: Vec::new(),
     }));
     messages.push(Message::Assistant {
@@ -385,6 +445,7 @@ fn deliver(
 fn finish(
     answer: Answer,
     last: bool,
+    forced: Option<Forced>,
     host: &dyn ToolHost,
     messages: &mut Vec<Message>,
     steer: &mut dyn FnMut() -> Option<String>,
@@ -401,7 +462,7 @@ fn finish(
             text: answer.text.clone(),
             calls: Vec::new(),
             stop: answer.stop,
-            budget_forced: false,
+            forced: None,
             sources: answer.sources.clone(),
         }));
         messages.push(Message::Assistant {
@@ -417,7 +478,7 @@ fn finish(
             text: answer.text.clone(),
             calls: Vec::new(),
             stop: answer.stop,
-            budget_forced: false,
+            forced: None,
             sources: answer.sources.clone(),
         }));
         messages.push(Message::Assistant {
@@ -433,7 +494,7 @@ fn finish(
         text: answer.text,
         calls: Vec::new(),
         stop: answer.stop,
-        budget_forced: last,
+        forced,
         sources: answer.sources,
     }));
     Finished::Answered
