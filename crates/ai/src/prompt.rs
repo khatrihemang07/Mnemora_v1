@@ -67,7 +67,8 @@ pub fn system(
          {intent}\
          Cite the ids of the Entries and Tasks your answer rests on, in square brackets, such as \
          [id]. Cite only items a Tool returned in this Run.\n\
-         Answer briefly, in the person's language, in plain Markdown. Do not describe how you work.",
+         Answer briefly, in the language of the person's question, in plain Markdown. Do not describe \
+         how you work.",
         weekday = local.weekday,
         today = local.today,
         zone = local.time_zone,

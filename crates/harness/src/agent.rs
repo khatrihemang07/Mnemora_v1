@@ -23,13 +23,15 @@ pub const MAX_INVALID_STEPS: usize = 3;
 
 /// Sent after each batch of Tool results, while Tools are still offered: answer, or call the next
 /// Tool. It goes into the request only, never into the branch, so it is not saved as an entry.
-pub const NUDGE: &str = "If you now have what you need, answer in your own words unless the person \
-    asked for exact text. If something is missing, call the next Tool.";
+pub const NUDGE: &str = "If you now have what you need, answer in the language of the question, \
+    summarising rather than quoting unless exact text was asked for. If something is missing, call \
+    the next Tool.";
 /// Sent with the answer-only request, when Tools are removed: on the last request, or once the
 /// Model has repeated itself. The app adds its own note saying the Run stopped early.
 pub const FINAL_NOTE: &str = "Investigation is closed. Answer now from the observations only. \
     Write in your own words unless the person asked for exact text. Group by day when the question \
-    spans days. Cite ids. If the observations are empty, say so plainly.";
+    spans days. Answer in the language of the question. Cite ids. If the observations are empty, say \
+    so plainly.";
 /// The result of a call the Model made in a reply that was cut off. It did not run.
 pub const CUT_OFF: &str =
     "The reply was cut off before these calls ran. Send them again, one at a time.";

@@ -853,18 +853,26 @@ fn the_prompt_asks_what_the_person_wants_before_a_tool_and_fixes_no_phrasing() {
 
     let (_, system) = sent(&provider, 0);
     assert!(system.contains(INTENT), "{system}");
+    assert!(
+        system.contains(
+            "Answer briefly, in the language of the person's question, in plain Markdown."
+        ),
+        "{system}"
+    );
     assert!(!system.contains("yesterday"), "{system}");
     assert!(!system.contains("what did I do"), "{system}");
 }
 
 /// The closing nudge the loop adds after each batch of Tool results.
-pub(crate) const NUDGE: &str = "If you now have what you need, answer in your own words unless the person \
-    asked for exact text. If something is missing, call the next Tool.";
+pub(crate) const NUDGE: &str = "If you now have what you need, answer in the language of the question, \
+    summarising rather than quoting unless exact text was asked for. If something is missing, call \
+    the next Tool.";
 
 /// The final-Step instruction, sent in the system prompt when Tools are removed.
 const FINAL_STEP: &str = "Investigation is closed. Answer now from the observations only. Write in \
     your own words unless the person asked for exact text. Group by day when the question spans \
-    days. Cite ids. If the observations are empty, say so plainly.";
+    days. Answer in the language of the question. Cite ids. If the observations are empty, say so \
+    plainly.";
 
 /// The sentence the final-step note no longer asks the Model to write: the app adds its own note.
 const REMOVED_LINE: &str = "Add one line that there may be more to find.";

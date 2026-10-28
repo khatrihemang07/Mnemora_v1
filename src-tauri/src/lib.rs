@@ -164,6 +164,8 @@ mod ai_branching_tests;
 #[cfg(test)]
 mod ai_changes_tests;
 #[cfg(test)]
+mod ai_comment_hints_tests;
+#[cfg(test)]
 mod ai_conversations_tests;
 #[cfg(any(test, feature = "seed"))]
 mod ai_fixture;

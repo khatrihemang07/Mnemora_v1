@@ -3,6 +3,7 @@
 //! and say what changed in a range of days. They never write, skip deleted rows and return refusals
 //! as data. Closing days and local times are read in the device's zone, as the client sends it.
 
+use mnemora_core::error::AppResult;
 use mnemora_core::local_time;
 use mnemora_core::recent;
 use mnemora_core::tool::{
@@ -286,6 +287,39 @@ fn row_json(task: &Task, list: &str, zone: &str) -> Value {
     })
 }
 
+/// The rows of `tasks` for a list or search, each with its Comment hints (see `with_comment_hints`).
+fn hinted_rows<'a>(
+    conn: &Connection,
+    tasks: impl IntoIterator<Item = &'a Task>,
+    names: &std::collections::HashMap<String, String>,
+    zone: &str,
+) -> AppResult<Vec<Value>> {
+    tasks
+        .into_iter()
+        .map(|task| {
+            let mut row = row_json(task, &list_label(names, task), zone);
+            with_comment_hints(conn, &task.id, &mut row, zone)?;
+            Ok(row)
+        })
+        .collect()
+}
+
+/// Adds to a row how many live Comments its Task has and when the newest was written, with a local
+/// reading. A Task with no live Comment gets none of the three fields, which keeps rows small.
+fn with_comment_hints(
+    conn: &Connection,
+    task_id: &str,
+    row: &mut Value,
+    zone: &str,
+) -> AppResult<()> {
+    if let Some((count, newest)) = comment_repo::hint(conn, task_id)? {
+        row["comments"] = json!(count);
+        row["last_comment_at"] = json!(newest);
+        row["last_comment_at_local"] = json!(local_time::minute(newest, zone));
+    }
+    Ok(())
+}
+
 /// The instants a closing-day range covers in the device's zone: from the start of its first day
 /// to the end of its last. A zone or day that cannot be read is a refusal.
 fn closed_bounds(
@@ -318,7 +352,7 @@ impl Tool for List {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_list",
-            about: "List Tasks by state, List, due date, priority and the day they were closed. With closed_from or closed_to it lists done and Won't do Tasks, newest close first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
+            about: "List Tasks by state, List, due date, priority and the day they were closed. With closed_from or closed_to it lists done and Won't do Tasks, newest close first. A row with comments above 0 has updates and progress notes: read them with todo_read and comments true. last_comment_at is when its newest live Comment was written. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
             params: LIST_PARAMS,
         }
     }
@@ -398,10 +432,9 @@ impl Tool for List {
         let more = tasks.len() > limit;
         tasks.truncate(limit);
         let zone = calendar.time_zone.as_str();
-        let rows: Vec<Value> = tasks
-            .iter()
-            .map(|t| row_json(t, &list_label(&names, t), zone))
-            .collect();
+        let Ok(rows) = hinted_rows(conn, &tasks, &names, zone) else {
+            return unreadable();
+        };
         let (kept, cut_short) = fit_rows(rows);
         let shown = kept.len();
         let next = (more || cut_short).then_some(number(offset + shown));
@@ -423,7 +456,7 @@ impl Tool for Read {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_read",
-            about: "Read one Task in full: its notes, and optionally steps, Comments and History. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
+            about: "Read one Task in full: its notes, and optionally steps, Comments and History. Comments are its updates and progress notes; set comments true when a list or search row shows comments above 0. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
             params: READ_PARAMS,
         }
     }
@@ -515,7 +548,7 @@ impl Tool for Search {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_search",
-            about: "Find Tasks with the app's Search, open ones first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
+            about: "Find Tasks with the app's Search, open ones first. A row with comments above 0 has updates and progress notes: read them with todo_read and comments true. last_comment_at is when its newest live Comment was written. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
             params: SEARCH_PARAMS,
         }
     }
@@ -551,10 +584,9 @@ impl Tool for Search {
         let total = matching.len();
         let page: Vec<&Task> = matching.into_iter().skip(offset).take(limit).collect();
         let zone = calendar.time_zone.as_str();
-        let rows: Vec<Value> = page
-            .iter()
-            .map(|t| row_json(t, &list_label(&names, t), zone))
-            .collect();
+        let Ok(rows) = hinted_rows(conn, page.iter().copied(), &names, zone) else {
+            return unreadable();
+        };
         let items = page.iter().map(|t| item(t)).collect();
         let next = (offset + limit < total).then_some(offset + limit);
         Output::ok(
@@ -571,7 +603,7 @@ impl Tool for Changes {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_changes",
-            about: "Task creations, completions, reschedules, moves and Comments in a date range. Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'.",
+            about: "Task creations, completions, reschedules, moves and Comments written in a date range (a Comment reads as commented, with its text). Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'.",
             params: CHANGES_PARAMS,
         }
     }
