@@ -5,20 +5,35 @@ use jiff::{Timestamp, civil::Date, tz::TimeZone};
 
 /// A local date and time as a Tool shows it: `2026-10-27 23:50`.
 const MINUTE_FORMAT: &str = "%Y-%m-%d %H:%M";
+/// A local day, `2026-10-27`.
+const DAY_FORMAT: &str = "%Y-%m-%d";
+/// A local time of day, `23:50`.
+const CLOCK_FORMAT: &str = "%H:%M";
 
 /// The zone an IANA name refers to, if the bundled tz data knows it.
 fn zone(time_zone: &str) -> Option<TimeZone> {
     TimeZone::get(time_zone).ok()
 }
 
+/// The instant as `format` reads it in `time_zone`, or `None` when either is unknown.
+fn read(ms: i64, time_zone: &str, format: &str) -> Option<String> {
+    let at = Timestamp::from_millisecond(ms).ok()?;
+    Some(at.to_zoned(zone(time_zone)?).strftime(format).to_string())
+}
+
 /// The instant as `YYYY-MM-DD HH:MM` in `time_zone`, or `None` when either is unknown.
 pub fn minute(ms: i64, time_zone: &str) -> Option<String> {
-    let at = Timestamp::from_millisecond(ms).ok()?;
-    Some(
-        at.to_zoned(zone(time_zone)?)
-            .strftime(MINUTE_FORMAT)
-            .to_string(),
-    )
+    read(ms, time_zone, MINUTE_FORMAT)
+}
+
+/// The local day of the instant in `time_zone`, `YYYY-MM-DD`, or `None` when either is unknown.
+pub fn day(ms: i64, time_zone: &str) -> Option<String> {
+    read(ms, time_zone, DAY_FORMAT)
+}
+
+/// The local time of day of the instant in `time_zone`, `HH:MM`, or `None` when either is unknown.
+pub fn clock(ms: i64, time_zone: &str) -> Option<String> {
+    read(ms, time_zone, CLOCK_FORMAT)
 }
 
 /// The instant `day` (`YYYY-MM-DD`) starts in `time_zone`, in epoch milliseconds. Midnight, or the

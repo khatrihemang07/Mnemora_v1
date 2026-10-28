@@ -373,10 +373,22 @@ fn advance(state: &Value, record: &Record) -> (Value, Value) {
 pub fn task_history(conn: &Connection, id: &str) -> AppResult<Vec<HistoryLine>> {
     repo::get(conn, id)?.ok_or(TodoError::TaskNotFound)?;
     let records = changelog::read(conn, ENTITY, id)?;
+    let batches = lines_by_record(conn, &records)?;
+    Ok(batches.into_iter().rev().flatten().collect())
+}
+
+/// The lines each record of one Task adds, as one batch per record in record order (oldest
+/// first). The walk carries the state and the text baseline from record to record, so a line
+/// reads the same whether the whole History is shown or only some of its records (the Tool that
+/// lists changes in a range).
+pub(crate) fn lines_by_record(
+    conn: &Connection,
+    records: &[Record],
+) -> AppResult<Vec<Vec<HistoryLine>>> {
     let mut batches: Vec<Vec<HistoryLine>> = Vec::with_capacity(records.len());
     let mut prev: Option<Value> = None;
     let mut base: Option<Baseline> = None;
-    for record in &records {
+    for record in records {
         let (state, seen) = advance(prev.as_ref().unwrap_or(&Value::Null), record);
         let lines = record_lines(
             conn,
@@ -403,7 +415,7 @@ pub fn task_history(conn: &Connection, id: &str) -> AppResult<Vec<HistoryLine>> 
         }
         prev = Some(state);
     }
-    Ok(batches.into_iter().rev().flatten().collect())
+    Ok(batches)
 }
 
 #[cfg(test)]

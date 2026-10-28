@@ -6,6 +6,7 @@
 mod arrange;
 mod backfill;
 mod capture;
+mod changes;
 mod comment;
 mod comment_repo;
 mod comment_service;

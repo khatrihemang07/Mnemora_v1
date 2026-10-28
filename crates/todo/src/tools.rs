@@ -1,9 +1,10 @@
 //! The Todo Module's read-only Tools for the AI (ADR 0002 amendment, ADR 0018): list Tasks by state,
-//! List, due date, priority and closing day; read one in full; search with the app's own Search.
-//! They never write, skip deleted rows and return refusals as data. Closing days and local times
-//! are read in the device's zone, as the client sends it.
+//! List, due date, priority and closing day; read one in full; search with the app's own Search;
+//! and say what changed in a range of days. They never write, skip deleted rows and return refusals
+//! as data. Closing days and local times are read in the device's zone, as the client sends it.
 
 use mnemora_core::local_time;
+use mnemora_core::recent;
 use mnemora_core::tool::{
     Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, fit_rows, number,
 };
@@ -14,7 +15,7 @@ use crate::list::name_key;
 use crate::repo::{COLUMNS, from_row};
 use crate::steps::checklist_items;
 use crate::task::{Task, TaskState};
-use crate::{comment_repo, history, list_repo};
+use crate::{changes, comment_repo, history, list_repo};
 
 /// The Module's id, as the change log and the AI name it.
 const MODULE_ID: &str = "todo";
@@ -168,9 +169,57 @@ const SEARCH_PARAMS: &[Param] = &[
     },
 ];
 
+/// Rows the changes Tool returns by default, and at most.
+const CHANGES_DEFAULT: usize = 30;
+const CHANGES_MAX: i64 = 100;
+
+const CHANGES_PARAMS: &[Param] = &[
+    Param {
+        name: "from",
+        kind: Kind::Date,
+        required: true,
+        about: "First day, YYYY-MM-DD, in the device's time zone.",
+    },
+    Param {
+        name: "to",
+        kind: Kind::Date,
+        required: true,
+        about: "Last day, YYYY-MM-DD, in the device's time zone.",
+    },
+    Param {
+        name: "kinds",
+        kind: Kind::Text { max_chars: 200 },
+        required: false,
+        about: "Only these kinds, comma-separated: created, done, wont, skipped, reopened, moved, due, priority, edited, commented, deleted, restored, repeat. Counts still cover the whole range.",
+    },
+    Param {
+        name: "offset",
+        kind: Kind::Integer {
+            min: 0,
+            max: 1_000_000,
+        },
+        required: false,
+        about: "Rows to skip, from a next_offset.",
+    },
+    Param {
+        name: "limit",
+        kind: Kind::Integer {
+            min: 1,
+            max: CHANGES_MAX,
+        },
+        required: false,
+        about: "Rows to return, 30 by default.",
+    },
+];
+
 /// The Tools the Todo Module offers.
 pub(crate) fn all() -> Vec<Box<dyn Tool>> {
-    vec![Box::new(List), Box::new(Read), Box::new(Search)]
+    vec![
+        Box::new(List),
+        Box::new(Read),
+        Box::new(Search),
+        Box::new(Changes),
+    ]
 }
 
 fn unreadable() -> Output {
@@ -512,6 +561,42 @@ impl Tool for Search {
             json!({ "tasks": rows, "next_offset": next }),
             format!("Searched tasks, {total} found"),
             items,
+        )
+    }
+}
+
+struct Changes;
+
+impl Tool for Changes {
+    fn spec(&self) -> Spec {
+        Spec {
+            name: "todo_changes",
+            about: "Task creations, completions, reschedules, moves and Comments in a date range. Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'.",
+            params: CHANGES_PARAMS,
+        }
+    }
+
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
+        let zone = calendar.time_zone.as_str();
+        let (start, end) = match recent::bounds(args, zone) {
+            Ok(bounds) => bounds,
+            Err(refusal) => return refusal,
+        };
+        let kinds = match recent::kind_filter(args.text("kinds"), changes::KINDS) {
+            Ok(kinds) => kinds,
+            Err(refusal) => return refusal,
+        };
+        let Ok(rows) = changes::rows(conn, start, end) else {
+            return unreadable();
+        };
+        recent::page(
+            MODULE_ID,
+            rows,
+            changes::KINDS,
+            kinds,
+            count(args.int("offset"), 0),
+            count(args.int("limit"), CHANGES_DEFAULT),
+            zone,
         )
     }
 }

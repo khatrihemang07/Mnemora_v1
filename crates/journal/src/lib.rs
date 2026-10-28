@@ -3,6 +3,7 @@
 
 #![forbid(unsafe_code)]
 
+mod changes;
 mod entry;
 mod error;
 mod migrations;

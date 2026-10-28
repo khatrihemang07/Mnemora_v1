@@ -12,9 +12,9 @@ use crate::ai_tracer_tests::{ended_outcome, label, until_end};
 use crate::test_support::TestApp;
 use mnemora_ai::RunOutcome;
 
-const TODAY: &str = "2026-10-25";
+pub(crate) const TODAY: &str = "2026-10-25";
 
-fn local_now() -> Value {
+pub(crate) fn local_now() -> Value {
     json!({ "today": TODAY, "now": "12:00", "offset_min": 0 })
 }
 
@@ -28,11 +28,11 @@ fn local() -> Value {
 }
 
 /// A Provider that makes native Tool calls, playing `replies` one Step at a time.
-fn native(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
+pub(crate) fn native(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
     Arc::new(ScriptedProvider::new("Scripted", "scripted-model", replies).with_native_tools())
 }
 
-fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
+pub(crate) fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
     let provider: Arc<dyn Provider> = provider.clone();
     app.set_ai_provider(provider);
     app.invoke::<Value>(
@@ -42,7 +42,7 @@ fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
     .unwrap();
 }
 
-fn provider_id(app: &TestApp) -> String {
+pub(crate) fn provider_id(app: &TestApp) -> String {
     let list: Value = app.invoke("ai_provider_list", json!({})).unwrap();
     list[0]["id"].as_str().unwrap().to_owned()
 }
@@ -61,7 +61,7 @@ fn ask(app: &TestApp, text: &str) -> Value {
     .unwrap()
 }
 
-fn payloads(app: &TestApp, conversation: &str) -> Vec<Value> {
+pub(crate) fn payloads(app: &TestApp, conversation: &str) -> Vec<Value> {
     let view: Value = app
         .invoke("ai_conversation_get", json!({ "id": conversation }))
         .unwrap();
@@ -74,16 +74,16 @@ fn payloads(app: &TestApp, conversation: &str) -> Vec<Value> {
 }
 
 /// The Tools and system prompt a Step was sent with.
-fn sent(provider: &ScriptedProvider, step: usize) -> (Vec<ToolDef>, String) {
+pub(crate) fn sent(provider: &ScriptedProvider, step: usize) -> (Vec<ToolDef>, String) {
     let request = &provider.requests()[step];
     (request.tools.clone(), request.system.clone())
 }
 
-fn names(tools: &[ToolDef]) -> Vec<String> {
+pub(crate) fn names(tools: &[ToolDef]) -> Vec<String> {
     tools.iter().map(|t| t.name.clone()).collect()
 }
 
-fn seed_entry(app: &TestApp, date: &str, text: &str) -> String {
+pub(crate) fn seed_entry(app: &TestApp, date: &str, text: &str) -> String {
     let entry: Value = app
         .invoke(
             "journal_entry_create",
@@ -96,7 +96,7 @@ fn seed_entry(app: &TestApp, date: &str, text: &str) -> String {
     entry["id"].as_str().unwrap().to_owned()
 }
 
-fn seed_task(app: &TestApp, title: &str, due: Option<&str>) -> String {
+pub(crate) fn seed_task(app: &TestApp, title: &str, due: Option<&str>) -> String {
     let when = due.map(|d| json!({ "date": d, "time": null, "local": local_now() }));
     let task: Value = app
         .invoke(
@@ -531,7 +531,7 @@ fn close_at(app: &TestApp, id: &str, state: &str, ms: i64) {
 }
 
 /// Asks a question as if the device were in `time_zone`.
-fn ask_in(app: &TestApp, text: &str, time_zone: &str) -> Value {
+pub(crate) fn ask_in(app: &TestApp, text: &str, time_zone: &str) -> Value {
     app.invoke(
         "ai_run_start",
         json!({ "request": {
@@ -546,12 +546,12 @@ fn ask_in(app: &TestApp, text: &str, time_zone: &str) -> Value {
 }
 
 /// Runs a question on a scripted native-tool Provider and returns each Tool result, in order.
-fn tool_results(app: &TestApp, replies: Vec<Reply>) -> Vec<String> {
+pub(crate) fn tool_results(app: &TestApp, replies: Vec<Reply>) -> Vec<String> {
     tool_results_in(app, "Europe/London", replies)
 }
 
 /// As `tool_results`, for a device in `time_zone`.
-fn tool_results_in(app: &TestApp, time_zone: &str, replies: Vec<Reply>) -> Vec<String> {
+pub(crate) fn tool_results_in(app: &TestApp, time_zone: &str, replies: Vec<Reply>) -> Vec<String> {
     let provider = native(replies);
     install(app, &provider);
     let events = app.ai_events();

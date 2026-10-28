@@ -162,6 +162,8 @@ mod ai;
 #[cfg(test)]
 mod ai_branching_tests;
 #[cfg(test)]
+mod ai_changes_tests;
+#[cfg(test)]
 mod ai_conversations_tests;
 #[cfg(test)]
 mod ai_provider_tests;

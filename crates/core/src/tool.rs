@@ -286,6 +286,12 @@ pub fn fit_rows(rows: Vec<Value>) -> (Vec<Value>, bool) {
     (kept, false)
 }
 
+/// Whether a whole result body fits under the cap, with the same room the envelope keeps free as
+/// `fit_rows` leaves.
+pub fn fits(body: &Value) -> bool {
+    body.to_string().len() <= RESULT_CAP - ENVELOPE_ALLOWANCE
+}
+
 /// Cuts `text` to at most `max_bytes`, on a character boundary.
 pub fn cut(text: &str, max_bytes: usize) -> &str {
     if text.len() <= max_bytes {

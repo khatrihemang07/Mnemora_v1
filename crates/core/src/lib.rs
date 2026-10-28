@@ -17,6 +17,7 @@ pub mod logging;
 pub mod module;
 pub mod order;
 pub mod paths;
+pub mod recent;
 pub mod search;
 pub mod settings;
 pub mod syncable;

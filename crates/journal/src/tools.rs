@@ -1,8 +1,9 @@
 //! The Journal's read-only Tools for the AI (ADR 0002 amendment, ADR 0018): list Entries by date,
-//! read one in full and search with the app's own Search. They never write, skip deleted Entries
-//! and return refusals as data.
+//! read one in full, search with the app's own Search, and say what changed in a range of days.
+//! They never write, skip deleted Entries and return refusals as data.
 
 use mnemora_core::local_time;
+use mnemora_core::recent;
 use mnemora_core::search::Span;
 use mnemora_core::tool::{
     Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, fit_rows, number,
@@ -10,7 +11,7 @@ use mnemora_core::tool::{
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
 
-use crate::MODULE_ID;
+use crate::{MODULE_ID, changes};
 
 /// Characters of an Entry's text shown in a list row or a title.
 const PREVIEW_CHARS: usize = 120;
@@ -115,15 +116,57 @@ const SEARCH_PARAMS: &[Param] = &[
     },
 ];
 
+/// Rows the changes Tool returns by default, and at most.
+const CHANGES_DEFAULT: usize = 30;
+const CHANGES_MAX: i64 = 100;
+
+const CHANGES_PARAMS: &[Param] = &[
+    Param {
+        name: "from",
+        kind: Kind::Date,
+        required: true,
+        about: "First day, YYYY-MM-DD, in the device's time zone.",
+    },
+    Param {
+        name: "to",
+        kind: Kind::Date,
+        required: true,
+        about: "Last day, YYYY-MM-DD, in the device's time zone.",
+    },
+    Param {
+        name: "kinds",
+        kind: Kind::Text { max_chars: 60 },
+        required: false,
+        about: "Only these kinds, comma-separated: written, edited, deleted. Counts still cover the whole range.",
+    },
+    Param {
+        name: "offset",
+        kind: Kind::Integer {
+            min: 0,
+            max: 1_000_000,
+        },
+        required: false,
+        about: "Rows to skip, from a next_offset.",
+    },
+    Param {
+        name: "limit",
+        kind: Kind::Integer {
+            min: 1,
+            max: CHANGES_MAX,
+        },
+        required: false,
+        about: "Rows to return, 30 by default.",
+    },
+];
+
 /// The Tools the Journal offers.
 pub(crate) fn all() -> Vec<Box<dyn Tool>> {
-    vec![Box::new(List), Box::new(Read), Box::new(Search)]
-}
-
-/// The Entry's first words, whitespace collapsed, for a row or a title.
-fn preview(body: &str, chars: usize) -> String {
-    let collapsed = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.chars().take(chars).collect()
+    vec![
+        Box::new(List),
+        Box::new(Read),
+        Box::new(Search),
+        Box::new(Changes),
+    ]
 }
 
 fn plain(spans: &[Span]) -> String {
@@ -154,7 +197,7 @@ fn item(row: &Row) -> Item {
     Item {
         id: row.id.clone(),
         module: MODULE_ID,
-        title: preview(&row.body, PREVIEW_CHARS),
+        title: recent::preview(&row.body, PREVIEW_CHARS),
         date: Some(row.page_date.clone()),
     }
 }
@@ -166,7 +209,7 @@ fn list_json(row: &Row, zone: &str) -> Value {
         "written_at": row.written_at,
         "written_at_local": local_time::minute(row.written_at, zone),
         "word_count": row.word_count,
-        "preview": preview(&row.body, PREVIEW_CHARS),
+        "preview": recent::preview(&row.body, PREVIEW_CHARS),
     })
 }
 
@@ -334,6 +377,42 @@ impl Tool for Search {
             json!({ "results": rows, "next_offset": next }),
             format!("Searched entries, {total} found"),
             items,
+        )
+    }
+}
+
+struct Changes;
+
+impl Tool for Changes {
+    fn spec(&self) -> Spec {
+        Spec {
+            name: "journal_changes",
+            about: "Entries written, edited or deleted in a date range. Use for questions about a period. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title (the Entry's preview; a deleted Entry keeps its preview). A change counts on the day it was made, not on the Entry's Page date. Counts cover the whole range by kind.",
+            params: CHANGES_PARAMS,
+        }
+    }
+
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
+        let zone = calendar.time_zone.as_str();
+        let (start, end) = match recent::bounds(args, zone) {
+            Ok(bounds) => bounds,
+            Err(refusal) => return refusal,
+        };
+        let kinds = match recent::kind_filter(args.text("kinds"), changes::KINDS) {
+            Ok(kinds) => kinds,
+            Err(refusal) => return refusal,
+        };
+        let Ok(rows) = changes::rows(conn, start, end) else {
+            return unreadable();
+        };
+        recent::page(
+            MODULE_ID,
+            rows,
+            changes::KINDS,
+            kinds,
+            count(args.int("offset"), 0),
+            count(args.int("limit"), CHANGES_DEFAULT),
+            zone,
         )
     }
 }

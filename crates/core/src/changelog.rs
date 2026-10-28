@@ -535,43 +535,96 @@ pub struct Record {
     /// Made on this device. Only an own record has to be completed (a group whole) the way it is
     /// sent; a received one already carries whole groups.
     pub local: bool,
+    /// Its place in the log: the clock it was stamped with. Records sort by it, then by `device`.
+    pub clock: hlc::Timestamp,
+    /// The device that made it.
+    pub device: String,
+}
+
+/// A stored record with the entity it belongs to, as `read_between` returns it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityRecord {
+    /// Kind of entity, e.g. `journal_entry`.
+    pub entity: String,
+    /// Id of the changed entity.
+    pub entity_id: String,
+    /// The record itself.
+    pub record: Record,
+}
+
+/// The columns a stored record is read from, in the order `stored` takes them.
+const RECORD_COLUMNS: &str = "entity, entity_id, op, session_id, snapshot, at, fields,
+    hlc_ms, hlc_counter, origin_device, origin_device = (SELECT device_id FROM device_clock)";
+
+/// A row read with `RECORD_COLUMNS`. A record whose snapshot cannot be read back is `None`: the
+/// log must never stop a screen from loading.
+fn stored(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<EntityRecord>> {
+    let snapshot: String = r.get(4)?;
+    let Ok(snapshot) = serde_json::from_str(&snapshot) else {
+        return Ok(None);
+    };
+    let fields: Option<String> = r.get(6)?;
+    Ok(Some(EntityRecord {
+        entity: r.get(0)?,
+        entity_id: r.get(1)?,
+        record: Record {
+            op: r.get(2)?,
+            session_id: r.get(3)?,
+            snapshot,
+            at: r.get(5)?,
+            fields: fields.and_then(|f| match serde_json::from_str(&f) {
+                Ok(Value::Object(map)) => Some(map),
+                _ => None,
+            }),
+            clock: hlc::Timestamp {
+                ms: r.get(7)?,
+                counter: r.get(8)?,
+            },
+            device: r.get(9)?,
+            local: r.get::<_, Option<bool>>(10)?.unwrap_or(false),
+        },
+    }))
 }
 
 /// Every record of one entity, oldest first by clock `(ms, counter, origin device)`: the same
-/// order on every device. On one device that is the order the changes were made. A record whose snapshot cannot be read back is
-/// skipped: the log must never stop a screen from loading.
+/// order on every device. On one device that is the order the changes were made. A record whose
+/// snapshot cannot be read back is skipped.
 pub fn read(conn: &Connection, entity: &str, entity_id: &str) -> AppResult<Vec<Record>> {
-    let mut stmt = conn.prepare(
-        "SELECT op, session_id, snapshot, at, fields,
-                origin_device = (SELECT device_id FROM device_clock) FROM change_log
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {RECORD_COLUMNS} FROM change_log
          WHERE entity = ?1 AND entity_id = ?2
-         ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq",
-    )?;
-    let rows = stmt.query_map([entity, entity_id], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, Option<String>>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, i64>(3)?,
-            r.get::<_, Option<String>>(4)?,
-            r.get::<_, Option<bool>>(5)?.unwrap_or(false),
-        ))
-    })?;
+         ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq"
+    ))?;
+    let rows = stmt.query_map([entity, entity_id], stored)?;
     let mut out = Vec::new();
     for row in rows {
-        let (op, session_id, snapshot, at, fields, local) = row?;
-        if let Ok(snapshot) = serde_json::from_str(&snapshot) {
-            out.push(Record {
-                op,
-                session_id,
-                snapshot,
-                at,
-                fields: fields.and_then(|f| match serde_json::from_str(&f) {
-                    Ok(Value::Object(map)) => Some(map),
-                    _ => None,
-                }),
-                local,
-            });
+        if let Some(found) = row? {
+            out.push(found.record);
+        }
+    }
+    Ok(out)
+}
+
+/// Every record of `module` made in `[from, to)` (UTC milliseconds), oldest first by clock as
+/// `read` orders them, whatever entity it belongs to. Module Tools use it to find what changed in
+/// a period; a Module then reads the whole history of the entities it finds, since a change only
+/// reads in context. A record whose snapshot cannot be read back is skipped.
+pub fn read_between(
+    conn: &Connection,
+    module: &str,
+    from: i64,
+    to: i64,
+) -> AppResult<Vec<EntityRecord>> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {RECORD_COLUMNS} FROM change_log
+         WHERE module = ?1 AND at >= ?2 AND at < ?3
+         ORDER BY hlc_ms, hlc_counter, origin_device, origin_seq"
+    ))?;
+    let rows = stmt.query_map(rusqlite::params![module, from, to], stored)?;
+    let mut out = Vec::new();
+    for row in rows {
+        if let Some(found) = row? {
+            out.push(found);
         }
     }
     Ok(out)
