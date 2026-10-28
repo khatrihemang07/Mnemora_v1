@@ -38,6 +38,7 @@ pub use conversations::{
 };
 pub use error::AiError;
 pub use keys::KeyStore;
+pub use prompt::Wording;
 pub use provider::{
     ConnectionTest, KeyState, ModelList, ModelUsage, ModelUse, NewProvider, ProviderKind,
     ProviderRecord, ProviderUpdate, ProviderView, build,

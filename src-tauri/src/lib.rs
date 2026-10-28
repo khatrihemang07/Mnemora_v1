@@ -171,6 +171,12 @@ mod ai_fixture;
 mod ai_fixture_tests;
 #[cfg(test)]
 mod ai_provider_tests;
+// The headless QA harness: real Runs over a copy of the Sandbox, for `examples/ai_qa.rs`.
+#[cfg(any(test, feature = "seed"))]
+#[doc(hidden)]
+pub mod ai_qa;
+#[cfg(test)]
+mod ai_qa_tests;
 #[cfg(test)]
 mod ai_run_control_tests;
 #[cfg(test)]

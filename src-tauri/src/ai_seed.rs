@@ -374,7 +374,7 @@ fn count_rows(conn: &Connection) -> Result<BTreeMap<String, i64>, String> {
 
 /// Deletes the database file and its WAL and shared-memory files. Only ever called with the Sandbox
 /// path, after `refuse_production` has passed.
-fn remove_database(db_file: &Path) -> Result<(), String> {
+pub(crate) fn remove_database(db_file: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let mut name = db_file.as_os_str().to_owned();
         name.push(suffix);
@@ -418,28 +418,52 @@ pub fn run_cli<I: IntoIterator<Item = String>>(args: I) -> i32 {
     }
 }
 
-fn run(options: &Options) -> Result<String, String> {
-    let real_base = platform_data_root()?;
-    let base = options.base.clone().unwrap_or_else(|| real_base.clone());
+/// The Sandbox's paths, resolved as the app would resolve them: under `base` (default: `real_base`,
+/// the platform data folder) and in `data_dir` (default: the folder the Sandbox's device file
+/// moved it to). Refused, before anything is read or written there, when any of them lies inside
+/// Production's folders, which are read from `real_base`. Returns the paths and those folders.
+pub fn sandbox_paths(
+    real_base: &Path,
+    base: Option<&Path>,
+    data_dir: Option<&Path>,
+) -> Result<(AppPaths, Vec<PathBuf>), String> {
+    let base = base.map_or_else(|| real_base.to_path_buf(), Path::to_path_buf);
     let boot = AppPaths::resolve(Environment::Sandbox, &base, None);
-    let data_dir = options
-        .data_dir
-        .clone()
+    let data_dir = data_dir
+        .map(Path::to_path_buf)
         .or_else(|| DeviceSettings::load(&boot.device_file()).data_dir_override());
     let paths = AppPaths::resolve(Environment::Sandbox, &base, data_dir.as_deref());
+    let production = production_roots(real_base);
+    refuse_production(
+        &[
+            paths.data_dir.as_path(),
+            paths.config_dir.as_path(),
+            paths.db_file.as_path(),
+        ],
+        &production,
+    )?;
+    Ok((paths, production))
+}
+
+fn run(options: &Options) -> Result<String, String> {
+    let real_base = platform_data_root()?;
+    let (paths, production) = sandbox_paths(
+        &real_base,
+        options.base.as_deref(),
+        options.data_dir.as_deref(),
+    )?;
     let zone = options
         .zone
         .clone()
         .or_else(system_zone)
         .ok_or("this Mac's time zone is not an IANA name; pass --zone")?;
     let now = now_ms();
-    let production = production_roots(&real_base);
     let report = seed_at(&paths, &production, now, &zone, options.reset)?;
     Ok(describe(&paths, &production, now, &zone, &report))
 }
 
 /// This machine's IANA zone: `TZ` when it names one, else what `/etc/localtime` points at.
-fn system_zone() -> Option<String> {
+pub fn system_zone() -> Option<String> {
     if let Ok(tz) = std::env::var("TZ") {
         let tz = tz.trim_start_matches(':');
         if !tz.is_empty() {

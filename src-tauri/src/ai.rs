@@ -279,7 +279,11 @@ fn start_run<R: Runtime>(
     };
     let provider = state.ai.provider_for(&prepared);
     let (tools, off) = offered_tools(state)?;
-    let toolset = mnemora_ai::Toolset { tools, off };
+    let toolset = mnemora_ai::Toolset {
+        tools,
+        off,
+        wording: mnemora_ai::Wording::Full,
+    };
     let ask = mnemora_ai::Ask {
         conversation_id,
         continues,
@@ -645,18 +649,25 @@ pub fn ai_models_usage(state: State<'_, AppState>) -> Result<ModelUsage, AppErro
     mnemora_ai::model_usage(&lock(&state.db))
 }
 
+/// The Tools a Run may call, and the names of the Modules that are off and would have offered some.
+pub(crate) type Offer = (Vec<Box<dyn Tool>>, Vec<String>);
+
 /// The Tools of every Module that is turned on, and the names of the Modules that are off and
 /// would have offered some, for the prompt. Read from the Preferences that list the exceptions.
-/// The Tools a Run may call, and the names of the Modules that are off and would have offered some.
-type Offer = (Vec<Box<dyn Tool>>, Vec<String>);
-
 fn offered_tools(state: &AppState) -> Result<Offer, AppError> {
-    let conn = lock(&state.db);
-    let disabled = preference_list(&conn, "disabled_modules")?;
-    let opted_in = preference_list(&conn, "enabled_optional_modules")?;
+    offered_tools_in(&lock(&state.db), &state.modules)
+}
+
+/// `offered_tools` over a database and a set of Modules: the QA harness offers the same Tools.
+pub(crate) fn offered_tools_in(
+    conn: &mnemora_core::db::Connection,
+    modules: &[Box<dyn mnemora_core::module::Module>],
+) -> Result<Offer, AppError> {
+    let disabled = preference_list(conn, "disabled_modules")?;
+    let opted_in = preference_list(conn, "enabled_optional_modules")?;
     let mut tools = Vec::new();
     let mut off = Vec::new();
-    for module in state.modules.iter() {
+    for module in modules {
         if is_enabled(module.as_ref(), &disabled, &opted_in) {
             tools.extend(module.tools());
         } else if !module.tools().is_empty() {
