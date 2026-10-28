@@ -2,6 +2,7 @@
 //! read one in full and search with the app's own Search. They never write, skip deleted Entries
 //! and return refusals as data.
 
+use mnemora_core::local_time;
 use mnemora_core::search::Span;
 use mnemora_core::tool::{
     Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, fit_rows, number,
@@ -158,11 +159,12 @@ fn item(row: &Row) -> Item {
     }
 }
 
-fn list_json(row: &Row) -> Value {
+fn list_json(row: &Row, zone: &str) -> Value {
     json!({
         "id": row.id,
         "page_date": row.page_date,
         "written_at": row.written_at,
+        "written_at_local": local_time::minute(row.written_at, zone),
         "word_count": row.word_count,
         "preview": preview(&row.body, PREVIEW_CHARS),
     })
@@ -178,12 +180,12 @@ impl Tool for List {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_list",
-            about: "List Journal Entries by Page date, newest first.",
+            about: "List Journal Entries by Page date, newest first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
             params: LIST_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
         let from = args.text("from").unwrap_or("0000-01-01");
         let to = args.text("to").unwrap_or("9999-12-31");
         if from > to {
@@ -209,7 +211,8 @@ impl Tool for List {
         };
         let more = rows.len() > limit;
         rows.truncate(limit);
-        let (kept, cut_short) = fit_rows(rows.iter().map(list_json).collect());
+        let zone = calendar.time_zone.as_str();
+        let (kept, cut_short) = fit_rows(rows.iter().map(|row| list_json(row, zone)).collect());
         let shown = kept.len();
         let next = (more || cut_short).then_some(number(offset + shown));
         let items = rows.iter().take(shown).map(item).collect();
@@ -230,12 +233,12 @@ impl Tool for Read {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_read",
-            about: "Read one Journal Entry in full, a page of its text at a time.",
+            about: "Read one Journal Entry in full, a page of its text at a time. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
             params: READ_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
         let id = args.text("id").unwrap_or_default();
         let offset = count(args.int("offset"), 0);
         let found = conn
@@ -267,6 +270,7 @@ impl Tool for Read {
                 "id": row.id,
                 "page_date": row.page_date,
                 "written_at": row.written_at,
+                "written_at_local": local_time::minute(row.written_at, &calendar.time_zone),
                 "word_count": row.word_count,
                 "body": page,
                 "next_offset": next,

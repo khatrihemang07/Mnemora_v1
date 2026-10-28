@@ -25,6 +25,8 @@ tauri-plugin-opener = "=2.7.2"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
+# IANA time zones for local days and times. The tz data is bundled, so no system tzdata is read.
+jiff = { version = "=0.2.38", default-features = false, features = ["std", "tzdb-bundle-always"] }
 rusqlite = { version = "=0.40.2", features = ["bundled", "backup", "functions", "hooks"] }
 rusqlite_migration = "=2.6.0"
 serde = { version = "=1.0.229", features = ["derive"] }

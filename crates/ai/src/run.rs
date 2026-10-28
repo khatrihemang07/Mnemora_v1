@@ -134,6 +134,7 @@ pub fn execute(
         tools,
         Calendar {
             today: ask.local.today.clone(),
+            time_zone: ask.local.time_zone.clone(),
         },
         native,
     );

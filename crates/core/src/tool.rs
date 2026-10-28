@@ -59,11 +59,15 @@ pub struct Spec {
     pub params: &'static [Param],
 }
 
-/// Today on the device, which some Tools need for "overdue" and the like.
+/// Today on the device, which some Tools need for "overdue" and the like, and the zone its local
+/// days and times are read in.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Calendar {
     /// Today, `YYYY-MM-DD`.
     pub today: String,
+    /// The device's IANA time zone, such as "Europe/London". Local days and times are read in it,
+    /// not in the machine's zone.
+    pub time_zone: String,
 }
 
 /// Arguments that passed `check`: every key is a parameter and has the kind it declares.

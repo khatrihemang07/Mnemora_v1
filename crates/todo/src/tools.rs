@@ -1,8 +1,9 @@
 //! The Todo Module's read-only Tools for the AI (ADR 0002 amendment, ADR 0018): list Tasks by state,
 //! List, due date, priority and closing day; read one in full; search with the app's own Search.
-//! They never write, skip deleted rows and return refusals as data. Dates use the device's zone:
-//! closing days are compared in `SQLite`'s local time.
+//! They never write, skip deleted rows and return refusals as data. Closing days and local times
+//! are read in the device's zone, as the client sends it.
 
+use mnemora_core::local_time;
 use mnemora_core::tool::{
     Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, fit_rows, number,
 };
@@ -34,7 +35,7 @@ const LIST_PARAMS: &[Param] = &[
         name: "state",
         kind: Kind::Choice(STATES),
         required: false,
-        about: "open (the default), done, wont (Won't do) or any.",
+        about: "open, done, wont (Won't do) or any. With closed_from or closed_to and no state: done and wont. Otherwise open.",
     },
     Param {
         name: "list",
@@ -64,13 +65,13 @@ const LIST_PARAMS: &[Param] = &[
         name: "closed_from",
         kind: Kind::Date,
         required: false,
-        about: "First day closed, YYYY-MM-DD (done or Won't do).",
+        about: "First day closed, YYYY-MM-DD, in the device's time zone.",
     },
     Param {
         name: "closed_to",
         kind: Kind::Date,
         required: false,
-        about: "Last day closed, YYYY-MM-DD (done or Won't do).",
+        about: "Last day closed, YYYY-MM-DD, in the device's time zone.",
     },
     Param {
         name: "offset",
@@ -222,7 +223,8 @@ fn list_label(names: &std::collections::HashMap<String, String>, task: &Task) ->
     }
 }
 
-fn row_json(task: &Task, list: &str) -> Value {
+/// A Task's row. Each timestamp is epoch milliseconds, with a `_local` reading in the device's zone.
+fn row_json(task: &Task, list: &str, zone: &str) -> Value {
     json!({
         "id": task.id,
         "title": task.title,
@@ -231,7 +233,25 @@ fn row_json(task: &Task, list: &str) -> Value {
         "due": task.due_date,
         "priority": task.priority,
         "closed_at": task.closed_at,
+        "closed_at_local": task.closed_at.and_then(|ms| local_time::minute(ms, zone)),
     })
+}
+
+/// The instants a closing-day range covers in the device's zone: from the start of its first day
+/// to the end of its last. A zone or day that cannot be read is a refusal.
+fn closed_bounds(
+    from: Option<&str>,
+    to: Option<&str>,
+    zone: &str,
+) -> Result<(Option<i64>, Option<i64>), Output> {
+    let refused = || Output::error("The closing days could not be read in the device's time zone.");
+    let from = from
+        .map(|day| local_time::day_start(day, zone).ok_or_else(refused))
+        .transpose()?;
+    let to = to
+        .map(|day| local_time::day_end(day, zone).ok_or_else(refused))
+        .transpose()?;
+    Ok((from, to))
 }
 
 fn item(task: &Task) -> Item {
@@ -249,14 +269,24 @@ impl Tool for List {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_list",
-            about: "List Tasks by state, List, due date, priority and the day they were closed.",
+            about: "List Tasks by state, List, due date, priority and the day they were closed. With closed_from or closed_to it lists done and Won't do Tasks, newest close first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
             params: LIST_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
-        let state = args.text("state").unwrap_or("open");
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
+        let (closed_from, closed_to) = (args.text("closed_from"), args.text("closed_to"));
+        let closed = closed_from.is_some() || closed_to.is_some();
+        // A closing-day question is about Tasks that were done or declined, unless a state is named.
+        let explicit = args.text("state");
+        let closed_only = i64::from(closed && explicit.is_none());
+        let state = explicit.unwrap_or(if closed { "any" } else { "open" });
         let state = (state != "any").then_some(state);
+        let (closed_from_ms, closed_to_ms) =
+            match closed_bounds(closed_from, closed_to, &calendar.time_zone) {
+                Ok(bounds) => bounds,
+                Err(refusal) => return refusal,
+            };
         let list = match list_filter(conn, args.text("list")) {
             Ok(list) => list,
             Err(refusal) => return refusal,
@@ -270,10 +300,15 @@ impl Tool for List {
         let limit = count(args.int("limit"), LIST_DEFAULT);
         let priority = args.int("priority");
         let (due_from, due_to) = (args.text("due_from"), args.text("due_to"));
-        let (closed_from, closed_to) = (args.text("closed_from"), args.text("closed_to"));
         let names = match list_names(conn) {
             Ok(names) => names,
             Err(refusal) => return refusal,
+        };
+        // A closing-day list reads as a log, newest close first; any other list reads by due date.
+        let order = if closed {
+            "closed_at DESC, sort_key"
+        } else {
+            "(state = 'open') DESC, due_date IS NULL, due_date, closed_at DESC, sort_key"
         };
         let sql = format!(
             "SELECT {COLUMNS} FROM todo_tasks
@@ -283,9 +318,10 @@ impl Tool for List {
                AND (?4 IS NULL OR due_date >= ?4)
                AND (?5 IS NULL OR due_date <= ?5)
                AND (?6 IS NULL OR priority = ?6)
-               AND (?7 IS NULL OR date(closed_at / 1000, 'unixepoch', 'localtime') >= ?7)
-               AND (?8 IS NULL OR date(closed_at / 1000, 'unixepoch', 'localtime') <= ?8)
-             ORDER BY (state = 'open') DESC, due_date IS NULL, due_date, closed_at DESC, sort_key
+               AND (?7 IS NULL OR closed_at >= ?7)
+               AND (?8 IS NULL OR closed_at < ?8)
+               AND (?11 = 0 OR state IN ('done', 'wont'))
+             ORDER BY {order}
              LIMIT ?9 OFFSET ?10"
         );
         let fetched = conn.prepare(&sql).and_then(|mut stmt| {
@@ -297,10 +333,11 @@ impl Tool for List {
                     due_from,
                     due_to,
                     priority,
-                    closed_from,
-                    closed_to,
+                    closed_from_ms,
+                    closed_to_ms,
                     number(limit + 1),
-                    number(offset)
+                    number(offset),
+                    closed_only,
                 ],
                 from_row,
             )?
@@ -311,9 +348,10 @@ impl Tool for List {
         };
         let more = tasks.len() > limit;
         tasks.truncate(limit);
+        let zone = calendar.time_zone.as_str();
         let rows: Vec<Value> = tasks
             .iter()
-            .map(|t| row_json(t, &list_label(&names, t)))
+            .map(|t| row_json(t, &list_label(&names, t), zone))
             .collect();
         let (kept, cut_short) = fit_rows(rows);
         let shown = kept.len();
@@ -336,12 +374,13 @@ impl Tool for Read {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_read",
-            about: "Read one Task in full: its notes, and optionally steps, Comments and History.",
+            about: "Read one Task in full: its notes, and optionally steps, Comments and History. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
             params: READ_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
+        let zone = calendar.time_zone.as_str();
         let id = args.text("id").unwrap_or_default();
         let task = match crate::repo::get(conn, id) {
             Ok(Some(task)) => task,
@@ -363,10 +402,11 @@ impl Tool for Read {
         let rest = &task.notes[start..];
         let page = cut(rest, READ_PAGE_BYTES);
         let next = (page.len() < rest.len()).then_some(start + page.len());
-        let mut body = row_json(&task, &list_label(&names, &task));
+        let mut body = row_json(&task, &list_label(&names, &task), zone);
         body["notes"] = json!(page);
         body["next_offset"] = json!(next);
         body["created_at"] = json!(task.created_at);
+        body["created_at_local"] = json!(local_time::minute(task.created_at, zone));
         if args.flag("steps") == Some(true) {
             let steps: Vec<Value> = checklist_items(&task.notes)
                 .into_iter()
@@ -378,7 +418,13 @@ impl Tool for Read {
             let comments: Vec<Value> = match comment_repo::for_task(conn, &task.id) {
                 Ok(list) => list
                     .into_iter()
-                    .map(|c| json!({ "body": c.body, "created_at": c.created_at }))
+                    .map(|c| {
+                        json!({
+                            "body": c.body,
+                            "created_at": c.created_at,
+                            "created_at_local": local_time::minute(c.created_at, zone),
+                        })
+                    })
                     .collect(),
                 Err(_) => return unreadable(),
             };
@@ -392,7 +438,14 @@ impl Tool for Read {
             };
             let rows: Vec<Value> = lines
                 .iter()
-                .map(|l| json!({ "at": l.at, "kind": l.kind, "text": l.text }))
+                .map(|l| {
+                    json!({
+                        "at": l.at,
+                        "at_local": local_time::minute(l.at, zone),
+                        "kind": l.kind,
+                        "text": l.text,
+                    })
+                })
                 .collect();
             let (kept, cut_short) = fit_rows(rows);
             body["history"] = json!(kept);
@@ -413,12 +466,12 @@ impl Tool for Search {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_search",
-            about: "Find Tasks with the app's Search, open ones first.",
+            about: "Find Tasks with the app's Search, open ones first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
             params: SEARCH_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
         let query = args.text("query").unwrap_or_default();
         let state = args.text("state").unwrap_or("any");
         let list = match list_filter(conn, args.text("list")) {
@@ -448,9 +501,10 @@ impl Tool for Search {
             .collect();
         let total = matching.len();
         let page: Vec<&Task> = matching.into_iter().skip(offset).take(limit).collect();
+        let zone = calendar.time_zone.as_str();
         let rows: Vec<Value> = page
             .iter()
-            .map(|t| row_json(t, &list_label(&names, t)))
+            .map(|t| row_json(t, &list_label(&names, t), zone))
             .collect();
         let items = page.iter().map(|t| item(t)).collect();
         let next = (offset + limit < total).then_some(offset + limit);

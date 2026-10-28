@@ -12,6 +12,7 @@ pub mod env;
 pub mod error;
 pub mod events;
 pub mod hlc;
+pub mod local_time;
 pub mod logging;
 pub mod module;
 pub mod order;

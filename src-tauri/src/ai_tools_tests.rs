@@ -517,3 +517,310 @@ fn a_list_pages_with_next_offset_until_the_last_row_and_deleted_rows_never_count
     assert!(first.contains(&ids[2]) && first.contains(&ids[1]) && !first.contains(&ids[0]));
     assert!(second.contains(&ids[0]) && !second.contains(&gone));
 }
+
+/// Stamps a Task as closed at `ms` (epoch milliseconds). Closing through the commands stamps the
+/// system clock, so a test places the close directly.
+fn close_at(app: &TestApp, id: &str, state: &str, ms: i64) {
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE todo_tasks SET state = ?2, closed_at = ?3 WHERE id = ?1",
+            (id, state, ms),
+        )
+        .unwrap();
+    });
+}
+
+/// Asks a question as if the device were in `time_zone`.
+fn ask_in(app: &TestApp, text: &str, time_zone: &str) -> Value {
+    app.invoke(
+        "ai_run_start",
+        json!({ "request": {
+            "conversation_id": null,
+            "text": text,
+            "provider_id": provider_id(app),
+            "model": "scripted-model",
+            "local": { "today": TODAY, "weekday": "Sunday", "time_zone": time_zone, "week_start": "mon" },
+        } }),
+    )
+    .unwrap()
+}
+
+/// Runs a question on a scripted native-tool Provider and returns each Tool result, in order.
+fn tool_results(app: &TestApp, replies: Vec<Reply>) -> Vec<String> {
+    tool_results_in(app, "Europe/London", replies)
+}
+
+/// As `tool_results`, for a device in `time_zone`.
+fn tool_results_in(app: &TestApp, time_zone: &str, replies: Vec<Reply>) -> Vec<String> {
+    let provider = native(replies);
+    install(app, &provider);
+    let events = app.ai_events();
+    let started = ask_in(app, "What did I close?", time_zone);
+    until_end(&events);
+    payloads(app, started["conversation_id"].as_str().unwrap())
+        .iter()
+        .filter(|p| p["kind"] == "tool_result")
+        .map(|p| p["result"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn todo_list_with_a_closed_day_lists_done_and_wont_do_tasks_by_default() {
+    let app = TestApp::new();
+    let open = seed_task(&app, "Still open", Some("2026-11-05"));
+    let early = seed_task(&app, "Closed early", None);
+    let late = seed_task(&app, "Closed late", None);
+    let declined = seed_task(&app, "Declined in the range", None);
+    close_at(&app, &early, "done", 1_792_490_400_000); // 2026-10-20 10:00 UTC
+    close_at(&app, &late, "done", 1_792_663_200_000); // 2026-10-22 10:00 UTC
+    close_at(&app, &declined, "wont", 1_792_576_800_000); // 2026-10-21 10:00 UTC
+
+    let results = tool_results(
+        &app,
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-19","closed_to":"2026-10-23"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains(&early) && results[0].contains(&late),
+        "{}",
+        results[0]
+    );
+    assert!(results[0].contains(&declined), "{}", results[0]);
+    assert!(!results[0].contains(&open), "{}", results[0]);
+}
+
+#[test]
+fn an_explicit_state_still_wins_over_the_closed_day_default() {
+    let app = TestApp::new();
+    let done = seed_task(&app, "Done on the day", None);
+    let wont = seed_task(&app, "Declined on the day", None);
+    close_at(&app, &done, "done", 1_792_490_400_000); // 2026-10-20 10:00 UTC
+    close_at(&app, &wont, "wont", 1_792_490_400_000);
+
+    let results = tool_results(
+        &app,
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"state":"wont","closed_from":"2026-10-19","closed_to":"2026-10-23"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(results[0].contains(&wont), "{}", results[0]);
+    assert!(!results[0].contains(&done), "{}", results[0]);
+}
+
+#[test]
+fn a_closed_day_list_is_ordered_by_when_each_task_closed_newest_first() {
+    let app = TestApp::new();
+    // The Task closed first is due first: a due-date order would list it first too.
+    let first = seed_task(&app, "Closed first", Some("2026-11-01"));
+    let second = seed_task(&app, "Closed second", Some("2026-11-20"));
+    close_at(&app, &first, "done", 1_792_490_400_000); // 2026-10-20 10:00 UTC
+    close_at(&app, &second, "done", 1_792_663_200_000); // 2026-10-22 10:00 UTC
+
+    let results = tool_results(
+        &app,
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-19","closed_to":"2026-10-23"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    let at = |id: &str| results[0].find(id).unwrap_or(usize::MAX);
+    assert!(at(&second) < at(&first), "{}", results[0]);
+}
+
+/// Two Tasks closed in New York (UTC-4 on 27 October 2026) either side of midnight: 23:50 on the
+/// 27th and 00:10 on the 28th. Their UTC dates are both the 28th.
+#[test]
+fn a_tool_timestamp_comes_with_its_local_date_and_time_in_the_clients_zone() {
+    let app = TestApp::new();
+    let late = seed_task(&app, "Closed at 23:50 on the 27th", None);
+    let after = seed_task(&app, "Closed at 00:10 on the 28th", None);
+    close_at(&app, &late, "done", 1_793_159_400_000); // 2026-10-27 23:50 EDT
+    close_at(&app, &after, "done", 1_793_160_600_000); // 2026-10-28 00:10 EDT
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-27","closed_to":"2026-10-28"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains(r#""closed_at":1793159400000"#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[0].contains(r#""closed_at_local":"2026-10-27 23:50""#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[0].contains(r#""closed_at_local":"2026-10-28 00:10""#),
+        "{}",
+        results[0]
+    );
+}
+
+/// The 27th in New York holds the 23:50 Task and not the 00:10 one. A UTC day or the machine's own
+/// zone (Asia/Kolkata here) would put both on the 28th.
+#[test]
+fn a_closed_day_is_the_clients_day_in_its_zone_not_utc_or_the_machines() {
+    let app = TestApp::new();
+    let late = seed_task(&app, "Closed at 23:50 on the 27th", None);
+    let after = seed_task(&app, "Closed at 00:10 on the 28th", None);
+    close_at(&app, &late, "done", 1_793_159_400_000); // 2026-10-27 23:50 EDT
+    close_at(&app, &after, "done", 1_793_160_600_000); // 2026-10-28 00:10 EDT
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-27","closed_to":"2026-10-27"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(results[0].contains(&late), "{}", results[0]);
+    assert!(!results[0].contains(&after), "{}", results[0]);
+}
+
+/// The Task's creation, its Comment and its History line are all at 23:50 on the 27th in New York.
+#[test]
+fn todo_read_gives_its_creation_comment_and_history_times_a_local_reading() {
+    let app = TestApp::new();
+    let at = 1_793_159_400_000; // 2026-10-27 23:50 EDT
+    app.clock().freeze(at);
+    let task = seed_task(&app, "Renew passport", None);
+    app.invoke::<Value>(
+        "todo_comment_add",
+        json!({ "taskId": task, "body": "Photos first." }),
+    )
+    .unwrap();
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE todo_tasks SET created_at = ?2 WHERE id = ?1",
+            (&task, at),
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE todo_comments SET created_at = ?2 WHERE task_id = ?1",
+            (&task, at),
+        )
+        .unwrap();
+    });
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[(
+                "todo_read",
+                &format!(r#"{{"id":"{task}","comments":true,"history":true}}"#),
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    let body = &results[0];
+    assert!(
+        body.contains(r#""created_at_local":"2026-10-27 23:50""#),
+        "{body}"
+    );
+    assert!(body.contains(r#""body":"Photos first.""#), "{body}");
+    assert!(
+        body.contains(r#""created_at":1793159400000,"created_at_local":"2026-10-27 23:50""#),
+        "{body}"
+    );
+    assert!(body.contains(r#""at_local":"2026-10-27 23:50""#), "{body}");
+}
+
+/// An Entry written at 23:50 on the 27th in New York reads as that day and time there.
+#[test]
+fn journal_tools_give_written_at_a_local_reading_in_the_clients_zone() {
+    let app = TestApp::new();
+    let id = seed_entry(&app, "2026-10-27", "Walked to the river.");
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE journal_entries SET written_at = ?2 WHERE id = ?1",
+            (&id, 1_793_159_400_000_i64),
+        )
+        .unwrap();
+    });
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[("journal_list", r#"{"from":"2026-10-27","to":"2026-10-27"}"#)]),
+            Reply::calls(&[("journal_read", &format!(r#"{{"id":"{id}"}}"#))]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains(r#""written_at":1793159400000"#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[0].contains(r#""written_at_local":"2026-10-27 23:50""#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[1].contains(r#""written_at_local":"2026-10-27 23:50""#),
+        "{}",
+        results[1]
+    );
+}
+
+/// A closing-day question in a zone the bundled tz data does not know is refused, not answered in
+/// some other zone.
+#[test]
+fn a_closing_day_question_in_an_unknown_zone_is_refused() {
+    let app = TestApp::new();
+    let task = seed_task(&app, "Closed on the day", None);
+    close_at(&app, &task, "done", 1_793_159_400_000);
+
+    let results = tool_results_in(
+        &app,
+        "Mars/Olympus",
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-27","closed_to":"2026-10-27"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains("could not be read in the device's time zone"),
+        "{}",
+        results[0]
+    );
+    assert!(!results[0].contains(&task), "{}", results[0]);
+}
