@@ -165,7 +165,7 @@ mod ai_branching_tests;
 mod ai_changes_tests;
 #[cfg(test)]
 mod ai_conversations_tests;
-#[cfg(test)]
+#[cfg(any(test, feature = "seed"))]
 mod ai_fixture;
 #[cfg(test)]
 mod ai_fixture_tests;
@@ -175,6 +175,12 @@ mod ai_provider_tests;
 mod ai_run_control_tests;
 #[cfg(test)]
 mod ai_saved_tests;
+// The Sandbox seed: only in tests and the `seed` feature, never in the app's own surface.
+#[cfg(any(test, feature = "seed"))]
+#[doc(hidden)]
+pub mod ai_seed;
+#[cfg(test)]
+mod ai_seed_tests;
 #[cfg(test)]
 mod ai_sync_tests;
 #[cfg(test)]

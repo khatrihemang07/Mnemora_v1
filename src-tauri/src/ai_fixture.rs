@@ -11,6 +11,7 @@ use mnemora_core::util::now_ms;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+#[cfg(test)]
 use crate::test_support::TestApp;
 
 /// The fixture, with each Entry's source (book and original date) beside its text.
@@ -20,7 +21,8 @@ const MINUTE_MS: i64 = 60_000;
 const DAY_MS: i64 = 24 * 60 * MINUTE_MS;
 
 /// Where a load's events go: the commands, the clock they are stamped with, and the database for
-/// the columns no command sets from the clock. A later Sandbox seed command implements this too.
+/// the columns no command sets from the clock. The Sandbox seed (`ai_seed`) implements it over the
+/// services; the tests implement it over a `TestApp`.
 pub trait Driver {
     /// Runs a command, as the UI would, with `args` keyed by parameter name.
     fn invoke(&self, command: &str, args: Value) -> Result<Value, Value>;
@@ -30,6 +32,7 @@ pub trait Driver {
     fn with_db(&self, f: &mut dyn FnMut(&Connection));
 }
 
+#[cfg(test)]
 impl Driver for TestApp {
     fn invoke(&self, command: &str, args: Value) -> Result<Value, Value> {
         TestApp::invoke::<Value>(self, command, args)
@@ -47,6 +50,8 @@ impl Driver for TestApp {
 /// The ids of what a load wrote, by the key the fixture gives it.
 pub struct Loaded {
     ids: HashMap<String, String>,
+    events: usize,
+    skipped: usize,
 }
 
 impl Loaded {
@@ -55,7 +60,18 @@ impl Loaded {
         self.ids.len()
     }
 
+    /// How many fixture events were written.
+    pub fn events(&self) -> usize {
+        self.events
+    }
+
+    /// How many fixture events were left out because they fall after `now` (not yet happened).
+    pub fn skipped(&self) -> usize {
+        self.skipped
+    }
+
     /// The id of the List, Task or Entry with `key`. Panics when the fixture did not write it.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn id(&self, key: &str) -> &str {
         self.ids
             .get(key)
@@ -98,8 +114,8 @@ struct Placed<'a> {
 }
 
 /// Replays the fixture through `driver` in time order, each event at its own local time in `zone`,
-/// on the day it names relative to `now`'s local day. Leaves the clock at `now`. Returns the ids the
-/// commands gave, by key.
+/// on the day it names relative to `now`'s local day. Events after `now` are left out (they have not
+/// happened yet). Leaves the clock at `now`. Returns the ids the commands gave, by key.
 pub fn load(driver: &impl Driver, now: i64, zone: &str) -> Result<Loaded, String> {
     let fixture: Fixture = serde_json::from_str(FIXTURE).map_err(|e| e.to_string())?;
     let today = local_time::day(now, zone).ok_or_else(|| format!("unknown time zone {zone}"))?;
@@ -119,6 +135,8 @@ pub fn load(driver: &impl Driver, now: i64, zone: &str) -> Result<Loaded, String
         });
     }
     placed.sort_by_key(|p| (p.at, p.index));
+    let skipped = placed.iter().filter(|p| p.at > now).count();
+    placed.retain(|p| p.at <= now);
     // `restamp` tells this event's writes from earlier ones by comparing with the system clock, so
     // every event must lie before it.
     if placed.last().is_some_and(|p| p.at >= now_ms()) {
@@ -127,6 +145,8 @@ pub fn load(driver: &impl Driver, now: i64, zone: &str) -> Result<Loaded, String
 
     let mut loaded = Loaded {
         ids: HashMap::new(),
+        events: placed.len(),
+        skipped,
     };
     for p in &placed {
         driver.set_clock(p.at);
