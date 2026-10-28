@@ -166,6 +166,10 @@ mod ai_changes_tests;
 #[cfg(test)]
 mod ai_conversations_tests;
 #[cfg(test)]
+mod ai_fixture;
+#[cfg(test)]
+mod ai_fixture_tests;
+#[cfg(test)]
 mod ai_provider_tests;
 #[cfg(test)]
 mod ai_run_control_tests;
