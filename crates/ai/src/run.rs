@@ -12,7 +12,7 @@ use mnemora_harness::Cited;
 use mnemora_harness::agent::{self, Event, Forced, MAX_REQUESTS, Outcome, Prompts};
 use mnemora_harness::{Control, Failure, Message, Provider, ToolProtocol};
 
-use crate::prompt::{self, Wording};
+use crate::prompt;
 use crate::provider_store;
 use crate::steering::Steering;
 use crate::store::{self, NewRow};
@@ -23,14 +23,12 @@ use crate::types::{
 };
 
 /// The Tools a Run may call, and the names of the Modules that are off and would have offered some
-/// (the prompt says those are unavailable), and how the prompt is worded.
+/// (the prompt says those are unavailable).
 pub struct Toolset {
     /// The Tools offered this Run.
     pub tools: Vec<Box<dyn Tool>>,
     /// The Modules turned off that would have offered Tools.
     pub off: Vec<String>,
-    /// The system prompt's wording. The app always sends `Wording::Full`.
-    pub wording: Wording,
 }
 
 /// What the person can do to a Run while it answers: stop it, skip its Step, and the notes queued
@@ -128,11 +126,7 @@ pub fn execute(
         entry_id: question_id.to_owned(),
         kind: EntryKind::User,
     });
-    let Toolset {
-        tools,
-        off,
-        wording,
-    } = toolset;
+    let Toolset { tools, off } = toolset;
     let messages = match branch(db, question_id) {
         Ok(messages) => messages,
         Err(error) => {
@@ -151,8 +145,8 @@ pub fn execute(
         native,
     );
     let prompts = Prompts {
-        open: prompt::system(&ask.local, &toolbox.available(), &off, native, wording),
-        closed: prompt::closed(&ask.local, &off, wording),
+        open: prompt::system(&ask.local, &toolbox.available(), &off, native),
+        closed: prompt::closed(&ask.local, &off),
     };
     let mut recorder = Recorder {
         db,

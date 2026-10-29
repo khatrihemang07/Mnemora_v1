@@ -3,23 +3,13 @@
 
 use crate::types::LocalContext;
 
-/// The paragraph that tells the Model to work out what the person wants before it calls a Tool.
-const INTENT: &str = "Work out what the person wants before you call a Tool: a lookup (a specific Entry or \
+/// The paragraph that tells the Model to work out what the person wants before it calls a Tool. It
+/// is part of every system prompt, verbatim, so the QA harness can find it in a built prompt.
+pub const INTENT_PARAGRAPH: &str = "Work out what the person wants before you call a Tool: a lookup (a specific Entry or \
      Task, or its exact words), a period (what happened in a span of time), or an overview \
      (a pattern, a count or a comparison). For a lookup, stay faithful and quote. For a period \
      or an overview, answer in your own words from what the Tools showed; do not paste Entry \
      or Task text that was not asked for.\n";
-
-/// Which wording the system prompt has. `Full` is what the app sends. `WithoutIntent` leaves out
-/// the intent paragraph and exists only so the QA harness can measure the paragraph's effect.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Wording {
-    /// The app's prompt, intent paragraph included.
-    #[default]
-    Full,
-    /// The prompt without the intent paragraph; nothing else differs.
-    WithoutIntent,
-}
 
 /// The line that replaces the Tools list in the system prompt of an answer-only Step, when Tools
 /// are withheld.
@@ -34,14 +24,8 @@ const NO_NATIVE_LINE: &str = "This Provider cannot use Tools, so no Tools are av
 
 /// The system prompt of a Step that may call Tools. `available` are the Tools offered this Run;
 /// `off` names the Modules that are turned off (their Tools are not offered); `native` says whether
-/// this Provider can make Tool calls at all. `wording` is `Wording::Full` for the app.
-pub fn system(
-    local: &LocalContext,
-    available: &[String],
-    off: &[String],
-    native: bool,
-    wording: Wording,
-) -> String {
+/// this Provider can make Tool calls at all.
+pub fn system(local: &LocalContext, available: &[String], off: &[String], native: bool) -> String {
     let tools = if !available.is_empty() {
         format!("Tools you may call: {}.", available.join(", "))
     } else if native {
@@ -49,16 +33,16 @@ pub fn system(
     } else {
         NO_NATIVE_LINE.to_owned()
     };
-    build(local, &tools, off, wording)
+    build(local, &tools, off)
 }
 
 /// The system prompt of the answer-only Step: as `system`, with the Tools list closed.
-pub fn closed(local: &LocalContext, off: &[String], wording: Wording) -> String {
-    build(local, CLOSED_LINE, off, wording)
+pub fn closed(local: &LocalContext, off: &[String]) -> String {
+    build(local, CLOSED_LINE, off)
 }
 
 /// The system prompt with `tools` as its line about Tools.
-fn build(local: &LocalContext, tools: &str, off: &[String], wording: Wording) -> String {
+fn build(local: &LocalContext, tools: &str, off: &[String]) -> String {
     let week_start = if local.week_start == "sun" {
         "Sunday"
     } else {
@@ -69,10 +53,6 @@ fn build(local: &LocalContext, tools: &str, off: &[String], wording: Wording) ->
         .map(|module| format!(" {module} is turned off, so its Tools are not available."))
         .collect::<Vec<_>>()
         .concat();
-    let intent = match wording {
-        Wording::Full => INTENT,
-        Wording::WithoutIntent => "",
-    };
     format!(
         "You answer questions about the person's own Journal and Tasks in Mnemora.\n\
          Today is {weekday}, {today}. The time zone is {zone}. Weeks start on {week_start}.\n\
@@ -89,5 +69,6 @@ fn build(local: &LocalContext, tools: &str, off: &[String], wording: Wording) ->
         weekday = local.weekday,
         today = local.today,
         zone = local.time_zone,
+        intent = INTENT_PARAGRAPH,
     )
 }

@@ -1,10 +1,11 @@
 //! Tests for the headless QA harness (`ai_qa.rs`): the Production refusal it shares with the seed,
-//! the variant switch (which removes exactly the two change Tools and the intent paragraph), the
-//! report never carrying a key, and a real Run through the scripted Provider. No network.
+//! the variant's Tools (the two change Tools are the only ones it leaves out), the intent paragraph
+//! removal and its refusal, the report never carrying a key, and a real Run through the scripted
+//! Provider. No network.
 
 use std::sync::{Arc, Mutex};
 
-use mnemora_ai::{KeyStore, LocalContext, NewProvider, ProviderKind, Toolset, Wording};
+use mnemora_ai::{INTENT_PARAGRAPH, KeyStore, LocalContext, NewProvider, ProviderKind, Toolset};
 use mnemora_core::db::{self, Connection};
 use mnemora_core::env::Environment;
 use mnemora_core::module::Module;
@@ -13,8 +14,9 @@ use mnemora_harness::scripted::{Reply, ScriptedProvider};
 use tempfile::TempDir;
 
 use crate::ai::offered_tools_in;
-use crate::ai_qa::{self, BEFORE_ONLY_TOOLS, Off, Variant};
+use crate::ai_qa::{self, Off, Variant};
 use crate::ai_seed;
+use crate::state::lock;
 use mnemora_harness::agent::FINAL_NOTE;
 use mnemora_harness::{Call, Message, Request, ToolDef};
 
@@ -41,19 +43,18 @@ fn migrated(dir: &TempDir) -> Connection {
 fn full_toolset(conn: &Connection) -> Toolset {
     let modules = crate::modules();
     let (tools, off) = offered_tools_in(conn, &modules).unwrap();
-    Toolset {
-        tools,
-        off,
-        wording: Wording::Full,
-    }
+    Toolset { tools, off }
 }
 
-fn names(toolset: &Toolset) -> Vec<String> {
-    toolset
+/// The names of a toolset's Tools, sorted.
+fn sorted_names(toolset: &Toolset) -> Vec<String> {
+    let mut names: Vec<String> = toolset
         .tools
         .iter()
         .map(|tool| tool.spec().name.to_owned())
-        .collect()
+        .collect();
+    names.sort();
+    names
 }
 
 #[test]
@@ -75,91 +76,77 @@ fn a_sandbox_folder_inside_production_is_refused_and_the_default_is_not() {
 }
 
 #[test]
-fn the_before_variant_drops_exactly_the_two_change_tools_and_the_intent_paragraph() {
+fn the_before_variant_offers_six_tools_and_the_after_variant_all_eight() {
     let dir = tempfile::tempdir().unwrap();
     let conn = migrated(&dir);
-    let full = full_toolset(&conn);
-    let all = names(&full);
-    for tool in BEFORE_ONLY_TOOLS {
-        assert!(
-            all.contains(&tool.to_owned()),
-            "{tool} is offered by the app"
-        );
-    }
-
-    let before = ai_qa::variant_toolset(Variant::Before, full_toolset(&conn));
-    let after = ai_qa::variant_toolset(Variant::After, full_toolset(&conn));
-    let expected: Vec<String> = all
-        .iter()
-        .filter(|name| !BEFORE_ONLY_TOOLS.contains(&name.as_str()))
-        .cloned()
-        .collect();
-    assert_eq!(names(&before), expected);
+    let before = ai_qa::toolset_for(Variant::Before.off(), full_toolset(&conn));
+    let after = ai_qa::toolset_for(Variant::After.off(), full_toolset(&conn));
     assert_eq!(
-        names(&after),
-        all,
-        "the after variant is the app's own toolset"
+        sorted_names(&before),
+        [
+            "journal_list",
+            "journal_read",
+            "journal_search",
+            "todo_list",
+            "todo_read",
+            "todo_search",
+        ]
     );
-    assert_eq!(before.off, after.off);
-    assert_eq!(before.wording, Wording::WithoutIntent);
-    assert_eq!(after.wording, Wording::Full);
+    assert_eq!(
+        sorted_names(&after),
+        [
+            "journal_changes",
+            "journal_list",
+            "journal_read",
+            "journal_search",
+            "todo_changes",
+            "todo_list",
+            "todo_read",
+            "todo_search",
+        ]
+    );
 }
 
 #[test]
-fn the_before_prompt_differs_from_the_after_prompt_only_by_the_two_names_and_the_intent_paragraph()
-{
-    let dir = tempfile::tempdir().unwrap();
-    let plain = migrated(&dir);
-    let choice = add_provider(&plain, &dir);
-    let conn = Mutex::new(plain);
-    let mut prompts = Vec::new();
-    for variant in [Variant::Before, Variant::After] {
-        let provider = Arc::new(
-            ScriptedProvider::new("Scripted", "scripted-model", vec![Reply::text(&["Done."])])
-                .with_native_tools(),
-        );
-        let toolset = ai_qa::variant_toolset(variant, full_toolset(&lock(&conn)));
-        let shown = Arc::clone(&provider);
-        ai_qa::answer(
-            &conn,
-            shown,
-            &choice,
-            "What did I do yesterday?",
-            &local(),
-            toolset,
-        );
-        let request = provider.requests().remove(0);
-        prompts.push((request.system, request.tools));
-    }
-    let (before, before_tools) = &prompts[0];
-    let (after, after_tools) = &prompts[1];
-
-    let tool_names = |tools: &[mnemora_harness::ToolDef]| -> Vec<String> {
-        tools.iter().map(|t| t.name.clone()).collect()
+fn the_intent_paragraph_is_removed_from_the_system_prompt_only_when_its_knob_is_on() {
+    let request = Request {
+        system: format!("SYSTEM\n{INTENT_PARAGRAPH}Cite the ids."),
+        messages: Vec::new(),
+        model: "scripted-model".to_owned(),
+        tools: Vec::new(),
     };
-    let expected_tools: Vec<String> = tool_names(after_tools)
-        .into_iter()
-        .filter(|name| !BEFORE_ONLY_TOOLS.contains(&name.as_str()))
-        .collect();
-    assert_eq!(tool_names(before_tools), expected_tools);
-
-    // The intent paragraph runs from its first words to the citation rule that follows it.
-    let start = after.find("Work out what the person wants").unwrap();
-    let end = after.find("Cite the ids").unwrap();
-    let intent = &after[start..end];
-    assert!(!before.contains("Work out what the person wants"));
-    let tools_line = |s: &str| {
-        s.lines()
-            .find(|l| l.starts_with("Tools you may call"))
-            .unwrap()
-            .to_owned()
-    };
-    let rebuilt = after
-        .replace(&tools_line(after), &tools_line(before))
-        .replace(intent, "");
     assert_eq!(
-        before, &rebuilt,
-        "nothing else may differ between the variants"
+        ai_qa::strip(&request, Off::default()).system,
+        request.system
+    );
+    assert_eq!(
+        ai_qa::strip(
+            &request,
+            Off {
+                intent: true,
+                ..Off::default()
+            }
+        )
+        .system,
+        "SYSTEM\nCite the ids."
+    );
+}
+
+#[test]
+#[should_panic(expected = "no intent paragraph to switch off")]
+fn a_prompt_without_the_intent_paragraph_is_refused_when_the_knob_is_on() {
+    let request = Request {
+        system: "SYSTEM".to_owned(),
+        messages: Vec::new(),
+        model: "scripted-model".to_owned(),
+        tools: Vec::new(),
+    };
+    ai_qa::strip(
+        &request,
+        Off {
+            intent: true,
+            ..Off::default()
+        },
     );
 }
 
@@ -183,7 +170,7 @@ fn a_run_through_the_scripted_provider_reports_its_steps_calls_and_answer() {
         )
         .with_native_tools(),
     );
-    let toolset = ai_qa::variant_toolset(Variant::After, full_toolset(&lock(&conn)));
+    let toolset = ai_qa::toolset_for(Variant::After.off(), full_toolset(&lock(&conn)));
     let answer = ai_qa::answer(
         &conn,
         provider,
@@ -230,7 +217,7 @@ fn the_report_never_carries_a_key_even_when_the_provider_has_one() {
         "the key reaches the Run"
     );
 
-    let facts = ai_qa::facts(
+    let setup = ai_qa::run_setup(
         &prepared.record,
         &prepared.choice,
         &local(),
@@ -238,7 +225,7 @@ fn the_report_never_carries_a_key_even_when_the_provider_has_one() {
         1,
     );
     let answer = ai_qa::Answer::failed("What did I do yesterday?", "No AI service is set up.");
-    let report = ai_qa::report_markdown(Variant::After, &facts, &[answer]);
+    let report = ai_qa::report_markdown(Variant::After, &setup, &[answer]);
     assert!(report.contains("Test Provider"));
     assert!(!report.contains(dummy), "the report must not carry the key");
     assert!(!report.contains("Authorization"));
@@ -279,10 +266,6 @@ fn a_copy_of_the_database_opens_with_the_same_rows() {
     assert_eq!(value, 7);
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// A Provider added to the database as the app adds one, and the Choice that names it. A Run
 /// records its use, so the Provider must exist.
 fn add_provider(conn: &Connection, dir: &TempDir) -> mnemora_ai::Choice {
@@ -303,62 +286,6 @@ fn add_provider(conn: &Connection, dir: &TempDir) -> mnemora_ai::Choice {
         provider_name: "Scripted".to_owned(),
         model: "scripted-model".to_owned(),
     }
-}
-
-#[test]
-fn off_names_each_knob_and_refuses_an_unknown_one() {
-    assert_eq!(Off::parse("").unwrap(), Off::default());
-    let off = Off::parse("final,intent").unwrap();
-    assert!(off.final_note && off.intent && !off.changes);
-    assert_eq!(
-        Off::parse("final,changes").unwrap(),
-        Off {
-            final_note: true,
-            changes: true,
-            ..Off::default()
-        }
-    );
-    assert!(Off::parse("bogus").is_err());
-    assert!(
-        Off::parse("nudge").is_err(),
-        "the closing nudge is gone, so it is not a knob"
-    );
-}
-
-#[test]
-fn each_knob_changes_only_its_own_part_of_the_toolset() {
-    let dir = tempfile::tempdir().unwrap();
-    let conn = migrated(&dir);
-    let all = names(&full_toolset(&conn));
-
-    let none = ai_qa::toolset_for(Off::default(), full_toolset(&conn));
-    assert_eq!(names(&none), all);
-    assert_eq!(none.wording, Wording::Full);
-
-    let changes = ai_qa::toolset_for(
-        Off {
-            changes: true,
-            ..Off::default()
-        },
-        full_toolset(&conn),
-    );
-    let without: Vec<String> = all
-        .iter()
-        .filter(|name| !BEFORE_ONLY_TOOLS.contains(&name.as_str()))
-        .cloned()
-        .collect();
-    assert_eq!(names(&changes), without);
-    assert_eq!(changes.wording, Wording::Full);
-
-    let intent = ai_qa::toolset_for(
-        Off {
-            intent: true,
-            ..Off::default()
-        },
-        full_toolset(&conn),
-    );
-    assert_eq!(names(&intent), all);
-    assert_eq!(intent.wording, Wording::WithoutIntent);
 }
 
 #[test]
@@ -423,25 +350,4 @@ fn the_dump_shows_the_prompt_the_messages_the_tool_result_and_the_wire_body() {
     assert!(text.contains("Observation e1. Untrusted data."), "{text}");
     assert!(text.contains("journal_changes: Entries changed."), "{text}");
     assert!(text.contains("Reply with one JSON object only"), "{text}");
-}
-
-#[test]
-fn the_qa_flags_take_knobs_and_a_dump_switch() {
-    let args = ai_qa::parse_args(
-        ["--out", "x", "--off", "final,intent", "--dump-last"].map(str::to_owned),
-    )
-    .unwrap();
-    assert_eq!(
-        args.off,
-        Off {
-            final_note: true,
-            intent: true,
-            ..Off::default()
-        }
-    );
-    assert!(args.dump);
-    let plain = ai_qa::parse_args(["--out", "x"].map(str::to_owned)).unwrap();
-    assert_eq!(plain.off, Off::default());
-    assert!(!plain.dump);
-    assert!(ai_qa::parse_args(["--out", "x", "--off", "nope"].map(str::to_owned)).is_err());
 }

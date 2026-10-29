@@ -189,6 +189,7 @@ mod ai_saved_tests;
 pub mod ai_seed;
 #[cfg(test)]
 mod ai_seed_tests;
+// The command-line shape `ai_qa` and `ai_seed` share (flags, the exit codes).
 #[cfg(test)]
 mod ai_sync_tests;
 #[cfg(test)]
@@ -204,6 +205,8 @@ mod journal;
 #[cfg(test)]
 mod legacy_db_tests;
 mod links;
+#[cfg(any(test, feature = "seed"))]
+mod qa_cli;
 mod state;
 mod sync;
 #[cfg(test)]

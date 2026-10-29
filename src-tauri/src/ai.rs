@@ -279,11 +279,7 @@ fn start_run<R: Runtime>(
     };
     let provider = state.ai.provider_for(&prepared);
     let (tools, off) = offered_tools(state)?;
-    let toolset = mnemora_ai::Toolset {
-        tools,
-        off,
-        wording: mnemora_ai::Wording::Full,
-    };
+    let toolset = mnemora_ai::Toolset { tools, off };
     let ask = mnemora_ai::Ask {
         conversation_id,
         continues,

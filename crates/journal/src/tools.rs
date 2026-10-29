@@ -116,47 +116,19 @@ const SEARCH_PARAMS: &[Param] = &[
     },
 ];
 
-/// Rows the changes Tool returns by default, and at most.
-const CHANGES_DEFAULT: usize = 30;
-const CHANGES_MAX: i64 = 100;
-
+/// The changes Tool's parameters: the shared range, paging and limit (`recent`), and the kinds this
+/// Module names.
 const CHANGES_PARAMS: &[Param] = &[
-    Param {
-        name: "from",
-        kind: Kind::Date,
-        required: true,
-        about: "First day, YYYY-MM-DD, in the device's time zone.",
-    },
-    Param {
-        name: "to",
-        kind: Kind::Date,
-        required: true,
-        about: "Last day, YYYY-MM-DD, in the device's time zone.",
-    },
+    recent::FROM,
+    recent::TO,
     Param {
         name: "kinds",
         kind: Kind::Text { max_chars: 60 },
         required: false,
         about: "Only these kinds, comma-separated: written, edited, deleted. Counts still cover the whole range.",
     },
-    Param {
-        name: "offset",
-        kind: Kind::Integer {
-            min: 0,
-            max: 1_000_000,
-        },
-        required: false,
-        about: "Rows to skip, from a next_offset.",
-    },
-    Param {
-        name: "limit",
-        kind: Kind::Integer {
-            min: 1,
-            max: CHANGES_MAX,
-        },
-        required: false,
-        about: "Rows to return, 30 by default.",
-    },
+    recent::OFFSET,
+    recent::LIMIT,
 ];
 
 /// The Tools the Journal offers.
@@ -393,26 +365,8 @@ impl Tool for Changes {
     }
 
     fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
-        let zone = calendar.time_zone.as_str();
-        let (start, end) = match recent::bounds(args, zone) {
-            Ok(bounds) => bounds,
-            Err(refusal) => return refusal,
-        };
-        let kinds = match recent::kind_filter(args.text("kinds"), changes::KINDS) {
-            Ok(kinds) => kinds,
-            Err(refusal) => return refusal,
-        };
-        let Ok(rows) = changes::rows(conn, start, end) else {
-            return unreadable();
-        };
-        recent::page(
-            MODULE_ID,
-            rows,
-            changes::KINDS,
-            kinds,
-            count(args.int("offset"), 0),
-            count(args.int("limit"), CHANGES_DEFAULT),
-            zone,
-        )
+        recent::run(args, calendar, MODULE_ID, changes::KINDS, |start, end| {
+            changes::rows(conn, start, end).map_err(|_| unreadable())
+        })
     }
 }

@@ -13,7 +13,7 @@ use mnemora_todo::TodoModule;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::ai_seed::{self, DbState, Outcome};
+use crate::ai_seed::{self, DbState, SeedOutcome};
 
 /// The device's zone, as in `ai_fixture_tests.rs`.
 const ZONE: &str = "America/New_York";
@@ -159,7 +159,7 @@ fn refuses_a_database_with_rows_that_are_not_the_fixture_until_reset() {
 
     let report = ai_seed::seed_at(&paths, &production, NOW, ZONE, true).unwrap();
     assert_eq!(report.before, DbState::Other);
-    assert!(matches!(report.outcome, Outcome::Seeded { .. }));
+    assert!(matches!(report.outcome, SeedOutcome::Written { .. }));
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
 
     let first = ai_seed::seed_at(&paths, &production, NOW, ZONE, false).unwrap();
     assert_eq!(first.before, DbState::Missing);
-    let Outcome::Seeded {
+    let SeedOutcome::Written {
         items,
         skipped,
         counts,
@@ -225,7 +225,7 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
 
     let again = ai_seed::seed_at(&paths, &production, NOW, ZONE, false).unwrap();
     assert_eq!(again.before, DbState::Seeded);
-    assert_eq!(again.outcome, Outcome::AlreadySeeded);
+    assert_eq!(again.outcome, SeedOutcome::AlreadySeeded);
     let conn = db::open_existing(&paths.db_file).unwrap().unwrap();
     assert_eq!(row_counts(&conn), before, "a second seed wrote rows");
 }

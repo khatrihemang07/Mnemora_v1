@@ -4,7 +4,7 @@
 
 use mnemora_core::changelog;
 use mnemora_core::error::AppResult;
-use mnemora_core::recent::{self, PREVIEW_CHARS, Row};
+use mnemora_core::recent::{self, PREVIEW_CHARS, Row, text_of};
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -28,16 +28,18 @@ pub(crate) fn rows(conn: &Connection, start: i64, end: i64) -> AppResult<Vec<Row
             "delete" => ("deleted", "Deleted".to_owned()),
             _ => continue,
         };
-        rows.push(Row {
-            id: change.entity_id.clone(),
-            at: record.at,
-            clock: record.clock,
-            device: record.device.clone(),
+        let preview = recent::preview(text_of(snapshot, "body").unwrap_or_default(), PREVIEW_CHARS);
+        let page_date = text_of(snapshot, "page_date")
+            .unwrap_or_default()
+            .to_owned();
+        rows.push(Row::of_record(
+            &change.entity_id,
+            record,
             kind,
-            change: line,
-            title: recent::preview(text_of(snapshot, "body"), PREVIEW_CHARS),
-            date: Some(text_of(snapshot, "page_date").to_owned()),
-        });
+            line,
+            preview,
+            Some(page_date),
+        ));
     }
     Ok(rows)
 }
@@ -50,11 +52,4 @@ fn written(snapshot: &Value) -> String {
         .unwrap_or(0);
     let noun = if words == 1 { "word" } else { "words" };
     format!("Written, {words} {noun}")
-}
-
-fn text_of<'a>(snapshot: &'a Value, key: &str) -> &'a str {
-    snapshot
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
 }

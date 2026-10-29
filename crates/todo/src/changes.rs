@@ -7,9 +7,8 @@ use std::collections::BTreeSet;
 
 use mnemora_core::changelog::{self, EntityRecord, Record};
 use mnemora_core::error::AppResult;
-use mnemora_core::recent::{self, PREVIEW_CHARS, Row};
+use mnemora_core::recent::{self, PREVIEW_CHARS, Row, text_of};
 use rusqlite::Connection;
-use serde_json::Value;
 
 use crate::comment_service::ENTITY as COMMENT;
 use crate::history;
@@ -98,7 +97,14 @@ fn task_rows(conn: &Connection, id: &str, start: i64, end: i64) -> AppResult<Vec
             } else {
                 line.text
             };
-            rows.push(row(id, record, kind, change, &title, date.clone()));
+            rows.push(Row::of_record(
+                id,
+                record,
+                kind,
+                change,
+                title.clone(),
+                date.clone(),
+            ));
         }
     }
     Ok(rows)
@@ -118,35 +124,14 @@ fn comment_row(conn: &Connection, change: &EntityRecord) -> AppResult<Option<Row
     };
     let (title, date) = standing(&changelog::read(conn, TASK, task)?);
     let change_line = format!("Commented: {}", recent::preview(body, PREVIEW_CHARS));
-    Ok(Some(row(
+    Ok(Some(Row::of_record(
         task,
         &change.record,
         "commented",
         change_line,
-        &title,
+        title,
         date,
     )))
-}
-
-/// A row for one record of a Task.
-fn row(
-    id: &str,
-    record: &Record,
-    kind: &'static str,
-    change: String,
-    title: &str,
-    date: Option<String>,
-) -> Row {
-    Row {
-        id: id.to_owned(),
-        at: record.at,
-        clock: record.clock,
-        device: record.device.clone(),
-        kind,
-        change,
-        title: title.to_owned(),
-        date,
-    }
 }
 
 /// A Task's title and Due date as its latest record has them. Empty when it has no record.
@@ -162,8 +147,4 @@ fn standing(records: &[Record]) -> (String, Option<String>) {
             )
         },
     )
-}
-
-fn text_of<'a>(snapshot: &'a Value, key: &str) -> Option<&'a str> {
-    snapshot.get(key)?.as_str()
 }
