@@ -38,6 +38,8 @@ pub use conversations::{
 };
 pub use error::AiError;
 pub use keys::KeyStore;
+pub use mnemora_providers::WrapperProvider;
+pub use prompt::INTENT_PARAGRAPH;
 pub use provider::{
     ConnectionTest, KeyState, ModelList, ModelUsage, ModelUse, NewProvider, ProviderKind,
     ProviderRecord, ProviderUpdate, ProviderView, build,

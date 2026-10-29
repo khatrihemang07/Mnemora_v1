@@ -25,6 +25,7 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 |---|---|
 | `make dev` | Vite plus a key menu; build the app on **Production** data (DB is backed up before migrations) |
 | `make sandbox` | Vite plus a key menu; build the app on separate **Sandbox** data, with an orange SANDBOX badge |
+| `make seed-sandbox` | Fill the **Sandbox** database with about three weeks of Journal Entries and Tasks, dated from today (quit the Sandbox app first) |
 | `make build` | Release build for this machine (`.app` / `.dmg`) |
 | `make android-dev` | `make sandbox` that also launches the Android app on a USB-connected phone (Sandbox data) |
 | `make android-sandbox` | Debug Sandbox APK (no hot reload) installed on the phone |
@@ -38,6 +39,14 @@ make setup      # one-time Android toolchain + signing (optional if you only tar
 | `make icons` | Regenerate every app icon and the favicon from `src-tauri/icons/source/*.svg` |
 
 Every target runs with `CARGO_BUILD_JOBS=2` and cleans up the processes it started.
+
+### Seeding the Sandbox
+
+`make seed-sandbox` writes the recent-changes fixture into the Sandbox database, timed from now in this Mac's zone, so yesterday's changes can be read in the app and the change Tools. Quit the Sandbox app first. The seed refuses, before it writes anything, any folder inside Production's data (including the folder Production's device file moved it to), a database another connection is writing to, and a database holding rows that are not the fixture's. `--reset` deletes the Sandbox database files and seeds again; it never touches Production. Running it twice changes nothing.
+
+```sh
+make seed-sandbox ARGS="[--zone <IANA zone>] [--data-dir <folder>] [--base <folder>] [--reset]"
+```
 
 ### Dev menu (`make dev`, `make sandbox`)
 

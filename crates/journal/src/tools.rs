@@ -1,7 +1,9 @@
 //! The Journal's read-only Tools for the AI (ADR 0002 amendment, ADR 0018): list Entries by date,
-//! read one in full and search with the app's own Search. They never write, skip deleted Entries
-//! and return refusals as data.
+//! read one in full, search with the app's own Search, and say what changed in a range of days.
+//! They never write, skip deleted Entries and return refusals as data.
 
+use mnemora_core::local_time;
+use mnemora_core::recent;
 use mnemora_core::search::Span;
 use mnemora_core::tool::{
     Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, fit_rows, number,
@@ -9,7 +11,7 @@ use mnemora_core::tool::{
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
 
-use crate::MODULE_ID;
+use crate::{MODULE_ID, changes};
 
 /// Characters of an Entry's text shown in a list row or a title.
 const PREVIEW_CHARS: usize = 120;
@@ -114,15 +116,29 @@ const SEARCH_PARAMS: &[Param] = &[
     },
 ];
 
+/// The changes Tool's parameters: the shared range, paging and limit (`recent`), and the kinds this
+/// Module names.
+const CHANGES_PARAMS: &[Param] = &[
+    recent::FROM,
+    recent::TO,
+    Param {
+        name: "kinds",
+        kind: Kind::Text { max_chars: 60 },
+        required: false,
+        about: "Only these kinds, comma-separated: written, edited, deleted. Counts still cover the whole range.",
+    },
+    recent::OFFSET,
+    recent::LIMIT,
+];
+
 /// The Tools the Journal offers.
 pub(crate) fn all() -> Vec<Box<dyn Tool>> {
-    vec![Box::new(List), Box::new(Read), Box::new(Search)]
-}
-
-/// The Entry's first words, whitespace collapsed, for a row or a title.
-fn preview(body: &str, chars: usize) -> String {
-    let collapsed = body.split_whitespace().collect::<Vec<_>>().join(" ");
-    collapsed.chars().take(chars).collect()
+    vec![
+        Box::new(List),
+        Box::new(Read),
+        Box::new(Search),
+        Box::new(Changes),
+    ]
 }
 
 fn plain(spans: &[Span]) -> String {
@@ -153,18 +169,19 @@ fn item(row: &Row) -> Item {
     Item {
         id: row.id.clone(),
         module: MODULE_ID,
-        title: preview(&row.body, PREVIEW_CHARS),
+        title: recent::preview(&row.body, PREVIEW_CHARS),
         date: Some(row.page_date.clone()),
     }
 }
 
-fn list_json(row: &Row) -> Value {
+fn list_json(row: &Row, zone: &str) -> Value {
     json!({
         "id": row.id,
         "page_date": row.page_date,
         "written_at": row.written_at,
+        "written_at_local": local_time::minute(row.written_at, zone),
         "word_count": row.word_count,
-        "preview": preview(&row.body, PREVIEW_CHARS),
+        "preview": recent::preview(&row.body, PREVIEW_CHARS),
     })
 }
 
@@ -178,12 +195,12 @@ impl Tool for List {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_list",
-            about: "List Journal Entries by Page date, newest first.",
+            about: "List Journal Entries by Page date, newest first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
             params: LIST_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
         let from = args.text("from").unwrap_or("0000-01-01");
         let to = args.text("to").unwrap_or("9999-12-31");
         if from > to {
@@ -209,7 +226,8 @@ impl Tool for List {
         };
         let more = rows.len() > limit;
         rows.truncate(limit);
-        let (kept, cut_short) = fit_rows(rows.iter().map(list_json).collect());
+        let zone = calendar.time_zone.as_str();
+        let (kept, cut_short) = fit_rows(rows.iter().map(|row| list_json(row, zone)).collect());
         let shown = kept.len();
         let next = (more || cut_short).then_some(number(offset + shown));
         let items = rows.iter().take(shown).map(item).collect();
@@ -230,12 +248,12 @@ impl Tool for Read {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_read",
-            about: "Read one Journal Entry in full, a page of its text at a time.",
+            about: "Read one Journal Entry in full, a page of its text at a time. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
             params: READ_PARAMS,
         }
     }
 
-    fn run(&self, conn: &Connection, args: &Args, _calendar: &Calendar) -> Output {
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
         let id = args.text("id").unwrap_or_default();
         let offset = count(args.int("offset"), 0);
         let found = conn
@@ -267,6 +285,7 @@ impl Tool for Read {
                 "id": row.id,
                 "page_date": row.page_date,
                 "written_at": row.written_at,
+                "written_at_local": local_time::minute(row.written_at, &calendar.time_zone),
                 "word_count": row.word_count,
                 "body": page,
                 "next_offset": next,
@@ -331,5 +350,23 @@ impl Tool for Search {
             format!("Searched entries, {total} found"),
             items,
         )
+    }
+}
+
+struct Changes;
+
+impl Tool for Changes {
+    fn spec(&self) -> Spec {
+        Spec {
+            name: "journal_changes",
+            about: "Entries written, edited or deleted in a date range. Use for questions about a period. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title (the Entry's preview; a deleted Entry keeps its preview). A change counts on the day it was made, not on the Entry's Page date. Counts cover the whole range by kind.",
+            params: CHANGES_PARAMS,
+        }
+    }
+
+    fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
+        recent::run(args, calendar, MODULE_ID, changes::KINDS, |start, end| {
+            changes::rows(conn, start, end).map_err(|_| unreadable())
+        })
     }
 }

@@ -9,7 +9,7 @@ RUN := ./scripts/with-env.sh
 # it, e.g. make dev ARGS="--mac --android". The dev port, its check and the command lines live
 # in scripts/dev/ (port 47821 is also in vite.config.ts and src-tauri/tauri.conf.json).
 
-.PHONY: help dev sandbox build android-dev android android-sandbox android-test test lint fmt icons bindings trim clean-heavy setup
+.PHONY: help dev sandbox seed-sandbox build android-dev android android-sandbox android-test test lint fmt icons bindings trim clean-heavy setup
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-z-]+:.*## / {printf "  \033[1m%-12s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -19,6 +19,9 @@ dev: ## Vite + key menu (w web, z Mac, r relaunch, x stop, q quit); Production d
 
 sandbox: ## Vite + key menu (z Mac, a Android), apps on separate Sandbox data with the SANDBOX badge
 	$(RUN) node scripts/dev.mjs --sandbox $(ARGS)
+
+seed-sandbox: ## Fill the Sandbox database with the recent-changes fixture, dated from today (quit the Sandbox app first; ARGS= flags in README)
+	$(RUN) cargo run -p mnemora-app --features seed --example seed_sandbox -- $(ARGS)
 
 build: ## Release build for this machine (.app/.dmg), signed if setup-signing was run
 	@eval "$$(./scripts/signing-env.sh mac)"; $(RUN) cargo tauri build

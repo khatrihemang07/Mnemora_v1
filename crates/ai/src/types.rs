@@ -88,7 +88,7 @@ pub enum EntryPayload {
         calls: Vec<CallRecord>,
         /// The Entries and Tasks the answer cites, which a Tool returned in this Run.
         sources: Vec<Source>,
-        /// Why the answer may be incomplete, when the Run ran out of steps.
+        /// Why the answer may be incomplete, when the Run stopped early (steps or repeated lookups).
         budget_note: Option<String>,
     },
     /// What a Tool returned for one call.

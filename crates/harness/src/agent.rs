@@ -21,12 +21,12 @@ pub const MAX_REPEATS: usize = 3;
 /// Steps in a row whose calls were unknown or badly formed. After that the Run fails.
 pub const MAX_INVALID_STEPS: usize = 3;
 
-/// Sent with the last request: no Tools, answer what there is.
-pub const FINAL_NOTE: &str = "This is your last step. Answer now from what the Tools have shown, \
-    and say that the answer may be incomplete.";
-/// Sent once the Model has repeated itself: stop searching and answer.
-pub const CLOSE_NOTE: &str = "Stop looking things up. Answer now from what the Tools have shown, \
-    and say what is missing.";
+/// Sent with the answer-only request, when Tools are removed: on the last request, or once the
+/// Model has repeated itself. The app adds its own note saying the Run stopped early.
+pub const FINAL_NOTE: &str = "Investigation is closed. Answer now from the observations only. \
+    Write in your own words unless the person asked for exact text. Group by day when the question \
+    spans days. Answer in the language of the question. Cite ids. If the observations are empty, say \
+    so plainly.";
 /// The result of a call the Model made in a reply that was cut off. It did not run.
 pub const CUT_OFF: &str =
     "The reply was cut off before these calls ran. Send them again, one at a time.";
@@ -97,6 +97,16 @@ pub trait ToolHost {
     fn check_answer(&self, text: &str, sources: &[String]) -> Result<(), String>;
 }
 
+/// Why the Tools were removed for an answer: the Model's requests ran out, or it kept repeating
+/// its lookups.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Forced {
+    /// The last request of the Run.
+    Budget,
+    /// The Model repeated its calls, so the loop closed the investigation.
+    Repeats,
+}
+
 /// One Step that ended, with what the Model wrote and asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StepRecord {
@@ -106,8 +116,9 @@ pub struct StepRecord {
     pub calls: Vec<Call>,
     /// How the reply ended.
     pub stop: StopReason,
-    /// Whether this Step was the last one, so its answer carries the budget note.
-    pub budget_forced: bool,
+    /// Why this Step's answer is forced, when Tools were removed for it; the answer then carries
+    /// the app's note saying the Run stopped early.
+    pub forced: Option<Forced>,
     /// The sources the answer lists (envelope Providers); empty otherwise.
     pub sources: Vec<String>,
 }
@@ -174,7 +185,7 @@ enum Finished {
 /// the Step's Tools finish, or after a Step that asked for none but is not the answer.
 pub fn run(
     provider: Arc<dyn Provider>,
-    system: &str,
+    prompts: &Prompts,
     mut messages: Vec<Message>,
     host: &mut dyn ToolHost,
     control: &Control,
@@ -192,16 +203,7 @@ pub fn run(
         }
         let last = requests + 1 == MAX_REQUESTS;
         let withheld = last || closing;
-        let request = Request {
-            system: match (last, closing) {
-                (true, _) => format!("{system}\n{FINAL_NOTE}"),
-                (false, true) => format!("{system}\n{CLOSE_NOTE}"),
-                (false, false) => system.to_owned(),
-            },
-            messages: messages.clone(),
-            model: provider.model().to_owned(),
-            tools: if withheld { Vec::new() } else { host.specs() },
-        };
+        let request = request_for(&*provider, prompts, &messages, withheld, host);
         if request_bytes(&request) > MAX_PROMPT_BYTES {
             return Outcome::Failed(Failure::TooLong);
         }
@@ -243,7 +245,8 @@ pub fn run(
         }
 
         if answer.calls.is_empty() || (last && !answer.text.is_empty()) {
-            match finish(answer, last, host, &mut messages, steer, emit) {
+            let forced = forced_by(last, closing);
+            match finish(answer, last, forced, host, &mut messages, steer, emit) {
                 Finished::Answered => return Outcome::Answered,
                 Finished::Failed(failure) => return Outcome::Failed(failure),
                 Finished::Steered => continue,
@@ -289,6 +292,48 @@ pub fn run(
     }
 }
 
+/// Why an answer is forced: it is the last request, or the Model repeated its calls and the loop
+/// closed the investigation.
+fn forced_by(last: bool, closing: bool) -> Option<Forced> {
+    if last {
+        Some(Forced::Budget)
+    } else if closing {
+        Some(Forced::Repeats)
+    } else {
+        None
+    }
+}
+
+/// The system prompt of each kind of Step. `open` is for a Step that may call Tools. `closed` is for
+/// the answer-only Step, which is sent no Tools and the final note.
+pub struct Prompts {
+    /// The system prompt of a Step that may call Tools.
+    pub open: String,
+    /// The system prompt of the answer-only Step (Tools withheld), before the final note.
+    pub closed: String,
+}
+
+/// The request for one Step. Once Tools are removed (`withheld`) the Step is sent the closed prompt
+/// with the final note, and no Tools.
+fn request_for(
+    provider: &dyn Provider,
+    prompts: &Prompts,
+    messages: &[Message],
+    withheld: bool,
+    host: &dyn ToolHost,
+) -> Request {
+    Request {
+        system: if withheld {
+            format!("{}\n{FINAL_NOTE}", prompts.closed)
+        } else {
+            prompts.open.clone()
+        },
+        messages: messages.to_vec(),
+        model: provider.model().to_owned(),
+        tools: if withheld { Vec::new() } else { host.specs() },
+    }
+}
+
 /// Keeps a Step the person stopped or skipped: what it wrote is saved, and each of its calls is
 /// answered without running. Returns whether the Run ended, which a stop does and a skip does not.
 fn keep_halted(
@@ -311,7 +356,7 @@ fn keep_halted(
             } else {
                 StopReason::Stop
             },
-            budget_forced: false,
+            forced: None,
             sources: Vec::new(),
         }));
         messages.push(Message::Assistant {
@@ -358,7 +403,7 @@ fn run_step_calls(
         text: answer.text.clone(),
         calls: answer.calls.clone(),
         stop: answer.stop,
-        budget_forced: false,
+        forced: None,
         sources: Vec::new(),
     }));
     messages.push(Message::Assistant {
@@ -385,6 +430,7 @@ fn deliver(
 fn finish(
     answer: Answer,
     last: bool,
+    forced: Option<Forced>,
     host: &dyn ToolHost,
     messages: &mut Vec<Message>,
     steer: &mut dyn FnMut() -> Option<String>,
@@ -401,7 +447,7 @@ fn finish(
             text: answer.text.clone(),
             calls: Vec::new(),
             stop: answer.stop,
-            budget_forced: false,
+            forced: None,
             sources: answer.sources.clone(),
         }));
         messages.push(Message::Assistant {
@@ -417,7 +463,7 @@ fn finish(
             text: answer.text.clone(),
             calls: Vec::new(),
             stop: answer.stop,
-            budget_forced: false,
+            forced: None,
             sources: answer.sources.clone(),
         }));
         messages.push(Message::Assistant {
@@ -433,7 +479,7 @@ fn finish(
         text: answer.text,
         calls: Vec::new(),
         stop: answer.stop,
-        budget_forced: last,
+        forced,
         sources: answer.sources,
     }));
     Finished::Answered

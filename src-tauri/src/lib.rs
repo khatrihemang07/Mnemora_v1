@@ -162,13 +162,34 @@ mod ai;
 #[cfg(test)]
 mod ai_branching_tests;
 #[cfg(test)]
+mod ai_changes_tests;
+#[cfg(test)]
+mod ai_comment_hints_tests;
+#[cfg(test)]
 mod ai_conversations_tests;
+#[cfg(any(test, feature = "seed"))]
+mod ai_fixture;
+#[cfg(test)]
+mod ai_fixture_tests;
 #[cfg(test)]
 mod ai_provider_tests;
+// The headless QA harness: real Runs over a copy of the Sandbox, for `examples/ai_qa.rs`.
+#[cfg(any(test, feature = "seed"))]
+#[doc(hidden)]
+pub mod ai_qa;
+#[cfg(test)]
+mod ai_qa_tests;
 #[cfg(test)]
 mod ai_run_control_tests;
 #[cfg(test)]
 mod ai_saved_tests;
+// The Sandbox seed: only in tests and the `seed` feature, never in the app's own surface.
+#[cfg(any(test, feature = "seed"))]
+#[doc(hidden)]
+pub mod ai_seed;
+#[cfg(test)]
+mod ai_seed_tests;
+// The command-line shape `ai_qa` and `ai_seed` share (flags, the exit codes).
 #[cfg(test)]
 mod ai_sync_tests;
 #[cfg(test)]
@@ -184,6 +205,8 @@ mod journal;
 #[cfg(test)]
 mod legacy_db_tests;
 mod links;
+#[cfg(any(test, feature = "seed"))]
+mod qa_cli;
 mod state;
 mod sync;
 #[cfg(test)]

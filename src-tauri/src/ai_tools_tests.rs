@@ -5,16 +5,16 @@
 use std::sync::Arc;
 
 use mnemora_harness::scripted::{Reply, ScriptedProvider};
-use mnemora_harness::{Provider, ToolDef};
+use mnemora_harness::{Message, Provider, Request, ToolDef};
 use serde_json::{Value, json};
 
-use crate::ai_tracer_tests::{ended_outcome, label, until_end};
+use crate::ai_tracer_tests::{ended_outcome, get, label, until_end};
 use crate::test_support::TestApp;
 use mnemora_ai::RunOutcome;
 
-const TODAY: &str = "2026-10-25";
+pub(crate) const TODAY: &str = "2026-10-25";
 
-fn local_now() -> Value {
+pub(crate) fn local_now() -> Value {
     json!({ "today": TODAY, "now": "12:00", "offset_min": 0 })
 }
 
@@ -28,11 +28,11 @@ fn local() -> Value {
 }
 
 /// A Provider that makes native Tool calls, playing `replies` one Step at a time.
-fn native(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
+pub(crate) fn native(replies: Vec<Reply>) -> Arc<ScriptedProvider> {
     Arc::new(ScriptedProvider::new("Scripted", "scripted-model", replies).with_native_tools())
 }
 
-fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
+pub(crate) fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
     let provider: Arc<dyn Provider> = provider.clone();
     app.set_ai_provider(provider);
     app.invoke::<Value>(
@@ -42,7 +42,7 @@ fn install(app: &TestApp, provider: &Arc<ScriptedProvider>) {
     .unwrap();
 }
 
-fn provider_id(app: &TestApp) -> String {
+pub(crate) fn provider_id(app: &TestApp) -> String {
     let list: Value = app.invoke("ai_provider_list", json!({})).unwrap();
     list[0]["id"].as_str().unwrap().to_owned()
 }
@@ -61,7 +61,7 @@ fn ask(app: &TestApp, text: &str) -> Value {
     .unwrap()
 }
 
-fn payloads(app: &TestApp, conversation: &str) -> Vec<Value> {
+pub(crate) fn payloads(app: &TestApp, conversation: &str) -> Vec<Value> {
     let view: Value = app
         .invoke("ai_conversation_get", json!({ "id": conversation }))
         .unwrap();
@@ -74,16 +74,16 @@ fn payloads(app: &TestApp, conversation: &str) -> Vec<Value> {
 }
 
 /// The Tools and system prompt a Step was sent with.
-fn sent(provider: &ScriptedProvider, step: usize) -> (Vec<ToolDef>, String) {
+pub(crate) fn sent(provider: &ScriptedProvider, step: usize) -> (Vec<ToolDef>, String) {
     let request = &provider.requests()[step];
     (request.tools.clone(), request.system.clone())
 }
 
-fn names(tools: &[ToolDef]) -> Vec<String> {
+pub(crate) fn names(tools: &[ToolDef]) -> Vec<String> {
     tools.iter().map(|t| t.name.clone()).collect()
 }
 
-fn seed_entry(app: &TestApp, date: &str, text: &str) -> String {
+pub(crate) fn seed_entry(app: &TestApp, date: &str, text: &str) -> String {
     let entry: Value = app
         .invoke(
             "journal_entry_create",
@@ -96,7 +96,7 @@ fn seed_entry(app: &TestApp, date: &str, text: &str) -> String {
     entry["id"].as_str().unwrap().to_owned()
 }
 
-fn seed_task(app: &TestApp, title: &str, due: Option<&str>) -> String {
+pub(crate) fn seed_task(app: &TestApp, title: &str, due: Option<&str>) -> String {
     let when = due.map(|d| json!({ "date": d, "time": null, "local": local_now() }));
     let task: Value = app
         .invoke(
@@ -287,6 +287,42 @@ fn turning_a_module_off_removes_its_tools_and_the_prompt_says_so() {
 }
 
 #[test]
+fn a_run_with_no_tools_offered_carries_the_no_data_wording() {
+    let app = TestApp::new();
+    app.set_pref("core.disabled_modules", json!(["journal", "todo"]));
+    let provider = native(vec![Reply::text(&["Nothing to read."])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let (tools, system) = sent(&provider, 0);
+    assert!(tools.is_empty());
+    assert!(system.contains(NO_TOOLS_LINE), "{system}");
+    assert!(!system.contains("cannot read the Journal"), "{system}");
+}
+
+#[test]
+fn a_normal_step_lists_the_tools_it_may_call_and_not_the_closed_line() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let (tools, system) = sent(&provider, 0);
+    assert!(!tools.is_empty());
+    assert!(system.contains("Tools you may call: "), "{system}");
+    assert!(system.contains("journal_list"), "{system}");
+    assert!(!system.contains(CLOSED_TOOLS), "{system}");
+}
+
+#[test]
 fn a_cited_id_no_tool_returned_gets_a_correction_turn_then_the_answer() {
     let app = TestApp::new();
     let real = seed_entry(&app, "2026-10-22", "Long walk.");
@@ -338,7 +374,10 @@ fn an_exact_repeat_is_answered_with_its_earlier_result_and_three_in_a_row_close_
     // After three repeats in a row the Model is asked to answer: its next request has no Tools.
     let (tools, system) = sent(&provider, 4);
     assert!(tools.is_empty());
-    assert!(system.contains("answer"), "{system}");
+    assert!(system.contains(FINAL_STEP), "{system}");
+    assert!(system.contains(CLOSED_TOOLS), "{system}");
+    assert!(!system.contains("Tools you may call"), "{system}");
+    assert!(!carries_nudge(&provider.requests()[4]));
 }
 
 #[test]
@@ -360,14 +399,24 @@ fn the_twelfth_request_has_no_tools_and_its_answer_says_it_may_be_incomplete() {
     let run = until_end(&events);
     assert_eq!(ended_outcome(&run), RunOutcome::Answered);
 
-    let (tools, _) = sent(&provider, 11);
+    let (tools, system) = sent(&provider, 11);
     assert!(tools.is_empty(), "the last step is finish-only");
+    assert!(system.contains(FINAL_STEP), "{system}");
+    assert!(system.contains(CLOSED_TOOLS), "{system}");
+    assert!(!system.contains("Tools you may call"), "{system}");
+    assert!(
+        !carries_nudge(&provider.requests()[11]),
+        "the final Step carries no nudge"
+    );
     let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
     let answer = saved.last().unwrap();
     assert_eq!(
         answer["budget_note"],
         "Answered after 12 steps; there may be more to find"
     );
+    let notes = saved.iter().filter(|p| !p["budget_note"].is_null()).count();
+    assert_eq!(notes, 1, "the note is shown once");
+    assert!(!system.contains(REMOVED_LINE), "{system}");
 }
 
 #[test]
@@ -484,7 +533,7 @@ fn a_provider_without_native_tools_is_sent_no_tools_and_told_so() {
 
     let (tools, system) = sent(&provider, 0);
     assert!(tools.is_empty());
-    assert!(system.contains("cannot use Tools"), "{system}");
+    assert!(system.contains(NO_NATIVE_LINE), "{system}");
 }
 
 #[test]
@@ -516,4 +565,508 @@ fn a_list_pages_with_next_offset_until_the_last_row_and_deleted_rows_never_count
     assert!(second.contains("\"next_offset\":null"), "{second}");
     assert!(first.contains(&ids[2]) && first.contains(&ids[1]) && !first.contains(&ids[0]));
     assert!(second.contains(&ids[0]) && !second.contains(&gone));
+}
+
+/// Stamps a Task as closed at `ms` (epoch milliseconds). Closing through the commands stamps the
+/// system clock, so a test places the close directly.
+fn close_at(app: &TestApp, id: &str, state: &str, ms: i64) {
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE todo_tasks SET state = ?2, closed_at = ?3 WHERE id = ?1",
+            (id, state, ms),
+        )
+        .unwrap();
+    });
+}
+
+/// Asks a question as if the device were in `time_zone`.
+pub(crate) fn ask_in(app: &TestApp, text: &str, time_zone: &str) -> Value {
+    app.invoke(
+        "ai_run_start",
+        json!({ "request": {
+            "conversation_id": null,
+            "text": text,
+            "provider_id": provider_id(app),
+            "model": "scripted-model",
+            "local": { "today": TODAY, "weekday": "Sunday", "time_zone": time_zone, "week_start": "mon" },
+        } }),
+    )
+    .unwrap()
+}
+
+/// Runs a question on a scripted native-tool Provider and returns each Tool result, in order.
+pub(crate) fn tool_results(app: &TestApp, replies: Vec<Reply>) -> Vec<String> {
+    tool_results_in(app, "Europe/London", replies)
+}
+
+/// As `tool_results`, for a device in `time_zone`.
+pub(crate) fn tool_results_in(app: &TestApp, time_zone: &str, replies: Vec<Reply>) -> Vec<String> {
+    let provider = native(replies);
+    install(app, &provider);
+    let events = app.ai_events();
+    let started = ask_in(app, "What did I close?", time_zone);
+    until_end(&events);
+    payloads(app, started["conversation_id"].as_str().unwrap())
+        .iter()
+        .filter(|p| p["kind"] == "tool_result")
+        .map(|p| p["result"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn todo_list_with_a_closed_day_lists_done_and_wont_do_tasks_by_default() {
+    let app = TestApp::new();
+    let open = seed_task(&app, "Still open", Some("2026-11-05"));
+    let early = seed_task(&app, "Closed early", None);
+    let late = seed_task(&app, "Closed late", None);
+    let declined = seed_task(&app, "Declined in the range", None);
+    close_at(&app, &early, "done", 1_792_490_400_000); // 2026-10-20 10:00 UTC
+    close_at(&app, &late, "done", 1_792_663_200_000); // 2026-10-22 10:00 UTC
+    close_at(&app, &declined, "wont", 1_792_576_800_000); // 2026-10-21 10:00 UTC
+
+    let results = tool_results(
+        &app,
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-19","closed_to":"2026-10-23"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains(&early) && results[0].contains(&late),
+        "{}",
+        results[0]
+    );
+    assert!(results[0].contains(&declined), "{}", results[0]);
+    assert!(!results[0].contains(&open), "{}", results[0]);
+}
+
+#[test]
+fn an_explicit_state_still_wins_over_the_closed_day_default() {
+    let app = TestApp::new();
+    let done = seed_task(&app, "Done on the day", None);
+    let wont = seed_task(&app, "Declined on the day", None);
+    close_at(&app, &done, "done", 1_792_490_400_000); // 2026-10-20 10:00 UTC
+    close_at(&app, &wont, "wont", 1_792_490_400_000);
+
+    let results = tool_results(
+        &app,
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"state":"wont","closed_from":"2026-10-19","closed_to":"2026-10-23"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(results[0].contains(&wont), "{}", results[0]);
+    assert!(!results[0].contains(&done), "{}", results[0]);
+}
+
+#[test]
+fn a_closed_day_list_is_ordered_by_when_each_task_closed_newest_first() {
+    let app = TestApp::new();
+    // The Task closed first is due first: a due-date order would list it first too.
+    let first = seed_task(&app, "Closed first", Some("2026-11-01"));
+    let second = seed_task(&app, "Closed second", Some("2026-11-20"));
+    close_at(&app, &first, "done", 1_792_490_400_000); // 2026-10-20 10:00 UTC
+    close_at(&app, &second, "done", 1_792_663_200_000); // 2026-10-22 10:00 UTC
+
+    let results = tool_results(
+        &app,
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-19","closed_to":"2026-10-23"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    let at = |id: &str| results[0].find(id).unwrap_or(usize::MAX);
+    assert!(at(&second) < at(&first), "{}", results[0]);
+}
+
+/// Two Tasks closed in New York (UTC-4 on 27 October 2026) either side of midnight: 23:50 on the
+/// 27th and 00:10 on the 28th. Their UTC dates are both the 28th.
+#[test]
+fn a_tool_timestamp_comes_with_its_local_date_and_time_in_the_clients_zone() {
+    let app = TestApp::new();
+    let late = seed_task(&app, "Closed at 23:50 on the 27th", None);
+    let after = seed_task(&app, "Closed at 00:10 on the 28th", None);
+    close_at(&app, &late, "done", 1_793_159_400_000); // 2026-10-27 23:50 EDT
+    close_at(&app, &after, "done", 1_793_160_600_000); // 2026-10-28 00:10 EDT
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-27","closed_to":"2026-10-28"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains(r#""closed_at":1793159400000"#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[0].contains(r#""closed_at_local":"2026-10-27 23:50""#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[0].contains(r#""closed_at_local":"2026-10-28 00:10""#),
+        "{}",
+        results[0]
+    );
+}
+
+/// The 27th in New York holds the 23:50 Task and not the 00:10 one. A UTC day or the machine's own
+/// zone (Asia/Kolkata here) would put both on the 28th.
+#[test]
+fn a_closed_day_is_the_clients_day_in_its_zone_not_utc_or_the_machines() {
+    let app = TestApp::new();
+    let late = seed_task(&app, "Closed at 23:50 on the 27th", None);
+    let after = seed_task(&app, "Closed at 00:10 on the 28th", None);
+    close_at(&app, &late, "done", 1_793_159_400_000); // 2026-10-27 23:50 EDT
+    close_at(&app, &after, "done", 1_793_160_600_000); // 2026-10-28 00:10 EDT
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-27","closed_to":"2026-10-27"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(results[0].contains(&late), "{}", results[0]);
+    assert!(!results[0].contains(&after), "{}", results[0]);
+}
+
+/// The Task's creation, its Comment and its History line are all at 23:50 on the 27th in New York.
+#[test]
+fn todo_read_gives_its_creation_comment_and_history_times_a_local_reading() {
+    let app = TestApp::new();
+    let at = 1_793_159_400_000; // 2026-10-27 23:50 EDT
+    app.clock().freeze(at);
+    let task = seed_task(&app, "Renew passport", None);
+    app.invoke::<Value>(
+        "todo_comment_add",
+        json!({ "taskId": task, "body": "Photos first." }),
+    )
+    .unwrap();
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE todo_tasks SET created_at = ?2 WHERE id = ?1",
+            (&task, at),
+        )
+        .unwrap();
+        c.execute(
+            "UPDATE todo_comments SET created_at = ?2 WHERE task_id = ?1",
+            (&task, at),
+        )
+        .unwrap();
+    });
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[(
+                "todo_read",
+                &format!(r#"{{"id":"{task}","comments":true,"history":true}}"#),
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    let body = &results[0];
+    assert!(
+        body.contains(r#""created_at_local":"2026-10-27 23:50""#),
+        "{body}"
+    );
+    assert!(body.contains(r#""body":"Photos first.""#), "{body}");
+    assert!(
+        body.contains(r#""created_at":1793159400000,"created_at_local":"2026-10-27 23:50""#),
+        "{body}"
+    );
+    assert!(body.contains(r#""at_local":"2026-10-27 23:50""#), "{body}");
+}
+
+/// An Entry written at 23:50 on the 27th in New York reads as that day and time there.
+#[test]
+fn journal_tools_give_written_at_a_local_reading_in_the_clients_zone() {
+    let app = TestApp::new();
+    let id = seed_entry(&app, "2026-10-27", "Walked to the river.");
+    app.with_db(|c| {
+        c.execute(
+            "UPDATE journal_entries SET written_at = ?2 WHERE id = ?1",
+            (&id, 1_793_159_400_000_i64),
+        )
+        .unwrap();
+    });
+
+    let results = tool_results_in(
+        &app,
+        "America/New_York",
+        vec![
+            Reply::calls(&[("journal_list", r#"{"from":"2026-10-27","to":"2026-10-27"}"#)]),
+            Reply::calls(&[("journal_read", &format!(r#"{{"id":"{id}"}}"#))]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains(r#""written_at":1793159400000"#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[0].contains(r#""written_at_local":"2026-10-27 23:50""#),
+        "{}",
+        results[0]
+    );
+    assert!(
+        results[1].contains(r#""written_at_local":"2026-10-27 23:50""#),
+        "{}",
+        results[1]
+    );
+}
+
+/// A closing-day question in a zone the bundled tz data does not know is refused, not answered in
+/// some other zone.
+#[test]
+fn a_closing_day_question_in_an_unknown_zone_is_refused() {
+    let app = TestApp::new();
+    let task = seed_task(&app, "Closed on the day", None);
+    close_at(&app, &task, "done", 1_793_159_400_000);
+
+    let results = tool_results_in(
+        &app,
+        "Mars/Olympus",
+        vec![
+            Reply::calls(&[(
+                "todo_list",
+                r#"{"closed_from":"2026-10-27","closed_to":"2026-10-27"}"#,
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(
+        results[0].contains("could not be read in the device's time zone"),
+        "{}",
+        results[0]
+    );
+    assert!(!results[0].contains(&task), "{}", results[0]);
+}
+
+/// The intent paragraph of the system prompt, as one line.
+const INTENT: &str = "Work out what the person wants before you call a Tool: a lookup (a specific \
+    Entry or Task, or its exact words), a period (what happened in a span of time), or an overview \
+    (a pattern, a count or a comparison). For a lookup, stay faithful and quote. For a period or an \
+    overview, answer in your own words from what the Tools showed; do not paste Entry or Task text \
+    that was not asked for.";
+
+#[test]
+fn the_prompt_asks_what_the_person_wants_before_a_tool_and_fixes_no_phrasing() {
+    let app = TestApp::new();
+    let provider = native(vec![Reply::text(&["Hello."])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "Hi");
+    until_end(&events);
+
+    let (_, system) = sent(&provider, 0);
+    assert!(system.contains(INTENT), "{system}");
+    assert!(
+        system.contains(
+            "Answer briefly, in the language of the person's question, in plain Markdown."
+        ),
+        "{system}"
+    );
+    assert!(!system.contains("yesterday"), "{system}");
+    assert!(!system.contains("what did I do"), "{system}");
+}
+
+/// A line of the closing nudge the loop used to add after each batch of Tool results. It is retired:
+/// no request may carry it, in any Provider's form.
+pub(crate) const RETIRED_NUDGE: &str = "If you now have what you need";
+
+/// Whether a Step's request, its system prompt and its messages together, carries the retired nudge.
+pub(crate) fn carries_nudge(request: &Request) -> bool {
+    format!("{request:?}").contains(RETIRED_NUDGE)
+}
+
+/// The final-Step instruction, sent in the system prompt when Tools are removed.
+const FINAL_STEP: &str = "Investigation is closed. Answer now from the observations only. Write in \
+    your own words unless the person asked for exact text. Group by day when the question spans \
+    days. Answer in the language of the question. Cite ids. If the observations are empty, say so \
+    plainly.";
+
+/// The line that replaces the Tools list in the system prompt of an answer-only Step.
+pub(crate) const CLOSED_TOOLS: &str = "Tools are closed for this answer: none can be called now. Answer from the observations already in this Run, and say plainly what they do not show.";
+
+/// The line a Run with no Tools offered carries.
+const NO_TOOLS_LINE: &str =
+    "No Tools are available in this Run, so no Journal or Task data was read. Say so plainly.";
+
+/// The line a Provider that cannot use Tools is told with.
+const NO_NATIVE_LINE: &str = "This Provider cannot use Tools, so no Tools are available in this Run and no Journal or Task data was read. Say so plainly if the question needs the Journal or the Tasks.";
+
+/// The sentence the final-step note no longer asks the Model to write: the app adds its own note.
+const REMOVED_LINE: &str = "Add one line that there may be more to find.";
+
+#[test]
+fn after_a_batch_of_tool_results_the_next_request_carries_no_closing_nudge() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let requests = provider.requests();
+    assert!(
+        matches!(requests[1].messages.last(), Some(Message::Tool { .. })),
+        "the next request ends with the Tool result"
+    );
+    assert!(requests.iter().all(|request| !carries_nudge(request)));
+}
+
+#[test]
+fn two_batches_in_a_row_send_no_closing_nudge_in_any_request() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::calls(&[("journal_search", r#"{"query":"walk"}"#)]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(requests.iter().all(|request| !carries_nudge(request)));
+    assert!(matches!(
+        requests[2].messages.last(),
+        Some(Message::Tool { .. })
+    ));
+}
+
+#[test]
+fn a_greeting_answered_without_a_tool_is_one_request_and_carries_no_nudge() {
+    let app = TestApp::new();
+    let provider = native(vec![Reply::text(&["Hello! What would you like to know?"])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "Hi");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 1, "the greeting takes one request");
+    assert!(!carries_nudge(&requests[0]));
+}
+
+#[test]
+fn the_stored_entries_are_the_same_as_before_the_nudge_was_removed() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    let started = ask(&app, "What did I write?");
+    let run = until_end(&events);
+    let conversation = started["conversation_id"].as_str().unwrap().to_owned();
+
+    let saved = payloads(&app, &conversation);
+    let kinds: Vec<&str> = saved.iter().map(|p| p["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "model_change",
+            "user",
+            "assistant",
+            "tool_result",
+            "assistant"
+        ]
+    );
+    let listed: Value = app
+        .invoke(
+            "ai_conversation_list",
+            json!({ "query": "", "offset": 0, "limit": 20 }),
+        )
+        .unwrap();
+    let markdown: String = app
+        .invoke(
+            "ai_conversation_markdown",
+            json!({ "id": conversation, "entryId": null }),
+        )
+        .unwrap();
+    let shown = [
+        started.to_string(),
+        run.iter()
+            .map(|event| serde_json::to_string(&event.event).unwrap())
+            .collect::<String>(),
+        get(&app, &conversation).to_string(),
+        listed.to_string(),
+        markdown,
+    ];
+    for text in shown {
+        assert!(
+            !text.contains(RETIRED_NUDGE),
+            "the retired nudge appeared: {text}"
+        );
+    }
+}
+
+/// The note the app adds to an answer given after the Model repeated its lookups.
+const LOOP_NOTE: &str = "Stopped early after repeated lookups; there may be more to find";
+
+#[test]
+fn a_loop_guard_stop_shows_its_note_once_and_the_answer_does_not_repeat_it() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let same = || Reply::calls(&[("journal_list", r#"{"from":"2026-10-22","to":"2026-10-22"}"#)]);
+    let provider = native(vec![
+        same(),
+        same(),
+        same(),
+        same(),
+        Reply::text(&["Enough looking."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    let started = ask(&app, "Repeat yourself");
+    assert_eq!(ended_outcome(&until_end(&events)), RunOutcome::Answered);
+
+    let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
+    let answer = saved.last().unwrap();
+    assert_eq!(answer["budget_note"], LOOP_NOTE);
+    let notes = saved.iter().filter(|p| !p["budget_note"].is_null()).count();
+    assert_eq!(notes, 1, "the note is shown once");
+    assert!(!answer["text"].as_str().unwrap().contains("may be more"));
 }

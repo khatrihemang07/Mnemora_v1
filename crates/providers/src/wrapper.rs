@@ -97,7 +97,7 @@ impl WrapperProvider {
     /// The chat body: the system prompt with the envelope's instructions, the branch as turns,
     /// and the envelope as the response format. No native `tools` are sent (the Wrapper refuses
     /// them), and no output limit.
-    fn body(request: &Request, finish_only: bool) -> Value {
+    pub fn body(request: &Request, finish_only: bool) -> Value {
         let instructions = envelope::instructions(&request.tools);
         let system = if request.system.is_empty() {
             instructions

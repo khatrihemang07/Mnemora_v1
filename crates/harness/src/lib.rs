@@ -11,7 +11,7 @@ pub mod scripted;
 mod step;
 
 pub use agent::{
-    Cited, Event, MAX_CALLS_PER_STEP, MAX_INVALID_STEPS, MAX_PROMPT_BYTES, MAX_REPEATS,
+    Cited, Event, Forced, MAX_CALLS_PER_STEP, MAX_INVALID_STEPS, MAX_PROMPT_BYTES, MAX_REPEATS,
     MAX_REQUESTS, Outcome, Reply, StepRecord, ToolHost,
 };
 pub use control::Control;

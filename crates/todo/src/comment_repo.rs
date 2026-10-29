@@ -77,6 +77,18 @@ pub fn for_task(conn: &Connection, task_id: &str) -> AppResult<Vec<Comment>> {
         .collect::<Result<_, _>>()?)
 }
 
+/// The live Comments on a Task: how many, and when the newest was written (UTC milliseconds). None
+/// when there are none, so a Task without Comments carries no hint.
+pub fn hint(conn: &Connection, task_id: &str) -> AppResult<Option<(i64, i64)>> {
+    let (count, newest): (i64, Option<i64>) = conn.query_row(
+        "SELECT count(*), max(created_at) FROM todo_comments
+         WHERE task_id = ?1 AND deleted_at IS NULL",
+        [task_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok(newest.filter(|_| count > 0).map(|at| (count, at)))
+}
+
 pub fn update_body(conn: &Connection, c: &Comment) -> AppResult<()> {
     conn.execute(
         "UPDATE todo_comments SET body = ?2, edited = 1, updated_at = ?3 WHERE id = ?1",
