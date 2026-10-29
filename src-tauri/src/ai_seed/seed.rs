@@ -20,6 +20,16 @@ use super::marker::{self, record_counts, record_fixture};
 use super::plan::{Plan, plan};
 use crate::ai_fixture::{self, Driver};
 
+/// What a seed is asked to do beyond the paths, the clock and the zone.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SeedOptions {
+    /// Delete the Sandbox database and seed again when it holds rows that are not the fixture's.
+    pub reset: bool,
+    /// Leave the catch-up day (`ai_fixture::CATCHUP_DAY`) out of the fixture, and record that the
+    /// database was seeded that way (`leaves_out_catchup`).
+    pub skip_catchup: bool,
+}
+
 /// What a seed did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SeedOutcome {
@@ -49,28 +59,15 @@ pub struct SeedReport {
     pub outcome: SeedOutcome,
 }
 
-/// Seeds the database of `paths` with the fixture, as of `now` in `zone`. `production` are the
-/// folders of Production's data (see `production_roots`); a target inside any of them is refused
+/// Seeds the database of `paths` with the fixture, as of `now` in `zone`, as `options` say. `production`
+/// are the folders of Production's data (see `production_roots`); a target inside any of them is refused
 /// before anything else is looked at.
 pub fn seed_at(
     paths: &AppPaths,
     production: &[PathBuf],
     now: i64,
     zone: &str,
-    reset: bool,
-) -> Result<SeedReport, String> {
-    seed_at_with(paths, production, now, zone, reset, false)
-}
-
-/// As `seed_at`. With `skip_catchup`, the catch-up day (`ai_fixture::CATCHUP_DAY`) is left out of the
-/// fixture, and the database records that it was (`leaves_out_catchup`).
-pub fn seed_at_with(
-    paths: &AppPaths,
-    production: &[PathBuf],
-    now: i64,
-    zone: &str,
-    reset: bool,
-    skip_catchup: bool,
+    options: SeedOptions,
 ) -> Result<SeedReport, String> {
     refuse_production(
         &[
@@ -84,13 +81,13 @@ pub fn seed_at_with(
         return Err(format!("{zone} is not an IANA time zone; pass --zone"));
     }
     let before = inspect(&paths.db_file)?;
-    let outcome = match plan(before, reset)? {
+    let outcome = match plan(before, options.reset)? {
         Plan::Keep => SeedOutcome::AlreadySeeded,
         step => {
             if step == Plan::Reset {
                 remove_database(&paths.db_file)?;
             }
-            write_fixture(paths, now, zone, skip_catchup)?
+            write_fixture(paths, now, zone, options)?
         }
     };
     Ok(SeedReport { before, outcome })
@@ -102,7 +99,7 @@ fn write_fixture(
     paths: &AppPaths,
     now: i64,
     zone: &str,
-    skip_catchup: bool,
+    options: SeedOptions,
 ) -> Result<SeedOutcome, String> {
     let mut conn = db::open(&paths.db_file).map_err(err)?;
     let modules = crate::modules();
@@ -119,12 +116,12 @@ fn write_fixture(
     }
 
     let driver = SeedDriver::new(conn, Arc::new(AtomicI64::new(now)))?;
-    let leave_out = skip_catchup.then_some(ai_fixture::CATCHUP_DAY);
+    let leave_out = options.skip_catchup.then_some(ai_fixture::CATCHUP_DAY);
     let loaded = ai_fixture::load_except(&driver, now, zone, leave_out)?;
     let mut recorded = Err("the database was not reached".to_owned());
     driver.with_db(&mut |conn| {
-        recorded = record_counts(conn)
-            .and_then(|counts| record_fixture(conn, skip_catchup).map(|()| counts));
+        recorded =
+            record_counts(conn).and_then(|counts| record_fixture(conn, options).map(|()| counts));
     });
     let counts = recorded?;
     Ok(SeedOutcome::Written {

@@ -7,6 +7,7 @@ use mnemora_core::db::Connection;
 
 use super::database::{count_rows, table_exists};
 use super::err;
+use super::seed::SeedOptions;
 
 /// The table a finished seed records its row counts in; its presence marks a seeded database.
 const MARKER_TABLE: &str = "sandbox_seed";
@@ -38,8 +39,12 @@ pub(super) fn record_counts(conn: &Connection) -> Result<BTreeMap<String, i64>, 
 
 /// Records whether the seed left the catch-up day out. Written after `record_counts`, which creates
 /// the marker table.
-pub(super) fn record_fixture(conn: &Connection, skip_catchup: bool) -> Result<(), String> {
-    let value = if skip_catchup { WITHOUT_CATCHUP } else { WHOLE };
+pub(super) fn record_fixture(conn: &Connection, options: SeedOptions) -> Result<(), String> {
+    let value = if options.skip_catchup {
+        WITHOUT_CATCHUP
+    } else {
+        WHOLE
+    };
     conn.execute(
         &format!("INSERT OR REPLACE INTO {MARKER_TABLE} (key, value) VALUES (?1, ?2)"),
         (FIXTURE_KEY, value),

@@ -10,7 +10,7 @@ use super::args::{Options, USAGE, parse_args};
 use super::database::DbState;
 use super::guard::sandbox_paths;
 use super::machine::{platform_data_root, system_zone};
-use super::seed::{SeedOutcome, SeedReport, seed_at_with};
+use super::seed::{SeedOptions, SeedOutcome, SeedReport, seed_at};
 use crate::qa_cli::exit_code;
 
 /// Runs the seed from the command line and returns the process exit code: 0 when it wrote or found
@@ -38,14 +38,11 @@ fn run(options: &Options) -> Result<String, String> {
         .or_else(system_zone)
         .ok_or("this Mac's time zone is not an IANA name; pass --zone")?;
     let now = now_ms();
-    let report = seed_at_with(
-        &paths,
-        &production,
-        now,
-        &zone,
-        options.reset,
-        options.skip_catchup,
-    )?;
+    let seed = SeedOptions {
+        reset: options.reset,
+        skip_catchup: options.skip_catchup,
+    };
+    let report = seed_at(&paths, &production, now, &zone, seed)?;
     Ok(describe(&paths, &production, now, &zone, &report))
 }
 

@@ -28,7 +28,7 @@ pub use cli::run_cli;
 pub use database::{DbState, inspect, remove_database};
 pub use guard::{production_roots, refuse_production, sandbox_paths};
 pub use machine::{platform_data_root, system_zone};
-pub use seed::{SeedOutcome, SeedReport, leaves_out_catchup, seed_at, seed_at_with};
+pub use seed::{SeedOptions, SeedOutcome, SeedReport, leaves_out_catchup, seed_at};
 
 /// A failure as the text the command line prints.
 fn err(e: impl std::fmt::Display) -> String {

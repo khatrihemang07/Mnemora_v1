@@ -3,7 +3,7 @@
 //! and say what changed in a range of days. They never write, skip deleted rows and return refusals
 //! as data. Closing days and local times are read in the device's zone, as the client sends it.
 
-use mnemora_core::batch;
+use mnemora_core::batch::{self, Batch, READ_BATCH_BYTES};
 use mnemora_core::error::AppResult;
 use mnemora_core::local_time;
 use mnemora_core::recent;
@@ -22,8 +22,6 @@ use crate::{changes, comment_repo, history, list_repo};
 /// The Module's id, as the change log and the AI name it.
 const MODULE_ID: &str = "todo";
 
-/// Bytes of a Task's notes one read batch returns; the next offset continues them.
-const READ_BATCH_BYTES: usize = 8 * 1024;
 /// Rows a list returns by default, and at most.
 const LIST_DEFAULT: usize = 30;
 const LIST_MAX: i64 = 100;
@@ -413,7 +411,7 @@ impl Tool for List {
         let Ok(rows) = hinted_rows(conn, &tasks, &names, zone) else {
             return unreadable();
         };
-        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "tasks") else {
+        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "tasks", None) else {
             return Output::error(batch::ROW_TOO_LARGE);
         };
         let items = tasks.iter().take(shown).map(item).collect();
@@ -461,17 +459,12 @@ impl Tool for Read {
         }
         let rest = &task.notes[start..];
         let page = cut(rest, READ_BATCH_BYTES);
-        let next = (page.len() < rest.len()).then_some(start + page.len());
         let mut body = row_json(&task, &list_label(&names, &task), zone);
         body["notes"] = json!(page);
-        body["next_offset"] = json!(next);
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::byte_fields(
-                start,
-                page.len(),
-                task.notes.len(),
-                next,
-            ));
+            fields.extend(
+                Batch::new(start, page.len(), task.notes.len()).byte_fields("bytes of the notes"),
+            );
         }
         body["created_at"] = json!(task.created_at);
         body["created_at_local"] = json!(local_time::minute(task.created_at, zone));
@@ -573,7 +566,8 @@ impl Tool for Search {
         let Ok(rows) = hinted_rows(conn, page.iter().copied(), &names, zone) else {
             return unreadable();
         };
-        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "matches") else {
+        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "matches", None)
+        else {
             return Output::error(batch::ROW_TOO_LARGE);
         };
         let items = page.iter().take(shown).map(|t| item(t)).collect();
@@ -593,8 +587,13 @@ impl Tool for Changes {
     }
 
     fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
-        recent::run(args, calendar, MODULE_ID, changes::KINDS, |start, end| {
-            changes::rows(conn, start, end).map_err(|_| unreadable())
-        })
+        recent::run(
+            args,
+            calendar,
+            MODULE_ID,
+            "Tasks",
+            changes::KINDS,
+            |start, end| changes::rows(conn, start, end).map_err(|_| unreadable()),
+        )
     }
 }

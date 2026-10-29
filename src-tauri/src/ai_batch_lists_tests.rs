@@ -3,6 +3,7 @@
 //! match, and its note names the offset of the next batch; a read cut into 8 KiB parts says the same
 //! in bytes. A scripted native-tool Provider asks the Tools through the commands. No network.
 
+use mnemora_core::batch::READ_BATCH_BYTES;
 use mnemora_harness::scripted::Reply;
 use serde_json::{Value, json};
 
@@ -11,6 +12,52 @@ use crate::test_support::TestApp;
 
 /// The device's zone: London in October is UTC+1.
 const ZONE: &str = "Europe/London";
+
+/// What a paged result counts, so how `walk` checks it: rows under `key`, which the note calls
+/// `noun`, or the bytes of a text under `key`.
+#[derive(Clone, Copy)]
+enum Paged {
+    Rows {
+        key: &'static str,
+        noun: &'static str,
+    },
+    Bytes {
+        key: &'static str,
+    },
+}
+
+const TODO_LIST: Paged = Paged::Rows {
+    key: "tasks",
+    noun: "tasks",
+};
+const TODO_SEARCH: Paged = Paged::Rows {
+    key: "tasks",
+    noun: "matches",
+};
+const JOURNAL_LIST: Paged = Paged::Rows {
+    key: "entries",
+    noun: "entries",
+};
+const JOURNAL_SEARCH: Paged = Paged::Rows {
+    key: "results",
+    noun: "matches",
+};
+const TODO_NOTES: Paged = Paged::Bytes { key: "notes" };
+const JOURNAL_BODY: Paged = Paged::Bytes { key: "body" };
+
+impl Paged {
+    /// The note an incomplete batch carries, once `done` of `total` are shown and the next starts at `next`.
+    fn note(self, done: usize, total: usize, next: usize) -> String {
+        match self {
+            Self::Rows { noun, .. } => format!(
+                "{done} of {total} {noun} shown. The list is incomplete: call again with offset {next} for the rest."
+            ),
+            Self::Bytes { .. } => format!(
+                "{done} of {total} bytes shown. The text is incomplete: call again with offset {next} for the rest."
+            ),
+        }
+    }
+}
 
 /// The body of a Tool result: the JSON after the observation line.
 fn body(result: &str) -> Value {
@@ -63,6 +110,47 @@ fn task_with_notes(app: &TestApp, title: &str, notes: &str) -> String {
     task["id"].as_str().unwrap().to_owned()
 }
 
+/// Checks the batches of one paged Tool, in the order the calls ran. `batches` gives each call's
+/// (offset, shown) and `total` what the query matches. A batch that is followed by another says so
+/// in its note and `next_offset`, and the next batch starts exactly where it ends; the last batch
+/// reaches `total` and has neither. Returns the ids of every row, in order (a read has none).
+fn walk(results: &[String], what: Paged, total: usize, batches: &[(usize, usize)]) -> Vec<String> {
+    assert_eq!(results.len(), batches.len(), "one result per call");
+    let mut ids = Vec::new();
+    for (i, (result, &(offset, shown))) in results.iter().zip(batches).enumerate() {
+        let whole = body(result);
+        assert_eq!(whole["shown"], shown, "{result}");
+        assert_eq!(whole["total"], total, "{result}");
+        match what {
+            Paged::Rows { key, .. } => {
+                let rows = ids_under(&whole, key);
+                assert_eq!(rows.len(), shown, "{result}");
+                ids.extend(rows);
+            }
+            Paged::Bytes { key } => {
+                let text = whole[key]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("no {key} in {result}"));
+                assert_eq!(text.len(), shown, "{result}");
+            }
+        }
+        if let Some(&(next, _)) = batches.get(i + 1) {
+            assert_eq!(next, offset + shown, "{result}");
+            assert_eq!(whole["next_offset"], next, "{result}");
+            assert_eq!(
+                whole["note"],
+                what.note(offset + shown, total, next),
+                "{result}"
+            );
+        } else {
+            assert_eq!(offset + shown, total, "{result}");
+            assert!(whole["next_offset"].is_null(), "{result}");
+            assert!(whole.get("note").is_none(), "{result}");
+        }
+    }
+    ids
+}
+
 #[test]
 fn todo_list_cut_at_30_says_so_and_offset_30_holds_the_rest() {
     let app = TestApp::new();
@@ -75,27 +163,13 @@ fn todo_list_cut_at_30_says_so_and_offset_30_holds_the_rest() {
         &[("todo_list", "{}"), ("todo_list", r#"{"offset":30}"#)],
     );
 
-    let first = body(&results[0]);
-    assert_eq!(ids_under(&first, "tasks").len(), 30, "{}", results[0]);
-    assert_eq!(first["shown"], 30, "{}", results[0]);
-    assert_eq!(first["total"], 35, "{}", results[0]);
-    assert_eq!(first["next_offset"], 30, "{}", results[0]);
     assert_eq!(
-        first["note"],
+        body(&results[0])["note"],
         "30 of 35 tasks shown. The list is incomplete: call again with offset 30 for the rest.",
         "{}",
         results[0]
     );
-
-    let second = body(&results[1]);
-    assert_eq!(ids_under(&second, "tasks").len(), 5, "{}", results[1]);
-    assert_eq!(second["shown"], 5, "{}", results[1]);
-    assert_eq!(second["total"], 35, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
-    assert!(second.get("note").is_none(), "{}", results[1]);
-
-    let mut ids = ids_under(&first, "tasks");
-    ids.extend(ids_under(&second, "tasks"));
+    let ids = walk(&results, TODO_LIST, 35, &[(0, 30), (30, 5)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),
@@ -118,27 +192,7 @@ fn todo_search_cut_at_10_says_so_and_offset_10_holds_the_rest() {
         ],
     );
 
-    let first = body(&results[0]);
-    assert_eq!(ids_under(&first, "tasks").len(), 10, "{}", results[0]);
-    assert_eq!(first["shown"], 10, "{}", results[0]);
-    assert_eq!(first["total"], 12, "{}", results[0]);
-    assert_eq!(first["next_offset"], 10, "{}", results[0]);
-    assert_eq!(
-        first["note"],
-        "10 of 12 matches shown. The list is incomplete: call again with offset 10 for the rest.",
-        "{}",
-        results[0]
-    );
-
-    let second = body(&results[1]);
-    assert_eq!(ids_under(&second, "tasks").len(), 2, "{}", results[1]);
-    assert_eq!(second["shown"], 2, "{}", results[1]);
-    assert_eq!(second["total"], 12, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
-    assert!(second.get("note").is_none(), "{}", results[1]);
-
-    let mut ids = ids_under(&first, "tasks");
-    ids.extend(ids_under(&second, "tasks"));
+    let ids = walk(&results, TODO_SEARCH, 12, &[(0, 10), (10, 2)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),
@@ -158,27 +212,7 @@ fn journal_list_cut_at_30_says_so_and_offset_30_holds_the_rest() {
         &[("journal_list", "{}"), ("journal_list", r#"{"offset":30}"#)],
     );
 
-    let first = body(&results[0]);
-    assert_eq!(ids_under(&first, "entries").len(), 30, "{}", results[0]);
-    assert_eq!(first["shown"], 30, "{}", results[0]);
-    assert_eq!(first["total"], 32, "{}", results[0]);
-    assert_eq!(first["next_offset"], 30, "{}", results[0]);
-    assert_eq!(
-        first["note"],
-        "30 of 32 entries shown. The list is incomplete: call again with offset 30 for the rest.",
-        "{}",
-        results[0]
-    );
-
-    let second = body(&results[1]);
-    assert_eq!(ids_under(&second, "entries").len(), 2, "{}", results[1]);
-    assert_eq!(second["shown"], 2, "{}", results[1]);
-    assert_eq!(second["total"], 32, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
-    assert!(second.get("note").is_none(), "{}", results[1]);
-
-    let mut ids = ids_under(&first, "entries");
-    ids.extend(ids_under(&second, "entries"));
+    let ids = walk(&results, JOURNAL_LIST, 32, &[(0, 30), (30, 2)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),
@@ -201,27 +235,7 @@ fn journal_search_cut_at_10_says_so_and_offset_10_holds_the_rest() {
         ],
     );
 
-    let first = body(&results[0]);
-    assert_eq!(ids_under(&first, "results").len(), 10, "{}", results[0]);
-    assert_eq!(first["shown"], 10, "{}", results[0]);
-    assert_eq!(first["total"], 12, "{}", results[0]);
-    assert_eq!(first["next_offset"], 10, "{}", results[0]);
-    assert_eq!(
-        first["note"],
-        "10 of 12 matches shown. The list is incomplete: call again with offset 10 for the rest.",
-        "{}",
-        results[0]
-    );
-
-    let second = body(&results[1]);
-    assert_eq!(ids_under(&second, "results").len(), 2, "{}", results[1]);
-    assert_eq!(second["shown"], 2, "{}", results[1]);
-    assert_eq!(second["total"], 12, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
-    assert!(second.get("note").is_none(), "{}", results[1]);
-
-    let mut ids = ids_under(&first, "results");
-    ids.extend(ids_under(&second, "results"));
+    let ids = walk(&results, JOURNAL_SEARCH, 12, &[(0, 10), (10, 2)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),
@@ -232,41 +246,46 @@ fn journal_search_cut_at_10_says_so_and_offset_10_holds_the_rest() {
 #[test]
 fn todo_read_cut_at_8_kib_says_so_in_bytes_and_the_next_offset_holds_the_rest() {
     let app = TestApp::new();
-    let notes = long_text(8 * 1024 + 5_000);
+    let notes = long_text(READ_BATCH_BYTES + 5_000);
     let task = task_with_notes(&app, "Long notes", &notes);
 
     let results = results_of(
         &app,
         &[
             ("todo_read", &format!(r#"{{"id":"{task}"}}"#)),
-            ("todo_read", &format!(r#"{{"id":"{task}","offset":8192}}"#)),
+            (
+                "todo_read",
+                &format!(r#"{{"id":"{task}","offset":{READ_BATCH_BYTES}}}"#),
+            ),
         ],
     );
 
     let first = body(&results[0]);
-    assert_eq!(first["notes"], &notes[..8192], "{}", results[0]);
-    assert_eq!(first["shown"], 8192, "{}", results[0]);
-    assert_eq!(first["total"], 13_192, "{}", results[0]);
-    assert_eq!(first["next_offset"], 8192, "{}", results[0]);
+    assert_eq!(first["notes"], &notes[..READ_BATCH_BYTES], "{}", results[0]);
     assert_eq!(
         first["note"],
         "8192 of 13192 bytes shown. The text is incomplete: call again with offset 8192 for the rest.",
         "{}",
         results[0]
     );
-
-    let second = body(&results[1]);
-    assert_eq!(second["notes"], &notes[8192..], "{}", results[1]);
-    assert_eq!(second["shown"], 5_000, "{}", results[1]);
-    assert_eq!(second["total"], 13_192, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
-    assert!(second.get("note").is_none(), "{}", results[1]);
+    walk(
+        &results,
+        TODO_NOTES,
+        notes.len(),
+        &[(0, READ_BATCH_BYTES), (READ_BATCH_BYTES, 5_000)],
+    );
+    assert_eq!(
+        body(&results[1])["notes"],
+        &notes[READ_BATCH_BYTES..],
+        "{}",
+        results[1]
+    );
 }
 
 #[test]
 fn journal_read_cut_at_8_kib_says_so_in_bytes_and_the_next_offset_holds_the_rest() {
     let app = TestApp::new();
-    let text = long_text(8 * 1024 + 5_000);
+    let text = long_text(READ_BATCH_BYTES + 5_000);
     let entry = seed_entry(&app, "2026-10-20", &text);
 
     let results = results_of(
@@ -275,29 +294,29 @@ fn journal_read_cut_at_8_kib_says_so_in_bytes_and_the_next_offset_holds_the_rest
             ("journal_read", &format!(r#"{{"id":"{entry}"}}"#)),
             (
                 "journal_read",
-                &format!(r#"{{"id":"{entry}","offset":8192}}"#),
+                &format!(r#"{{"id":"{entry}","offset":{READ_BATCH_BYTES}}}"#),
             ),
         ],
     );
 
-    let first = body(&results[0]);
-    assert_eq!(first["body"], &text[..8192], "{}", results[0]);
-    assert_eq!(first["shown"], 8192, "{}", results[0]);
-    assert_eq!(first["total"], 13_192, "{}", results[0]);
-    assert_eq!(first["next_offset"], 8192, "{}", results[0]);
     assert_eq!(
-        first["note"],
-        "8192 of 13192 bytes shown. The text is incomplete: call again with offset 8192 for the rest.",
+        body(&results[0])["body"],
+        &text[..READ_BATCH_BYTES],
         "{}",
         results[0]
     );
-
-    let second = body(&results[1]);
-    assert_eq!(second["body"], &text[8192..], "{}", results[1]);
-    assert_eq!(second["shown"], 5_000, "{}", results[1]);
-    assert_eq!(second["total"], 13_192, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
-    assert!(second.get("note").is_none(), "{}", results[1]);
+    walk(
+        &results,
+        JOURNAL_BODY,
+        text.len(),
+        &[(0, READ_BATCH_BYTES), (READ_BATCH_BYTES, 5_000)],
+    );
+    assert_eq!(
+        body(&results[1])["body"],
+        &text[READ_BATCH_BYTES..],
+        "{}",
+        results[1]
+    );
 }
 
 #[test]
@@ -318,20 +337,10 @@ fn a_complete_list_and_search_show_all_their_rows_and_no_note() {
         ],
     );
 
-    let checks = [
-        (&results[0], "tasks"),
-        (&results[1], "entries"),
-        (&results[2], "tasks"),
-        (&results[3], "results"),
-    ];
-    for (result, key) in checks {
-        let whole = body(result);
-        assert_eq!(ids_under(&whole, key).len(), 3, "{result}");
-        assert_eq!(whole["shown"], 3, "{result}");
-        assert_eq!(whole["total"], 3, "{result}");
-        assert!(whole["next_offset"].is_null(), "{result}");
-        assert!(whole.get("note").is_none(), "{result}");
-    }
+    walk(&results[0..1], TODO_LIST, 3, &[(0, 3)]);
+    walk(&results[1..2], JOURNAL_LIST, 3, &[(0, 3)]);
+    walk(&results[2..3], TODO_SEARCH, 3, &[(0, 3)]);
+    walk(&results[3..4], JOURNAL_SEARCH, 3, &[(0, 3)]);
 }
 
 #[test]
@@ -348,23 +357,20 @@ fn a_complete_read_shows_its_whole_text_and_no_note() {
         ],
     );
 
-    let task_body = body(&results[0]);
     assert_eq!(
-        task_body["notes"], "Two lines.\nAnd a third.",
+        body(&results[0])["notes"],
+        "Two lines.\nAnd a third.",
         "{}",
         results[0]
     );
-    assert_eq!(task_body["shown"], 23, "{}", results[0]);
-    assert_eq!(task_body["total"], 23, "{}", results[0]);
-    assert!(task_body["next_offset"].is_null(), "{}", results[0]);
-    assert!(task_body.get("note").is_none(), "{}", results[0]);
-
-    let entry_body = body(&results[1]);
-    assert_eq!(entry_body["body"], "A short Entry.", "{}", results[1]);
-    assert_eq!(entry_body["shown"], 14, "{}", results[1]);
-    assert_eq!(entry_body["total"], 14, "{}", results[1]);
-    assert!(entry_body["next_offset"].is_null(), "{}", results[1]);
-    assert!(entry_body.get("note").is_none(), "{}", results[1]);
+    walk(&results[0..1], TODO_NOTES, 23, &[(0, 23)]);
+    assert_eq!(
+        body(&results[1])["body"],
+        "A short Entry.",
+        "{}",
+        results[1]
+    );
+    walk(&results[1..2], JOURNAL_BODY, 14, &[(0, 14)]);
 }
 
 #[test]
@@ -399,15 +405,25 @@ fn a_later_read_part_that_is_still_incomplete_counts_from_the_start_of_the_text(
         &app,
         &[(
             "journal_read",
-            &format!(r#"{{"id":"{entry}","offset":8192}}"#),
+            &format!(r#"{{"id":"{entry}","offset":{READ_BATCH_BYTES}}}"#),
         )],
     );
 
     let middle = body(&results[0]);
-    assert_eq!(middle["body"], &text[8192..16384], "{}", results[0]);
-    assert_eq!(middle["shown"], 8192, "{}", results[0]);
+    assert_eq!(
+        middle["body"],
+        &text[READ_BATCH_BYTES..2 * READ_BATCH_BYTES],
+        "{}",
+        results[0]
+    );
+    assert_eq!(middle["shown"], READ_BATCH_BYTES, "{}", results[0]);
     assert_eq!(middle["total"], 20_000, "{}", results[0]);
-    assert_eq!(middle["next_offset"], 16384, "{}", results[0]);
+    assert_eq!(
+        middle["next_offset"],
+        2 * READ_BATCH_BYTES,
+        "{}",
+        results[0]
+    );
     assert_eq!(
         middle["note"],
         "16384 of 20000 bytes shown. The text is incomplete: call again with offset 16384 for the rest.",
@@ -424,44 +440,6 @@ fn title_of(label: &str, len: usize) -> String {
 /// A text of `chars` copies of "é": two bytes each, so each row that carries it is large.
 fn accented(chars: usize) -> String {
     "é".repeat(chars)
-}
-
-/// Checks the batches of one paged Tool, in the order the calls ran. `batches` gives each call's
-/// (offset, shown). A batch that is followed by another says so in its note and `next_offset`, and the
-/// next batch starts exactly where it ends. The last batch has neither. Returns every id in order.
-fn walk(
-    results: &[String],
-    key: &str,
-    noun: &str,
-    total: usize,
-    batches: &[(usize, usize)],
-) -> Vec<String> {
-    assert_eq!(results.len(), batches.len(), "one result per call");
-    let mut ids = Vec::new();
-    for (i, (result, &(offset, shown))) in results.iter().zip(batches).enumerate() {
-        let whole = body(result);
-        let rows = ids_under(&whole, key);
-        assert_eq!(rows.len(), shown, "{result}");
-        assert_eq!(whole["shown"], shown, "{result}");
-        assert_eq!(whole["total"], total, "{result}");
-        if let Some(&(next, _)) = batches.get(i + 1) {
-            assert_eq!(next, offset + shown, "{result}");
-            assert_eq!(whole["next_offset"], next, "{result}");
-            assert_eq!(
-                whole["note"],
-                format!(
-                    "{next} of {total} {noun} shown. The list is incomplete: call again with offset {next} for the rest."
-                ),
-                "{result}"
-            );
-        } else {
-            assert_eq!(offset + shown, total, "{result}");
-            assert!(whole["next_offset"].is_null(), "{result}");
-            assert!(whole.get("note").is_none(), "{result}");
-        }
-        ids.extend(rows);
-    }
-    ids
 }
 
 #[test]
@@ -488,16 +466,9 @@ fn todo_list_whose_rows_pass_the_cap_is_cut_short_and_no_task_is_lost() {
         "a batch that passes the cap is cut, not refused: {}",
         results[0]
     );
-    assert_eq!(
-        body(&results[0])["note"],
-        "24 of 100 tasks shown. The list is incomplete: call again with offset 24 for the rest.",
-        "{}",
-        results[0]
-    );
     let ids = walk(
         &results,
-        "tasks",
-        "tasks",
+        TODO_LIST,
         100,
         &[(0, 24), (24, 24), (48, 24), (72, 24), (96, 4)],
     );
@@ -530,19 +501,7 @@ fn journal_list_whose_rows_pass_the_cap_is_cut_short_and_no_entry_is_lost() {
         "a batch that passes the cap is cut, not refused: {}",
         results[0]
     );
-    assert_eq!(
-        body(&results[0])["note"],
-        "38 of 100 entries shown. The list is incomplete: call again with offset 38 for the rest.",
-        "{}",
-        results[0]
-    );
-    let ids = walk(
-        &results,
-        "entries",
-        "entries",
-        100,
-        &[(0, 38), (38, 38), (76, 24)],
-    );
+    let ids = walk(&results, JOURNAL_LIST, 100, &[(0, 38), (38, 38), (76, 24)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),
@@ -574,7 +533,7 @@ fn todo_search_whose_rows_pass_the_cap_is_cut_short_and_no_match_is_lost() {
         "a batch that passes the cap is cut, not refused: {}",
         results[0]
     );
-    let ids = walk(&results, "tasks", "matches", 30, &[(0, 24), (24, 6)]);
+    let ids = walk(&results, TODO_SEARCH, 30, &[(0, 24), (24, 6)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),
@@ -584,8 +543,8 @@ fn todo_search_whose_rows_pass_the_cap_is_cut_short_and_no_match_is_lost() {
 
 #[test]
 fn journal_search_at_its_largest_batch_fits_the_cap_and_no_match_is_lost() {
-    // Not red first: a search row holds a snippet of at most 200 bytes, so 25 rows (about 7 KiB)
-    // never reach the cap. This test guards that bound.
+    // Not red first: a search row holds a snippet of at most about 160 bytes, so 25 rows (about
+    // 7 KiB) never reach the cap. This test guards that bound.
     let app = TestApp::new();
     let seeded: Vec<String> = (0..30)
         .map(|i| {
@@ -608,7 +567,7 @@ fn journal_search_at_its_largest_batch_fits_the_cap_and_no_match_is_lost() {
         ],
     );
 
-    let ids = walk(&results, "results", "matches", 30, &[(0, 25), (25, 5)]);
+    let ids = walk(&results, JOURNAL_SEARCH, 30, &[(0, 25), (25, 5)]);
     assert_eq!(
         sorted(ids),
         sorted(seeded),

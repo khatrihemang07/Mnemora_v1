@@ -228,9 +228,8 @@ struct Recorder<'a> {
 
 impl Recorder<'_> {
     fn handle(&mut self, event: Event, emit: &mut dyn FnMut(RunEvent)) {
-        if self.broken {
-            return;
-        }
+        // The held answer is released before any later entry, so the entries keep their order. A
+        // save that fails here ends the Run, and the event is dropped.
         self.release(None, emit);
         if self.broken {
             return;
@@ -321,7 +320,8 @@ impl Recorder<'_> {
         self.release(unread, emit);
     }
 
-    /// Saves the held answer, if there is one, with `unread` joined to its note.
+    /// Saves the held answer, if there is one, with `unread` joined to its note. Nothing is saved
+    /// once the Run is broken.
     fn release(&mut self, unread: Option<String>, emit: &mut dyn FnMut(RunEvent)) {
         let Some(mut payload) = self.held.take() else {
             return;

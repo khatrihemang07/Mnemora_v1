@@ -64,8 +64,9 @@ pub struct Off {
     pub changes: bool,
     /// The paging rule of the system prompt, replaced by the earlier economy sentence (`paging`).
     pub paging: bool,
-    /// The copy is a fixture seeded without the catch-up day (`--fixture-skip-catchup`). Checked, not
-    /// applied: the seed decides what the copy holds.
+    /// The copy must have been seeded without the catch-up day (`--fixture-skip-catchup`). This is not
+    /// a switch: no Run is changed by it, and the copy is never seeded here. The run checks the copy's
+    /// record against it and refuses on a mismatch, so the report states what the copy holds.
     pub catchup: bool,
 }
 

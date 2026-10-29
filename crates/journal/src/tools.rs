@@ -2,12 +2,12 @@
 //! read one in full, search with the app's own Search, and say what changed in a range of days.
 //! They never write, skip deleted Entries and return refusals as data.
 
-use mnemora_core::batch;
+use mnemora_core::batch::{self, Batch, READ_BATCH_BYTES};
 use mnemora_core::local_time;
 use mnemora_core::recent;
 use mnemora_core::search::Span;
 use mnemora_core::tool::{
-    Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, fit_rows, number,
+    Args, Calendar, Item, Kind, Output, Param, Spec, Tool, count, cut, number,
 };
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
@@ -18,8 +18,6 @@ use crate::{MODULE_ID, changes};
 const PREVIEW_CHARS: usize = 120;
 /// Characters of a search snippet.
 const SNIPPET_CHARS: usize = 200;
-/// Bytes of an Entry's body one read batch returns; the next offset continues it.
-const READ_BATCH_BYTES: usize = 8 * 1024;
 /// Rows a list returns by default, and at most.
 const LIST_DEFAULT: usize = 30;
 const LIST_MAX: i64 = 100;
@@ -238,7 +236,8 @@ impl Tool for List {
         rows.truncate(limit);
         let zone = calendar.time_zone.as_str();
         let json_rows: Vec<Value> = rows.iter().map(|row| list_json(row, zone)).collect();
-        let Some((body, shown)) = batch::page("entries", &json_rows, offset, total, "entries")
+        let Some((body, shown)) =
+            batch::page("entries", &json_rows, offset, total, "entries", None)
         else {
             return Output::error(batch::ROW_TOO_LARGE);
         };
@@ -290,7 +289,6 @@ impl Tool for Read {
         }
         let rest = &row.body[start..];
         let page = cut(rest, READ_BATCH_BYTES);
-        let next = (page.len() < rest.len()).then_some(start + page.len());
         let summary = format!("Read an entry, {}", row.page_date);
         let mut body = json!({
             "id": row.id,
@@ -299,10 +297,11 @@ impl Tool for Read {
             "written_at_local": local_time::minute(row.written_at, &calendar.time_zone),
             "word_count": row.word_count,
             "body": page,
-            "next_offset": next,
         });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::byte_fields(start, page.len(), row.body.len(), next));
+            fields.extend(
+                Batch::new(start, page.len(), row.body.len()).byte_fields("bytes of the Entry"),
+            );
         }
         Output::ok(body, summary, vec![item(&row)])
     }
@@ -347,8 +346,10 @@ impl Tool for Search {
                 })
             })
             .collect();
-        let (kept, _) = fit_rows(rows);
-        let shown = kept.len();
+        let Some((body, shown)) = batch::page("results", &rows, offset, total, "matches", None)
+        else {
+            return Output::error(batch::ROW_TOO_LARGE);
+        };
         let items = page
             .iter()
             .take(shown)
@@ -359,11 +360,6 @@ impl Tool for Search {
                 date: Some(hit.page_date.clone()),
             })
             .collect();
-        let next = (offset + shown < total).then_some(offset + shown);
-        let mut body = json!({ "results": kept, "next_offset": next });
-        if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(offset, shown, total, next, "matches", None));
-        }
         Output::ok(body, format!("Searched entries, {total} found"), items)
     }
 }
@@ -380,8 +376,13 @@ impl Tool for Changes {
     }
 
     fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
-        recent::run(args, calendar, MODULE_ID, changes::KINDS, |start, end| {
-            changes::rows(conn, start, end).map_err(|_| unreadable())
-        })
+        recent::run(
+            args,
+            calendar,
+            MODULE_ID,
+            "Journal",
+            changes::KINDS,
+            |start, end| changes::rows(conn, start, end).map_err(|_| unreadable()),
+        )
     }
 }

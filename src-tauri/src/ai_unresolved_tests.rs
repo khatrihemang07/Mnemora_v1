@@ -5,6 +5,7 @@
 //! network.
 
 use mnemora_ai::RunOutcome;
+use mnemora_core::recent::CHANGES_DEFAULT;
 use mnemora_harness::scripted::Reply;
 use serde_json::{Value, json};
 
@@ -84,7 +85,10 @@ fn a_run_that_follows_next_offset_to_the_end_has_no_note() {
         &app,
         vec![
             Reply::calls(&[("todo_changes", &format!("{{{DAY}}}"))]),
-            Reply::calls(&[("todo_changes", &format!("{{{DAY},\"offset\":100}}"))]),
+            Reply::calls(&[(
+                "todo_changes",
+                &format!("{{{DAY},\"offset\":{CHANGES_DEFAULT}}}"),
+            )]),
             Reply::text(&["Done."]),
         ],
     );

@@ -4,6 +4,7 @@
 //! Tools through the commands, with the clock frozen so every change lands on one local day. No
 //! network.
 
+use mnemora_core::recent::CHANGES_DEFAULT;
 use mnemora_harness::scripted::Reply;
 use serde_json::{Value, json};
 
@@ -86,7 +87,10 @@ fn the_batch_from_offset_100_holds_the_rest_and_no_row_is_lost_or_repeated() {
         vec![
             Reply::calls(&[
                 ("todo_changes", &format!("{{{DAY}}}")),
-                ("todo_changes", &format!("{{{DAY},\"offset\":100}}")),
+                (
+                    "todo_changes",
+                    &format!("{{{DAY},\"offset\":{CHANGES_DEFAULT}}}"),
+                ),
             ]),
             Reply::text(&["Done."]),
         ],
@@ -259,7 +263,10 @@ fn the_same_call_with_a_new_offset_is_run_and_not_refused_as_a_repeat() {
         ZONE,
         vec![
             Reply::calls(&[("todo_changes", &format!("{{{DAY}}}"))]),
-            Reply::calls(&[("todo_changes", &format!("{{{DAY},\"offset\":100}}"))]),
+            Reply::calls(&[(
+                "todo_changes",
+                &format!("{{{DAY},\"offset\":{CHANGES_DEFAULT}}}"),
+            )]),
             Reply::text(&["Done."]),
         ],
     );

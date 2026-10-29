@@ -8,11 +8,11 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
-use crate::batch;
+use crate::batch::{self, Batch};
 use crate::changelog::Record;
 use crate::hlc;
 use crate::local_time;
-use crate::tool::{Args, Calendar, Item, Kind, Output, Param, count, cut, fits, number};
+use crate::tool::{Args, Calendar, Item, Kind, Output, Param, count, cut, number};
 
 /// Characters of a title or text shown as a preview.
 pub const PREVIEW_CHARS: usize = 120;
@@ -115,6 +115,8 @@ struct LocalRow {
 pub struct PageOptions<'a> {
     /// The Module the rows belong to, as each Item names it.
     pub module: &'static str,
+    /// The name the unread note gives the Module, such as "Journal".
+    pub scope: &'static str,
     /// The kinds the Tool counts, in the order it lists them.
     pub vocabulary: &'static [&'static str],
     /// The kinds to keep. `None` keeps every kind.
@@ -134,6 +136,7 @@ pub fn run(
     args: &Args,
     calendar: &Calendar,
     module: &'static str,
+    scope: &'static str,
     vocabulary: &'static [&'static str],
     rows: impl FnOnce(i64, i64) -> Result<Vec<Row>, Output>,
 ) -> Output {
@@ -154,6 +157,7 @@ pub fn run(
         rows,
         PageOptions {
             module,
+            scope,
             vocabulary,
             kinds,
             offset: count(args.int("offset"), 0),
@@ -224,6 +228,7 @@ fn kind_filter(
 fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
     let PageOptions {
         module,
+        scope,
         vocabulary,
         kinds,
         offset,
@@ -261,22 +266,16 @@ fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
     let total = matching.len();
     let page: Vec<&LocalRow> = matching.into_iter().skip(offset).take(limit).collect();
 
-    let mut shown = page.len();
-    let body = loop {
-        let next = (offset + shown < total).then_some(offset + shown);
+    let (body, shown) = batch::fit(page.len(), |shown| {
         let mut body = json!({
             "days": days_of(&page[..shown]),
-            "counts": counts,
-            "next_offset": next.map(number),
+            "counts": counts.clone(),
         });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(offset, shown, total, next, "changes", None));
+            fields.extend(Batch::new(offset, shown, total).list_fields("changes", Some(scope)));
         }
-        if fits(&body) || shown == 0 {
-            break body;
-        }
-        shown -= 1;
-    };
+        body
+    });
 
     let mut seen = HashSet::new();
     let items: Vec<Item> = page[..shown]
