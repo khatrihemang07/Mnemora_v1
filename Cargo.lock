@@ -2296,7 +2296,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-ai"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mnemora-core",
  "mnemora-harness",
@@ -2313,7 +2313,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-app"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "jni",
  "mnemora-ai",
@@ -2339,7 +2339,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "jiff",
  "rusqlite",
@@ -2358,7 +2358,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-harness"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "specta",
@@ -2366,7 +2366,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-journal"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mnemora-core",
  "rusqlite",
@@ -2381,7 +2381,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-providers"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mnemora-harness",
  "rcgen",
@@ -2392,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-sync"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "if-addrs",
  "mdns-sd",
@@ -2419,7 +2419,7 @@ dependencies = [
 
 [[package]]
 name = "mnemora-todo"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mnemora-core",
  "rusqlite",
