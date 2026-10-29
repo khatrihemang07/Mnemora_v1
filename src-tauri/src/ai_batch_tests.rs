@@ -216,3 +216,56 @@ fn a_kinds_filter_counts_only_the_matching_rows_as_total() {
         results[1]
     );
 }
+
+#[test]
+fn a_later_batch_that_is_still_incomplete_counts_from_the_start_of_the_list() {
+    let app = TestApp::new();
+    app.clock().freeze(YESTERDAY_NOON);
+    seed_tasks(&app, (0..130).map(|i| format!("Task {i:03}")));
+
+    let results = tool_results_in(
+        &app,
+        ZONE,
+        vec![
+            Reply::calls(&[(
+                "todo_changes",
+                &format!("{{{DAY},\"limit\":30,\"offset\":30}}"),
+            )]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    let middle = body(&results[0]);
+    assert_eq!(rows_of(&middle).len(), 30, "{}", results[0]);
+    assert_eq!(middle["shown"], 30, "{}", results[0]);
+    assert_eq!(middle["total"], 130, "{}", results[0]);
+    assert_eq!(middle["next_offset"], 60, "{}", results[0]);
+    assert_eq!(
+        middle["note"],
+        "60 of 130 changes shown. The list is incomplete: call again with offset 60 for the rest.",
+        "{}",
+        results[0]
+    );
+}
+
+#[test]
+fn the_same_call_with_a_new_offset_is_run_and_not_refused_as_a_repeat() {
+    let app = TestApp::new();
+    app.clock().freeze(YESTERDAY_NOON);
+    seed_tasks(&app, (0..130).map(|i| format!("Task {i:03}")));
+
+    let results = tool_results_in(
+        &app,
+        ZONE,
+        vec![
+            Reply::calls(&[("todo_changes", &format!("{{{DAY}}}"))]),
+            Reply::calls(&[("todo_changes", &format!("{{{DAY},\"offset\":100}}"))]),
+            Reply::text(&["Done."]),
+        ],
+    );
+
+    assert!(!results[1].contains("This repeats call"), "{}", results[1]);
+    let second = body(&results[1]);
+    assert_eq!(second["shown"], 30, "{}", results[1]);
+    assert_eq!(second["total"], 130, "{}", results[1]);
+}

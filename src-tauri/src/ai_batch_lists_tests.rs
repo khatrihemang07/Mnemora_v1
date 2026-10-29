@@ -366,3 +366,52 @@ fn a_complete_read_shows_its_whole_text_and_no_note() {
     assert!(entry_body["next_offset"].is_null(), "{}", results[1]);
     assert!(entry_body.get("note").is_none(), "{}", results[1]);
 }
+
+#[test]
+fn a_later_batch_that_is_still_incomplete_counts_from_the_start_of_the_list() {
+    let app = TestApp::new();
+    for i in 0..35 {
+        seed_task(&app, &format!("Task {i:02}"), None);
+    }
+
+    let results = results_of(&app, &[("todo_list", r#"{"limit":10,"offset":10}"#)]);
+
+    let middle = body(&results[0]);
+    assert_eq!(ids_under(&middle, "tasks").len(), 10, "{}", results[0]);
+    assert_eq!(middle["shown"], 10, "{}", results[0]);
+    assert_eq!(middle["total"], 35, "{}", results[0]);
+    assert_eq!(middle["next_offset"], 20, "{}", results[0]);
+    assert_eq!(
+        middle["note"],
+        "20 of 35 tasks shown. The list is incomplete: call again with offset 20 for the rest.",
+        "{}",
+        results[0]
+    );
+}
+
+#[test]
+fn a_later_read_part_that_is_still_incomplete_counts_from_the_start_of_the_text() {
+    let app = TestApp::new();
+    let text = long_text(20_000);
+    let entry = seed_entry(&app, "2026-10-20", &text);
+
+    let results = results_of(
+        &app,
+        &[(
+            "journal_read",
+            &format!(r#"{{"id":"{entry}","offset":8192}}"#),
+        )],
+    );
+
+    let middle = body(&results[0]);
+    assert_eq!(middle["body"], &text[8192..16384], "{}", results[0]);
+    assert_eq!(middle["shown"], 8192, "{}", results[0]);
+    assert_eq!(middle["total"], 20_000, "{}", results[0]);
+    assert_eq!(middle["next_offset"], 16384, "{}", results[0]);
+    assert_eq!(
+        middle["note"],
+        "16384 of 20000 bytes shown. The text is incomplete: call again with offset 16384 for the rest.",
+        "{}",
+        results[0]
+    );
+}

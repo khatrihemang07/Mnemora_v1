@@ -1070,3 +1070,25 @@ fn a_loop_guard_stop_shows_its_note_once_and_the_answer_does_not_repeat_it() {
     assert_eq!(notes, 1, "the note is shown once");
     assert!(!answer["text"].as_str().unwrap().contains("may be more"));
 }
+
+#[test]
+fn the_prompt_says_to_page_an_incomplete_list_and_not_to_repeat_a_call_with_the_same_arguments() {
+    let app = TestApp::new();
+    let provider = native(vec![Reply::text(&["Hello."])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "Hi");
+    until_end(&events);
+
+    let (_, system) = sent(&provider, 0);
+    assert!(
+        system.contains(
+            "Be economical: do not repeat a Tool call with the same arguments. When a Tool result says the list is incomplete and your answer needs all of it, call the Tool again with the offset it gives. If you stop early, say the answer is incomplete.\n"
+        ),
+        "{system}"
+    );
+    assert!(
+        !system.contains("whose result you already have"),
+        "{system}"
+    );
+}

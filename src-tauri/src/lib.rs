@@ -201,6 +201,8 @@ mod ai_tools_tests;
 #[cfg(test)]
 mod ai_tracer_tests;
 #[cfg(test)]
+mod ai_unresolved_tests;
+#[cfg(test)]
 mod ai_wire_tests;
 mod commands;
 mod editing;

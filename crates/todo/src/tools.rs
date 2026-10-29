@@ -420,7 +420,7 @@ impl Tool for List {
         let items = tasks.iter().take(shown).map(item).collect();
         let mut body = json!({ "tasks": kept, "next_offset": next });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(shown, total, next, "tasks", None));
+            fields.extend(batch::fields(offset, shown, total, next, "tasks", None));
         }
         Output::ok(
             body,
@@ -471,7 +471,12 @@ impl Tool for Read {
         body["notes"] = json!(page);
         body["next_offset"] = json!(next);
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::byte_fields(page.len(), task.notes.len(), next));
+            fields.extend(batch::byte_fields(
+                start,
+                page.len(),
+                task.notes.len(),
+                next,
+            ));
         }
         body["created_at"] = json!(task.created_at);
         body["created_at_local"] = json!(local_time::minute(task.created_at, zone));
@@ -579,7 +584,7 @@ impl Tool for Search {
         let next = (offset + shown < total).then_some(offset + shown);
         let mut body = json!({ "tasks": kept, "next_offset": next });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(shown, total, next, "matches", None));
+            fields.extend(batch::fields(offset, shown, total, next, "matches", None));
         }
         Output::ok(body, format!("Searched tasks, {total} found"), items)
     }

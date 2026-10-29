@@ -23,6 +23,7 @@ mod sync_apply;
 mod title;
 mod tools;
 mod types;
+mod unresolved;
 
 use mnemora_core::db::Connection;
 use mnemora_core::error::AppResult;

@@ -7,11 +7,13 @@ use serde_json::{Map, Value};
 
 use crate::tool::number;
 
-/// The fields a paged list or search carries. `shown` is the items in this batch and `total` the
-/// items the query matches. `note` is there only when `next_offset` is `Some`: it says in plain words
-/// that the list is incomplete and where the next batch starts. `noun` is the plural the note names,
-/// such as "changes"; `scope`, when given, goes before it.
+/// The fields a paged list or search carries. `offset` is where this batch starts, `shown` the items
+/// in this batch and `total` the items the query matches. `note` is there only when `next_offset` is
+/// `Some`: it says in plain words that the list is incomplete and where the next batch starts. The
+/// note counts from the start of the list, so a later batch says how far the list has got. `noun` is
+/// the plural the note names, such as "changes"; `scope`, when given, goes before it.
 pub fn fields(
+    offset: usize,
     shown: usize,
     total: usize,
     next_offset: Option<usize>,
@@ -22,19 +24,27 @@ pub fn fields(
         Some(scope) => format!("{scope} {noun}"),
         None => noun.to_owned(),
     };
-    counted(shown, total, next_offset, &noun, "list")
+    counted(offset, shown, total, next_offset, &noun, "list")
 }
 
-/// The fields a read cut into byte parts carries, such as a Task's notes or an Entry's body. `shown`
-/// is the bytes in this part and `total` the bytes of the whole text. `note` is there only when
-/// `next_offset` is `Some`: the text is incomplete, and the offset is a byte offset.
-pub fn byte_fields(shown: usize, total: usize, next_offset: Option<usize>) -> Map<String, Value> {
-    counted(shown, total, next_offset, "bytes", "text")
+/// The fields a read cut into byte parts carries, such as a Task's notes or an Entry's body. `offset`
+/// is the byte where this part starts, `shown` the bytes in this part and `total` the bytes of the
+/// whole text. `note` is there only when `next_offset` is `Some`: the text is incomplete, and the
+/// offset is a byte offset.
+pub fn byte_fields(
+    offset: usize,
+    shown: usize,
+    total: usize,
+    next_offset: Option<usize>,
+) -> Map<String, Value> {
+    counted(offset, shown, total, next_offset, "bytes", "text")
 }
 
-/// `shown`, `total` and, when there is a next offset, the note "{shown} of {total} {unit} shown. The
-/// {what} is incomplete: call again with offset {next} for the rest."
+/// `shown`, `total` and, when there is a next offset, the note "{done} of {total} {unit} shown. The
+/// {what} is incomplete: call again with offset {next} for the rest.", where {done} is `offset` plus
+/// `shown`: the count from the start, which is `shown` alone for the first batch.
 fn counted(
+    offset: usize,
     shown: usize,
     total: usize,
     next_offset: Option<usize>,
@@ -45,8 +55,9 @@ fn counted(
     fields.insert("shown".to_owned(), Value::from(number(shown)));
     fields.insert("total".to_owned(), Value::from(number(total)));
     if let Some(next) = next_offset {
+        let done = offset + shown;
         let note = format!(
-            "{shown} of {total} {unit} shown. The {what} is incomplete: call again with offset {next} for the rest."
+            "{done} of {total} {unit} shown. The {what} is incomplete: call again with offset {next} for the rest."
         );
         fields.insert("note".to_owned(), Value::from(note));
     }

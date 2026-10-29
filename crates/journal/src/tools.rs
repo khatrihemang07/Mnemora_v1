@@ -244,7 +244,7 @@ impl Tool for List {
         let items = rows.iter().take(shown).map(item).collect();
         let mut body = json!({ "entries": kept, "next_offset": next });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(shown, total, next, "entries", None));
+            fields.extend(batch::fields(offset, shown, total, next, "entries", None));
         }
         Output::ok(
             body,
@@ -305,7 +305,7 @@ impl Tool for Read {
             "next_offset": next,
         });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::byte_fields(page.len(), row.body.len(), next));
+            fields.extend(batch::byte_fields(start, page.len(), row.body.len(), next));
         }
         Output::ok(body, summary, vec![item(&row)])
     }
@@ -365,7 +365,7 @@ impl Tool for Search {
         let next = (offset + shown < total).then_some(offset + shown);
         let mut body = json!({ "results": kept, "next_offset": next });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(shown, total, next, "matches", None));
+            fields.extend(batch::fields(offset, shown, total, next, "matches", None));
         }
         Output::ok(body, format!("Searched entries, {total} found"), items)
     }

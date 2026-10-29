@@ -270,7 +270,7 @@ fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
             "next_offset": next.map(number),
         });
         if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(shown, total, next, "changes", None));
+            fields.extend(batch::fields(offset, shown, total, next, "changes", None));
         }
         if fits(&body) || shown == 0 {
             break body;
