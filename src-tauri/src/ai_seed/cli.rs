@@ -10,7 +10,7 @@ use super::args::{Options, USAGE, parse_args};
 use super::database::DbState;
 use super::guard::sandbox_paths;
 use super::machine::{platform_data_root, system_zone};
-use super::seed::{SeedOutcome, SeedReport, seed_at};
+use super::seed::{SeedOutcome, SeedReport, seed_at_with};
 use crate::qa_cli::exit_code;
 
 /// Runs the seed from the command line and returns the process exit code: 0 when it wrote or found
@@ -38,7 +38,14 @@ fn run(options: &Options) -> Result<String, String> {
         .or_else(system_zone)
         .ok_or("this Mac's time zone is not an IANA name; pass --zone")?;
     let now = now_ms();
-    let report = seed_at(&paths, &production, now, &zone, options.reset)?;
+    let report = seed_at_with(
+        &paths,
+        &production,
+        now,
+        &zone,
+        options.reset,
+        options.skip_catchup,
+    )?;
     Ok(describe(&paths, &production, now, &zone, &report))
 }
 
@@ -66,11 +73,17 @@ fn describe(
             events,
             items,
             skipped,
+            left_out,
             counts,
         } => {
             lines.push(format!(
                 "  wrote {events} events as {items} items; {skipped} events after now were left out"
             ));
+            if *left_out > 0 {
+                lines.push(format!(
+                    "  the catch-up day was left out: {left_out} of its events were not written"
+                ));
+            }
             let rows: Vec<String> = counts.iter().map(|(t, n)| format!("{t} {n}")).collect();
             lines.push(format!("  rows now: {}", rows.join(", ")));
         }

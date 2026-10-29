@@ -15,7 +15,10 @@ pub const USAGE: &str =
   --zone <zone>       the calendar's IANA zone (default: this Mac's)
   --questions <file>  a JSON list of questions (default: the built-in ten)
   --data-dir <folder> the Sandbox data folder (default: the one the Sandbox app would use)
-  --base <folder>     the platform data folder the Sandbox lives in (default: this user's)";
+  --base <folder>     the platform data folder the Sandbox lives in (default: this user's)
+  --off <knobs>       switch off for every variant: final, intent, changes, paging (default: none)
+  --fixture-skip-catchup   the Sandbox copy must be seeded without the catch-up day (seed-sandbox --skip-catchup)
+  --dump-first-on-zero-calls  add the first request of each run that made no Tool call on its first Step to its report";
 
 /// Command-line options.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +45,9 @@ pub struct Args {
     pub off: Off,
     /// Whether to write the last request of the first question to a dump file (`--dump-last`).
     pub dump: bool,
+    /// Whether each run that made no Tool call on its first Step adds that first request to its
+    /// report (`--dump-first-on-zero-calls`).
+    pub dump_first_on_zero_calls: bool,
 }
 
 /// Reads the flags. `--variant` is `before`, `after` or `both` (the default).
@@ -58,6 +64,7 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Strin
         out: None,
         off: Off::default(),
         dump: false,
+        dump_first_on_zero_calls: false,
     };
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -72,6 +79,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Strin
             "--out" => options.out = Some(PathBuf::from(value(&mut args, &arg)?)),
             "--off" => options.off = Off::parse(&value(&mut args, &arg)?)?,
             "--dump-last" => options.dump = true,
+            "--dump-first-on-zero-calls" => options.dump_first_on_zero_calls = true,
+            "--fixture-skip-catchup" => options.off.catchup = true,
             "--variant" => {
                 options.variants = match value(&mut args, &arg)?.as_str() {
                     "before" => vec![Variant::Before],

@@ -229,3 +229,26 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
     let conn = db::open_existing(&paths.db_file).unwrap().unwrap();
     assert_eq!(row_counts(&conn), before, "a second seed wrote rows");
 }
+
+#[test]
+fn a_seed_that_leaves_out_the_catch_up_day_is_read_back_from_its_database() {
+    let full_dir = base();
+    let full = AppPaths::resolve(Environment::Sandbox, full_dir.path(), None);
+    let full_production = ai_seed::production_roots(full_dir.path());
+    ai_seed::seed_at(&full, &full_production, NOW, ZONE, false).unwrap();
+    assert_eq!(ai_seed::leaves_out_catchup(&full.db_file), Ok(false));
+
+    let dir = base();
+    let paths = AppPaths::resolve(Environment::Sandbox, dir.path(), None);
+    let production = ai_seed::production_roots(dir.path());
+    let report = ai_seed::seed_at_with(&paths, &production, NOW, ZONE, false, true).unwrap();
+    let SeedOutcome::Written {
+        items, left_out, ..
+    } = report.outcome
+    else {
+        panic!("the seed did not write: {report:?}");
+    };
+    assert_eq!(items, 47);
+    assert_eq!(left_out, 139);
+    assert_eq!(ai_seed::leaves_out_catchup(&paths.db_file), Ok(true));
+}

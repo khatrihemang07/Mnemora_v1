@@ -2,11 +2,11 @@
 //! then the fixture's write through the Modules' services (`write_fixture`).
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicI64;
 
-use mnemora_core::db;
+use mnemora_core::db::{self, Connection};
 use mnemora_core::device::{DeviceSettings, DeviceStore};
 use mnemora_core::local_time;
 use mnemora_core::module::Module;
@@ -16,7 +16,7 @@ use super::database::{DbState, inspect, remove_database};
 use super::driver::SeedDriver;
 use super::err;
 use super::guard::refuse_production;
-use super::marker::record_counts;
+use super::marker::{self, record_counts, record_fixture};
 use super::plan::{Plan, plan};
 use crate::ai_fixture::{self, Driver};
 
@@ -31,6 +31,8 @@ pub enum SeedOutcome {
         items: usize,
         /// Fixture events left out because they fall after the seed's `now`.
         skipped: usize,
+        /// Fixture events left out because the catch-up day was asked to be left out.
+        left_out: usize,
         /// Rows per data table after the seed.
         counts: BTreeMap<String, i64>,
     },
@@ -57,6 +59,19 @@ pub fn seed_at(
     zone: &str,
     reset: bool,
 ) -> Result<SeedReport, String> {
+    seed_at_with(paths, production, now, zone, reset, false)
+}
+
+/// As `seed_at`. With `skip_catchup`, the catch-up day (`ai_fixture::CATCHUP_DAY`) is left out of the
+/// fixture, and the database records that it was (`leaves_out_catchup`).
+pub fn seed_at_with(
+    paths: &AppPaths,
+    production: &[PathBuf],
+    now: i64,
+    zone: &str,
+    reset: bool,
+    skip_catchup: bool,
+) -> Result<SeedReport, String> {
     refuse_production(
         &[
             paths.data_dir.as_path(),
@@ -75,7 +90,7 @@ pub fn seed_at(
             if step == Plan::Reset {
                 remove_database(&paths.db_file)?;
             }
-            write_fixture(paths, now, zone)?
+            write_fixture(paths, now, zone, skip_catchup)?
         }
     };
     Ok(SeedReport { before, outcome })
@@ -83,7 +98,12 @@ pub fn seed_at(
 
 /// Opens (creating) the database, migrates it with every Module as the app does at start, then
 /// replays the fixture through the Modules' services and records the row counts.
-fn write_fixture(paths: &AppPaths, now: i64, zone: &str) -> Result<SeedOutcome, String> {
+fn write_fixture(
+    paths: &AppPaths,
+    now: i64,
+    zone: &str,
+    skip_catchup: bool,
+) -> Result<SeedOutcome, String> {
     let mut conn = db::open(&paths.db_file).map_err(err)?;
     let modules = crate::modules();
     let refs: Vec<&dyn Module> = modules.iter().map(AsRef::as_ref).collect();
@@ -99,14 +119,28 @@ fn write_fixture(paths: &AppPaths, now: i64, zone: &str) -> Result<SeedOutcome, 
     }
 
     let driver = SeedDriver::new(conn, Arc::new(AtomicI64::new(now)))?;
-    let loaded = ai_fixture::load(&driver, now, zone)?;
+    let leave_out = skip_catchup.then_some(ai_fixture::CATCHUP_DAY);
+    let loaded = ai_fixture::load_except(&driver, now, zone, leave_out)?;
     let mut recorded = Err("the database was not reached".to_owned());
-    driver.with_db(&mut |conn| recorded = record_counts(conn));
+    driver.with_db(&mut |conn| {
+        recorded = record_counts(conn)
+            .and_then(|counts| record_fixture(conn, skip_catchup).map(|()| counts));
+    });
     let counts = recorded?;
     Ok(SeedOutcome::Written {
         events: loaded.events(),
         items: loaded.len(),
         skipped: loaded.skipped(),
+        left_out: loaded.left_out(),
         counts,
     })
+}
+
+/// Whether the seed that wrote the database at `db_file` left the catch-up day out. Read-only in
+/// intent: the database is opened, read and not written.
+pub fn leaves_out_catchup(db_file: &Path) -> Result<bool, String> {
+    let conn: Connection = db::open_existing(db_file)
+        .map_err(err)?
+        .ok_or_else(|| format!("{} is missing", db_file.display()))?;
+    marker::leaves_out_catchup(&conn)
 }

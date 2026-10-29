@@ -351,3 +351,152 @@ fn the_dump_shows_the_prompt_the_messages_the_tool_result_and_the_wire_body() {
     assert!(text.contains("journal_changes: Entries changed."), "{text}");
     assert!(text.contains("Reply with one JSON object only"), "{text}");
 }
+
+/// The economy paragraph of the current prompt, as a Request carries it (the paging rule included).
+const PAGING_SYSTEM: &str = "SYSTEM\nBe economical: do not repeat a Tool call with the same arguments. When a Tool result says the list is incomplete and your answer needs all of it, call the Tool again with the offset it gives. If you stop early, say the answer is incomplete.\nCite the ids.";
+
+#[test]
+fn the_paging_knob_restores_the_earlier_economy_sentence_and_drops_the_paging_rule() {
+    let request = Request {
+        system: PAGING_SYSTEM.to_owned(),
+        messages: Vec::new(),
+        model: "scripted-model".to_owned(),
+        tools: Vec::new(),
+    };
+    assert_eq!(
+        ai_qa::strip(&request, Off::default()).system,
+        request.system
+    );
+    assert_eq!(
+        ai_qa::strip(
+            &request,
+            Off {
+                paging: true,
+                ..Off::default()
+            }
+        )
+        .system,
+        "SYSTEM\nBe economical: do not repeat a Tool call whose result you already have.\nCite the ids."
+    );
+}
+
+#[test]
+#[should_panic(expected = "no paging rule to switch off")]
+fn a_prompt_without_the_paging_rule_is_refused_when_the_paging_knob_is_on() {
+    let request = Request {
+        system: "SYSTEM".to_owned(),
+        messages: Vec::new(),
+        model: "scripted-model".to_owned(),
+        tools: Vec::new(),
+    };
+    ai_qa::strip(
+        &request,
+        Off {
+            paging: true,
+            ..Off::default()
+        },
+    );
+}
+
+#[test]
+fn off_names_the_paging_rule_and_describes_the_knobs_it_switches_on() {
+    let off = Off::parse("paging").unwrap();
+    assert!(off.paging && !off.intent && !off.final_note);
+    assert!(off.describe().contains("paging"), "{}", off.describe());
+    let catchup = Off {
+        catchup: true,
+        ..Off::default()
+    };
+    assert!(
+        catchup.describe().contains("catch-up"),
+        "{}",
+        catchup.describe()
+    );
+    assert_eq!(
+        Off::parse("bogus").unwrap_err(),
+        "--off takes final, intent, changes or paging, not bogus"
+    );
+}
+
+#[test]
+fn the_fixture_and_dump_flags_are_read_into_the_options() {
+    let options = ai_qa::parse_args(
+        [
+            "--out",
+            "/tmp/out-folder",
+            "--off",
+            "paging",
+            "--fixture-skip-catchup",
+            "--dump-first-on-zero-calls",
+        ]
+        .map(str::to_owned),
+    )
+    .unwrap();
+    assert!(options.off.paging);
+    assert!(options.off.catchup);
+    assert!(options.dump_first_on_zero_calls);
+    let plain = ai_qa::parse_args(["--out", "/tmp/out-folder"].map(str::to_owned)).unwrap();
+    assert!(!plain.off.paging && !plain.off.catchup && !plain.dump_first_on_zero_calls);
+}
+
+#[test]
+fn an_answer_says_how_many_tool_calls_its_first_step_made() {
+    let dir = tempfile::tempdir().unwrap();
+    let no_call = run_scripted(
+        &dir,
+        vec![Reply::text(&["Nothing was read."])],
+        "Any updates on the passport?",
+    );
+    assert_eq!(no_call.steps, 1);
+    assert_eq!(no_call.first_step_calls, 0);
+    assert!(no_call.first_request.is_none(), "the dump is opt-in");
+
+    let with_call = run_scripted(
+        &dir,
+        vec![
+            Reply::calls(&[(
+                "journal_changes",
+                r#"{"from":"2026-10-24","to":"2026-10-24"}"#,
+            )]),
+            Reply::text(&["You wrote nothing yesterday."]),
+        ],
+        "What did I do yesterday?",
+    );
+    assert_eq!(with_call.first_step_calls, 1);
+}
+
+/// One question on a scripted Provider with the Tools of the after variant, as a report's Answer.
+fn run_scripted(dir: &TempDir, replies: Vec<Reply>, question: &str) -> ai_qa::Answer {
+    let plain = migrated(dir);
+    let choice = add_provider(&plain, dir);
+    let conn = Mutex::new(plain);
+    let provider =
+        Arc::new(ScriptedProvider::new("Scripted", "scripted-model", replies).with_native_tools());
+    let toolset = ai_qa::toolset_for(Variant::After.off(), full_toolset(&lock(&conn)));
+    ai_qa::answer(&conn, provider, &choice, question, &local(), toolset)
+}
+
+#[test]
+fn the_first_request_of_a_run_is_added_to_the_report_only_when_it_was_kept() {
+    let request = Request {
+        system: "SYSTEM PROMPT TEXT".to_owned(),
+        messages: vec![Message::User("Any updates on the passport?".to_owned())],
+        model: "codex-luna".to_owned(),
+        tools: Vec::new(),
+    };
+    let setup = ai_qa::RunSetup {
+        provider: "Local AI Wrapper (Wrapper)".to_owned(),
+        model: "codex-luna".to_owned(),
+        zone: "America/New_York".to_owned(),
+        today: "Sunday 2026-10-25".to_owned(),
+        week_start: "mon".to_owned(),
+        sandbox_db: std::path::PathBuf::from("/sandbox/data/mnemora.db"),
+        questions: 2,
+    };
+    let mut kept = ai_qa::Answer::failed("Any updates on the passport?", "none");
+    kept.first_request = Some(request);
+    let plain = ai_qa::Answer::failed("What's overdue?", "none");
+    let report = ai_qa::report_markdown(Variant::After, &setup, &[kept, plain]);
+    assert_eq!(report.matches("First request").count(), 1, "{report}");
+    assert!(report.contains("SYSTEM PROMPT TEXT"), "{report}");
+}

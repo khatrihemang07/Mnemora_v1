@@ -233,3 +233,21 @@ fn a_run_that_follows_the_batches_to_the_end_has_no_note() {
     assert!(saved.last().unwrap()["budget_note"].is_null());
     assert_eq!(notes_in(&saved), 0);
 }
+
+#[test]
+fn leaving_out_the_catch_up_day_writes_every_other_day_and_none_of_its_keys() {
+    let app = TestApp::new();
+    let loaded = ai_fixture::load_except(&app, NOW, ZONE, Some(ai_fixture::CATCHUP_DAY)).unwrap();
+    assert_eq!(loaded.left_out(), 139, "the catch-up day has 139 events");
+    assert_eq!(loaded.events(), 221 - 139, "the fixture has 221 events");
+    assert_eq!(
+        loaded.len(),
+        112 - 65,
+        "the catch-up day creates 65 keyed items"
+    );
+    assert!(!loaded.contains("cu01"), "a catch-up key was written");
+    assert!(loaded.contains("hartley"), "another day's key was left out");
+    let whole = ai_fixture::load(&TestApp::new(), NOW, ZONE).unwrap();
+    assert_eq!(whole.left_out(), 0);
+    assert!(whole.contains("cu01"));
+}
