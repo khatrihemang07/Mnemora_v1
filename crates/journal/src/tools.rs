@@ -2,6 +2,7 @@
 //! read one in full, search with the app's own Search, and say what changed in a range of days.
 //! They never write, skip deleted Entries and return refusals as data.
 
+use mnemora_core::batch;
 use mnemora_core::local_time;
 use mnemora_core::recent;
 use mnemora_core::search::Span;
@@ -17,8 +18,8 @@ use crate::{MODULE_ID, changes};
 const PREVIEW_CHARS: usize = 120;
 /// Characters of a search snippet.
 const SNIPPET_CHARS: usize = 200;
-/// Bytes of an Entry's body one read returns; the next offset continues it.
-const READ_PAGE_BYTES: usize = 8 * 1024;
+/// Bytes of an Entry's body one read batch returns; the next offset continues it.
+const READ_BATCH_BYTES: usize = 8 * 1024;
 /// Rows a list returns by default, and at most.
 const LIST_DEFAULT: usize = 30;
 const LIST_MAX: i64 = 100;
@@ -46,7 +47,7 @@ const LIST_PARAMS: &[Param] = &[
             max: 1_000_000,
         },
         required: false,
-        about: "Rows to skip, from a next_offset.",
+        about: "Rows to skip: the next_offset of the batch before, 0 for the first.",
     },
     Param {
         name: "limit",
@@ -55,7 +56,7 @@ const LIST_PARAMS: &[Param] = &[
             max: LIST_MAX,
         },
         required: false,
-        about: "Rows to return, 30 by default.",
+        about: "Rows in one batch, 30 by default.",
     },
 ];
 
@@ -73,7 +74,7 @@ const READ_PARAMS: &[Param] = &[
             max: 10_000_000,
         },
         required: false,
-        about: "Bytes of the text to skip, from a next_offset.",
+        about: "Bytes of the text to skip: the next_offset of the batch before, 0 for the first.",
     },
 ];
 
@@ -103,7 +104,7 @@ const SEARCH_PARAMS: &[Param] = &[
             max: 1_000_000,
         },
         required: false,
-        about: "Results to skip, from a next_offset.",
+        about: "Results to skip: the next_offset of the batch before, 0 for the first.",
     },
     Param {
         name: "limit",
@@ -112,7 +113,7 @@ const SEARCH_PARAMS: &[Param] = &[
             max: SEARCH_MAX,
         },
         required: false,
-        about: "Results to return, 10 by default.",
+        about: "Results in one batch, 10 by default.",
     },
 ];
 
@@ -195,7 +196,7 @@ impl Tool for List {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_list",
-            about: "List Journal Entries by Page date, newest first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
+            about: "List Journal Entries by Page date, newest first. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: LIST_PARAMS,
         }
     }
@@ -208,6 +209,16 @@ impl Tool for List {
         }
         let offset = count(args.int("offset"), 0);
         let limit = count(args.int("limit"), LIST_DEFAULT);
+        // The same range counts every live Entry, so the batch can say how many there are.
+        let counted = conn.query_row(
+            "SELECT COUNT(*) FROM journal_entries WHERE deleted_at IS NULL AND page_date BETWEEN ?1 AND ?2",
+            rusqlite::params![from, to],
+            |r| r.get::<_, i64>(0),
+        );
+        let Ok(total) = counted else {
+            return unreadable();
+        };
+        let total = count(Some(total), 0);
         let fetched = conn
             .prepare(
                 "SELECT id, page_date, written_at, word_count, body FROM journal_entries
@@ -229,10 +240,14 @@ impl Tool for List {
         let zone = calendar.time_zone.as_str();
         let (kept, cut_short) = fit_rows(rows.iter().map(|row| list_json(row, zone)).collect());
         let shown = kept.len();
-        let next = (more || cut_short).then_some(number(offset + shown));
+        let next = (more || cut_short).then_some(offset + shown);
         let items = rows.iter().take(shown).map(item).collect();
+        let mut body = json!({ "entries": kept, "next_offset": next });
+        if let Some(fields) = body.as_object_mut() {
+            fields.extend(batch::fields(shown, total, next, "entries", None));
+        }
         Output::ok(
-            json!({ "entries": kept, "next_offset": next }),
+            body,
             match shown {
                 0 => "Listed entries, none".to_owned(),
                 n => format!("Listed entries, {n} entries"),
@@ -248,7 +263,7 @@ impl Tool for Read {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_read",
-            about: "Read one Journal Entry in full, a page of its text at a time. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
+            about: "Read one Journal Entry in full, a batch of its text at a time. Each batch has shown and total (bytes). If next_offset is not null the text is incomplete: fetch the next batch with that offset before summarising. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone.",
             params: READ_PARAMS,
         }
     }
@@ -277,22 +292,22 @@ impl Tool for Read {
             start += 1;
         }
         let rest = &row.body[start..];
-        let page = cut(rest, READ_PAGE_BYTES);
+        let page = cut(rest, READ_BATCH_BYTES);
         let next = (page.len() < rest.len()).then_some(start + page.len());
         let summary = format!("Read an entry, {}", row.page_date);
-        Output::ok(
-            json!({
-                "id": row.id,
-                "page_date": row.page_date,
-                "written_at": row.written_at,
-                "written_at_local": local_time::minute(row.written_at, &calendar.time_zone),
-                "word_count": row.word_count,
-                "body": page,
-                "next_offset": next,
-            }),
-            summary,
-            vec![item(&row)],
-        )
+        let mut body = json!({
+            "id": row.id,
+            "page_date": row.page_date,
+            "written_at": row.written_at,
+            "written_at_local": local_time::minute(row.written_at, &calendar.time_zone),
+            "word_count": row.word_count,
+            "body": page,
+            "next_offset": next,
+        });
+        if let Some(fields) = body.as_object_mut() {
+            fields.extend(batch::byte_fields(page.len(), row.body.len(), next));
+        }
+        Output::ok(body, summary, vec![item(&row)])
     }
 }
 
@@ -302,7 +317,7 @@ impl Tool for Search {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_search",
-            about: "Find Journal Entries with the app's Search, exact matches first.",
+            about: "Find Journal Entries with the app's Search, exact matches first. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: SEARCH_PARAMS,
         }
     }
@@ -335,8 +350,11 @@ impl Tool for Search {
                 })
             })
             .collect();
+        let (kept, _) = fit_rows(rows);
+        let shown = kept.len();
         let items = page
             .iter()
+            .take(shown)
             .map(|(_, hit)| Item {
                 id: hit.id.clone(),
                 module: MODULE_ID,
@@ -344,12 +362,12 @@ impl Tool for Search {
                 date: Some(hit.page_date.clone()),
             })
             .collect();
-        let next = (offset + limit < total).then_some(offset + limit);
-        Output::ok(
-            json!({ "results": rows, "next_offset": next }),
-            format!("Searched entries, {total} found"),
-            items,
-        )
+        let next = (offset + shown < total).then_some(offset + shown);
+        let mut body = json!({ "results": kept, "next_offset": next });
+        if let Some(fields) = body.as_object_mut() {
+            fields.extend(batch::fields(shown, total, next, "matches", None));
+        }
+        Output::ok(body, format!("Searched entries, {total} found"), items)
     }
 }
 
