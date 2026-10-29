@@ -25,7 +25,7 @@ const YESTERDAY: &str = "2026-10-24";
 fn loaded() -> (TestApp, Loaded) {
     let app = TestApp::new();
     let ids = ai_fixture::load(&app, NOW, ZONE).unwrap();
-    assert_eq!(ids.len(), 47, "the fixture did not load in full");
+    assert_eq!(ids.len(), 112, "the fixture did not load in full");
     (app, ids)
 }
 
@@ -335,7 +335,7 @@ fn deleted_items_read_as_deleted_and_stay_out_of_the_lists_and_searches() {
         vec![
             Reply::calls(&[
                 ("todo_changes", r#"{"from":"2026-10-24","to":"2026-10-24"}"#),
-                ("todo_list", r#"{"state":"any","limit":100}"#),
+                ("todo_list", r#"{"state":"open","limit":100}"#),
                 ("todo_search", r#"{"query":"birthday candles"}"#),
                 ("journal_list", r#"{"from":"2026-10-22","to":"2026-10-24"}"#),
                 ("journal_search", r#"{"query":"Thurburn"}"#),
@@ -357,7 +357,7 @@ fn deleted_items_read_as_deleted_and_stay_out_of_the_lists_and_searches() {
     );
     // Non-empty checks first, so that "not listed" cannot be a list that came back empty.
     assert!(
-        results[1].contains(&ids.id("dry_cleaning").to_owned()),
+        results[1].contains(&ids.id("council_tax").to_owned()),
         "{}",
         results[1]
     );
@@ -378,18 +378,18 @@ fn deleted_items_read_as_deleted_and_stay_out_of_the_lists_and_searches() {
 }
 
 #[test]
-fn the_full_range_is_under_the_result_cap_and_pages_past_its_rows() {
+fn the_full_range_is_paged_in_batches_of_100_and_the_journal_fits_in_one() {
     let (app, _ids) = loaded();
     let whole = format!(r#"{{"from":"{FIRST_DAY}","to":"{TODAY}"}}"#);
     let whole_100 = format!(r#"{{"from":"{FIRST_DAY}","to":"{TODAY}","limit":100}}"#);
-    let second_page = format!(r#"{{"from":"{FIRST_DAY}","to":"{TODAY}","offset":30}}"#);
+    let second_batch = format!(r#"{{"from":"{FIRST_DAY}","to":"{TODAY}","offset":30}}"#);
     let results = tool_results_in(
         &app,
         ZONE,
         vec![
             Reply::calls(&[
                 ("todo_changes", &whole),
-                ("todo_changes", &second_page),
+                ("todo_changes", &second_batch),
                 ("todo_changes", &whole_100),
                 ("journal_changes", &whole),
             ]),
@@ -397,27 +397,45 @@ fn the_full_range_is_under_the_result_cap_and_pages_past_its_rows() {
         ],
     );
 
-    // A default batch holds 100 rows, so the whole 58-row range fits in one and is complete. A batch
-    // from offset 30 holds the other 28.
+    // The range holds 192 Task changes (58 before the catch-up day, 134 on it), so a default batch
+    // holds the first 100 and says the rest follows. A batch from offset 30 holds the next 100.
     assert!(results[0].len() < 16 * 1024, "{}", results[0].len());
     let first = body(&results[0]);
-    assert_eq!(rows_of(&first).len(), 58, "{}", results[0]);
-    assert_eq!(first["shown"], 58, "{}", results[0]);
-    assert_eq!(first["total"], 58, "{}", results[0]);
-    assert!(first["next_offset"].is_null(), "{}", results[0]);
+    assert_eq!(rows_of(&first).len(), 100, "{}", results[0]);
+    assert_eq!(first["shown"], 100, "{}", results[0]);
+    assert_eq!(first["total"], 192, "{}", results[0]);
+    assert_eq!(first["next_offset"], 100, "{}", results[0]);
+    assert_eq!(first["counts"]["created"], 86, "{}", results[0]);
+    assert_eq!(
+        first["note"],
+        "100 of 192 changes shown. The list is incomplete: call again with offset 100 for the rest.",
+        "{}",
+        results[0]
+    );
     let second = body(&results[1]);
-    assert_eq!(rows_of(&second).len(), 28, "{}", results[1]);
-    assert!(second["next_offset"].is_null(), "{}", results[1]);
+    assert_eq!(rows_of(&second).len(), 100, "{}", results[1]);
+    assert_eq!(second["total"], 192, "{}", results[1]);
+    assert_eq!(second["next_offset"], 130, "{}", results[1]);
+    assert_eq!(
+        second["note"],
+        "130 of 192 changes shown. The list is incomplete: call again with offset 130 for the rest.",
+        "{}",
+        results[1]
+    );
 
-    // Asked for 100, all 58 rows fit under the cap, so nothing is cut or paged.
+    // Asked for 100 by name, the first batch is the same as the default.
     assert!(results[2].len() < 16 * 1024, "{}", results[2].len());
-    let all = body(&results[2]);
-    assert_eq!(rows_of(&all).len(), 58, "{}", results[2]);
-    assert!(all["next_offset"].is_null(), "{}", results[2]);
-    assert_eq!(all["counts"]["created"], 25, "{}", results[2]);
+    assert_eq!(
+        rows_of(&body(&results[2])),
+        rows_of(&first),
+        "{}",
+        results[2]
+    );
 
+    // The journal range holds 21 Entry rows before the catch-up day and 5 on it: all 26 in one batch.
     assert!(results[3].len() < 16 * 1024, "{}", results[3].len());
     let journal = body(&results[3]);
-    assert_eq!(rows_of(&journal).len(), 21, "{}", results[3]);
+    assert_eq!(rows_of(&journal).len(), 26, "{}", results[3]);
     assert!(journal["next_offset"].is_null(), "{}", results[3]);
+    assert!(journal.get("note").is_none(), "{}", results[3]);
 }

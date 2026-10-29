@@ -30,6 +30,8 @@ Offsets to dates for a seed on **Sunday 25 October 2026** (the design date):
 | -8 | Sat 17 Oct | | |
 | -7 | Sun 18 Oct | | |
 
+Offset **-19** is the catch-up day (section 11): Tuesday 6 October for a seed on Sunday 25 October, and Saturday 10 October for a seed on Thursday 29 October (the live QA run of 2026-10-29). Offset -19 has no other events.
+
 The fixture file's day numbers are what the Tools return as dates for the seed day. Entries are placed by when they were written (`at`); a Page date (`page`) does not move an Entry's change to the Page's day.
 
 ## Facts for a seed on Sunday 25 October 2026
@@ -127,6 +129,32 @@ Correct answer: the form was sent, and the photos were still awaited as of the l
 - **Completions: 7**, counting the two occurrences of "Water the plants". An answer of 6 tasks, or of 7 completions with that explained, is correct. The change Tool counts the same thing: `done: 7` for 19 to 25 October.
 - **Not finished:** "Order new running shoes" (finished Sun 18 Oct, last week), "Check the car insurance renewal" and "Learn the violin" (won't do), "Buy birthday candles" (deleted), the 22 Oct skip of "Water the plants".
 
+### 11. The catch-up day (offset -19: Tuesday 6 October for a seed on 25 October; Saturday 10 October for a seed on 29 October)
+
+This is the one day with more changes than a default batch holds (100 rows). It was written so that paging matters: a question about this day can be answered completely only by following `next_offset`. The counts below are the literals of `src-tauri/src/ai_catchup_tests.rs` and `ai_fixture_tests.rs`, derived by hand from the fixture events (a generator script counted the same numbers before the events were written).
+
+**Task changes** (`todo_changes` for the day, default limit 100): **134 rows in all**, shown 100 in the first batch and 34 in the second (`next_offset` 100, then null). Counts for the whole day: **created 61, done 53, won't do 1, moved 1, deleted 1, commented 16, repeat set 1**; due 0, priority 0, edited 0, skipped 0.
+
+- **Created and ticked:** 52 of the 60 everyday Tasks were created and then ticked on the same day, the ticks between 07:10 and 15:30. The first of them is "Clean the oven" (created 07:00, commented 07:05, done 07:10). "Scan the old photos" is row 100, done at 15:30, the last row of the first batch.
+- **Repeating Task:** "Change the bedding" is created at 18:20, set to repeat every week (a repeat row), and done at 18:30 as "Done (occurrence of 6 Oct)", or "of 10 Oct" for the live seed (the day's own date).
+- **Won't do:** "Defrost the freezer" (17:50).
+- **Moved:** "Mop the bathroom floor" from Home to Work (18:00). It is created in Home at 17:55.
+- **Deleted:** "Air the duvet" (18:10). It must not appear in any list or search afterwards.
+- **Still open at the end of the day:** "Check the tyre pressure", "Restock the first-aid kit", "Email the plumber back", "Clear the browser downloads", "Mop the bathroom floor" and "Set up the printer" (six Tasks).
+- **Comments:** 16, on the first 16 Tasks, each a few words (for example "Done after the kids were in bed." on "Clean the oven" at 07:05).
+
+**Journal rows** (`journal_changes` for the day): **5 rows, complete in one call** (no `next_offset`, no note). Counts: **written 4, edited 1, deleted 0**.
+
+- 09:25, written, 25 words: a bad night, tea by the window until it got light, the empty street and the bin lorry.
+- 12:30, written, 32 words: lunch in the park with Sam about the new job, "I think I already know what I want, I just have not said it yet."
+- 15:05, written, 20 words: a long queue at the post office, a walk home through the market, bread and lemons.
+- 16:00, **edited** (the lunch Entry): the last sentence becomes "...and I said so out loud for the first time." Its row carries the first 120 characters of the text.
+- 17:35, written, 20 words: a quiet evening, the book finished on the sofa, bed before eleven.
+
+**What a complete answer must mention:** the day's scale, stated in counts (61 Tasks created and 53 done, or the total of 134 changes), or the answer names that it read the whole day (every batch followed). It must mention the Entries (the lunch with Sam about the new job, at least) and that the repeating Task "Change the bedding" was done. It must not state a count from the first batch alone as the day's total (for example "100 changes").
+
+**What an incomplete answer looks like:** a Run that reads only the first batch and answers must say so in its own words, such as "I read the first 100 of 134 changes for that day; the rest is not included." The app adds its own note under the answer, "Based on the first 100 of 134 changes (Tasks); the rest was not read.", and that note is correct and expected. An answer that stops after batch 1 and gives no sentence of incompleteness, and no app note, is a failure (see the checks below).
+
 ## Facts for a seed on another date
 
 The relative facts above (yesterday, due dates, overdue, the Entries and Tasks, the passport, the dog Entry) hold for any seed date, since they are offsets. Two things move:
@@ -146,3 +174,4 @@ Questions 1, 3, 4, 7, 8 and 9 need no change. Question 10's expected count chang
 - It does not present a deleted Entry as current, or a won't do Task as done.
 - Question 8 quotes the Entry exactly.
 - Question 7 makes no Tool call.
+- For the catch-up day (section 11), a Run either follows `next_offset` to the end (the last call has no `next_offset`) or says the answer is incomplete. Stopping after the first batch with neither is a failure.

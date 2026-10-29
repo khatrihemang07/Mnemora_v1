@@ -199,11 +199,11 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
     else {
         panic!("the first seed did not write: {first:?}");
     };
-    assert_eq!(items, 47);
+    assert_eq!(items, 112);
     assert_eq!(skipped, 0, "every fixture event is before the fixed now");
-    // The fixture makes 3 Lists and 19 Journal Entries (its `list` and `entry` events).
+    // The fixture makes 3 Lists and 23 Journal Entries (its `list` and `entry` events).
     assert_eq!(counts["todo_lists"], 3, "{counts:?}");
-    assert_eq!(counts["journal_entries"], 19, "{counts:?}");
+    assert_eq!(counts["journal_entries"], 23, "{counts:?}");
 
     let conn = db::open_existing(&paths.db_file).unwrap().unwrap();
     let yesterday = json!({ "from": "2026-10-24", "to": "2026-10-24" });

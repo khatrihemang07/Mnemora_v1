@@ -189,7 +189,7 @@ fn run(
             let when = due.map(|date| json!({ "date": date, "time": null, "local": local }));
             let made = call(
                 "todo_task_create",
-                json!({ "title": e.title, "list_id": list, "when": when, "details": null }),
+                json!({ "title": e.title, "listId": list, "when": when, "details": null }),
             )?;
             ids.insert(key.clone(), id_of(&made)?);
         }

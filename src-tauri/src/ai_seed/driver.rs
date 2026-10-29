@@ -46,7 +46,7 @@ impl Driver for SeedDriver {
             "todo_task_create" => reply(mnemora_todo::create_task(
                 db,
                 &arg::<String>(&args, "title")?,
-                arg::<Option<String>>(&args, "list_id")?.as_deref(),
+                arg::<Option<String>>(&args, "listId")?.as_deref(),
                 arg::<Option<NewWhen>>(&args, "when")?.as_ref(),
                 arg::<Option<NewTaskDetails>>(&args, "details")?.as_ref(),
             )),

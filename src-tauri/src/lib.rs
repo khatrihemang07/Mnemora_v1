@@ -166,6 +166,8 @@ mod ai_batch_tests;
 #[cfg(test)]
 mod ai_branching_tests;
 #[cfg(test)]
+mod ai_catchup_tests;
+#[cfg(test)]
 mod ai_changes_tests;
 #[cfg(test)]
 mod ai_comment_hints_tests;
