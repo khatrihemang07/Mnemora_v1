@@ -359,7 +359,7 @@ impl Tool for Changes {
     fn spec(&self) -> Spec {
         Spec {
             name: "journal_changes",
-            about: "Entries written, edited or deleted in a date range. Use for questions about a period. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title (the Entry's preview; a deleted Entry keeps its preview). A change counts on the day it was made, not on the Entry's Page date. Counts cover the whole range by kind.",
+            about: "Entries written, edited or deleted in a date range. Use for questions about a period. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title (the Entry's preview; a deleted Entry keeps its preview). A change counts on the day it was made, not on the Entry's Page date. Counts cover the whole range by kind. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: CHANGES_PARAMS,
         }
     }

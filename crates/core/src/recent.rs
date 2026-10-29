@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
+use crate::batch;
 use crate::changelog::Record;
 use crate::hlc;
 use crate::local_time;
@@ -16,9 +17,9 @@ use crate::tool::{Args, Calendar, Item, Kind, Output, Param, count, cut, fits, n
 /// Characters of a title or text shown as a preview.
 pub const PREVIEW_CHARS: usize = 120;
 
-/// Rows the changes Tool returns by default, and at most.
-pub const CHANGES_DEFAULT: usize = 30;
-/// The most rows one page of the changes Tool returns.
+/// Rows one batch of the changes Tool returns by default.
+pub const CHANGES_DEFAULT: usize = 100;
+/// The most rows one batch of the changes Tool returns.
 pub const CHANGES_MAX: i64 = 100;
 
 /// The `from` parameter of a changes Tool: the first local day of the range.
@@ -35,7 +36,8 @@ pub const TO: Param = Param {
     required: true,
     about: "Last day, YYYY-MM-DD, in the device's time zone.",
 };
-/// The `offset` parameter of a changes Tool: the rows to skip, from a `next_offset`.
+/// The `offset` parameter of a changes Tool: the rows to skip, from the `next_offset` of the batch
+/// before.
 pub const OFFSET: Param = Param {
     name: "offset",
     kind: Kind::Integer {
@@ -43,9 +45,9 @@ pub const OFFSET: Param = Param {
         max: 1_000_000,
     },
     required: false,
-    about: "Rows to skip, from a next_offset.",
+    about: "Rows to skip: the next_offset of the batch before, 0 for the first.",
 };
-/// The `limit` parameter of a changes Tool: the rows to return, at most `CHANGES_MAX`.
+/// The `limit` parameter of a changes Tool: the rows in one batch, at most `CHANGES_MAX`.
 pub const LIMIT: Param = Param {
     name: "limit",
     kind: Kind::Integer {
@@ -53,7 +55,7 @@ pub const LIMIT: Param = Param {
         max: CHANGES_MAX,
     },
     required: false,
-    about: "Rows to return, 30 by default.",
+    about: "Rows in one batch, 100 by default, at most 100.",
 };
 
 /// One change a Module found, ready to read.
@@ -215,9 +217,10 @@ fn kind_filter(
     Ok((!kinds.is_empty()).then_some(kinds))
 }
 
-/// One page of changes. Days read newest first and the rows of a day oldest first (their log
-/// order). The counts cover the whole range, one per word of the vocabulary. A page is cut to fit
-/// the result cap, and its `next_offset` continues from the last row it holds.
+/// One batch of changes. Days read newest first and the rows of a day oldest first (their log
+/// order). The counts cover the whole range, one per word of the vocabulary. `total` is the rows
+/// the query matches. A batch is cut to fit the result cap, and its `next_offset` continues from
+/// the last row it holds.
 fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
     let PageOptions {
         module,
@@ -260,9 +263,15 @@ fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
 
     let mut shown = page.len();
     let body = loop {
-        let next = (offset + shown < total).then_some(number(offset + shown));
-        let body =
-            json!({ "days": days_of(&page[..shown]), "counts": counts, "next_offset": next });
+        let next = (offset + shown < total).then_some(offset + shown);
+        let mut body = json!({
+            "days": days_of(&page[..shown]),
+            "counts": counts,
+            "next_offset": next.map(number),
+        });
+        if let Some(fields) = body.as_object_mut() {
+            fields.extend(batch::fields(shown, total, next, "changes", None));
+        }
         if fits(&body) || shown == 0 {
             break body;
         }

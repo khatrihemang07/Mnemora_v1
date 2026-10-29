@@ -397,11 +397,14 @@ fn the_full_range_is_under_the_result_cap_and_pages_past_its_rows() {
         ],
     );
 
-    // A default page holds 30 rows; the second page holds the other 28.
+    // A default batch holds 100 rows, so the whole 58-row range fits in one and is complete. A batch
+    // from offset 30 holds the other 28.
     assert!(results[0].len() < 16 * 1024, "{}", results[0].len());
     let first = body(&results[0]);
-    assert_eq!(rows_of(&first).len(), 30, "{}", results[0]);
-    assert_eq!(first["next_offset"], 30, "{}", results[0]);
+    assert_eq!(rows_of(&first).len(), 58, "{}", results[0]);
+    assert_eq!(first["shown"], 58, "{}", results[0]);
+    assert_eq!(first["total"], 58, "{}", results[0]);
+    assert!(first["next_offset"].is_null(), "{}", results[0]);
     let second = body(&results[1]);
     assert_eq!(rows_of(&second).len(), 28, "{}", results[1]);
     assert!(second["next_offset"].is_null(), "{}", results[1]);

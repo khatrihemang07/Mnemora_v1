@@ -575,7 +575,7 @@ impl Tool for Changes {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_changes",
-            about: "Task creations, completions, reschedules, moves and Comments written in a date range (a Comment reads as commented, with its text). Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'.",
+            about: "Task creations, completions, reschedules, moves and Comments written in a date range (a Comment reads as commented, with its text). Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: CHANGES_PARAMS,
         }
     }
