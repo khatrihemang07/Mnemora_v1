@@ -287,6 +287,42 @@ fn turning_a_module_off_removes_its_tools_and_the_prompt_says_so() {
 }
 
 #[test]
+fn a_run_with_no_tools_offered_carries_the_no_data_wording() {
+    let app = TestApp::new();
+    app.set_pref("core.disabled_modules", json!(["journal", "todo"]));
+    let provider = native(vec![Reply::text(&["Nothing to read."])]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let (tools, system) = sent(&provider, 0);
+    assert!(tools.is_empty());
+    assert!(system.contains(NO_TOOLS_LINE), "{system}");
+    assert!(!system.contains("cannot read the Journal"), "{system}");
+}
+
+#[test]
+fn a_normal_step_lists_the_tools_it_may_call_and_not_the_closed_line() {
+    let app = TestApp::new();
+    seed_entry(&app, "2026-10-22", "Long walk.");
+    let provider = native(vec![
+        Reply::calls(&[("journal_list", "{}")]),
+        Reply::text(&["You walked."]),
+    ]);
+    install(&app, &provider);
+    let events = app.ai_events();
+    ask(&app, "What did I write?");
+    until_end(&events);
+
+    let (tools, system) = sent(&provider, 0);
+    assert!(!tools.is_empty());
+    assert!(system.contains("Tools you may call: "), "{system}");
+    assert!(system.contains("journal_list"), "{system}");
+    assert!(!system.contains(CLOSED_TOOLS), "{system}");
+}
+
+#[test]
 fn a_cited_id_no_tool_returned_gets_a_correction_turn_then_the_answer() {
     let app = TestApp::new();
     let real = seed_entry(&app, "2026-10-22", "Long walk.");
@@ -339,6 +375,8 @@ fn an_exact_repeat_is_answered_with_its_earlier_result_and_three_in_a_row_close_
     let (tools, system) = sent(&provider, 4);
     assert!(tools.is_empty());
     assert!(system.contains(FINAL_STEP), "{system}");
+    assert!(system.contains(CLOSED_TOOLS), "{system}");
+    assert!(!system.contains("Tools you may call"), "{system}");
     assert!(!carries_nudge(&provider.requests()[4]));
 }
 
@@ -364,6 +402,8 @@ fn the_twelfth_request_has_no_tools_and_its_answer_says_it_may_be_incomplete() {
     let (tools, system) = sent(&provider, 11);
     assert!(tools.is_empty(), "the last step is finish-only");
     assert!(system.contains(FINAL_STEP), "{system}");
+    assert!(system.contains(CLOSED_TOOLS), "{system}");
+    assert!(!system.contains("Tools you may call"), "{system}");
     assert!(
         !carries_nudge(&provider.requests()[11]),
         "the final Step carries no nudge"
@@ -493,7 +533,7 @@ fn a_provider_without_native_tools_is_sent_no_tools_and_told_so() {
 
     let (tools, system) = sent(&provider, 0);
     assert!(tools.is_empty());
-    assert!(system.contains("cannot use Tools"), "{system}");
+    assert!(system.contains(NO_NATIVE_LINE), "{system}");
 }
 
 #[test]
@@ -876,6 +916,16 @@ const FINAL_STEP: &str = "Investigation is closed. Answer now from the observati
     your own words unless the person asked for exact text. Group by day when the question spans \
     days. Answer in the language of the question. Cite ids. If the observations are empty, say so \
     plainly.";
+
+/// The line that replaces the Tools list in the system prompt of an answer-only Step.
+pub(crate) const CLOSED_TOOLS: &str = "Tools are closed for this answer: none can be called now. Answer from the observations already in this Run, and say plainly what they do not show.";
+
+/// The line a Run with no Tools offered carries.
+const NO_TOOLS_LINE: &str =
+    "No Tools are available in this Run, so no Journal or Task data was read. Say so plainly.";
+
+/// The line a Provider that cannot use Tools is told with.
+const NO_NATIVE_LINE: &str = "This Provider cannot use Tools, so no Tools are available in this Run and no Journal or Task data was read. Say so plainly if the question needs the Journal or the Tasks.";
 
 /// The sentence the final-step note no longer asks the Model to write: the app adds its own note.
 const REMOVED_LINE: &str = "Add one line that there may be more to find.";

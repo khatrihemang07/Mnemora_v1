@@ -21,9 +21,20 @@ pub enum Wording {
     WithoutIntent,
 }
 
-/// The system prompt. `available` are the Tools offered this Run; `off` names the Modules that
-/// are turned off (their Tools are not offered); `native` says whether this Provider can make
-/// Tool calls at all. `wording` is `Wording::Full` for the app.
+/// The line that replaces the Tools list in the system prompt of an answer-only Step, when Tools
+/// are withheld.
+const CLOSED_LINE: &str = "Tools are closed for this answer: none can be called now. Answer from the observations already in this Run, and say plainly what they do not show.";
+
+/// The line a Run carries when no Tools are offered and the Provider can make Tool calls.
+const NO_TOOLS_LINE: &str =
+    "No Tools are available in this Run, so no Journal or Task data was read. Say so plainly.";
+
+/// The line a Run carries when the Provider cannot make Tool calls at all.
+const NO_NATIVE_LINE: &str = "This Provider cannot use Tools, so no Tools are available in this Run and no Journal or Task data was read. Say so plainly if the question needs the Journal or the Tasks.";
+
+/// The system prompt of a Step that may call Tools. `available` are the Tools offered this Run;
+/// `off` names the Modules that are turned off (their Tools are not offered); `native` says whether
+/// this Provider can make Tool calls at all. `wording` is `Wording::Full` for the app.
 pub fn system(
     local: &LocalContext,
     available: &[String],
@@ -31,21 +42,27 @@ pub fn system(
     native: bool,
     wording: Wording,
 ) -> String {
+    let tools = if !available.is_empty() {
+        format!("Tools you may call: {}.", available.join(", "))
+    } else if native {
+        NO_TOOLS_LINE.to_owned()
+    } else {
+        NO_NATIVE_LINE.to_owned()
+    };
+    build(local, &tools, off, wording)
+}
+
+/// The system prompt of the answer-only Step: as `system`, with the Tools list closed.
+pub fn closed(local: &LocalContext, off: &[String], wording: Wording) -> String {
+    build(local, CLOSED_LINE, off, wording)
+}
+
+/// The system prompt with `tools` as its line about Tools.
+fn build(local: &LocalContext, tools: &str, off: &[String], wording: Wording) -> String {
     let week_start = if local.week_start == "sun" {
         "Sunday"
     } else {
         "Monday"
-    };
-    let tools = if !available.is_empty() {
-        format!("Tools you may call: {}.", available.join(", "))
-    } else if native {
-        "No Tools are available in this Run, so you cannot read the Journal or the Tasks. Say so \
-         plainly."
-            .to_owned()
-    } else {
-        "This Provider cannot use Tools, so no Tools are available in this Run. Say so plainly if \
-         the question needs the Journal or the Tasks."
-            .to_owned()
     };
     let off: String = off
         .iter()

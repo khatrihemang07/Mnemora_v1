@@ -185,7 +185,7 @@ enum Finished {
 /// the Step's Tools finish, or after a Step that asked for none but is not the answer.
 pub fn run(
     provider: Arc<dyn Provider>,
-    system: &str,
+    prompts: &Prompts,
     mut messages: Vec<Message>,
     host: &mut dyn ToolHost,
     control: &Control,
@@ -203,7 +203,7 @@ pub fn run(
         }
         let last = requests + 1 == MAX_REQUESTS;
         let withheld = last || closing;
-        let request = request_for(&*provider, system, &messages, withheld, host);
+        let request = request_for(&*provider, prompts, &messages, withheld, host);
         if request_bytes(&request) > MAX_PROMPT_BYTES {
             return Outcome::Failed(Failure::TooLong);
         }
@@ -304,20 +304,29 @@ fn forced_by(last: bool, closing: bool) -> Option<Forced> {
     }
 }
 
-/// The request for one Step. Once Tools are removed (`withheld`) the final note goes in the system
-/// prompt, and the Step is sent no Tools.
+/// The system prompt of each kind of Step. `open` is for a Step that may call Tools. `closed` is for
+/// the answer-only Step, which is sent no Tools and the final note.
+pub struct Prompts {
+    /// The system prompt of a Step that may call Tools.
+    pub open: String,
+    /// The system prompt of the answer-only Step (Tools withheld), before the final note.
+    pub closed: String,
+}
+
+/// The request for one Step. Once Tools are removed (`withheld`) the Step is sent the closed prompt
+/// with the final note, and no Tools.
 fn request_for(
     provider: &dyn Provider,
-    system: &str,
+    prompts: &Prompts,
     messages: &[Message],
     withheld: bool,
     host: &dyn ToolHost,
 ) -> Request {
     Request {
         system: if withheld {
-            format!("{system}\n{FINAL_NOTE}")
+            format!("{}\n{FINAL_NOTE}", prompts.closed)
         } else {
-            system.to_owned()
+            prompts.open.clone()
         },
         messages: messages.to_vec(),
         model: provider.model().to_owned(),

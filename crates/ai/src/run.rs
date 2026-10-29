@@ -9,7 +9,7 @@ use mnemora_core::error::AppResult;
 use mnemora_core::tool::{Calendar, Tool};
 use mnemora_core::util::new_id;
 use mnemora_harness::Cited;
-use mnemora_harness::agent::{self, Event, Forced, MAX_REQUESTS, Outcome};
+use mnemora_harness::agent::{self, Event, Forced, MAX_REQUESTS, Outcome, Prompts};
 use mnemora_harness::{Control, Failure, Message, Provider, ToolProtocol};
 
 use crate::prompt::{self, Wording};
@@ -150,7 +150,10 @@ pub fn execute(
         },
         native,
     );
-    let system = prompt::system(&ask.local, &toolbox.available(), &off, native, wording);
+    let prompts = Prompts {
+        open: prompt::system(&ask.local, &toolbox.available(), &off, native, wording),
+        closed: prompt::closed(&ask.local, &off, wording),
+    };
     let mut recorder = Recorder {
         db,
         ask,
@@ -162,7 +165,7 @@ pub fn execute(
     };
     let outcome = agent::run(
         Arc::clone(&provider),
-        &system,
+        &prompts,
         messages,
         &mut toolbox,
         handles.control,
