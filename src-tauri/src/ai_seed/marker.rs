@@ -7,11 +7,18 @@ use mnemora_core::db::Connection;
 
 use super::database::{count_rows, table_exists};
 use super::err;
+use super::seed::SeedOptions;
 
 /// The table a finished seed records its row counts in; its presence marks a seeded database.
 const MARKER_TABLE: &str = "sandbox_seed";
 /// The key the counts are recorded under in the marker table.
 const MARKER_KEY: &str = "counts";
+/// The key that says whether the seed left the catch-up day out of the fixture.
+const FIXTURE_KEY: &str = "fixture";
+/// The value of `FIXTURE_KEY` for a seed that left the catch-up day out.
+const WITHOUT_CATCHUP: &str = "without-catchup";
+/// The value of `FIXTURE_KEY` for a seed that wrote the whole fixture (the default).
+const WHOLE: &str = "whole";
 
 /// Counts the data tables and writes the counts to the marker table, which marks the database as
 /// seeded. Only `inspect` reads it back.
@@ -28,6 +35,40 @@ pub(super) fn record_counts(conn: &Connection) -> Result<BTreeMap<String, i64>, 
     )
     .map_err(err)?;
     Ok(counts)
+}
+
+/// Records whether the seed left the catch-up day out. Written after `record_counts`, which creates
+/// the marker table.
+pub(super) fn record_fixture(conn: &Connection, options: SeedOptions) -> Result<(), String> {
+    let value = if options.skip_catchup {
+        WITHOUT_CATCHUP
+    } else {
+        WHOLE
+    };
+    conn.execute(
+        &format!("INSERT OR REPLACE INTO {MARKER_TABLE} (key, value) VALUES (?1, ?2)"),
+        (FIXTURE_KEY, value),
+    )
+    .map_err(err)?;
+    Ok(())
+}
+
+/// Whether the seed that wrote this database left the catch-up day out. A database with no record of
+/// it, or without the marker table, was written whole.
+pub(super) fn leaves_out_catchup(conn: &Connection) -> Result<bool, String> {
+    if !table_exists(conn, MARKER_TABLE)? {
+        return Ok(false);
+    }
+    let mut statement = conn
+        .prepare(&format!("SELECT value FROM {MARKER_TABLE} WHERE key = ?1"))
+        .map_err(err)?;
+    let mut found = statement
+        .query_map([FIXTURE_KEY], |row| row.get::<_, String>(0))
+        .map_err(err)?;
+    match found.next() {
+        None => Ok(false),
+        Some(text) => Ok(text.map_err(err)? == WITHOUT_CATCHUP),
+    }
 }
 
 /// The recorded counts, when the database carries the marker.

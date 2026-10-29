@@ -229,6 +229,10 @@ _Avoid_: Engine
 A read-only action the Model may ask for, such as listing Journal Entries or searching Tasks. A Module offers its Tools, and they are available only while that Module is on.
 _Avoid_: Function, plugin, skill
 
+**Batch**:
+One part of a Tool's result when there is more than fits in one answer; the Model asks for the next one with the offset it was given.
+_Avoid_: Page (that is a diary day), Chunk
+
 **Recent changes**:
 What was written, done or edited between two dates, across the Journal and Tasks, read from the app's record of changes. It is what the AI reads to tell what happened in a period; a day counts when the change was made, not when an Entry is dated. A Comment on a Task counts as a change.
 _Avoid_: Activity (that is Sync's), History (that is one Task's), Log

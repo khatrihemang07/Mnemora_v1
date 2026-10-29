@@ -25,6 +25,11 @@ use crate::state::lock;
 /// The copy of the Sandbox database a run works on, in `--out`. Removed when the run ends.
 const COPY_NAME: &str = "qa-sandbox-copy.db";
 
+/// The refusal when the copy's catch-up day does not match `--fixture-skip-catchup`, one for each way
+/// it can be wrong.
+const CATCHUP_NOT_LEFT_OUT: &str = "--fixture-skip-catchup needs a Sandbox seeded without the catch-up day: seed one with `make seed-sandbox ARGS=\"--skip-catchup ...\"` and run again.";
+const CATCHUP_LEFT_OUT: &str = "The Sandbox was seeded without the catch-up day, so the run needs --fixture-skip-catchup, which says so in the report.";
+
 /// The refusal when the Sandbox has no Provider, and what to do about it.
 const NO_PROVIDER: &str = "The Sandbox has no AI Provider configured, so no Run can be made. Add one in the Sandbox app (AI, then Providers: a kind, a name and an address; Anthropic and OpenRouter also need a key, which the app saves), use it once so a Model is recorded, then run this again.";
 
@@ -96,6 +101,14 @@ fn run_on_copy(
     questions: &[String],
     out: &Path,
 ) -> Result<String, String> {
+    let left_out = ai_seed::leaves_out_catchup(copy)?;
+    if left_out != options.off.catchup {
+        return Err(if options.off.catchup {
+            CATCHUP_NOT_LEFT_OUT.to_owned()
+        } else {
+            CATCHUP_LEFT_OUT.to_owned()
+        });
+    }
     let conn = db::open(copy).map_err(|e| e.to_string())?;
     let keys = KeyStore::new(config_dir.join(crate::AI_KEYS_DIR));
     let providers = mnemora_ai::list_providers(&conn, &keys).map_err(|e| e.message)?;
@@ -158,7 +171,15 @@ fn run_on_copy(
     let mut per_variant: Vec<(Variant, Vec<Answer>)> = Vec::new();
     for &variant in &options.variants {
         let off = variant.off().with(options.off);
-        let answers = ask_questions(&db, &prepared, &modules, off, questions, &local)?;
+        let answers = ask_questions(
+            &db,
+            &prepared,
+            &modules,
+            off,
+            questions,
+            &local,
+            options.dump_first_on_zero_calls,
+        )?;
         per_variant.push((variant, answers));
     }
     drop(db);
@@ -182,7 +203,8 @@ fn run_on_copy(
     Ok(lines.join("\n"))
 }
 
-/// Asks each question as a new Conversation with the Tools and knobs `off` names.
+/// Asks each question as a new Conversation with the Tools and knobs `off` names. With `dump_first`,
+/// a Run that made no Tool call on its first Step keeps that first request for its report.
 fn ask_questions(
     db: &Mutex<Connection>,
     prepared: &Prepared,
@@ -190,6 +212,7 @@ fn ask_questions(
     off: Off,
     questions: &[String],
     local: &LocalContext,
+    dump_first: bool,
 ) -> Result<Vec<Answer>, String> {
     let mut answers = Vec::new();
     for question in questions {
@@ -221,6 +244,9 @@ fn ask_questions(
             toolset,
         );
         reply.last_request = ablated.last_sent();
+        if dump_first && reply.first_step_calls == 0 {
+            reply.first_request = ablated.first_sent();
+        }
         answers.push(reply);
     }
     Ok(answers)

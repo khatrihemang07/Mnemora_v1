@@ -40,6 +40,8 @@ pub struct Answer {
     pub steps: usize,
     /// The Tool calls in order.
     pub calls: Vec<CallLine>,
+    /// The Tool calls the Run's first Step made (0 when its first reply was the answer).
+    pub first_step_calls: usize,
     /// The final answer's Markdown; empty when the Run gave none.
     pub text: String,
     /// What the app would tell the person beside the answer, if anything.
@@ -48,6 +50,9 @@ pub struct Answer {
     pub elapsed: Duration,
     /// The last request the Provider was sent in this Run, for the dump. None when it sent none.
     pub last_request: Option<Request>,
+    /// The first request the Provider was sent in this Run, kept only for a Run that made no Tool
+    /// call on its first Step, and only when `--dump-first-on-zero-calls` is set.
+    pub first_request: Option<Request>,
 }
 
 impl Answer {
@@ -61,6 +66,8 @@ impl Answer {
             app_note: Some(note.to_owned()),
             elapsed: Duration::ZERO,
             last_request: None,
+            first_request: None,
+            first_step_calls: 0,
         }
     }
 }
@@ -105,6 +112,7 @@ pub fn answer(
         &mut |event| events.push(event),
     );
     let elapsed = started.elapsed();
+    let first_step_calls = first_step_tool_calls(&events);
     let steps = events
         .iter()
         .filter(|event| matches!(event, RunEvent::StepStarted))
@@ -159,7 +167,24 @@ pub fn answer(
         app_note,
         elapsed,
         last_request: None,
+        first_request: None,
+        first_step_calls,
     }
+}
+
+/// The Tool calls that finished in the Run's first Step: the events after the first `StepStarted` and
+/// before the second. A refused or cut-off call finishes too, so it counts.
+fn first_step_tool_calls(events: &[RunEvent]) -> usize {
+    let mut steps = 0;
+    let mut calls = 0;
+    for event in events {
+        match event {
+            RunEvent::StepStarted => steps += 1,
+            RunEvent::ToolEnded { .. } if steps == 1 => calls += 1,
+            _ => {}
+        }
+    }
+    calls
 }
 
 /// The rows a change Tool returned across its days, from the JSON after the observation line.

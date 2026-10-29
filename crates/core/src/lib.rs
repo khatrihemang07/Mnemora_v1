@@ -4,6 +4,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod batch;
 pub mod changelog;
 pub mod db;
 pub mod device;

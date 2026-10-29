@@ -3,6 +3,7 @@
 //! and say what changed in a range of days. They never write, skip deleted rows and return refusals
 //! as data. Closing days and local times are read in the device's zone, as the client sends it.
 
+use mnemora_core::batch::{self, Batch, READ_BATCH_BYTES};
 use mnemora_core::error::AppResult;
 use mnemora_core::local_time;
 use mnemora_core::recent;
@@ -21,8 +22,6 @@ use crate::{changes, comment_repo, history, list_repo};
 /// The Module's id, as the change log and the AI name it.
 const MODULE_ID: &str = "todo";
 
-/// Bytes of a Task's notes one read returns; the next offset continues them.
-const READ_PAGE_BYTES: usize = 8 * 1024;
 /// Rows a list returns by default, and at most.
 const LIST_DEFAULT: usize = 30;
 const LIST_MAX: i64 = 100;
@@ -82,7 +81,7 @@ const LIST_PARAMS: &[Param] = &[
             max: 1_000_000,
         },
         required: false,
-        about: "Rows to skip, from a next_offset.",
+        about: "Rows to skip: the next_offset of the batch before, 0 for the first.",
     },
     Param {
         name: "limit",
@@ -91,7 +90,7 @@ const LIST_PARAMS: &[Param] = &[
             max: LIST_MAX,
         },
         required: false,
-        about: "Rows to return, 30 by default.",
+        about: "Rows in one batch, 30 by default.",
     },
 ];
 
@@ -127,7 +126,7 @@ const READ_PARAMS: &[Param] = &[
             max: 10_000_000,
         },
         required: false,
-        about: "Bytes of the notes to skip, from a next_offset.",
+        about: "Bytes of the notes to skip: the next_offset of the batch before, 0 for the first.",
     },
 ];
 
@@ -157,7 +156,7 @@ const SEARCH_PARAMS: &[Param] = &[
             max: 1_000_000,
         },
         required: false,
-        about: "Results to skip, from a next_offset.",
+        about: "Results to skip: the next_offset of the batch before, 0 for the first.",
     },
     Param {
         name: "limit",
@@ -166,7 +165,7 @@ const SEARCH_PARAMS: &[Param] = &[
             max: SEARCH_MAX,
         },
         required: false,
-        about: "Results to return, 10 by default.",
+        about: "Results in one batch, 10 by default.",
     },
 ];
 
@@ -324,7 +323,7 @@ impl Tool for List {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_list",
-            about: "List Tasks by state, List, due date, priority and the day they were closed. With closed_from or closed_to it lists done and Won't do Tasks, newest close first. A row with comments above 0 has updates and progress notes: read them with todo_read and comments true. last_comment_at is when its newest live Comment was written. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
+            about: "List Tasks by state, List, due date, priority and the day they were closed. With closed_from or closed_to it lists done and Won't do Tasks, newest close first. A row with comments above 0 has updates and progress notes: read them with todo_read and comments true. last_comment_at is when its newest live Comment was written. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: LIST_PARAMS,
         }
     }
@@ -365,9 +364,8 @@ impl Tool for List {
         } else {
             "(state = 'open') DESC, due_date IS NULL, due_date, closed_at DESC, sort_key"
         };
-        let sql = format!(
-            "SELECT {COLUMNS} FROM todo_tasks
-             WHERE deleted_at IS NULL
+        // One filter for the count of every match and for the batch, so `total` is what paging runs over.
+        let filter = "deleted_at IS NULL
                AND (?1 IS NULL OR state = ?1)
                AND (?2 = 0 OR list_id IS ?3)
                AND (?4 IS NULL OR due_date >= ?4)
@@ -375,44 +373,50 @@ impl Tool for List {
                AND (?6 IS NULL OR priority = ?6)
                AND (?7 IS NULL OR closed_at >= ?7)
                AND (?8 IS NULL OR closed_at < ?8)
-               AND (?11 = 0 OR state IN ('done', 'wont'))
-             ORDER BY {order}
-             LIMIT ?9 OFFSET ?10"
+               AND (?11 = 0 OR state IN ('done', 'wont'))";
+        let sql = format!(
+            "SELECT {COLUMNS} FROM todo_tasks WHERE {filter} ORDER BY {order} LIMIT ?9 OFFSET ?10"
         );
+        let bound = rusqlite::params![
+            state,
+            list_on,
+            list_id,
+            due_from,
+            due_to,
+            priority,
+            closed_from_ms,
+            closed_to_ms,
+            number(limit + 1),
+            number(offset),
+            closed_only,
+        ];
+        let counted = conn.query_row(
+            &format!("SELECT COUNT(*) FROM todo_tasks WHERE {filter}"),
+            bound,
+            |r| r.get::<_, i64>(0),
+        );
+        let Ok(total) = counted else {
+            return unreadable();
+        };
+        let total = count(Some(total), 0);
         let fetched = conn.prepare(&sql).and_then(|mut stmt| {
-            stmt.query_map(
-                rusqlite::params![
-                    state,
-                    list_on,
-                    list_id,
-                    due_from,
-                    due_to,
-                    priority,
-                    closed_from_ms,
-                    closed_to_ms,
-                    number(limit + 1),
-                    number(offset),
-                    closed_only,
-                ],
-                from_row,
-            )?
-            .collect::<rusqlite::Result<Vec<Task>>>()
+            stmt.query_map(bound, from_row)?
+                .collect::<rusqlite::Result<Vec<Task>>>()
         });
         let Ok(mut tasks) = fetched else {
             return unreadable();
         };
-        let more = tasks.len() > limit;
         tasks.truncate(limit);
         let zone = calendar.time_zone.as_str();
         let Ok(rows) = hinted_rows(conn, &tasks, &names, zone) else {
             return unreadable();
         };
-        let (kept, cut_short) = fit_rows(rows);
-        let shown = kept.len();
-        let next = (more || cut_short).then_some(number(offset + shown));
+        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "tasks", None) else {
+            return Output::error(batch::ROW_TOO_LARGE);
+        };
         let items = tasks.iter().take(shown).map(item).collect();
         Output::ok(
-            json!({ "tasks": kept, "next_offset": next }),
+            body,
             match shown {
                 0 => "Listed tasks, none".to_owned(),
                 n => format!("Listed tasks, {n} tasks"),
@@ -428,7 +432,7 @@ impl Tool for Read {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_read",
-            about: "Read one Task in full: its notes, and optionally steps, Comments and History. Comments are its updates and progress notes; set comments true when a list or search row shows comments above 0. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
+            about: "Read one Task in full: its notes, and optionally steps, Comments and History. Comments are its updates and progress notes; set comments true when a list or search row shows comments above 0. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null. Long notes come in batches: shown and total are bytes. If next_offset is not null the notes are incomplete: fetch the next batch with that offset before summarising.",
             params: READ_PARAMS,
         }
     }
@@ -454,11 +458,14 @@ impl Tool for Read {
             start += 1;
         }
         let rest = &task.notes[start..];
-        let page = cut(rest, READ_PAGE_BYTES);
-        let next = (page.len() < rest.len()).then_some(start + page.len());
+        let page = cut(rest, READ_BATCH_BYTES);
         let mut body = row_json(&task, &list_label(&names, &task), zone);
         body["notes"] = json!(page);
-        body["next_offset"] = json!(next);
+        if let Some(fields) = body.as_object_mut() {
+            fields.extend(
+                Batch::new(start, page.len(), task.notes.len()).byte_fields("bytes of the notes"),
+            );
+        }
         body["created_at"] = json!(task.created_at);
         body["created_at_local"] = json!(local_time::minute(task.created_at, zone));
         if args.flag("steps") == Some(true) {
@@ -520,7 +527,7 @@ impl Tool for Search {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_search",
-            about: "Find Tasks with the app's Search, open ones first. A row with comments above 0 has updates and progress notes: read them with todo_read and comments true. last_comment_at is when its newest live Comment was written. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null.",
+            about: "Find Tasks with the app's Search, open ones first. A row with comments above 0 has updates and progress notes: read them with todo_read and comments true. last_comment_at is when its newest live Comment was written. Timestamps are epoch milliseconds (UTC); each has a _local twin, YYYY-MM-DD HH:MM in the device's time zone, or null. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: SEARCH_PARAMS,
         }
     }
@@ -559,13 +566,12 @@ impl Tool for Search {
         let Ok(rows) = hinted_rows(conn, page.iter().copied(), &names, zone) else {
             return unreadable();
         };
-        let items = page.iter().map(|t| item(t)).collect();
-        let next = (offset + limit < total).then_some(offset + limit);
-        Output::ok(
-            json!({ "tasks": rows, "next_offset": next }),
-            format!("Searched tasks, {total} found"),
-            items,
-        )
+        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "matches", None)
+        else {
+            return Output::error(batch::ROW_TOO_LARGE);
+        };
+        let items = page.iter().take(shown).map(|t| item(t)).collect();
+        Output::ok(body, format!("Searched tasks, {total} found"), items)
     }
 }
 
@@ -575,14 +581,19 @@ impl Tool for Changes {
     fn spec(&self) -> Spec {
         Spec {
             name: "todo_changes",
-            about: "Task creations, completions, reschedules, moves and Comments written in a date range (a Comment reads as commented, with its text). Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'.",
+            about: "Task creations, completions, reschedules, moves and Comments written in a date range (a Comment reads as commented, with its text). Use for what was done or updated. Days are local, in the device's time zone: rows are grouped by day, newest day first, and each day's rows oldest first. Each row has id, at (HH:MM, local time), change and title. Counts cover the whole range by kind. A repeating Task's completion reads as its occurrence, such as 'Done (occurrence of 18 Oct)'. Each batch has shown (its rows) and total (the rows the query matches). If next_offset is not null the list is incomplete: fetch the next batch with that offset before summarising.",
             params: CHANGES_PARAMS,
         }
     }
 
     fn run(&self, conn: &Connection, args: &Args, calendar: &Calendar) -> Output {
-        recent::run(args, calendar, MODULE_ID, changes::KINDS, |start, end| {
-            changes::rows(conn, start, end).map_err(|_| unreadable())
-        })
+        recent::run(
+            args,
+            calendar,
+            MODULE_ID,
+            "Tasks",
+            changes::KINDS,
+            |start, end| changes::rows(conn, start, end).map_err(|_| unreadable()),
+        )
     }
 }

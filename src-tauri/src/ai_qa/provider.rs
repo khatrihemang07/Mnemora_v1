@@ -45,8 +45,17 @@ pub fn default_model(usage: &ModelUsage, provider_id: &str) -> Option<String> {
         .map(|used| used.model.clone())
 }
 
+/// The paging rule of the current prompt, verbatim: the economy sentence and the rule for an
+/// incomplete list.
+const PAGING_RULE: &str = "Be economical: do not repeat a Tool call with the same arguments. When a Tool result says the list is incomplete and your answer needs all of it, call the Tool again with the offset it gives. If you stop early, say the answer is incomplete.";
+
+/// The economy sentence of the earlier prompt (v0.2.1), which `off.paging` restores.
+const PREVIOUS_ECONOMY: &str =
+    "Be economical: do not repeat a Tool call whose result you already have.";
+
 /// The request with what `off` switches off removed: the final-Step note at the end of the system
-/// prompt, and the intent paragraph. Everything else is kept.
+/// prompt, the intent paragraph, and the paging rule (replaced by the earlier economy sentence).
+/// Everything else is kept.
 ///
 /// Each removal is checked. A prompt without the paragraph it should lose panics, so a change to the
 /// prompt cannot make the run quietly match the variant it is not.
@@ -70,6 +79,17 @@ pub fn strip(request: &Request, off: Off) -> Request {
         assert!(
             !out.system.contains(INTENT_PARAGRAPH),
             "the intent paragraph is still in the system prompt after it was switched off"
+        );
+    }
+    if off.paging {
+        assert!(
+            out.system.contains(PAGING_RULE),
+            "the system prompt has no paging rule to switch off: the prompt changed, so the run would not be the variant it names"
+        );
+        out.system = out.system.replace(PAGING_RULE, PREVIOUS_ECONOMY);
+        assert!(
+            !out.system.contains(PAGING_RULE),
+            "the paging rule is still in the system prompt after it was switched off"
         );
     }
     out
@@ -99,6 +119,15 @@ impl Ablated {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .last()
+            .cloned()
+    }
+
+    /// The first request this Provider sent, with its knobs applied: the first Step of the Run.
+    pub fn first_sent(&self) -> Option<Request> {
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .first()
             .cloned()
     }
 }

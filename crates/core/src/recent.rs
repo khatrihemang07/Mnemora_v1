@@ -8,17 +8,18 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value, json};
 
+use crate::batch::{self, Batch};
 use crate::changelog::Record;
 use crate::hlc;
 use crate::local_time;
-use crate::tool::{Args, Calendar, Item, Kind, Output, Param, count, cut, fits, number};
+use crate::tool::{Args, Calendar, Item, Kind, Output, Param, count, cut, number};
 
 /// Characters of a title or text shown as a preview.
 pub const PREVIEW_CHARS: usize = 120;
 
-/// Rows the changes Tool returns by default, and at most.
-pub const CHANGES_DEFAULT: usize = 30;
-/// The most rows one page of the changes Tool returns.
+/// Rows one batch of the changes Tool returns by default.
+pub const CHANGES_DEFAULT: usize = 100;
+/// The most rows one batch of the changes Tool returns.
 pub const CHANGES_MAX: i64 = 100;
 
 /// The `from` parameter of a changes Tool: the first local day of the range.
@@ -35,7 +36,8 @@ pub const TO: Param = Param {
     required: true,
     about: "Last day, YYYY-MM-DD, in the device's time zone.",
 };
-/// The `offset` parameter of a changes Tool: the rows to skip, from a `next_offset`.
+/// The `offset` parameter of a changes Tool: the rows to skip, from the `next_offset` of the batch
+/// before.
 pub const OFFSET: Param = Param {
     name: "offset",
     kind: Kind::Integer {
@@ -43,9 +45,9 @@ pub const OFFSET: Param = Param {
         max: 1_000_000,
     },
     required: false,
-    about: "Rows to skip, from a next_offset.",
+    about: "Rows to skip: the next_offset of the batch before, 0 for the first.",
 };
-/// The `limit` parameter of a changes Tool: the rows to return, at most `CHANGES_MAX`.
+/// The `limit` parameter of a changes Tool: the rows in one batch, at most `CHANGES_MAX`.
 pub const LIMIT: Param = Param {
     name: "limit",
     kind: Kind::Integer {
@@ -53,7 +55,7 @@ pub const LIMIT: Param = Param {
         max: CHANGES_MAX,
     },
     required: false,
-    about: "Rows to return, 30 by default.",
+    about: "Rows in one batch, 100 by default, at most 100.",
 };
 
 /// One change a Module found, ready to read.
@@ -113,6 +115,8 @@ struct LocalRow {
 pub struct PageOptions<'a> {
     /// The Module the rows belong to, as each Item names it.
     pub module: &'static str,
+    /// The name the unread note gives the Module, such as "Journal".
+    pub scope: &'static str,
     /// The kinds the Tool counts, in the order it lists them.
     pub vocabulary: &'static [&'static str],
     /// The kinds to keep. `None` keeps every kind.
@@ -132,6 +136,7 @@ pub fn run(
     args: &Args,
     calendar: &Calendar,
     module: &'static str,
+    scope: &'static str,
     vocabulary: &'static [&'static str],
     rows: impl FnOnce(i64, i64) -> Result<Vec<Row>, Output>,
 ) -> Output {
@@ -152,6 +157,7 @@ pub fn run(
         rows,
         PageOptions {
             module,
+            scope,
             vocabulary,
             kinds,
             offset: count(args.int("offset"), 0),
@@ -215,12 +221,14 @@ fn kind_filter(
     Ok((!kinds.is_empty()).then_some(kinds))
 }
 
-/// One page of changes. Days read newest first and the rows of a day oldest first (their log
-/// order). The counts cover the whole range, one per word of the vocabulary. A page is cut to fit
-/// the result cap, and its `next_offset` continues from the last row it holds.
+/// One batch of changes. Days read newest first and the rows of a day oldest first (their log
+/// order). The counts cover the whole range, one per word of the vocabulary. `total` is the rows
+/// the query matches. A batch is cut to fit the result cap, and its `next_offset` continues from
+/// the last row it holds.
 fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
     let PageOptions {
         module,
+        scope,
         vocabulary,
         kinds,
         offset,
@@ -258,16 +266,16 @@ fn page(rows: Vec<Row>, options: PageOptions<'_>) -> Output {
     let total = matching.len();
     let page: Vec<&LocalRow> = matching.into_iter().skip(offset).take(limit).collect();
 
-    let mut shown = page.len();
-    let body = loop {
-        let next = (offset + shown < total).then_some(number(offset + shown));
-        let body =
-            json!({ "days": days_of(&page[..shown]), "counts": counts, "next_offset": next });
-        if fits(&body) || shown == 0 {
-            break body;
+    let (body, shown) = batch::fit(page.len(), |shown| {
+        let mut body = json!({
+            "days": days_of(&page[..shown]),
+            "counts": counts.clone(),
+        });
+        if let Some(fields) = body.as_object_mut() {
+            fields.extend(Batch::new(offset, shown, total).list_fields("changes", Some(scope)));
         }
-        shown -= 1;
-    };
+        body
+    });
 
     let mut seen = HashSet::new();
     let items: Vec<Item> = page[..shown]

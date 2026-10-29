@@ -225,7 +225,7 @@
         {/if}
         <Sources sources={entry.payload.sources} />
         {#if entry.payload.budget_note}
-          <p class="text-sm text-muted">{entry.payload.budget_note}</p>
+          <p class="whitespace-pre-line text-sm text-muted">{entry.payload.budget_note}</p>
         {/if}
         <div class="flex flex-wrap items-center gap-1">
           <IconButton icon={Copy} label="Copy answer as Markdown" size="sm" variant="ghost" onclick={() => void copyAsMarkdown(conversationId, entry.id)} />

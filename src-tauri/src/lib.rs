@@ -160,7 +160,13 @@ macro_rules! specta_builder_for {
 
 mod ai;
 #[cfg(test)]
+mod ai_batch_lists_tests;
+#[cfg(test)]
+mod ai_batch_tests;
+#[cfg(test)]
 mod ai_branching_tests;
+#[cfg(test)]
+mod ai_catchup_tests;
 #[cfg(test)]
 mod ai_changes_tests;
 #[cfg(test)]
@@ -196,6 +202,8 @@ mod ai_sync_tests;
 mod ai_tools_tests;
 #[cfg(test)]
 mod ai_tracer_tests;
+#[cfg(test)]
+mod ai_unresolved_tests;
 #[cfg(test)]
 mod ai_wire_tests;
 mod commands;

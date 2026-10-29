@@ -7,6 +7,7 @@ use std::time::Duration;
 use mnemora_ai::{Choice, LocalContext, ProviderRecord};
 
 use super::answer::{Answer, CallLine};
+use super::dump::dump_request;
 use super::knobs::{Off, Variant};
 
 /// The side-by-side summary's file name, in `--out`.
@@ -81,6 +82,13 @@ pub fn report_markdown(variant: Variant, setup: &RunSetup, answers: &[Answer]) -
         }
         let _ = writeln!(out, "Answer:\n");
         let _ = writeln!(out, "{}\n", answer_or_none(answer));
+        if let Some(request) = &answer.first_request {
+            let _ = writeln!(
+                out,
+                "### First request of this Run (no Tool call on its first Step)\n\n{}",
+                dump_request(request)
+            );
+        }
     }
     out
 }

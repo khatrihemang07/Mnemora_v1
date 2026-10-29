@@ -22,6 +22,7 @@ mod report;
 mod run;
 
 pub use answer::{Answer, answer};
+pub use args::parse_args;
 pub use dump::dump_request;
 pub use knobs::{BEFORE_ONLY_TOOLS, Off, Variant, toolset_for};
 pub use provider::strip;

@@ -13,7 +13,7 @@ use mnemora_todo::TodoModule;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::ai_seed::{self, DbState, SeedOutcome};
+use crate::ai_seed::{self, DbState, SeedOptions, SeedOutcome};
 
 /// The device's zone, as in `ai_fixture_tests.rs`.
 const ZONE: &str = "America/New_York";
@@ -74,7 +74,8 @@ fn refuses_a_path_that_resolves_to_production() {
         ),
     ];
     for target in &targets {
-        let err = ai_seed::seed_at(target, &production, NOW, ZONE, false).unwrap_err();
+        let err =
+            ai_seed::seed_at(target, &production, NOW, ZONE, SeedOptions::default()).unwrap_err();
         assert!(err.contains("Production"), "{err}");
         assert!(!target.db_file.exists(), "a refused seed wrote a database");
     }
@@ -94,7 +95,7 @@ fn refuses_a_symlink_that_leads_into_production() {
         &ai_seed::production_roots(dir.path()),
         NOW,
         ZONE,
-        false,
+        SeedOptions::default(),
     )
     .unwrap_err();
     assert!(err.contains("Production"), "{err}");
@@ -117,7 +118,7 @@ fn refuses_the_data_folder_that_production_has_moved_to() {
         &ai_seed::production_roots(dir.path()),
         NOW,
         ZONE,
-        false,
+        SeedOptions::default(),
     )
     .unwrap_err();
     assert!(err.contains("Production"), "{err}");
@@ -147,7 +148,7 @@ fn refuses_a_database_with_rows_that_are_not_the_fixture_until_reset() {
     drop(conn);
     let production = ai_seed::production_roots(dir.path());
 
-    let err = ai_seed::seed_at(&paths, &production, NOW, ZONE, false).unwrap_err();
+    let err = ai_seed::seed_at(&paths, &production, NOW, ZONE, SeedOptions::default()).unwrap_err();
     assert!(err.contains("not the fixture"), "{err}");
     assert!(err.contains("--reset"), "{err}");
     let conn = db::open_existing(&paths.db_file).unwrap().unwrap();
@@ -157,7 +158,17 @@ fn refuses_a_database_with_rows_that_are_not_the_fixture_until_reset() {
     assert_eq!(lists, 1, "a refused seed changed the database");
     drop(conn);
 
-    let report = ai_seed::seed_at(&paths, &production, NOW, ZONE, true).unwrap();
+    let report = ai_seed::seed_at(
+        &paths,
+        &production,
+        NOW,
+        ZONE,
+        SeedOptions {
+            reset: true,
+            ..SeedOptions::default()
+        },
+    )
+    .unwrap();
     assert_eq!(report.before, DbState::Other);
     assert!(matches!(report.outcome, SeedOutcome::Written { .. }));
 }
@@ -175,7 +186,7 @@ fn refuses_a_database_another_connection_holds_open_for_writing() {
         &ai_seed::production_roots(dir.path()),
         NOW,
         ZONE,
-        false,
+        SeedOptions::default(),
     )
     .unwrap_err();
     assert!(err.contains("in use"), "{err}");
@@ -188,7 +199,7 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
     let paths = AppPaths::resolve(Environment::Sandbox, dir.path(), None);
     let production = ai_seed::production_roots(dir.path());
 
-    let first = ai_seed::seed_at(&paths, &production, NOW, ZONE, false).unwrap();
+    let first = ai_seed::seed_at(&paths, &production, NOW, ZONE, SeedOptions::default()).unwrap();
     assert_eq!(first.before, DbState::Missing);
     let SeedOutcome::Written {
         items,
@@ -199,11 +210,11 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
     else {
         panic!("the first seed did not write: {first:?}");
     };
-    assert_eq!(items, 47);
+    assert_eq!(items, 112);
     assert_eq!(skipped, 0, "every fixture event is before the fixed now");
-    // The fixture makes 3 Lists and 19 Journal Entries (its `list` and `entry` events).
+    // The fixture makes 3 Lists and 23 Journal Entries (its `list` and `entry` events).
     assert_eq!(counts["todo_lists"], 3, "{counts:?}");
-    assert_eq!(counts["journal_entries"], 19, "{counts:?}");
+    assert_eq!(counts["journal_entries"], 23, "{counts:?}");
 
     let conn = db::open_existing(&paths.db_file).unwrap().unwrap();
     let yesterday = json!({ "from": "2026-10-24", "to": "2026-10-24" });
@@ -223,9 +234,42 @@ fn seeding_reads_back_the_fixture_counts_through_the_change_tools_and_twice_chan
     let before = row_counts(&conn);
     drop(conn);
 
-    let again = ai_seed::seed_at(&paths, &production, NOW, ZONE, false).unwrap();
+    let again = ai_seed::seed_at(&paths, &production, NOW, ZONE, SeedOptions::default()).unwrap();
     assert_eq!(again.before, DbState::Seeded);
     assert_eq!(again.outcome, SeedOutcome::AlreadySeeded);
     let conn = db::open_existing(&paths.db_file).unwrap().unwrap();
     assert_eq!(row_counts(&conn), before, "a second seed wrote rows");
+}
+
+#[test]
+fn a_seed_that_leaves_out_the_catch_up_day_is_read_back_from_its_database() {
+    let full_dir = base();
+    let full = AppPaths::resolve(Environment::Sandbox, full_dir.path(), None);
+    let full_production = ai_seed::production_roots(full_dir.path());
+    ai_seed::seed_at(&full, &full_production, NOW, ZONE, SeedOptions::default()).unwrap();
+    assert_eq!(ai_seed::leaves_out_catchup(&full.db_file), Ok(false));
+
+    let dir = base();
+    let paths = AppPaths::resolve(Environment::Sandbox, dir.path(), None);
+    let production = ai_seed::production_roots(dir.path());
+    let report = ai_seed::seed_at(
+        &paths,
+        &production,
+        NOW,
+        ZONE,
+        SeedOptions {
+            skip_catchup: true,
+            ..SeedOptions::default()
+        },
+    )
+    .unwrap();
+    let SeedOutcome::Written {
+        items, left_out, ..
+    } = report.outcome
+    else {
+        panic!("the seed did not write: {report:?}");
+    };
+    assert_eq!(items, 47);
+    assert_eq!(left_out, 139);
+    assert_eq!(ai_seed::leaves_out_catchup(&paths.db_file), Ok(true));
 }

@@ -21,6 +21,7 @@ use crate::tools::{Toolbox, cited_ids};
 use crate::types::{
     CallRecord, EntryKind, EntryPayload, LocalContext, RunEvent, RunOutcome, Source,
 };
+use crate::unresolved::Unread;
 
 /// The Tools a Run may call, and the names of the Modules that are off and would have offered some
 /// (the prompt says those are unavailable).
@@ -108,6 +109,14 @@ pub fn budget_note(forced: Forced) -> String {
     }
 }
 
+/// Joins two notes an answer carries, one per line.
+fn join_notes(first: Option<String>, second: Option<String>) -> Option<String> {
+    match (first, second) {
+        (Some(first), Some(second)) => Some(format!("{first}\n{second}")),
+        (first, second) => first.or(second),
+    }
+}
+
 /// Runs a question that `begin` has written, to its end. `db` is locked only while a row is read
 /// or written, never while the Provider streams or a Tool reads, so the rest of the app stays
 /// responsive. `tools` are the Tools this Run may call and `off` names the Modules turned off.
@@ -156,6 +165,8 @@ pub fn execute(
         cited: HashMap::new(),
         broken: false,
         steering: handles.steering,
+        held: None,
+        unread: Unread::default(),
     };
     let outcome = agent::run(
         Arc::clone(&provider),
@@ -166,11 +177,13 @@ pub fn execute(
         &mut || handles.steering.next(),
         &mut |event| recorder.handle(event, emit),
     );
+    let answered = matches!(outcome, Outcome::Answered);
     let outcome = if recorder.broken {
         Outcome::Failed(Failure::Unexpected)
     } else {
         outcome
     };
+    recorder.finish(answered, emit);
     // Closed first, so a note sent now is refused rather than lost; what was never sent is shown.
     let unsent = handles.steering.close();
     if !unsent.is_empty() {
@@ -206,10 +219,18 @@ struct Recorder<'a> {
     broken: bool,
     /// The notes still queued, announced after each one is sent.
     steering: &'a Steering,
+    /// The answer of the last Step that asked for no Tools, held until the Run ends or another entry
+    /// follows it: only then is it known whether it is the answer, and which batches were left unread.
+    held: Option<EntryPayload>,
+    /// The paged Tool results of this Run, for the note on the batches the Run left unread.
+    unread: Unread,
 }
 
 impl Recorder<'_> {
     fn handle(&mut self, event: Event, emit: &mut dyn FnMut(RunEvent)) {
+        // The held answer is released before any later entry, so the entries keep their order. A
+        // save that fails here ends the Run, and the event is dropped.
+        self.release(None, emit);
         if self.broken {
             return;
         }
@@ -217,7 +238,8 @@ impl Recorder<'_> {
             Event::StepStarted => emit(RunEvent::StepStarted),
             Event::TextDelta(text) => emit(RunEvent::TextDelta { text }),
             Event::StepEnded(record) => {
-                let sources = if record.calls.is_empty() {
+                let answer = record.calls.is_empty();
+                let sources = if answer {
                     cited_sources(&record.text, &record.sources, &self.cited)
                 } else {
                     Vec::new()
@@ -240,7 +262,11 @@ impl Recorder<'_> {
                     sources,
                     budget_note: record.forced.map(budget_note),
                 };
-                self.save(EntryKind::Assistant, &payload, emit);
+                if answer {
+                    self.held = Some(payload);
+                } else {
+                    self.save(EntryKind::Assistant, &payload, emit);
+                }
             }
             Event::ToolStarted { call_id, name } => emit(RunEvent::ToolStarted { call_id, name }),
             Event::ToolEnded {
@@ -252,6 +278,7 @@ impl Recorder<'_> {
                 for item in &reply.cited {
                     self.cited.insert(item.id.clone(), source_of(item));
                 }
+                self.unread.record(&name, &arguments, &reply.text);
                 let payload = EntryPayload::ToolResult {
                     call_id: call_id.clone(),
                     name: name.clone(),
@@ -284,6 +311,28 @@ impl Recorder<'_> {
 
     fn save(&mut self, kind: EntryKind, payload: &EntryPayload, emit: &mut dyn FnMut(RunEvent)) {
         self.broken = !record_entry(self.db, self.ask, &mut self.parent, kind, payload, emit);
+    }
+
+    /// Saves the Run's last entry, the held answer if there is one. When the Run answered, its note
+    /// also names the batches the Run left unread.
+    fn finish(&mut self, answered: bool, emit: &mut dyn FnMut(RunEvent)) {
+        let unread = if answered { self.unread.note() } else { None };
+        self.release(unread, emit);
+    }
+
+    /// Saves the held answer, if there is one, with `unread` joined to its note. Nothing is saved
+    /// once the Run is broken.
+    fn release(&mut self, unread: Option<String>, emit: &mut dyn FnMut(RunEvent)) {
+        let Some(mut payload) = self.held.take() else {
+            return;
+        };
+        if self.broken {
+            return;
+        }
+        if let EntryPayload::Assistant { budget_note, .. } = &mut payload {
+            *budget_note = join_notes(budget_note.take(), unread);
+        }
+        self.save(EntryKind::Assistant, &payload, emit);
     }
 }
 

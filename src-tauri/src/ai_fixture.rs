@@ -20,6 +20,10 @@ pub const FIXTURE: &str = include_str!("fixtures/recent_changes.json");
 const MINUTE_MS: i64 = 60_000;
 const DAY_MS: i64 = 24 * 60 * MINUTE_MS;
 
+/// The fixture day that holds the catch-up: 139 events, Tuesday 6 October for a seed on Sunday 25
+/// October (days from the day the seed ran). `load_except` leaves it out on request.
+pub const CATCHUP_DAY: i64 = -19;
+
 /// Where a load's events go: the commands, the clock they are stamped with, and the database for
 /// the columns no command sets from the clock. The Sandbox seed (`ai_seed`) implements it over the
 /// services; the tests implement it over a `TestApp`.
@@ -52,6 +56,7 @@ pub struct Loaded {
     ids: HashMap<String, String>,
     events: usize,
     skipped: usize,
+    left_out: usize,
 }
 
 impl Loaded {
@@ -68,6 +73,17 @@ impl Loaded {
     /// How many fixture events were left out because they fall after `now` (not yet happened).
     pub fn skipped(&self) -> usize {
         self.skipped
+    }
+
+    /// How many fixture events were left out because `load_except` was asked to leave their day out.
+    pub fn left_out(&self) -> usize {
+        self.left_out
+    }
+
+    /// Whether the fixture wrote an item with `key`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn contains(&self, key: &str) -> bool {
+        self.ids.contains_key(key)
     }
 
     /// The id of the List, Task or Entry with `key`. Panics when the fixture did not write it.
@@ -116,7 +132,19 @@ struct Placed<'a> {
 /// Replays the fixture through `driver` in time order, each event at its own local time in `zone`,
 /// on the day it names relative to `now`'s local day. Events after `now` are left out (they have not
 /// happened yet). Leaves the clock at `now`. Returns the ids the commands gave, by key.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn load(driver: &impl Driver, now: i64, zone: &str) -> Result<Loaded, String> {
+    load_except(driver, now, zone, None)
+}
+
+/// As `load`, but no event of fixture day `leave_out` (days from the day `now` is on) is written.
+/// Its events are counted in `left_out`. Every other day is written as `load` writes it.
+pub fn load_except(
+    driver: &impl Driver,
+    now: i64,
+    zone: &str,
+    leave_out: Option<i64>,
+) -> Result<Loaded, String> {
     let fixture: Fixture = serde_json::from_str(FIXTURE).map_err(|e| e.to_string())?;
     let today = local_time::day(now, zone).ok_or_else(|| format!("unknown time zone {zone}"))?;
     let midnight = local_time::day_start(&today, zone).ok_or_else(|| format!("bad day {today}"))?;
@@ -137,6 +165,11 @@ pub fn load(driver: &impl Driver, now: i64, zone: &str) -> Result<Loaded, String
     placed.sort_by_key(|p| (p.at, p.index));
     let skipped = placed.iter().filter(|p| p.at > now).count();
     placed.retain(|p| p.at <= now);
+    let before_leave_out = placed.len();
+    if let Some(day) = leave_out {
+        placed.retain(|p| p.event.day != day);
+    }
+    let left_out = before_leave_out - placed.len();
     // `restamp` tells this event's writes from earlier ones by comparing with the system clock, so
     // every event must lie before it.
     if placed.last().is_some_and(|p| p.at >= now_ms()) {
@@ -147,6 +180,7 @@ pub fn load(driver: &impl Driver, now: i64, zone: &str) -> Result<Loaded, String
         ids: HashMap::new(),
         events: placed.len(),
         skipped,
+        left_out,
     };
     for p in &placed {
         driver.set_clock(p.at);
@@ -189,7 +223,7 @@ fn run(
             let when = due.map(|date| json!({ "date": date, "time": null, "local": local }));
             let made = call(
                 "todo_task_create",
-                json!({ "title": e.title, "list_id": list, "when": when, "details": null }),
+                json!({ "title": e.title, "listId": list, "when": when, "details": null }),
             )?;
             ids.insert(key.clone(), id_of(&made)?);
         }
