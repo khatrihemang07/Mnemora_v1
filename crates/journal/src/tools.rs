@@ -235,17 +235,14 @@ impl Tool for List {
         let Ok(mut rows) = fetched else {
             return unreadable();
         };
-        let more = rows.len() > limit;
         rows.truncate(limit);
         let zone = calendar.time_zone.as_str();
-        let (kept, cut_short) = fit_rows(rows.iter().map(|row| list_json(row, zone)).collect());
-        let shown = kept.len();
-        let next = (more || cut_short).then_some(offset + shown);
+        let json_rows: Vec<Value> = rows.iter().map(|row| list_json(row, zone)).collect();
+        let Some((body, shown)) = batch::page("entries", &json_rows, offset, total, "entries")
+        else {
+            return Output::error(batch::ROW_TOO_LARGE);
+        };
         let items = rows.iter().take(shown).map(item).collect();
-        let mut body = json!({ "entries": kept, "next_offset": next });
-        if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(offset, shown, total, next, "entries", None));
-        }
         Output::ok(
             body,
             match shown {

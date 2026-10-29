@@ -3,9 +3,46 @@
 //! asks for the next one with the offset it was given. This file only says how much a batch holds
 //! and where the next one starts. Each Tool decides what a row is and what it pages over.
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
-use crate::tool::number;
+use crate::tool::{fit_rows, fits, number};
+
+/// What a paged Tool returns when its first row alone is larger than the result cap. No row is
+/// ever this large on the Modules' current limits (titles, previews and snippets are capped), so the
+/// message is a guard, not a path a Model reaches in practice.
+pub const ROW_TOO_LARGE: &str = "The result is too large to read. Narrow the request.";
+
+/// One batch of a paged list or search: its rows under `key`, `next_offset` and the batch fields, as
+/// the Model reads them. `rows` are the rows the query returns from `offset` on, at most the Tool's
+/// limit, and `total` the rows it matches. The batch holds the most leading rows whose whole body fits
+/// under the result cap, so no field is cut and no row is lost: the next batch starts where this one
+/// ends. Returns the body and the rows it holds, or `None` when the first row alone is over the cap.
+pub fn page(
+    key: &str,
+    rows: &[Value],
+    offset: usize,
+    total: usize,
+    noun: &str,
+) -> Option<(Value, usize)> {
+    let body = |shown: usize| {
+        let next = (offset + shown < total).then_some(offset + shown);
+        let mut body = Map::new();
+        body.insert(key.to_owned(), Value::Array(rows[..shown].to_vec()));
+        body.insert("next_offset".to_owned(), json!(next));
+        body.extend(fields(offset, shown, total, next, noun, None));
+        Value::Object(body)
+    };
+    // `fit_rows` keeps the rows alone under the cap, so it is an upper bound; the body's own fields
+    // take room too, so step down until the whole body fits.
+    let mut shown = fit_rows(rows.to_vec()).0.len();
+    while shown > 0 && !fits(&body(shown)) {
+        shown -= 1;
+    }
+    if shown == 0 && !rows.is_empty() {
+        return None;
+    }
+    Some((body(shown), shown))
+}
 
 /// The fields a paged list or search carries. `offset` is where this batch starts, `shown` the items
 /// in this batch and `total` the items the query matches. `note` is there only when `next_offset` is

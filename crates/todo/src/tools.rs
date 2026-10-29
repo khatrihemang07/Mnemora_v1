@@ -408,20 +408,15 @@ impl Tool for List {
         let Ok(mut tasks) = fetched else {
             return unreadable();
         };
-        let more = tasks.len() > limit;
         tasks.truncate(limit);
         let zone = calendar.time_zone.as_str();
         let Ok(rows) = hinted_rows(conn, &tasks, &names, zone) else {
             return unreadable();
         };
-        let (kept, cut_short) = fit_rows(rows);
-        let shown = kept.len();
-        let next = (more || cut_short).then_some(offset + shown);
+        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "tasks") else {
+            return Output::error(batch::ROW_TOO_LARGE);
+        };
         let items = tasks.iter().take(shown).map(item).collect();
-        let mut body = json!({ "tasks": kept, "next_offset": next });
-        if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(offset, shown, total, next, "tasks", None));
-        }
         Output::ok(
             body,
             match shown {
@@ -578,14 +573,10 @@ impl Tool for Search {
         let Ok(rows) = hinted_rows(conn, page.iter().copied(), &names, zone) else {
             return unreadable();
         };
-        let (kept, _) = fit_rows(rows);
-        let shown = kept.len();
+        let Some((body, shown)) = batch::page("tasks", &rows, offset, total, "matches") else {
+            return Output::error(batch::ROW_TOO_LARGE);
+        };
         let items = page.iter().take(shown).map(|t| item(t)).collect();
-        let next = (offset + shown < total).then_some(offset + shown);
-        let mut body = json!({ "tasks": kept, "next_offset": next });
-        if let Some(fields) = body.as_object_mut() {
-            fields.extend(batch::fields(offset, shown, total, next, "matches", None));
-        }
         Output::ok(body, format!("Searched tasks, {total} found"), items)
     }
 }

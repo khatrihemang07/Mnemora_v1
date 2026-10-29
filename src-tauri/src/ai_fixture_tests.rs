@@ -335,7 +335,7 @@ fn deleted_items_read_as_deleted_and_stay_out_of_the_lists_and_searches() {
         vec![
             Reply::calls(&[
                 ("todo_changes", r#"{"from":"2026-10-24","to":"2026-10-24"}"#),
-                ("todo_list", r#"{"state":"open","limit":100}"#),
+                ("todo_list", r#"{"state":"any","limit":100}"#),
                 ("todo_search", r#"{"query":"birthday candles"}"#),
                 ("journal_list", r#"{"from":"2026-10-22","to":"2026-10-24"}"#),
                 ("journal_search", r#"{"query":"Thurburn"}"#),
@@ -357,7 +357,7 @@ fn deleted_items_read_as_deleted_and_stay_out_of_the_lists_and_searches() {
     );
     // Non-empty checks first, so that "not listed" cannot be a list that came back empty.
     assert!(
-        results[1].contains(&ids.id("council_tax").to_owned()),
+        results[1].contains(&ids.id("dry_cleaning").to_owned()),
         "{}",
         results[1]
     );

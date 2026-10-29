@@ -415,3 +415,203 @@ fn a_later_read_part_that_is_still_incomplete_counts_from_the_start_of_the_text(
         results[0]
     );
 }
+
+/// A title of `len` characters that starts with `label`, so every row of a list is the same size.
+fn title_of(label: &str, len: usize) -> String {
+    format!("{label} {}", "x".repeat(len - label.len() - 1))
+}
+
+/// A text of `chars` copies of "é": two bytes each, so each row that carries it is large.
+fn accented(chars: usize) -> String {
+    "é".repeat(chars)
+}
+
+/// Checks the batches of one paged Tool, in the order the calls ran. `batches` gives each call's
+/// (offset, shown). A batch that is followed by another says so in its note and `next_offset`, and the
+/// next batch starts exactly where it ends. The last batch has neither. Returns every id in order.
+fn walk(
+    results: &[String],
+    key: &str,
+    noun: &str,
+    total: usize,
+    batches: &[(usize, usize)],
+) -> Vec<String> {
+    assert_eq!(results.len(), batches.len(), "one result per call");
+    let mut ids = Vec::new();
+    for (i, (result, &(offset, shown))) in results.iter().zip(batches).enumerate() {
+        let whole = body(result);
+        let rows = ids_under(&whole, key);
+        assert_eq!(rows.len(), shown, "{result}");
+        assert_eq!(whole["shown"], shown, "{result}");
+        assert_eq!(whole["total"], total, "{result}");
+        if let Some(&(next, _)) = batches.get(i + 1) {
+            assert_eq!(next, offset + shown, "{result}");
+            assert_eq!(whole["next_offset"], next, "{result}");
+            assert_eq!(
+                whole["note"],
+                format!(
+                    "{next} of {total} {noun} shown. The list is incomplete: call again with offset {next} for the rest."
+                ),
+                "{result}"
+            );
+        } else {
+            assert_eq!(offset + shown, total, "{result}");
+            assert!(whole["next_offset"].is_null(), "{result}");
+            assert!(whole.get("note").is_none(), "{result}");
+        }
+        ids.extend(rows);
+    }
+    ids
+}
+
+#[test]
+fn todo_list_whose_rows_pass_the_cap_is_cut_short_and_no_task_is_lost() {
+    let app = TestApp::new();
+    // Each row is about 630 bytes, so 24 rows fill a batch and 25 would pass the 16 KiB cap.
+    let seeded: Vec<String> = (0..100)
+        .map(|i| seed_task(&app, &title_of(&format!("Task {i:03}"), 480), None))
+        .collect();
+
+    let results = results_of(
+        &app,
+        &[
+            ("todo_list", r#"{"limit":100}"#),
+            ("todo_list", r#"{"limit":100,"offset":24}"#),
+            ("todo_list", r#"{"limit":100,"offset":48}"#),
+            ("todo_list", r#"{"limit":100,"offset":72}"#),
+            ("todo_list", r#"{"limit":100,"offset":96}"#),
+        ],
+    );
+
+    assert!(
+        !results[0].contains("too large"),
+        "a batch that passes the cap is cut, not refused: {}",
+        results[0]
+    );
+    assert_eq!(
+        body(&results[0])["note"],
+        "24 of 100 tasks shown. The list is incomplete: call again with offset 24 for the rest.",
+        "{}",
+        results[0]
+    );
+    let ids = walk(
+        &results,
+        "tasks",
+        "tasks",
+        100,
+        &[(0, 24), (24, 24), (48, 24), (72, 24), (96, 4)],
+    );
+    assert_eq!(
+        sorted(ids),
+        sorted(seeded),
+        "every Task once across the batches"
+    );
+}
+
+#[test]
+fn journal_list_whose_rows_pass_the_cap_is_cut_short_and_no_entry_is_lost() {
+    let app = TestApp::new();
+    // Each preview is 120 accented characters, so each row is about 405 bytes: 38 rows fill a batch.
+    let seeded: Vec<String> = (0..100)
+        .map(|_| seed_entry(&app, "2026-10-20", &accented(130)))
+        .collect();
+
+    let results = results_of(
+        &app,
+        &[
+            ("journal_list", r#"{"limit":100}"#),
+            ("journal_list", r#"{"limit":100,"offset":38}"#),
+            ("journal_list", r#"{"limit":100,"offset":76}"#),
+        ],
+    );
+
+    assert!(
+        !results[0].contains("too large"),
+        "a batch that passes the cap is cut, not refused: {}",
+        results[0]
+    );
+    assert_eq!(
+        body(&results[0])["note"],
+        "38 of 100 entries shown. The list is incomplete: call again with offset 38 for the rest.",
+        "{}",
+        results[0]
+    );
+    let ids = walk(
+        &results,
+        "entries",
+        "entries",
+        100,
+        &[(0, 38), (38, 38), (76, 24)],
+    );
+    assert_eq!(
+        sorted(ids),
+        sorted(seeded),
+        "every Entry once across the batches"
+    );
+}
+
+#[test]
+fn todo_search_whose_rows_pass_the_cap_is_cut_short_and_no_match_is_lost() {
+    let app = TestApp::new();
+    // A search of 25 rows, each about 630 bytes, would pass the cap: the batch holds 24.
+    let seeded: Vec<String> = (0..30)
+        .map(|i| seed_task(&app, &title_of(&format!("Passport {i:03}"), 480), None))
+        .collect();
+
+    let results = results_of(
+        &app,
+        &[
+            ("todo_search", r#"{"query":"passport","limit":25}"#),
+            (
+                "todo_search",
+                r#"{"query":"passport","limit":25,"offset":24}"#,
+            ),
+        ],
+    );
+
+    assert!(
+        !results[0].contains("too large"),
+        "a batch that passes the cap is cut, not refused: {}",
+        results[0]
+    );
+    let ids = walk(&results, "tasks", "matches", 30, &[(0, 24), (24, 6)]);
+    assert_eq!(
+        sorted(ids),
+        sorted(seeded),
+        "every match once across the batches"
+    );
+}
+
+#[test]
+fn journal_search_at_its_largest_batch_fits_the_cap_and_no_match_is_lost() {
+    // Not red first: a search row holds a snippet of at most 200 bytes, so 25 rows (about 7 KiB)
+    // never reach the cap. This test guards that bound.
+    let app = TestApp::new();
+    let seeded: Vec<String> = (0..30)
+        .map(|i| {
+            seed_entry(
+                &app,
+                "2026-10-20",
+                &format!("Walk {i:02} {}", accented(200)),
+            )
+        })
+        .collect();
+
+    let results = results_of(
+        &app,
+        &[
+            ("journal_search", r#"{"query":"walk","limit":25}"#),
+            (
+                "journal_search",
+                r#"{"query":"walk","limit":25,"offset":25}"#,
+            ),
+        ],
+    );
+
+    let ids = walk(&results, "results", "matches", 30, &[(0, 25), (25, 5)]);
+    assert_eq!(
+        sorted(ids),
+        sorted(seeded),
+        "every match once across the batches"
+    );
+}
