@@ -21,11 +21,6 @@ pub const MAX_REPEATS: usize = 3;
 /// Steps in a row whose calls were unknown or badly formed. After that the Run fails.
 pub const MAX_INVALID_STEPS: usize = 3;
 
-/// Sent after each batch of Tool results, while Tools are still offered: answer, or call the next
-/// Tool. It goes into the request only, never into the branch, so it is not saved as an entry.
-pub const NUDGE: &str = "If you now have what you need, answer in the language of the question, \
-    summarising rather than quoting unless exact text was asked for. If something is missing, call \
-    the next Tool.";
 /// Sent with the answer-only request, when Tools are removed: on the last request, or once the
 /// Model has repeated itself. The app adds its own note saying the Run stopped early.
 pub const FINAL_NOTE: &str = "Investigation is closed. Answer now from the observations only. \
@@ -202,23 +197,13 @@ pub fn run(
     let mut repeat_streak = 0;
     let mut invalid_streak = 0;
     let mut closing = false;
-    // Where the nudge goes in the messages: right after the last batch of Tool results, so notes
-    // the person sent after the batch follow it. Set after each batch, used by the next request.
-    let mut nudge_at: Option<usize> = None;
     loop {
         if control.ended() {
             return Outcome::Stopped;
         }
         let last = requests + 1 == MAX_REQUESTS;
         let withheld = last || closing;
-        let request = request_for(
-            &*provider,
-            system,
-            &messages,
-            nudge_at.take(),
-            withheld,
-            host,
-        );
+        let request = request_for(&*provider, system, &messages, withheld, host);
         if request_bytes(&request) > MAX_PROMPT_BYTES {
             return Outcome::Failed(Failure::TooLong);
         }
@@ -240,12 +225,8 @@ pub fn run(
         // A Step the person stopped or skipped: what it wrote is kept, and its calls do not run.
         if answer.stop == StopReason::Aborted || control.ended() {
             // On the answer-only request there is no request left for a note, so the Run ends too.
-            let had_calls = !answer.calls.is_empty();
             if keep_halted(answer, host, &mut messages, &mut ran, control, emit) || last {
                 return Outcome::Stopped;
-            }
-            if had_calls {
-                nudge_at = Some(messages.len());
             }
             deliver(steer, &mut messages, emit);
             continue;
@@ -294,7 +275,6 @@ pub fn run(
             control,
             emit,
         );
-        nudge_at = Some(messages.len());
         if !control.ended() {
             deliver(steer, &mut messages, emit);
         }
@@ -324,28 +304,22 @@ fn forced_by(last: bool, closing: bool) -> Option<Forced> {
     }
 }
 
-/// The request for one Step. The nudge, if due, goes in at `nudge_at` (after the last batch of Tool
-/// results). Once Tools are removed (`withheld`) the final note goes in the system prompt instead,
-/// and no nudge is sent, since it asks for a Tool.
+/// The request for one Step. Once Tools are removed (`withheld`) the final note goes in the system
+/// prompt, and the Step is sent no Tools.
 fn request_for(
     provider: &dyn Provider,
     system: &str,
     messages: &[Message],
-    nudge_at: Option<usize>,
     withheld: bool,
     host: &dyn ToolHost,
 ) -> Request {
-    let mut sent = messages.to_vec();
-    if let Some(at) = nudge_at.filter(|_| !withheld) {
-        sent.insert(at, Message::User(NUDGE.to_owned()));
-    }
     Request {
         system: if withheld {
             format!("{system}\n{FINAL_NOTE}")
         } else {
             system.to_owned()
         },
-        messages: sent,
+        messages: messages.to_vec(),
         model: provider.model().to_owned(),
         tools: if withheld { Vec::new() } else { host.specs() },
     }

@@ -1,7 +1,7 @@
 //! The headless QA harness: real AI Runs over a temporary copy of the Sandbox's seeded data, written
 //! to markdown reports, with no app window and no browser. `examples/ai_qa.rs` runs it (`--features
 //! seed`). A question goes through the path `ai_run_start` takes: the same Provider adapter, Tools,
-//! system prompt, calendar, nudge and final-Step note. It differs in three ways: it runs on the
+//! system prompt, calendar and final-Step note. It differs in three ways: it runs on the
 //! calling thread, it does not claim the Conversation, and it reads the answer from the saved
 //! entries. The Sandbox itself is never written: each run works on a copy, so no Conversation is
 //! left behind and the seed stays valid.
@@ -13,13 +13,14 @@ use std::time::{Duration, Instant};
 
 use mnemora_ai::{
     Ask, Choice, EntryPayload, Handles, KeyStore, LocalContext, ModelUsage, ProviderRecord,
-    ProviderView, RunEvent, RunOutcome, Steering, Toolset, Wording,
+    ProviderView, RunEvent, RunOutcome, Steering, Toolset, Wording, WrapperProvider,
 };
 use mnemora_core::db::{self, Connection};
 use mnemora_core::local_time;
 use mnemora_core::module::Module;
 use mnemora_core::util::{new_id, now_ms};
-use mnemora_harness::{Control, Provider};
+use mnemora_harness::agent::FINAL_NOTE;
+use mnemora_harness::{Control, Message, Provider, Request, StreamEvent, ToolProtocol};
 use serde_json::Value;
 
 use crate::ai::offered_tools_in;
@@ -82,9 +83,7 @@ impl Variant {
             Self::Before => {
                 "Tools: every Tool the app offers except `journal_changes` and `todo_changes`. \
                  System prompt: without the intent paragraph (\"Work out what the person wants \
-                 before you call a Tool\"). Not removed: the nudge after each batch of Tool \
-                 results and the final-Step note, which are part of the loop itself, so this is \
-                 not a pure ablation of them."
+                 before you call a Tool\"). The final-Step note is kept."
             }
             Self::After => "The current code: every Tool the app offers, and the app's prompt.",
         }
@@ -95,21 +94,231 @@ impl Variant {
 /// change Tools and switches the prompt to its wording without the intent paragraph; the after
 /// variant is the app's own toolset.
 pub fn variant_toolset(variant: Variant, toolset: Toolset) -> Toolset {
+    toolset_for(variant_off(variant), toolset)
+}
+
+/// The knobs a variant turns off: the before variant has no change Tools and no intent paragraph.
+fn variant_off(variant: Variant) -> Off {
     match variant {
-        Variant::After => Toolset {
-            wording: Wording::Full,
-            ..toolset
-        },
-        Variant::Before => Toolset {
-            tools: toolset
-                .tools
-                .into_iter()
-                .filter(|tool| !BEFORE_ONLY_TOOLS.contains(&tool.spec().name))
-                .collect(),
-            off: toolset.off,
-            wording: Wording::WithoutIntent,
+        Variant::After => Off::default(),
+        Variant::Before => Off {
+            intent: true,
+            changes: true,
+            ..Off::default()
         },
     }
+}
+
+/// The toolset with the parts `off` switches off: the change Tools (`changes`) and the intent
+/// paragraph (`intent`, through the wording). Every other part is kept as it is.
+pub fn toolset_for(off: Off, toolset: Toolset) -> Toolset {
+    let tools = if off.changes {
+        toolset
+            .tools
+            .into_iter()
+            .filter(|tool| !BEFORE_ONLY_TOOLS.contains(&tool.spec().name))
+            .collect()
+    } else {
+        toolset.tools
+    };
+    Toolset {
+        tools,
+        off: toolset.off,
+        wording: if off.intent {
+            Wording::WithoutIntent
+        } else {
+            Wording::Full
+        },
+    }
+}
+
+/// What a QA run switches off, one knob each. All false is the app's own behaviour. `final_note` is
+/// the final-Step note; `intent` is the intent paragraph; `changes` is `journal_changes` and
+/// `todo_changes`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Off {
+    pub final_note: bool,
+    pub intent: bool,
+    pub changes: bool,
+}
+
+impl Off {
+    /// Reads a comma-separated list of knob names: `final`, `intent`, `changes`. Empty is
+    /// the app's behaviour.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let mut off = Self::default();
+        for name in text
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        {
+            match name {
+                "final" => off.final_note = true,
+                "intent" => off.intent = true,
+                "changes" => off.changes = true,
+                other => {
+                    return Err(format!("--off takes final, intent or changes, not {other}"));
+                }
+            }
+        }
+        Ok(off)
+    }
+
+    /// The knobs on, for a report's header.
+    pub fn describe(self) -> String {
+        let on: Vec<&str> = [
+            (self.final_note, "final-Step note"),
+            (self.intent, "intent paragraph"),
+            (self.changes, "journal_changes and todo_changes Tools"),
+        ]
+        .iter()
+        .filter(|(set, _)| *set)
+        .map(|(_, name)| *name)
+        .collect();
+        if on.is_empty() {
+            "nothing (the app's own behaviour)".to_owned()
+        } else {
+            on.join(", ")
+        }
+    }
+
+    /// Both sets of knobs together.
+    fn with(self, other: Self) -> Self {
+        Self {
+            final_note: self.final_note || other.final_note,
+            intent: self.intent || other.intent,
+            changes: self.changes || other.changes,
+        }
+    }
+}
+
+/// The request with what `off` switches off removed: the final-Step note at the end of the system
+/// prompt. Everything else is kept.
+pub fn strip(request: &Request, off: Off) -> Request {
+    let mut out = request.clone();
+    if off.final_note {
+        let stripped = out
+            .system
+            .strip_suffix(&format!("\n{FINAL_NOTE}"))
+            .map(str::to_owned);
+        if let Some(system) = stripped {
+            out.system = system;
+        }
+    }
+    out
+}
+
+/// A Provider that removes what `off` switches off from each request before the real adapter sees
+/// it, and keeps a copy of each request it sent. QA only: the app never wraps its Provider.
+pub struct Ablated {
+    inner: Arc<dyn Provider>,
+    off: Off,
+    sent: Mutex<Vec<Request>>,
+}
+
+impl Ablated {
+    pub fn new(inner: Arc<dyn Provider>, off: Off) -> Self {
+        Self {
+            inner,
+            off,
+            sent: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// The request this Provider sent last, with its knobs applied.
+    pub fn last_sent(&self) -> Option<Request> {
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .last()
+            .cloned()
+    }
+}
+
+impl Provider for Ablated {
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+
+    fn model(&self) -> &str {
+        self.inner.model()
+    }
+
+    fn tool_protocol(&self) -> ToolProtocol {
+        self.inner.tool_protocol()
+    }
+
+    fn stream(
+        &self,
+        request: &Request,
+        halt: &dyn Fn() -> bool,
+        emit: &mut dyn FnMut(StreamEvent),
+    ) {
+        let request = strip(request, self.off);
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.clone());
+        self.inner.stream(&request, halt, emit);
+    }
+}
+
+/// The request as the model is sent it, for reading: the system prompt, every message in order, the
+/// Tool specs, and the Wrapper's wire body (the same function the adapter calls).
+pub fn dump_request(request: &Request) -> String {
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "### System prompt, as the harness sends it\n\n````text\n{}\n````\n",
+        request.system
+    );
+    let _ = writeln!(out, "### Messages, oldest first\n");
+    for (index, message) in request.messages.iter().enumerate() {
+        let _ = match message {
+            Message::User(text) => writeln!(
+                out,
+                "#### [{index}] user, the question\n\n````text\n{text}\n````\n"
+            ),
+            Message::Assistant { text, calls } => {
+                let calls: Vec<String> = calls
+                    .iter()
+                    .map(|call| format!("{} {}", call.name, call.arguments))
+                    .collect();
+                writeln!(
+                    out,
+                    "#### [{index}] assistant, a Step that asked for Tools\n\ntext: {text:?}\ncalls: {}\n",
+                    calls.join("; ")
+                )
+            }
+            Message::Tool {
+                call_id,
+                name,
+                text,
+                is_error,
+            } => writeln!(
+                out,
+                "#### [{index}] tool result for {name} (call {call_id}), refused: {is_error}, as the model reads it\n\n````text\n{text}\n````\n"
+            ),
+            Message::Correction(text) => {
+                writeln!(out, "#### [{index}] correction\n\n````text\n{text}\n````\n")
+            }
+        };
+    }
+    let _ = writeln!(out, "### Tool specs offered this Step\n");
+    for tool in &request.tools {
+        let _ = writeln!(
+            out,
+            "- {}: {}\n  schema: {}",
+            tool.name, tool.about, tool.schema
+        );
+    }
+    let wire = WrapperProvider::body(request, request.tools.is_empty());
+    let _ = writeln!(
+        out,
+        "\n### Wire body, as the Wrapper adapter builds it\n\n````json\n{}\n````",
+        serde_json::to_string_pretty(&wire).unwrap_or_default()
+    );
+    out
 }
 
 /// The questions in a JSON list of strings, which `--questions` reads.
@@ -175,6 +384,8 @@ pub struct Answer {
     pub app_note: Option<String>,
     /// Wall-clock time of the Run.
     pub elapsed: Duration,
+    /// The last request the Provider was sent in this Run, for the dump. None when it sent none.
+    pub last_request: Option<Request>,
 }
 
 impl Answer {
@@ -187,6 +398,7 @@ impl Answer {
             text: String::new(),
             app_note: Some(note.to_owned()),
             elapsed: Duration::ZERO,
+            last_request: None,
         }
     }
 }
@@ -342,6 +554,7 @@ pub fn answer(
         text,
         app_note,
         elapsed,
+        last_request: None,
     }
 }
 
@@ -486,6 +699,10 @@ pub struct Args {
     pub variants: Vec<Variant>,
     pub questions: Option<PathBuf>,
     pub out: Option<PathBuf>,
+    /// The knobs switched off for every variant (`--off`).
+    pub off: Off,
+    /// Whether to write the last request of the first question to a dump file (`--dump-last`).
+    pub dump: bool,
 }
 
 /// Reads the flags. `--variant` is `before`, `after` or `both` (the default).
@@ -500,6 +717,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Strin
         variants: vec![Variant::Before, Variant::After],
         questions: None,
         out: None,
+        off: Off::default(),
+        dump: false,
     };
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
@@ -512,6 +731,8 @@ pub fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Strin
             "--model" => options.model = Some(value(&mut args, &arg)?),
             "--questions" => options.questions = Some(PathBuf::from(value(&mut args, &arg)?)),
             "--out" => options.out = Some(PathBuf::from(value(&mut args, &arg)?)),
+            "--off" => options.off = Off::parse(&value(&mut args, &arg)?)?,
+            "--dump-last" => options.dump = true,
             "--variant" => {
                 options.variants = match value(&mut args, &arg)?.as_str() {
                     "before" => vec![Variant::Before],
@@ -661,7 +882,7 @@ fn ask_questions(
     db: &Mutex<Connection>,
     prepared: &mnemora_ai::Prepared,
     modules: &[Box<dyn Module>],
-    variant: Variant,
+    off: Off,
     questions: &[String],
     local: &LocalContext,
 ) -> Result<Vec<Answer>, String> {
@@ -669,29 +890,34 @@ fn ask_questions(
     for question in questions {
         let toolset = {
             let conn = lock(db);
-            let (tools, off) = offered_tools_in(&conn, modules).map_err(|e| e.message)?;
-            variant_toolset(
-                variant,
+            let (tools, modules_off) = offered_tools_in(&conn, modules).map_err(|e| e.message)?;
+            toolset_for(
+                off,
                 Toolset {
                     tools,
-                    off,
+                    off: modules_off,
                     wording: Wording::Full,
                 },
             )
         };
-        let provider = mnemora_ai::build(
-            &prepared.record,
-            &prepared.choice.model,
-            prepared.key.clone(),
-        );
-        answers.push(answer(
+        let ablated = Arc::new(Ablated::new(
+            mnemora_ai::build(
+                &prepared.record,
+                &prepared.choice.model,
+                prepared.key.clone(),
+            ),
+            off,
+        ));
+        let mut reply = answer(
             db,
-            provider,
+            ablated.clone(),
             &prepared.choice,
             question,
             local,
             toolset,
-        ));
+        );
+        reply.last_request = ablated.last_sent();
+        answers.push(reply);
     }
     Ok(answers)
 }
@@ -702,12 +928,17 @@ fn write_reports(
     out: &Path,
     facts: &Facts,
     per_variant: &[(Variant, Vec<Answer>)],
+    off: Off,
 ) -> Result<Vec<String>, String> {
     let mut lines = Vec::new();
+    let switched = format!("Switched off for this run: {}\n\n", off.describe());
     for (variant, answers) in per_variant {
         let path = out.join(format!("qa-{}.md", variant.label()));
-        std::fs::write(&path, report_markdown(*variant, facts, answers))
-            .map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::write(
+            &path,
+            format!("{switched}{}", report_markdown(*variant, facts, answers)),
+        )
+        .map_err(|e| format!("{}: {e}", path.display()))?;
         lines.push(format!("Wrote {}", path.display()));
     }
     if let [(_, before), (_, after)] = per_variant {
@@ -790,10 +1021,27 @@ fn run_on_copy(
     ];
     let mut per_variant: Vec<(Variant, Vec<Answer>)> = Vec::new();
     for &variant in &options.variants {
-        let answers = ask_questions(&db, &prepared, &modules, variant, questions, &local)?;
+        let off = variant_off(variant).with(options.off);
+        let answers = ask_questions(&db, &prepared, &modules, off, questions, &local)?;
         per_variant.push((variant, answers));
     }
     drop(db);
-    lines.extend(write_reports(out, &facts, &per_variant)?);
+    if options.dump {
+        let first = per_variant
+            .first()
+            .and_then(|(_, answers)| answers.first())
+            .and_then(|answer| answer.last_request.as_ref());
+        if let Some(request) = first {
+            let path = out.join("dump-last-request.md");
+            let text = format!(
+                "Switched off for this run: {}\n\nThe last request of the first question of the first variant.\n\n{}",
+                options.off.describe(),
+                dump_request(request)
+            );
+            std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+            lines.push(format!("Wrote {}", path.display()));
+        }
+    }
+    lines.extend(write_reports(out, &facts, &per_variant, options.off)?);
     Ok(lines.join("\n"))
 }

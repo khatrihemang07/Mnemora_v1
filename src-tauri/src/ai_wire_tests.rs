@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use mnemora_providers::testing::{Canned, FakeServer};
 use serde_json::{Value, json};
 
-use crate::ai_tools_tests::NUDGE;
+use crate::ai_tools_tests::RETIRED_NUDGE;
 use crate::ai_tracer_tests::{ended_outcome, until_end};
 use crate::test_support::TestApp;
 use mnemora_ai::RunOutcome;
@@ -597,7 +597,7 @@ fn ask_model(app: &TestApp, provider_id: &str, model: &str) -> Value {
 }
 
 #[test]
-fn a_wrapper_sends_the_nudge_as_its_own_turn_after_the_tool_result() {
+fn a_wrapper_request_after_a_tool_result_carries_no_closing_nudge_turn() {
     let app = TestApp::new();
     let id = seed_entry(&app, "2026-10-20", "Packed the boxes for the move.");
     let server = wrapper_playing(vec![
@@ -624,8 +624,13 @@ fn a_wrapper_sends_the_nudge_as_its_own_turn_after_the_tool_result() {
                 .is_some_and(|text| text.starts_with("Result of journal_list:"))
         })
         .expect("the Tool result is read back to the Model");
-    assert_eq!(turns[result + 1]["role"], "user");
-    assert_eq!(turns[result + 1]["content"], NUDGE);
-    let nudges = turns.iter().filter(|turn| turn["content"] == NUDGE).count();
-    assert_eq!(nudges, 1, "one nudge per request");
+    assert_eq!(
+        result + 1,
+        turns.len(),
+        "the Tool result is the last turn of the request"
+    );
+    assert!(
+        !second.to_string().contains(RETIRED_NUDGE),
+        "the wire body carries no closing nudge"
+    );
 }

@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use mnemora_harness::scripted::{Reply, ScriptedProvider};
-use mnemora_harness::{Message, Provider, ToolDef};
+use mnemora_harness::{Message, Provider, Request, ToolDef};
 use serde_json::{Value, json};
 
 use crate::ai_tracer_tests::{ended_outcome, get, label, until_end};
@@ -339,7 +339,7 @@ fn an_exact_repeat_is_answered_with_its_earlier_result_and_three_in_a_row_close_
     let (tools, system) = sent(&provider, 4);
     assert!(tools.is_empty());
     assert!(system.contains(FINAL_STEP), "{system}");
-    assert_eq!(nudges(&provider.requests()[4].messages), 0);
+    assert!(!carries_nudge(&provider.requests()[4]));
 }
 
 #[test]
@@ -364,10 +364,9 @@ fn the_twelfth_request_has_no_tools_and_its_answer_says_it_may_be_incomplete() {
     let (tools, system) = sent(&provider, 11);
     assert!(tools.is_empty(), "the last step is finish-only");
     assert!(system.contains(FINAL_STEP), "{system}");
-    assert_eq!(
-        nudges(&provider.requests()[11].messages),
-        0,
-        "the final note replaces the nudge"
+    assert!(
+        !carries_nudge(&provider.requests()[11]),
+        "the final Step carries no nudge"
     );
     let saved = payloads(&app, started["conversation_id"].as_str().unwrap());
     let answer = saved.last().unwrap();
@@ -863,10 +862,14 @@ fn the_prompt_asks_what_the_person_wants_before_a_tool_and_fixes_no_phrasing() {
     assert!(!system.contains("what did I do"), "{system}");
 }
 
-/// The closing nudge the loop adds after each batch of Tool results.
-pub(crate) const NUDGE: &str = "If you now have what you need, answer in the language of the question, \
-    summarising rather than quoting unless exact text was asked for. If something is missing, call \
-    the next Tool.";
+/// A line of the closing nudge the loop used to add after each batch of Tool results. It is retired:
+/// no request may carry it, in any Provider's form.
+pub(crate) const RETIRED_NUDGE: &str = "If you now have what you need";
+
+/// Whether a Step's request, its system prompt and its messages together, carries the retired nudge.
+pub(crate) fn carries_nudge(request: &Request) -> bool {
+    format!("{request:?}").contains(RETIRED_NUDGE)
+}
 
 /// The final-Step instruction, sent in the system prompt when Tools are removed.
 const FINAL_STEP: &str = "Investigation is closed. Answer now from the observations only. Write in \
@@ -877,16 +880,8 @@ const FINAL_STEP: &str = "Investigation is closed. Answer now from the observati
 /// The sentence the final-step note no longer asks the Model to write: the app adds its own note.
 const REMOVED_LINE: &str = "Add one line that there may be more to find.";
 
-/// How many of a request's messages are the closing nudge.
-fn nudges(messages: &[Message]) -> usize {
-    messages
-        .iter()
-        .filter(|message| **message == Message::User(NUDGE.to_owned()))
-        .count()
-}
-
 #[test]
-fn after_a_batch_of_tool_results_the_next_request_ends_with_the_nudge_once() {
+fn after_a_batch_of_tool_results_the_next_request_carries_no_closing_nudge() {
     let app = TestApp::new();
     seed_entry(&app, "2026-10-22", "Long walk.");
     let provider = native(vec![
@@ -898,13 +893,16 @@ fn after_a_batch_of_tool_results_the_next_request_ends_with_the_nudge_once() {
     ask(&app, "What did I write?");
     until_end(&events);
 
-    let second = &provider.requests()[1].messages;
-    assert_eq!(second.last(), Some(&Message::User(NUDGE.to_owned())));
-    assert_eq!(nudges(second), 1);
+    let requests = provider.requests();
+    assert!(
+        matches!(requests[1].messages.last(), Some(Message::Tool { .. })),
+        "the next request ends with the Tool result"
+    );
+    assert!(requests.iter().all(|request| !carries_nudge(request)));
 }
 
 #[test]
-fn two_batches_in_a_row_give_each_request_one_nudge_and_the_nudges_do_not_stack() {
+fn two_batches_in_a_row_send_no_closing_nudge_in_any_request() {
     let app = TestApp::new();
     seed_entry(&app, "2026-10-22", "Long walk.");
     let provider = native(vec![
@@ -919,12 +917,11 @@ fn two_batches_in_a_row_give_each_request_one_nudge_and_the_nudges_do_not_stack(
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 3);
-    assert_eq!(nudges(&requests[1].messages), 1);
-    assert_eq!(nudges(&requests[2].messages), 1);
-    assert_eq!(
+    assert!(requests.iter().all(|request| !carries_nudge(request)));
+    assert!(matches!(
         requests[2].messages.last(),
-        Some(&Message::User(NUDGE.to_owned()))
-    );
+        Some(Message::Tool { .. })
+    ));
 }
 
 #[test]
@@ -938,15 +935,11 @@ fn a_greeting_answered_without_a_tool_is_one_request_and_carries_no_nudge() {
 
     let requests = provider.requests();
     assert_eq!(requests.len(), 1, "the greeting takes one request");
-    assert_eq!(nudges(&requests[0].messages), 0);
-    assert!(
-        !format!("{:?}", requests[0]).contains(NUDGE),
-        "no nudge in the request"
-    );
+    assert!(!carries_nudge(&requests[0]));
 }
 
 #[test]
-fn the_nudge_is_sent_to_the_model_but_never_stored_shown_or_returned_to_the_ui() {
+fn the_stored_entries_are_the_same_as_before_the_nudge_was_removed() {
     let app = TestApp::new();
     seed_entry(&app, "2026-10-22", "Long walk.");
     let provider = native(vec![
@@ -959,7 +952,18 @@ fn the_nudge_is_sent_to_the_model_but_never_stored_shown_or_returned_to_the_ui()
     let run = until_end(&events);
     let conversation = started["conversation_id"].as_str().unwrap().to_owned();
 
-    assert_eq!(nudges(&provider.requests()[1].messages), 1);
+    let saved = payloads(&app, &conversation);
+    let kinds: Vec<&str> = saved.iter().map(|p| p["kind"].as_str().unwrap()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "model_change",
+            "user",
+            "assistant",
+            "tool_result",
+            "assistant"
+        ]
+    );
     let listed: Value = app
         .invoke(
             "ai_conversation_list",
@@ -982,7 +986,10 @@ fn the_nudge_is_sent_to_the_model_but_never_stored_shown_or_returned_to_the_ui()
         markdown,
     ];
     for text in shown {
-        assert!(!text.contains(NUDGE), "the nudge leaked: {text}");
+        assert!(
+            !text.contains(RETIRED_NUDGE),
+            "the retired nudge appeared: {text}"
+        );
     }
 }
 

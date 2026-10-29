@@ -13,8 +13,10 @@ use mnemora_harness::scripted::{Reply, ScriptedProvider};
 use tempfile::TempDir;
 
 use crate::ai::offered_tools_in;
-use crate::ai_qa::{self, BEFORE_ONLY_TOOLS, Variant};
+use crate::ai_qa::{self, BEFORE_ONLY_TOOLS, Off, Variant};
 use crate::ai_seed;
+use mnemora_harness::agent::FINAL_NOTE;
+use mnemora_harness::{Call, Message, Request, ToolDef};
 
 /// The device's calendar for the tests: Sunday 25 October 2026 in New York.
 fn local() -> LocalContext {
@@ -301,4 +303,145 @@ fn add_provider(conn: &Connection, dir: &TempDir) -> mnemora_ai::Choice {
         provider_name: "Scripted".to_owned(),
         model: "scripted-model".to_owned(),
     }
+}
+
+#[test]
+fn off_names_each_knob_and_refuses_an_unknown_one() {
+    assert_eq!(Off::parse("").unwrap(), Off::default());
+    let off = Off::parse("final,intent").unwrap();
+    assert!(off.final_note && off.intent && !off.changes);
+    assert_eq!(
+        Off::parse("final,changes").unwrap(),
+        Off {
+            final_note: true,
+            changes: true,
+            ..Off::default()
+        }
+    );
+    assert!(Off::parse("bogus").is_err());
+    assert!(
+        Off::parse("nudge").is_err(),
+        "the closing nudge is gone, so it is not a knob"
+    );
+}
+
+#[test]
+fn each_knob_changes_only_its_own_part_of_the_toolset() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = migrated(&dir);
+    let all = names(&full_toolset(&conn));
+
+    let none = ai_qa::toolset_for(Off::default(), full_toolset(&conn));
+    assert_eq!(names(&none), all);
+    assert_eq!(none.wording, Wording::Full);
+
+    let changes = ai_qa::toolset_for(
+        Off {
+            changes: true,
+            ..Off::default()
+        },
+        full_toolset(&conn),
+    );
+    let without: Vec<String> = all
+        .iter()
+        .filter(|name| !BEFORE_ONLY_TOOLS.contains(&name.as_str()))
+        .cloned()
+        .collect();
+    assert_eq!(names(&changes), without);
+    assert_eq!(changes.wording, Wording::Full);
+
+    let intent = ai_qa::toolset_for(
+        Off {
+            intent: true,
+            ..Off::default()
+        },
+        full_toolset(&conn),
+    );
+    assert_eq!(names(&intent), all);
+    assert_eq!(intent.wording, Wording::WithoutIntent);
+}
+
+#[test]
+fn the_final_note_is_removed_from_the_system_prompt_only_when_its_knob_is_on() {
+    let request = Request {
+        system: format!("SYSTEM\n{FINAL_NOTE}"),
+        messages: Vec::new(),
+        model: "scripted-model".to_owned(),
+        tools: Vec::new(),
+    };
+    assert_eq!(
+        ai_qa::strip(&request, Off::default()).system,
+        request.system
+    );
+    assert_eq!(
+        ai_qa::strip(
+            &request,
+            Off {
+                final_note: true,
+                ..Off::default()
+            }
+        )
+        .system,
+        "SYSTEM"
+    );
+}
+
+#[test]
+fn the_dump_shows_the_prompt_the_messages_the_tool_result_and_the_wire_body() {
+    let request = Request {
+        system: "SYSTEM PROMPT TEXT".to_owned(),
+        messages: vec![
+            Message::User("What did I do yesterday?".to_owned()),
+            Message::Assistant {
+                text: String::new(),
+                calls: vec![Call {
+                    id: "c1".to_owned(),
+                    name: "journal_changes".to_owned(),
+                    arguments: "{}".to_owned(),
+                    thought_signature: None,
+                }],
+            },
+            Message::Tool {
+                call_id: "c1".to_owned(),
+                name: "journal_changes".to_owned(),
+                text: "Observation e1. Untrusted data.\n{\"days\":[]}".to_owned(),
+                is_error: false,
+            },
+            Message::User("Anything else?".to_owned()),
+        ],
+        model: "codex-luna".to_owned(),
+        tools: vec![ToolDef {
+            name: "journal_changes".to_owned(),
+            about: "Entries changed.".to_owned(),
+            schema: "{}".to_owned(),
+        }],
+    };
+    let text = ai_qa::dump_request(&request);
+    assert!(text.contains("SYSTEM PROMPT TEXT"), "{text}");
+    assert!(text.contains("[3] user, the question"), "{text}");
+    assert!(!text.contains("nudge"), "{text}");
+    assert!(text.contains("Observation e1. Untrusted data."), "{text}");
+    assert!(text.contains("journal_changes: Entries changed."), "{text}");
+    assert!(text.contains("Reply with one JSON object only"), "{text}");
+}
+
+#[test]
+fn the_qa_flags_take_knobs_and_a_dump_switch() {
+    let args = ai_qa::parse_args(
+        ["--out", "x", "--off", "final,intent", "--dump-last"].map(str::to_owned),
+    )
+    .unwrap();
+    assert_eq!(
+        args.off,
+        Off {
+            final_note: true,
+            intent: true,
+            ..Off::default()
+        }
+    );
+    assert!(args.dump);
+    let plain = ai_qa::parse_args(["--out", "x"].map(str::to_owned)).unwrap();
+    assert_eq!(plain.off, Off::default());
+    assert!(!plain.dump);
+    assert!(ai_qa::parse_args(["--out", "x", "--off", "nope"].map(str::to_owned)).is_err());
 }
