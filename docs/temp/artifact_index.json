@@ -1,0 +1,265 @@
+{
+    "token_budget": 200000,
+    "tokens_used": 12866,
+    "caps": {
+        "per_file_bytes": 16384,
+        "per_class_files": 40,
+        "per_file_units": 25
+    },
+    "with_prose": false,
+    "classes": {
+        "manifest": {
+            "files": [
+                {
+                    "path": "Cargo.toml",
+                    "bytes": 4941,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "package.json",
+                    "bytes": 1427,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": [
+                        "build",
+                        "check",
+                        "dev",
+                        "dev:menu",
+                        "lint",
+                        "test"
+                    ]
+                },
+                {
+                    "path": "pnpm-workspace.yaml",
+                    "bytes": 329,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "tsconfig.json",
+                    "bytes": 377,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "src-tauri/Cargo.toml",
+                    "bytes": 1670,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/ai/Cargo.toml",
+                    "bytes": 669,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/core/Cargo.toml",
+                    "bytes": 676,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/harness/Cargo.toml",
+                    "bytes": 413,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/journal/Cargo.toml",
+                    "bytes": 590,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/providers/Cargo.toml",
+                    "bytes": 672,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/sync/Cargo.toml",
+                    "bytes": 1029,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "crates/todo/Cargo.toml",
+                    "bytes": 609,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "src-tauri/gen/android/build.gradle.kts",
+                    "bytes": 377,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "src-tauri/gen/android/settings.gradle",
+                    "bytes": 52,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "src-tauri/gen/android/app/build.gradle.kts",
+                    "bytes": 4901,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "src-tauri/gen/android/buildSrc/build.gradle.kts",
+                    "bytes": 345,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                }
+            ],
+            "omitted_by_class_cap": [],
+            "not_loaded_budget": []
+        },
+        "build": {
+            "files": [
+                {
+                    "path": "Makefile",
+                    "bytes": 4326,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": [
+                        "android",
+                        "android-dev",
+                        "android-sandbox",
+                        "android-test",
+                        "bindings",
+                        "build",
+                        "clean-heavy",
+                        "dev",
+                        "fmt",
+                        "help",
+                        "icons",
+                        "lint",
+                        "sandbox",
+                        "setup",
+                        "test",
+                        "trim"
+                    ]
+                },
+                {
+                    "path": "vite.config.ts",
+                    "bytes": 914,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "src-tauri/build.rs",
+                    "bytes": 350,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                }
+            ],
+            "omitted_by_class_cap": [],
+            "not_loaded_budget": []
+        },
+        "config": {
+            "files": [
+                {
+                    "path": ".editorconfig",
+                    "bytes": 243,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "biome.json",
+                    "bytes": 591,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "clippy.toml",
+                    "bytes": 58,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "rustfmt.toml",
+                    "bytes": 244,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                }
+            ],
+            "omitted_by_class_cap": [],
+            "not_loaded_budget": []
+        },
+        "script": {
+            "files": [
+                {
+                    "path": "scripts/check-colors.sh",
+                    "bytes": 675,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "scripts/make-icons.sh",
+                    "bytes": 3158,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "scripts/setup-android.sh",
+                    "bytes": 6220,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "scripts/setup-signing.sh",
+                    "bytes": 7156,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "scripts/signing-env.sh",
+                    "bytes": 1029,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                },
+                {
+                    "path": "scripts/with-env.sh",
+                    "bytes": 1192,
+                    "truncated": false,
+                    "loaded": true,
+                    "units": []
+                }
+            ],
+            "omitted_by_class_cap": [],
+            "not_loaded_budget": []
+        }
+    },
+    "nodes": 51,
+    "edges": 46
+}
