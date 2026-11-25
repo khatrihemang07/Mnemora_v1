@@ -259,6 +259,7 @@ E. An answer that cites nothing says it cannot find the answer in the Journal an
 - Lists beyond a few hundred rows use `@tanstack/svelte-virtual`.
 - **No `VACUUM`** without rebuilding full-text indexes afterwards: they are keyed on implicit rowids (the Journal's `journal_fts`), which VACUUM may renumber. Backups use the page-copy backup API, which keeps rowids.
 - Animate only `transform` and `opacity`; durations come from tokens and are zero under reduced motion.
+- **The main window sets `backgroundThrottling: "disabled"`** (`src-tauri/tauri.conf.json`; WKWebView `inactiveSchedulingPolicy = none`, macOS 14+, ignored elsewhere). Without it WebKit suspends the web process once the window has been hidden for more than 240 s and, on switch-back, hides the view until the first fresh frame commits: an empty themed window for about 70 to 340 ms. With it the page keeps its layers, so switching back after any idle time is as quick as after a few seconds. `document.hidden` and `visibilitychange` are unchanged (the clock still stops and Todo still refetches). Measured cost while hidden for 5 minutes: none visible (about 0 % CPU, the same few wakeups, same compressed memory). Do not remove it without re-measuring a more than 240 s hidden switch-back.
 
 ## Resource rules for the dev machine
 
