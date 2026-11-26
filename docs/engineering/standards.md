@@ -259,6 +259,7 @@ E. An answer that cites nothing says it cannot find the answer in the Journal an
 - Lists beyond a few hundred rows use `@tanstack/svelte-virtual`.
 - **No `VACUUM`** without rebuilding full-text indexes afterwards: they are keyed on implicit rowids (the Journal's `journal_fts`), which VACUUM may renumber. Backups use the page-copy backup API, which keeps rowids.
 - Animate only `transform` and `opacity`; durations come from tokens and are zero under reduced motion.
+- **The main window sets `backgroundThrottling: "disabled"`** in the base `src-tauri/tauri.conf.json`. It only matters on macOS 14+ (WKWebView `inactiveSchedulingPolicy = none`); `tauri.linux.conf.json` and `tauri.windows.conf.json` redefine the whole `windows` array and do not carry it. Without it WebKit suspends the web process once the window has been hidden for more than 240 s, and on switch-back hides the view until the first fresh frame commits, an empty themed window for roughly 20 to 340 ms. `document.hidden` and `visibilitychange` are unchanged. Measured (Sandbox build, 3 runs each, about 280 s hidden): blank in 3 of 3 without it, none in 3 of 3 with it; hidden for 5 minutes there was no visible CPU or memory cost. To re-check before removing it, hide the app for more than 240 s behind another app, switch back, and capture frames at about 20 ms; the WebKit log (`subsystem BEGINSWITH "com.apple.WebKit"`) shows `PrepareToSuspend` when suspension happens.
 
 ## Resource rules for the dev machine
 
